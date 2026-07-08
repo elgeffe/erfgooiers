@@ -28,6 +28,7 @@ const hz = (midi: number): number => 440 * Math.pow(2, (midi - 69) / 12);
 interface Mood {
   bpm: number;                                       // tempo (bar length & drum)
   prog: { bass: number; chord: number[] }[];         // one sustained chord per bar
+  variants?: { bass: number; chord: number[] }[][];  // alt progressions, picked per play
   pad: number;                                       // pad voice level (× base)
   fb: number;                                        // delay feedback (space)
   shimmer: number;                                   // high octave sparkle (0 = none)
@@ -36,14 +37,24 @@ interface Mood {
   drum: number;                                      // frame-drum hits per bar (0 = none)
 }
 
-// Tier 0 — sunlit C major (I–V–vi–IV): warm, clean, idyllic. Pads only.
+// Shared C-major chord voicings, kept around C4 for smooth voice-leading.
+const C = { bass: 48, chord: [60, 64, 67] };  // I
+const G = { bass: 43, chord: [55, 59, 62] };  // V
+const Am = { bass: 45, chord: [57, 60, 64] }; // vi
+const F = { bass: 41, chord: [53, 57, 60] };  // IV
+const Em = { bass: 40, chord: [55, 59, 64] }; // iii
+
+// Tier 0 — sunlit C major: warm, clean, idyllic. Pads only. A handful of
+// bright progressions are shuffled between so no two games open the same way.
 const MOOD_MAJOR: Mood = {
   bpm: 60, pad: 1, fb: 0.16, shimmer: 0, air: 0, drone: 0, drum: 0,
-  prog: [
-    { bass: 48, chord: [60, 64, 67] }, // C  — I
-    { bass: 43, chord: [55, 59, 62] }, // G  — V
-    { bass: 45, chord: [57, 60, 64] }, // Am — vi
-    { bass: 41, chord: [53, 57, 60] }, // F  — IV
+  prog: [C, G, Am, F],
+  variants: [
+    [C, G, Am, F],  // I–V–vi–IV
+    [C, Am, F, G],  // I–vi–IV–V
+    [C, F, G, Am],  // I–IV–V–vi
+    [C, Em, F, G],  // I–iii–IV–V
+    [C, G, F, Am],  // I–V–IV–vi
   ],
 };
 
@@ -93,6 +104,12 @@ function moodForLevel(level: number): Mood {
   return MOOD_URGENT;
 }
 
+/** Choose a progression for a mood — a random variant if it has any. */
+function pickProg(m: Mood): { bass: number; chord: number[] }[] {
+  if (m.variants && m.variants.length) return m.variants[Math.floor(Math.random() * m.variants.length)];
+  return m.prog;
+}
+
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
@@ -109,6 +126,7 @@ export class AudioEngine {
 
   private mood: Mood = MOOD_MAJOR;        // mood the current bar is playing in
   private pendingMood: Mood = MOOD_MAJOR; // mood to switch to at the next bar
+  private activeProg = MOOD_MAJOR.prog;   // the chosen progression for this play
 
   constructor() {
     this.muted = localStorage.getItem(MUTE_KEY) === '1';
@@ -124,7 +142,7 @@ export class AudioEngine {
   setLevel(level = 0): void {
     this.pendingMood = level > 0 ? moodForLevel(level) : MOOD_MAJOR;
     // If nothing is playing yet, adopt it straight away.
-    if (!this.timer) this.mood = this.pendingMood;
+    if (!this.timer) { this.mood = this.pendingMood; this.activeProg = pickProg(this.mood); }
   }
 
   /** Create the context on the first user gesture and (if unmuted) start music. */
@@ -182,6 +200,7 @@ export class AudioEngine {
     if (!this.ctx || this.timer) return;
     this.nextNote = this.ctx.currentTime + 0.1;
     this.step = 0;
+    this.activeProg = pickProg(this.mood); // fresh progression variant each start
     // Lookahead scheduler: queue notes a fraction of a second ahead of the
     // audio clock so timing stays rock-steady regardless of frame rate.
     this.timer = window.setInterval(() => this.schedule(), 25);
@@ -199,12 +218,14 @@ export class AudioEngine {
       // Adopt any queued mood change at the bar boundary so shifts glide in.
       if (this.pendingMood !== this.mood) {
         this.mood = this.pendingMood;
+        this.activeProg = pickProg(this.mood);
         if (this.fbGain) this.fbGain.gain.value = this.mood.fb;
       }
       const m = this.mood;
+      const prog = this.activeProg;
       const barLen = (60 / m.bpm) * 4;
-      const bar = this.step % m.prog.length;
-      const cell = m.prog[bar];
+      const bar = this.step % prog.length;
+      const cell = prog[bar];
       const t = this.nextNote;
 
       // Warm bass root + the sustained pad chord — the constant harmonic bed.

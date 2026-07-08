@@ -73,7 +73,8 @@ function startLevel(): void {
   ui.setGame(game);
   controls.setGame(game);
   ui.setGold(run.gold);
-  ui.setObjective(`Level ${level.index} · ${level.name} — ${game.objective.brief()}`);
+  ui.setLevel(level.index, level.name);
+  ui.setObjective(game.objective.brief());
   ui.updateObjective(game.objective.evaluate(game).label, 0, level.hardTimer);
   view.centerOn(world.wx(game.store.x) + 0.5, world.wz(game.store.y) + 2);
   view.drawMinimap(game.units);

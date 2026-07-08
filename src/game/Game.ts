@@ -510,7 +510,7 @@ export class Game {
 
   demolishAt(tx: number, ty: number, dragOnly: boolean): void {
     const t = this.world.T(tx, ty); if (!t) return;
-    if (t.road) { t.road = false; this.view.refreshTile(tx, ty); this.view.removeRoad(tx, ty); return; }
+    if (t.road) { t.road = false; this.store.stock!['stone'] = (this.store.stock!['stone'] || 0) + ROAD_STONE_COST; this.view.refreshTile(tx, ty); this.view.removeRoad(tx, ty); return; }
     if (dragOnly) return;
     if (t.b) { if (t.b.def.store) { this.toast('The storehouse cannot be demolished', 'err'); return; } this.sfx('demolish'); this.removeBuilding(t.b); return; }
     if (t.site) { this.sfx('demolish'); this.removeSite(t.site); return; }

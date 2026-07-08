@@ -1,5 +1,6 @@
 import { DEFS, MENU_ORDER } from '../data/buildings';
 import { ITEMS, RES_SHOWN } from '../data/items';
+import { ROAD_STONE_COST } from '../constants';
 import { installFavicon, logoSVG } from './logo';
 import { audio } from '../audio/Audio';
 import type { Game } from '../game/Game';
@@ -64,6 +65,9 @@ export class UI {
   /** Set the objective card text (driven by main until Phase 1's Objectives). */
   setObjective(text: string): void { $('objText').textContent = text; }
 
+  /** Set the persistent level label shown above the objective progress. */
+  setLevel(index: number, name: string): void { $('objLabel').textContent = `Level ${index} · ${name}`; }
+
   /** Per-tick objective card update: label, progress ratio (0..1), seconds left. */
   updateObjective(label: string, ratio: number, remaining: number): void {
     $('objText').textContent = label;
@@ -111,11 +115,11 @@ export class UI {
       menu.appendChild(el);
     }
     const sep = document.createElement('div'); sep.className = 'bsep'; menu.appendChild(sep);
-    const road = document.createElement('div'); road.className = 'bcard'; road.dataset.key = 'road'; road.title = 'Workers route along roads and walk 30% faster on them';
-    road.innerHTML = '<div class="icon"><svg width="30" height="26" viewBox="0 0 30 26"><path d="M4 24 C10 14 20 12 26 2" stroke="#b9a179" stroke-width="6" fill="none" stroke-linecap="round"/></svg></div><div class="nm">Road</div><div class="cost"><i>free · drag</i></div>';
+    const road = document.createElement('div'); road.className = 'bcard'; road.dataset.key = 'road'; road.title = `Costs ${ROAD_STONE_COST} stone per tile · workers route along roads and walk 30% faster on them · demolishing a road refunds the stone`;
+    road.innerHTML = `<div class="icon"><svg width="30" height="26" viewBox="0 0 30 26"><path d="M4 24 C10 14 20 12 26 2" stroke="#b9a179" stroke-width="6" fill="none" stroke-linecap="round"/></svg></div><div class="nm">Road</div><div class="cost"><i><span class="dot" style="background:${ITEMS.stone.color}"></span>${ROAD_STONE_COST}</i> · drag</div>`;
     road.onclick = () => { audio.play('click'); this.onMode({ type: 'road' }); };
     menu.appendChild(road);
-    const dl = document.createElement('div'); dl.className = 'bcard'; dl.dataset.key = 'demolish'; dl.title = 'Remove roads, sites and buildings';
+    const dl = document.createElement('div'); dl.className = 'bcard'; dl.dataset.key = 'demolish'; dl.title = `Remove roads, sites and buildings \u00b7 demolishing a road refunds ${ROAD_STONE_COST} stone`;
     dl.innerHTML = '<div class="icon"><svg width="30" height="26" viewBox="0 0 30 26"><path d="M7 5 L23 21 M23 5 L7 21" stroke="#c96b4a" stroke-width="4" fill="none" stroke-linecap="round"/></svg></div><div class="nm">Demolish</div><div class="cost"><i>click / drag</i></div>';
     dl.onclick = () => { audio.play('click'); this.onMode({ type: 'demolish' }); };
     menu.appendChild(dl);
