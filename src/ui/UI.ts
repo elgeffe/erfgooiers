@@ -1,0 +1,160 @@
+import { DEFS, MENU_ORDER } from '../data/buildings';
+import { ITEMS, RES_SHOWN } from '../data/items';
+import type { Game } from '../game/Game';
+import type { BuildingDef, Mode } from '../types';
+
+const $ = (id: string) => document.getElementById(id)!;
+
+/**
+ * All DOM overlay: resource bar, objective, speed controls, build menu,
+ * inspector, worker panel, toasts and the intro card. Reads state from the
+ * Game; pushes build-mode changes out through the `onMode` callback (wired to
+ * Controls in main.ts).
+ */
+export class UI {
+  onMode: (m: Mode) => void = () => {};
+
+  private readonly resEls: Record<string, HTMLElement> = {};
+  private objDone = false;
+  private unitsOpen = false;
+
+  constructor(private readonly game: Game) {
+    this.buildResbar();
+    this.buildMenu();
+    this.wireSpeed();
+    this.wireUnitPanel();
+    this.wireInspector();
+    $('startBtn').onclick = () => { $('intro').style.display = 'none'; };
+  }
+
+  // ---------- resource bar & objective ----------
+  private buildResbar(): void {
+    const bar = $('resbar');
+    for (const k of RES_SHOWN) {
+      const el = document.createElement('div'); el.className = 'res';
+      el.innerHTML = `<div class="dot" style="background:${ITEMS[k].color}"></div><b>0</b><span>${ITEMS[k].name}</span>`;
+      bar.appendChild(el);
+      this.resEls[k] = el.querySelector('b')!;
+    }
+  }
+  private refreshResbar(): void {
+    for (const k of RES_SHOWN) this.resEls[k].textContent = String(this.game.countItem(k));
+    const c = this.game.countItem('coin');
+    $('objText').textContent = this.objDone ? 'Complete! ✦' : `Mint 10 coins — ${c}/10`;
+    if (c >= 10 && !this.objDone) { this.objDone = true; this.toast('✦ Objective complete — 10 coins minted! ✦'); }
+  }
+
+  // ---------- build menu ----------
+  private iconSVG(def: BuildingDef): string {
+    const r = '#' + def.roof.toString(16).padStart(6, '0'), w = '#' + def.wall.toString(16).padStart(6, '0');
+    return `<svg width="30" height="26" viewBox="0 0 30 26"><rect x="6" y="12" width="18" height="12" rx="1" fill="${w}"/><path d="M3 13 L15 3 L27 13 Z" fill="${r}"/></svg>`;
+  }
+  private costHTML(cost: BuildingDef['cost']): string {
+    let s = '';
+    for (const k in cost) { if (!(cost as any)[k]) continue; s += `<i><span class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color}"></span>${(cost as any)[k]}</i>`; }
+    return s || '<i>free</i>';
+  }
+  private buildMenu(): void {
+    const menu = $('buildmenu');
+    for (const key of MENU_ORDER) {
+      const def = DEFS[key];
+      const el = document.createElement('div'); el.className = 'bcard'; el.dataset.key = key; el.title = def.desc;
+      el.innerHTML = `<div class="icon">${this.iconSVG(def)}</div><div class="nm">${def.name}</div><div class="cost">${this.costHTML(def.cost)}</div>`;
+      el.onclick = () => this.onMode({ type: 'build', key });
+      menu.appendChild(el);
+    }
+    const sep = document.createElement('div'); sep.className = 'bsep'; menu.appendChild(sep);
+    const road = document.createElement('div'); road.className = 'bcard'; road.dataset.key = 'road'; road.title = 'Workers walk 30% faster on roads';
+    road.innerHTML = '<div class="icon"><svg width="30" height="26" viewBox="0 0 30 26"><path d="M4 24 C10 14 20 12 26 2" stroke="#b9a179" stroke-width="6" fill="none" stroke-linecap="round"/></svg></div><div class="nm">Road</div><div class="cost"><i>free · drag</i></div>';
+    road.onclick = () => this.onMode({ type: 'road' });
+    menu.appendChild(road);
+    const dl = document.createElement('div'); dl.className = 'bcard'; dl.dataset.key = 'demolish'; dl.title = 'Remove roads, sites and buildings';
+    dl.innerHTML = '<div class="icon"><svg width="30" height="26" viewBox="0 0 30 26"><path d="M7 5 L23 21 M23 5 L7 21" stroke="#c96b4a" stroke-width="4" fill="none" stroke-linecap="round"/></svg></div><div class="nm">Demolish</div><div class="cost"><i>click / drag</i></div>';
+    dl.onclick = () => this.onMode({ type: 'demolish' });
+    menu.appendChild(dl);
+  }
+
+  // ---------- speed ----------
+  private wireSpeed(): void {
+    $('sp0').onclick = () => this.setSpeed(0);
+    $('sp1').onclick = () => this.setSpeed(1);
+    $('sp3').onclick = () => this.setSpeed(3);
+  }
+  setSpeed(s: number): void {
+    this.game.simSpeed = s;
+    $('sp0').classList.toggle('on', s === 0);
+    $('sp1').classList.toggle('on', s === 1);
+    $('sp3').classList.toggle('on', s === 3);
+  }
+  togglePause(): void { this.setSpeed(this.game.simSpeed === 0 ? 1 : 0); }
+
+  // ---------- inspector ----------
+  private wireInspector(): void { $('closeInsp').onclick = () => this.game.select(null); }
+  showInspector(obj: any): void {
+    $('inspector').style.display = obj ? 'block' : 'none';
+    if (obj) this.renderInspector();
+  }
+  private invRowsHTML(obj: Record<string, number>): string {
+    let s = '';
+    for (const k in obj) { if (!obj[k]) continue; s += `<div class="invrow"><div class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color}"></div>${ITEMS[k as keyof typeof ITEMS].name}<b>${obj[k]}</b></div>`; }
+    return s || '<div class="invrow" style="color:var(--ink-dim)">empty</div>';
+  }
+  private renderInspector(): void {
+    const o = this.game.selected; if (!o) return;
+    $('inspName').textContent = o.def.name + (o.isSite ? ' — site' : '');
+    $('inspSub').textContent = o.def.desc || '';
+    let body = '';
+    if (o.isSite) {
+      body += '<div class="sect">Materials needed</div>';
+      for (const k in o.needs) body += `<div class="invrow"><div class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color}"></div>${ITEMS[k as keyof typeof ITEMS].name}<b>${o.delivered[k] || 0} / ${o.needs[k]}</b></div>`;
+      if (o.ready) body += `<div class="sect">Construction</div><div class="bar"><div style="width:${Math.round(o.progress * 100)}%"></div></div>`;
+      else body += '<div class="hnote">Waiting for serfs to deliver materials…</div>';
+    } else if (o.def.store) {
+      body += '<div class="sect">Stock</div>' + this.invRowsHTML(o.stock);
+    } else {
+      if (!o.active) body += '<div class="hnote">Waiting for worker to arrive…</div>';
+      if (o.def.recipe) {
+        body += `<div class="sect">Production</div><div class="bar"><div style="width:${Math.round(o.prog * 100)}%"></div></div>`;
+        body += '<div class="sect">Inputs</div>' + this.invRowsHTML(o.inp);
+        body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
+      } else if (o.def.gather) {
+        body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
+      }
+      if (o.worker) body += `<div class="sect">Worker</div><div class="invrow"><div class="dot" style="background:#${o.def.wcolor.toString(16).padStart(6, '0')};border-radius:50%"></div>${o.worker.roleName}<b style="font-weight:400;color:var(--ink-dim);font-size:11px">${o.worker.status}</b></div>`;
+    }
+    $('inspBody').innerHTML = body;
+  }
+
+  // ---------- worker panel ----------
+  private wireUnitPanel(): void {
+    const toggle = $('unitsToggle'), panel = $('unitpanel');
+    toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : 'block'; this.renderUnits(); };
+    document.addEventListener('keydown', e => { if (e.key === 'u') toggle.click(); });
+    const h3 = panel.querySelector('h3') as HTMLElement;
+    h3.style.cursor = 'pointer'; h3.title = 'Click to collapse';
+    h3.onclick = () => { this.unitsOpen = false; panel.style.display = 'none'; toggle.style.display = 'block'; };
+  }
+  private renderUnits(): void {
+    if (!this.unitsOpen) return;
+    let s = '';
+    for (const u of this.game.units) {
+      const hcol = u.hunger > 50 ? 'var(--good)' : u.hunger > 25 ? 'var(--accent)' : 'var(--bad)';
+      s += `<div class="urow"><div class="dot" style="background:#${u.colorHex.toString(16).padStart(6, '0')}"></div><div class="info"><div class="rn">${u.roleName}</div><div class="st">${u.status}</div></div><div class="hbar" title="Hunger (stub)"><div style="width:${Math.round(u.hunger)}%;background:${hcol}"></div></div></div>`;
+    }
+    $('unitlist').innerHTML = s;
+  }
+
+  // ---------- toasts ----------
+  toast(msg: string, cls?: string): void {
+    const el = document.createElement('div'); el.className = 'toast' + (cls ? ' ' + cls : ''); el.textContent = msg;
+    $('toasts').appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .4s'; setTimeout(() => el.remove(), 400); }, 3200);
+  }
+
+  /** Periodic refresh from the game loop. */
+  tick(): void {
+    this.refreshResbar();
+    this.renderUnits();
+    if (this.game.selected) this.renderInspector();
+  }
+}

@@ -1,0 +1,58 @@
+name: Deploy to GitHub Pages
+
+# Publishes to a single `gh-pages` branch so multiple branches can coexist:
+#   main            -> https://elgeffe.github.io/erfgooiers/
+#   any other branch-> https://elgeffe.github.io/erfgooiers/branch/<branch-name>/
+#
+# ONE-TIME SETUP: Repo Settings -> Pages -> Build and deployment ->
+#   Source: "Deploy from a branch", Branch: "gh-pages" / "(root)".
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compute base path & destination
+        id: cfg
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "base=/erfgooiers/" >> "$GITHUB_OUTPUT"
+            echo "dest=" >> "$GITHUB_OUTPUT"
+          else
+            safe=$(echo "${{ github.ref_name }}" | tr -c 'a-zA-Z0-9._-' '-')
+            echo "base=/erfgooiers/branch/$safe/" >> "$GITHUB_OUTPUT"
+            echo "dest=branch/$safe" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        run: npm run build
+        env:
+          BASE_PATH: ${{ steps.cfg.outputs.base }}
+
+      - name: Publish
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          destination_dir: ${{ steps.cfg.outputs.dest }}
+          keep_files: true
