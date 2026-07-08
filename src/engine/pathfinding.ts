@@ -1,8 +1,11 @@
-import { W, H, TILE_COST_ROAD } from '../constants';
+import { W, H, TILE_COST_ROAD, TILE_COST_GRASS } from '../constants';
 import type { World } from '../world/World';
 import type { Coord } from '../types';
 
-// A* over the tile grid. Roads are cheaper (TILE_COST_ROAD) so units prefer them.
+// A* over the tile grid. Open ground costs TILE_COST_GRASS per step while
+// roads cost TILE_COST_ROAD, so units take a paved detour whenever it isn't
+// wildly longer than the beeline. The heuristic is weighted by the road cost
+// (the cheapest possible step) to stay admissible.
 // The goal tile is always considered enterable even if occupied (door tiles).
 export function findPath(world: World, sx: number, sy: number, ex: number, ey: number): Coord[] | null {
   if (sx === ex && sy === ey) return [];
@@ -36,7 +39,7 @@ export function findPath(world: World, sx: number, sy: number, ex: number, ey: n
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
       const t = tiles[ny][nx];
       if (t.type === 'water') continue;
-      const cost = t.road ? TILE_COST_ROAD : 1;
+      const cost = t.road ? TILE_COST_ROAD : TILE_COST_GRASS;
       const ng = gS.get(ck)! + cost, nk = key(nx, ny);
       if (gS.has(nk) && gS.get(nk)! <= ng) continue;
       gS.set(nk, ng);

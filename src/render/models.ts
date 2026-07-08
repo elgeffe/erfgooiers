@@ -381,29 +381,70 @@ function windmill(def: BuildingDef, ghost: boolean): THREE.Group {
   return g;
 }
 
-// ---------- farmhouse (farm) — thatched roof + haystack ----------
+// ---------- farmhouse (farm) — hipped thatch, timbered walls, working yard ----------
 function farmhouse(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.82, 1.5), mkMat(def.wall, ghost));
-  base.position.y = 0.41; base.castShadow = !ghost; base.receiveShadow = !ghost; g.add(base);
-  // white plaster + timber frame stripes
+  // long low hall — plastered walls over a timber frame
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.78, 1.5), mkMat(def.wall, ghost));
+  base.position.y = 0.39; base.castShadow = !ghost; base.receiveShadow = !ghost; g.add(base);
   const beamMat = mkMat(0x6b4a2f, ghost);
-  for (const bx of [-0.55, 0, 0.55]) {
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.82, 0.05), beamMat);
-    beam.position.set(bx, 0.41, 0.76); beam.userData.marker = true; g.add(beam);
+  for (const bx of [-0.68, -0.12, 0.35, 0.8]) {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.78, 0.05), beamMat);
+    beam.position.set(bx, 0.39, 0.76); beam.userData.marker = true; g.add(beam);
   }
-  // thatched roof — soft straw colour, oversized with overhang
-  const thatch = new THREE.Mesh(new THREE.ConeGeometry(1.5, 0.95, 4), mkMat(0xcaab5c, ghost));
-  thatch.position.y = 1.25; thatch.rotation.y = Math.PI / 4; thatch.castShadow = !ghost; g.add(thatch);
-  const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.16, 1.55), mkMat(0xa98d45, ghost));
-  ridge.position.y = 1.66; ridge.userData.marker = true; g.add(ridge);
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.08, 0.05), beamMat);
+  rail.position.set(0, 0.71, 0.76); rail.userData.marker = true; g.add(rail);
+  // a small shuttered window between the beams
+  const win = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.26, 0.05), mkMat(0xf0e6c2, ghost));
+  win.position.set(0.58, 0.42, 0.77); win.userData.marker = true; g.add(win);
+  // deep hipped thatch with a generous overhang — sits snug on the walls,
+  // no ridge beam (geometry pre-rotated 45° so the mesh can be squashed in z)
+  const thatchGeo = new THREE.ConeGeometry(1.52, 1.05, 4);
+  thatchGeo.rotateY(Math.PI / 4);
+  const thatch = new THREE.Mesh(thatchGeo, mkMat(0xcaab5c, ghost));
+  thatch.position.y = 1.3; thatch.scale.z = 0.84; thatch.castShadow = !ghost; g.add(thatch);
   addDoor(g, ghost);
-  // haystack + a pumpkin-ish gourd for cosy farm vibes (skip on ghost)
+  // the farmyard: haystack, leaning wheat sheaves and a bit of paling fence
   if (!ghost) {
     const hay = new THREE.Group();
-    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, 0.4, 10), mat(0xd7bd63)); stack.position.y = 0.2; stack.castShadow = true;
-    const top = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.32, 10), mat(0xc9a94e)); top.position.y = 0.55; top.castShadow = true;
-    hay.add(stack, top); hay.position.set(0.98, 0, 0.55); g.add(hay);
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.38, 10), mat(0xd7bd63)); stack.position.y = 0.19; stack.castShadow = true;
+    const top = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.3, 10), mat(0xc9a94e)); top.position.y = 0.52; top.castShadow = true;
+    hay.add(stack, top); hay.position.set(0.92, 0, -0.55); g.add(hay);
+    const sheafMat = mat(0xdcc25c);
+    for (const [sx, sz, lean] of [[0.86, 0.42, 0.18], [0.64, 0.62, -0.22]]) {
+      const sheaf = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.42, 6), sheafMat);
+      sheaf.position.set(sx, 0.2, sz); sheaf.rotation.z = lean; sheaf.castShadow = true; g.add(sheaf);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.09, 0.05, 6), mat(0xa98d45));
+      band.position.set(sx, 0.18, sz); band.rotation.z = lean; g.add(band);
+    }
+    const fenceMat = mat(0x8a6a44);
+    for (let i = 0; i < 3; i++) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.06), fenceMat);
+      post.position.set(-0.92, 0.17, -0.7 + i * 0.55); post.castShadow = true; g.add(post);
+    }
+    const rail1 = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.05, 1.24), fenceMat);
+    rail1.position.set(-0.92, 0.26, -0.15); g.add(rail1);
+  }
+  return g;
+}
+
+// ---------- field crops — wheat stalks that rise as the plot ripens ----------
+const geoStalk = new THREE.CylinderGeometry(0.012, 0.02, 0.32, 4);
+const geoEar = new THREE.CylinderGeometry(0.03, 0.018, 0.12, 5);
+/** A tile's worth of wheat: 3×3 jittered bundles. The View scales the group's
+ *  y with growth so young fields read as green shoots, ripe ones as tall grain. */
+export function makeFieldCrop(): THREE.Group {
+  const g = new THREE.Group();
+  const stalkMat = mat(0xb5a04a), earMat = mat(0xe0c25c);
+  for (let ry = 0; ry < 3; ry++) for (let rx = 0; rx < 3; rx++) {
+    const px = (rx - 1) * 0.3 + (rnd() - 0.5) * 0.12;
+    const pz = (ry - 1) * 0.3 + (rnd() - 0.5) * 0.12;
+    const tilt = (rnd() - 0.5) * 0.2;
+    const stalk = new THREE.Mesh(geoStalk, stalkMat);
+    stalk.position.set(px, 0.16, pz); stalk.rotation.z = tilt;
+    const ear = new THREE.Mesh(geoEar, earMat);
+    ear.position.set(px - Math.sin(tilt) * 0.36, 0.38, pz); ear.rotation.z = tilt;
+    g.add(stalk, ear);
   }
   return g;
 }

@@ -79,7 +79,7 @@ export class Game {
         const t = this.world.T(x, y);
         if (t && t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep && !t.road && !t.field) {
           if (t.deco) this.removeDeco(x, y);
-          t.field = { farm, growth: rnd() * 0.5 }; farm.fieldsList.push({ x, y }); this.view.refreshTile(x, y); n++;
+          t.field = { farm, growth: rnd() * 0.5, meshes: [] }; farm.fieldsList.push({ x, y }); this.view.refreshTile(x, y); this.view.addFieldCrop(x, y, t.field); n++;
         }
       }
     }
@@ -372,7 +372,7 @@ export class Game {
       if (u.timer <= 0) {
         const n = u.target, t = this.world.tiles[n.y][n.x];
         if (def.gather!.node === 'tree') { if (t.tree) this.removeTree(n.x, n.y); this.setCarrying(u, 'trunk'); }
-        else if (def.gather!.node === 'field') { if (t.field) { t.field.growth = 0; this.view.refreshTile(n.x, n.y); } this.setCarrying(u, 'wheat'); }
+        else if (def.gather!.node === 'field') { if (t.field) { t.field.growth = 0; this.view.refreshTile(n.x, n.y); this.view.scaleFieldCrop(t.field); } this.setCarrying(u, 'wheat'); }
         else if (def.gather!.node === 'plant') {
           if (!t.tree && !t.b && !t.site && !t.road && !t.field && !t.dep) { if (t.deco) this.removeDeco(n.x, n.y); t.tree = { growth: 0.12, reserved: false, meshes: [], s: 0.85 + rnd() * 0.4, kind: Math.floor(rnd() * 4) }; this.view.addTree(n.x, n.y, t.tree); }
         } else { if (t.dep) { t.dep.amt--; if (t.dep.amt <= 0) this.removeDep(n.x, n.y); } this.setCarrying(u, def.gather!.out); }
@@ -396,7 +396,7 @@ export class Game {
   // =====================================================================
   private growthUpdate(dt: number): void {
     const tiles = this.world.tiles;
-    for (const b of this.buildings) { if (b.def.fields) for (const f of b.fieldsList) { const t = tiles[f.y][f.x]; if (t.field && t.field.growth < 1) { t.field.growth += dt / 22; if (t.field.growth > 1) t.field.growth = 1; } } }
+    for (const b of this.buildings) { if (b.def.fields) for (const f of b.fieldsList) { const t = tiles[f.y][f.x]; if (t.field && t.field.growth < 1) { t.field.growth += dt / 22; if (t.field.growth > 1) t.field.growth = 1; this.view.scaleFieldCrop(t.field); } } }
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const t = tiles[y][x]; if (t.tree && t.tree.growth < 1) { t.tree.growth += dt / 40; if (t.tree.growth > 1) t.tree.growth = 1; const s = t.tree.s * Math.max(0.15, t.tree.growth); (t.tree.meshes[0] as THREE.Object3D).scale.set(s, s, s); } }
   }
   private fieldRecolor(): void { for (const b of this.buildings) { if (b.def.fields) for (const f of b.fieldsList) this.view.refreshTile(f.x, f.y); } }
@@ -476,7 +476,7 @@ export class Game {
     b.removed = true;
     for (const u of this.units) if (u.task && (u.task.to === b || u.task.from === b)) this.cancelTask(u);
     if (b.worker) { const w = b.worker; this.view.remove(w.mesh); this.units.splice(this.units.indexOf(w), 1); }
-    for (const f of b.fieldsList) { const t = this.world.tiles[f.y][f.x]; if (t.field) { t.field = null; this.view.refreshTile(f.x, f.y); } }
+    for (const f of b.fieldsList) { const t = this.world.tiles[f.y][f.x]; if (t.field) { this.view.removeMeshes(t.field.meshes); t.field = null; this.view.refreshTile(f.x, f.y); } }
     for (let y = b.y; y < b.y + 2; y++) for (let x = b.x; x < b.x + 2; x++) this.world.tiles[y][x].b = null;
     this.view.remove(b.mesh);
     this.buildings.splice(this.buildings.indexOf(b), 1);

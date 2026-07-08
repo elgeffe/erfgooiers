@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { W, H } from '../constants';
 import { rnd } from '../engine/rng';
 import type { World } from '../world/World';
-import type { Building, BuildingDef, Deco, Deposit, Tree, Unit } from '../types';
-import { makeBuilding, makeDeco, makeDeposit, makeScaffold, makeTree, makeUnit } from './models';
+import type { Building, BuildingDef, Deco, Deposit, Field, Tree, Unit } from '../types';
+import { makeBuilding, makeDeco, makeDeposit, makeFieldCrop, makeScaffold, makeTree, makeUnit } from './models';
 
 /**
  * Owns everything Three.js: renderer, scene, orthographic camera, the ground
@@ -31,7 +31,10 @@ export class View {
   // cobbled road overlay meshes, keyed by "x,y"
   private readonly roadMeshes = new Map<string, THREE.Mesh>();
   private readonly roadGeo = new THREE.PlaneGeometry(1.0, 1.0);
-  private roadMat!: THREE.MeshLambertMaterial;
+  private readonly roadMats: THREE.MeshLambertMaterial[] = [];
+
+  // ambient scenery that turns in real time (distant windmill sails)
+  private readonly millSails: THREE.Object3D[] = [];
 
   // minimap
   private readonly mm: HTMLCanvasElement;
@@ -44,10 +47,6 @@ export class View {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-    // a soft pastoral daytime sky
-    this.scene.background = new THREE.Color(0xbfe0ee);
-    this.scene.fog = new THREE.Fog(0xcfe6f0, 70, 165);
 
     this.setSize();
     addEventListener('resize', () => this.setSize());
@@ -62,7 +61,8 @@ export class View {
     sun.shadow.camera.top = 34; sun.shadow.camera.bottom = -34; sun.shadow.camera.far = 100;
     this.scene.add(sun, sun.target);
 
-    this.roadMat = new THREE.MeshLambertMaterial({ map: this.makeRoadTexture() });
+    // a few cobble variants so long roads don't tile visibly
+    for (let i = 0; i < 4; i++) this.roadMats.push(new THREE.MeshLambertMaterial({ map: this.makeRoadTexture() }));
     this.buildGround();
     this.populateDoodads();
     this.buildAmbiance();
@@ -161,6 +161,18 @@ export class View {
     this.scene.add(g);
     deco.meshes = [g];
   }
+  /** Plant the visible wheat on a farm plot; growth drives its height. */
+  addFieldCrop(x: number, y: number, field: Field): void {
+    const g = makeFieldCrop();
+    g.position.set(this.world.wx(x), 0, this.world.wz(y));
+    this.scene.add(g);
+    field.meshes = [g];
+    this.scaleFieldCrop(field);
+  }
+  scaleFieldCrop(field: Field): void {
+    const m = field.meshes[0];
+    if (m) m.scale.y = 0.12 + 0.88 * Math.min(1, field.growth);
+  }
   removeMeshes(meshes: THREE.Object3D[]): void { for (const m of meshes) this.scene.remove(m); }
 
   // =====================================================================
@@ -173,7 +185,7 @@ export class View {
   }
   private tileBaseColor(tx: number, ty: number): { hex: number; sh: number } {
     const t = this.world.tiles[ty][tx];
-    if (t.type === 'water') return { hex: 0x5b93b0, sh: 0.9 + ((tx * 7 + ty * 13) % 10) / 100 };
+    if (t.type === 'water') return { hex: 0x36648f, sh: 0.9 + ((tx * 7 + ty * 13) % 10) / 100 };
     if (t.road) return { hex: 0xcbb389, sh: 0.96 + ((tx * 3 + ty * 5) % 8) / 100 };
     if (t.field) return { hex: this.lerpHex(0x8a6b42, 0xe0c24e, Math.min(1, t.field.growth)), sh: 1 };
     // lush meadow — two greens dithered by position
@@ -207,8 +219,10 @@ export class View {
     const ground = new THREE.Mesh(this.groundGeo, new THREE.MeshLambertMaterial({ vertexColors: true }));
     ground.receiveShadow = true;
     this.scene.add(ground);
+    // the slab top must sit below the recessed water tiles (y −0.14) or it
+    // shows through every lake and pond as a dark green sheet
     const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 2, 2, H + 2), new THREE.MeshLambertMaterial({ color: 0x4f6b3c }));
-    slab.position.y = -1.06; this.scene.add(slab);
+    slab.position.y = -1.16; this.scene.add(slab);
   }
 
   private populateDoodads(): void {
@@ -223,37 +237,70 @@ export class View {
   // =====================================================================
   //  Cobbled road overlay
   // =====================================================================
-  /** A small procedural cobblestone tile, tinted warm sandy stone. */
+  /** Procedural cobbles: offset courses of shaded stones over packed earth,
+   *  with hairline cracks, moss in the joints and scattered grit. */
   private makeRoadTexture(): THREE.Texture {
-    const S = 128;
+    const S = 256;
     const cv = document.createElement('canvas'); cv.width = cv.height = S;
     const ctx = cv.getContext('2d')!;
-    // packed-earth mortar base
-    ctx.fillStyle = '#a98f63'; ctx.fillRect(0, 0, S, S);
-    // irregular rounded cobbles on a jittered grid
-    const cell = S / 5;
-    for (let gy = 0; gy < 5; gy++) for (let gx = 0; gx < 5; gx++) {
-      const cx = gx * cell + cell / 2 + (Math.random() - 0.5) * cell * 0.3;
-      const cy = gy * cell + cell / 2 + (Math.random() - 0.5) * cell * 0.3;
-      const r = cell * (0.32 + Math.random() * 0.12);
-      const shade = 150 + Math.floor(Math.random() * 60);
-      ctx.beginPath(); ctx.ellipse(cx, cy, r, r * (0.8 + Math.random() * 0.3), Math.random() * Math.PI, 0, Math.PI * 2);
-      ctx.fillStyle = `rgb(${shade + 20},${shade},${Math.floor(shade * 0.72)})`; ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(90,70,45,0.55)'; ctx.stroke();
-      // a soft highlight
-      ctx.beginPath(); ctx.ellipse(cx - r * 0.25, cy - r * 0.25, r * 0.4, r * 0.3, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,240,205,0.18)'; ctx.fill();
+    // packed-earth base, mottled so the joints between stones vary
+    // (kept dark: the scene's bright lighting roughly doubles these values)
+    ctx.fillStyle = '#665137'; ctx.fillRect(0, 0, S, S);
+    for (let i = 0; i < 130; i++) {
+      ctx.fillStyle = `rgba(${70 + Math.random() * 60 | 0},${55 + Math.random() * 45 | 0},${34 + Math.random() * 28 | 0},0.25)`;
+      ctx.beginPath(); ctx.arc(Math.random() * S, Math.random() * S, 4 + Math.random() * 14, 0, Math.PI * 2); ctx.fill();
+    }
+    // cobbles laid in offset courses like a real paved lane
+    const rows = 6, rh = S / rows;
+    for (let gy = 0; gy < rows; gy++) {
+      let x = (gy % 2) * -rh * 0.5;
+      while (x < S) {
+        const w = rh * (0.85 + Math.random() * 0.75);
+        const cx = x + w / 2, cy = gy * rh + rh / 2 + (Math.random() - 0.5) * rh * 0.18;
+        const rx = w * 0.46, ry = rh * (0.36 + Math.random() * 0.1);
+        // warm sandy stones with the odd cool grey one mixed in
+        const cool = Math.random() < 0.22;
+        const base = 84 + Math.random() * 42;
+        const rC = cool ? base * 0.92 : base + 14, gC = cool ? base * 0.95 : base * 0.94, bC = cool ? base : base * 0.7;
+        const grad = ctx.createRadialGradient(cx - rx * 0.35, cy - ry * 0.45, ry * 0.2, cx, cy, Math.max(rx, ry) * 1.15);
+        grad.addColorStop(0, `rgb(${Math.min(255, rC + 24) | 0},${Math.min(255, gC + 21) | 0},${Math.min(255, bC + 17) | 0})`);
+        grad.addColorStop(0.72, `rgb(${rC | 0},${gC | 0},${bC | 0})`);
+        grad.addColorStop(1, `rgb(${rC * 0.66 | 0},${gC * 0.64 | 0},${bC * 0.62 | 0})`);
+        ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, (Math.random() - 0.5) * 0.35, 0, Math.PI * 2);
+        ctx.fillStyle = grad; ctx.fill();
+        ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(70,54,34,0.6)'; ctx.stroke();
+        // the occasional hairline crack across a worn stone
+        if (Math.random() < 0.3) {
+          ctx.beginPath();
+          ctx.moveTo(cx - rx * 0.5, cy + (Math.random() - 0.5) * ry);
+          ctx.quadraticCurveTo(cx, cy + (Math.random() - 0.5) * ry, cx + rx * 0.55, cy + (Math.random() - 0.5) * ry);
+          ctx.lineWidth = 0.8; ctx.strokeStyle = 'rgba(60,45,30,0.45)'; ctx.stroke();
+        }
+        // moss creeping into some joints
+        if (Math.random() < 0.28) {
+          ctx.fillStyle = `rgba(${90 + Math.random() * 30 | 0},${118 + Math.random() * 40 | 0},60,0.5)`;
+          ctx.beginPath();
+          ctx.arc(cx + (Math.random() - 0.5) * rx * 2, cy + ry * (Math.random() < 0.5 ? 1 : -1) * 0.95, 1.5 + Math.random() * 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        x += w;
+      }
+    }
+    // grit — light grains catching the sun, dark flecks in the shade
+    for (let i = 0; i < 170; i++) {
+      ctx.fillStyle = Math.random() < 0.5 ? 'rgba(230,208,168,0.25)' : 'rgba(40,30,20,0.32)';
+      ctx.fillRect(Math.random() * S, Math.random() * S, 1.4, 1.4);
     }
     const tex = new THREE.CanvasTexture(cv);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.anisotropy = 4;
+    tex.anisotropy = 8;
     return tex;
   }
 
   addRoad(x: number, y: number): void {
     const key = x + ',' + y;
     if (this.roadMeshes.has(key)) return;
-    const m = new THREE.Mesh(this.roadGeo, this.roadMat);
+    const m = new THREE.Mesh(this.roadGeo, this.roadMats[Math.floor(rnd() * this.roadMats.length)]);
     m.rotation.x = -Math.PI / 2;
     m.rotation.z = Math.floor(rnd() * 4) * (Math.PI / 2);   // rotate for variety
     m.position.set(this.world.wx(x), 0.02, this.world.wz(y));
@@ -268,21 +315,82 @@ export class View {
   }
 
   // =====================================================================
-  //  Ambiance — distant hills + drifting clouds
+  //  Ambiance — gradient sky, horizon meadow, rolling hills, treeline,
+  //  a distant windmill and drifting clouds
   // =====================================================================
   private buildAmbiance(): void {
-    // hazy hills ringing the meadow (evokes the wooded ridges around Het Gooi)
-    const hillMat = new THREE.MeshLambertMaterial({ color: 0x86a679 });
-    const hillMat2 = new THREE.MeshLambertMaterial({ color: 0x6f9a86 });
-    for (let i = 0; i < 26; i++) {
-      const ang = (i / 26) * Math.PI * 2;
-      const rad = W * 0.72 + rnd() * 6;
-      const h = 3 + rnd() * 6;
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(4 + rnd() * 4, h, 5), i % 2 ? hillMat2 : hillMat);
-      cone.position.set(Math.cos(ang) * rad, h / 2 - 1.2, Math.sin(ang) * rad);
-      cone.rotation.y = rnd() * Math.PI;
-      this.scene.add(cone);
+    // gradient sky: deep blue overhead fading to a warm pale horizon
+    const sky = document.createElement('canvas'); sky.width = 1; sky.height = 256;
+    const sctx = sky.getContext('2d')!;
+    const grad = sctx.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, '#69b0dd');
+    grad.addColorStop(0.55, '#a9d3ea');
+    grad.addColorStop(1, '#e9f2ea');
+    sctx.fillStyle = grad; sctx.fillRect(0, 0, 1, 256);
+    this.scene.background = new THREE.CanvasTexture(sky);
+    this.scene.fog = new THREE.Fog(0xddecee, 62, 150);
+
+    // a broad meadow plain reaching out to the horizon beneath the map plinth
+    const plain = new THREE.Mesh(new THREE.CircleGeometry(240, 48), new THREE.MeshLambertMaterial({ color: 0x7fae66 }));
+    plain.rotation.x = -Math.PI / 2; plain.position.y = -2.1;
+    this.scene.add(plain);
+
+    // low rolling hill domes in three hazier and hazier rings
+    const hillTones = [0x8cbc70, 0x7aa96a, 0x6f9d74, 0x678f79].map(c => new THREE.MeshLambertMaterial({ color: c }));
+    for (let ring = 0; ring < 3; ring++) {
+      const count = 10 + ring * 4;
+      for (let i = 0; i < count; i++) {
+        const ang = (i / count) * Math.PI * 2 + rnd() * 0.5;
+        const rad = W * (0.88 + ring * 0.45) + rnd() * 10;
+        const r = 10 + ring * 8 + rnd() * 8;
+        const h = (2.5 + rnd() * 2.5) * (1 + ring * 0.5);
+        const hill = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 12), hillTones[Math.min(3, ring + (i % 2))]);
+        hill.scale.y = h / r;
+        hill.position.set(Math.cos(ang) * rad, -2.1, Math.sin(ang) * rad);
+        this.scene.add(hill);
+      }
     }
+
+    // a hazy treeline between the plinth and the hills
+    const folA = new THREE.MeshLambertMaterial({ color: 0x4a7350 });
+    const folB = new THREE.MeshLambertMaterial({ color: 0x3f6a5e });
+    const trunkM = new THREE.MeshLambertMaterial({ color: 0x5b4433 });
+    for (let i = 0; i < 90; i++) {
+      const ang = rnd() * Math.PI * 2;
+      const rad = W * 0.78 + rnd() * 12;
+      const s = 0.9 + rnd() * 1.4;
+      const crown = new THREE.Mesh(new THREE.ConeGeometry(0.75 * s, 2.6 * s, 6), rnd() < 0.5 ? folA : folB);
+      crown.position.set(Math.cos(ang) * rad, -2.1 + 1.5 * s, Math.sin(ang) * rad);
+      this.scene.add(crown);
+      if (rnd() < 0.35) {
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1 * s, 0.14 * s, 0.5 * s, 5), trunkM);
+        trunk.position.set(crown.position.x, -2.1 + 0.22 * s, crown.position.z);
+        this.scene.add(trunk);
+      }
+    }
+
+    // one far-off windmill turning on the plain — a little postcard of Het Gooi
+    const millAng = rnd() * Math.PI * 2;
+    const mill = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.7, 5.2, 8), new THREE.MeshLambertMaterial({ color: 0x6b5540 }));
+    body.position.y = 2.6; mill.add(body);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(1.35, 1.3, 8), new THREE.MeshLambertMaterial({ color: 0x54402f }));
+    cap.position.y = 5.85; mill.add(cap);
+    const sails = new THREE.Group();
+    sails.position.set(0, 5.4, 1.5);
+    const sailMat = new THREE.MeshLambertMaterial({ color: 0xefe6d0 });
+    for (let i = 0; i < 4; i++) {
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.6, 0.08), sailMat);
+      blade.position.y = 1.5;
+      const arm = new THREE.Group(); arm.rotation.z = i * Math.PI / 2; arm.add(blade);
+      sails.add(arm);
+    }
+    mill.add(sails);
+    mill.position.set(Math.cos(millAng) * W * 1.05, -2.1, Math.sin(millAng) * W * 1.05);
+    mill.lookAt(0, -2.1, 0);
+    this.scene.add(mill);
+    this.millSails.push(sails);
+
     // soft clouds
     const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
     for (let i = 0; i < 8; i++) {
@@ -312,6 +420,7 @@ export class View {
       c.position.x += dt * 0.6;
       if (c.position.x > W * 0.8) c.position.x = -W * 0.8;
     }
+    for (const s of this.millSails) s.rotation.z += dt * 0.45;
   }
 
   /** Chimney puffs rise, drift, swell and fade; only visible while the oven works. */

@@ -1,5 +1,6 @@
 import { DEFS, MENU_ORDER } from '../data/buildings';
 import { ITEMS, RES_SHOWN } from '../data/items';
+import { installFavicon, logoSVG } from './logo';
 import type { Game } from '../game/Game';
 import type { BuildingDef, Mode } from '../types';
 
@@ -19,6 +20,9 @@ export class UI {
   private unitsOpen = false;
 
   constructor(private readonly game: Game) {
+    $('logo').innerHTML = logoSVG(30);
+    $('introLogo').innerHTML = logoSVG(40);
+    installFavicon();
     this.buildResbar();
     this.buildMenu();
     this.wireSpeed();
@@ -64,7 +68,7 @@ export class UI {
       menu.appendChild(el);
     }
     const sep = document.createElement('div'); sep.className = 'bsep'; menu.appendChild(sep);
-    const road = document.createElement('div'); road.className = 'bcard'; road.dataset.key = 'road'; road.title = 'Workers walk 30% faster on roads';
+    const road = document.createElement('div'); road.className = 'bcard'; road.dataset.key = 'road'; road.title = 'Workers route along roads and walk 30% faster on them';
     road.innerHTML = '<div class="icon"><svg width="30" height="26" viewBox="0 0 30 26"><path d="M4 24 C10 14 20 12 26 2" stroke="#b9a179" stroke-width="6" fill="none" stroke-linecap="round"/></svg></div><div class="nm">Road</div><div class="cost"><i>free · drag</i></div>';
     road.onclick = () => this.onMode({ type: 'road' });
     menu.appendChild(road);
