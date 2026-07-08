@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { uiRng } from '../engine/rng';
+import { GRAPHICS } from '../constants';
 import type { BuildingDef, DecoKind } from '../types';
 
 // Mesh scatter is purely cosmetic — it must never touch gameplay/worldgen streams.
@@ -14,14 +15,48 @@ const rnd = () => uiRng.next();
    group.userData.spin so the View can turn them each frame.
    ===================================================================== */
 
-const matCache: Record<number, THREE.MeshLambertMaterial> = {};
-function mat(hex: number): THREE.MeshLambertMaterial {
-  if (!matCache[hex]) matCache[hex] = new THREE.MeshLambertMaterial({ color: hex });
+export type SceneMaterial = THREE.MeshToonMaterial | THREE.MeshLambertMaterial;
+
+// One shared gradient map quantizes toon lighting into flat cel bands.
+// r152's toon shader samples only the red channel, hence RedFormat.
+let gradient: THREE.DataTexture | null = null;
+function toonGradient(): THREE.DataTexture {
+  if (!gradient) {
+    const n = Math.max(2, GRAPHICS.toonBands);
+    const data = new Uint8Array(n);
+    for (let i = 0; i < n; i++) data[i] = Math.round(255 * (i + 1) / n);
+    gradient = new THREE.DataTexture(data, n, 1, THREE.RedFormat);
+    gradient.minFilter = gradient.magFilter = THREE.NearestFilter;
+    gradient.needsUpdate = true;
+  }
+  return gradient;
+}
+
+/** Exclude a material from the OutlineEffect ink pass (UI overlays, ghosts, transparents). */
+export function noOutline<T extends THREE.Material>(m: T): T {
+  m.userData.outlineParameters = { visible: false };
+  return m;
+}
+
+/** Every lit scene material funnels through here so the whole look flips
+ *  between cel-shaded toon and flat Lambert on GRAPHICS.toon. Transparent
+ *  materials never get ink outlines — expanded backfaces read wrong on them. */
+export function stdMat(params: THREE.MeshLambertMaterialParameters, outline = true): SceneMaterial {
+  const m = GRAPHICS.toon
+    ? new THREE.MeshToonMaterial({ ...params, gradientMap: toonGradient() })
+    : new THREE.MeshLambertMaterial(params);
+  if (!outline || params.transparent) noOutline(m);
+  return m;
+}
+
+const matCache: Record<number, SceneMaterial> = {};
+function mat(hex: number): SceneMaterial {
+  if (!matCache[hex]) matCache[hex] = stdMat({ color: hex });
   return matCache[hex];
 }
 // Solid material when placed, translucent when previewing (ghost).
-function mkMat(hex: number, ghost: boolean): THREE.MeshLambertMaterial {
-  return ghost ? new THREE.MeshLambertMaterial({ color: hex, transparent: true, opacity: 0.55 }) : mat(hex);
+function mkMat(hex: number, ghost: boolean): SceneMaterial {
+  return ghost ? stdMat({ color: hex, transparent: true, opacity: 0.55 }) : mat(hex);
 }
 
 // ---------- shared primitive geometries ----------
@@ -234,7 +269,7 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
   g.add(eyeL, eyeR, smile);
 
   dressUnit(g, role);
-  const item = new THREE.Mesh(geoItem, new THREE.MeshLambertMaterial({ color: 0xffffff }));
+  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
   item.position.y = 0.82; item.visible = false;
   g.add(item);
   return { group: g, itemMesh: item };
@@ -378,7 +413,7 @@ function makeBeast(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.22, 6), mat(0x3a2a20)); leg.position.set(dx, 0.11, dz); leg.castShadow = true; g.add(leg);
   }
   const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.16, 5), hide); tail.position.set(-0.42, 0.34, 0); tail.rotation.z = 0.8; g.add(tail);
-  const item = new THREE.Mesh(geoItem, new THREE.MeshLambertMaterial({ color: 0xffffff })); item.visible = false; g.add(item);
+  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; g.add(item);
   return { group: g, itemMesh: item };
 }
 
@@ -407,7 +442,7 @@ function makeDragon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mes
   for (const dx of [-0.24, 0.28]) for (const dz of [-0.22, 0.22]) {
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.32, 6), scale); leg.position.set(dx, 0.17, dz); leg.castShadow = true; g.add(leg);
   }
-  const item = new THREE.Mesh(geoItem, new THREE.MeshLambertMaterial({ color: 0xffffff })); item.visible = false; g.add(item);
+  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; g.add(item);
   return { group: g, itemMesh: item };
 }
 
@@ -429,7 +464,7 @@ export function makeCorpse(colorHex: number): THREE.Mesh {
   ];
   const merged = mergeGeometries(parts, false)!;
   parts.forEach(p => p.dispose());
-  return new THREE.Mesh(merged, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  return new THREE.Mesh(merged, stdMat({ vertexColors: true }));
 }
 
 const ONE = new THREE.Vector3(1, 1, 1);
@@ -468,6 +503,7 @@ export function makeScaffold(def: BuildingDef): { group: THREE.Group; frame: THR
   }
   const frame = makeBuilding(def, true);
   frame.visible = false;
+  frame.userData.dynamic = true; // Game scales it up with build progress
   g.add(frame);
   return { group: g, frame };
 }
@@ -491,8 +527,9 @@ function addChimney(g: THREE.Group, ghost: boolean): void {
   const puffs: THREE.Mesh[] = [];
   const N = 4;
   for (let i = 0; i < N; i++) {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(0.12, 7, 6), new THREE.MeshLambertMaterial({ color: 0xbfbfbf, transparent: true, opacity: 0 }));
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.12, 7, 6), stdMat({ color: 0xbfbfbf, transparent: true, opacity: 0 }));
     m.userData.marker = true;
+    m.userData.dynamic = true;              // View moves each puff every frame
     m.userData.smokePhase = i / N;          // stagger the puffs up the plume
     m.position.set(0.5, 1.75, -0.3);
     g.add(m); puffs.push(m);
@@ -598,7 +635,7 @@ function fisheryYard(g: THREE.Group): void {
   const wood = mat(0x6b4a2f);
   for (const x of [0.5, 0.9]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 0.7, 6), wood); post.position.set(x, 0.35, 0.55); post.castShadow = true; g.add(post); }
   const bar = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.04, 0.04), wood); bar.position.set(0.7, 0.66, 0.55); g.add(bar);
-  const net = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.32, 0.02), new THREE.MeshLambertMaterial({ color: 0xcfc7ad, transparent: true, opacity: 0.5 })); net.position.set(0.7, 0.46, 0.55); g.add(net);
+  const net = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.32, 0.02), stdMat({ color: 0xcfc7ad, transparent: true, opacity: 0.5 })); net.position.set(0.7, 0.46, 0.55); g.add(net);
   const crate = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, 0.24), mat(0x8a6a44)); crate.position.set(-0.7, 0.09, 0.5); crate.castShadow = true; g.add(crate);
   for (const fz of [0.44, 0.56]) { const f = makeFish(); f.scale.setScalar(0.55); f.position.set(-0.7, 0.18, fz); f.rotation.z = 0.3; g.add(f); }
 }
@@ -749,6 +786,7 @@ function windmill(def: BuildingDef, ghost: boolean): THREE.Group {
     blades.add(arm);
   }
   blades.userData.marker = true;
+  blades.userData.dynamic = true; // spun every frame — must keep auto matrix updates
   g.add(blades);
   g.userData.spin = blades; // View turns this each frame
   return g;
