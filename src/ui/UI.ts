@@ -80,6 +80,13 @@ export class UI {
   /** Show the run's gold total in the HUD chip. */
   setGold(n: number): void { $('goldText').textContent = String(n); }
 
+  /** Toggle sandbox HUD: no objective card, no timer, no debug-win button. */
+  setSandbox(on: boolean): void {
+    ($('objective') as HTMLElement).style.display = on ? 'none' : '';
+    ($('timerChip') as HTMLElement).style.display = on ? 'none' : '';
+    ($('btnDebugWin') as HTMLElement).style.display = on ? 'none' : '';
+  }
+
   // ---------- resource bar & objective ----------
   private buildResbar(): void {
     const bar = $('resbar');

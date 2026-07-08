@@ -113,3 +113,19 @@ export function levelFor(index: number): LevelDef {
 export function pickObjective(level: LevelDef, roll: number): ObjectiveDef {
   return level.objectives[Math.floor(roll * level.objectives.length) % level.objectives.length];
 }
+
+/**
+ * A no-objective free-build map (menu → Sandbox). Big, resource-rich and
+ * timer-free so you can raise as much as you like — the eventual test bed for
+ * massive armies and combat juice. The objective is disabled by main, so the
+ * placeholder entry here is never evaluated.
+ */
+export function sandboxLevel(): LevelDef {
+  return {
+    index: 0, name: 'Sandbox', type: 'Sandbox',
+    objectives: [{ kind: 'produce', item: 'coin', n: 1 }],
+    world: { w: 60, h: 60, treeStands: 14, oreVeins: 18, waterScale: 0.4, meadows: 7, goldPiles: 10 },
+    kit: { stock: { timber: 240, stone: 240, bread: 120 }, serfs: 12, laborers: 6 },
+    timeTarget: Infinity, hardTimer: Infinity, reward: 0,
+  };
+}

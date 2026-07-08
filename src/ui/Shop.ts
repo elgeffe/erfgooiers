@@ -5,18 +5,15 @@ import type { RunState } from '../game/RunState';
 const $ = (id: string) => document.getElementById(id)!;
 
 /**
- * The between-levels shop. Rolls 5 purchasable wares + a 1-of-3 free draft,
- * deterministically per (run, level) so a reload lands on the same offer. Buying
- * mutates the run's gold and upgrade list; the next `startLevel` rebuilds the
- * Modifiers from those ids. Phase 1 offers the economy pool only.
+ * The between-levels shop. Rolls 3 purchasable wares, deterministically per
+ * (run, level) so a reload lands on the same offer. Buying mutates the run's gold
+ * and upgrade list; the next `startLevel` rebuilds the Modifiers from those ids.
+ * Phase 1 offers the economy pool only.
  */
 export class Shop {
   private run!: RunState;
   private rng!: Rng;
   private slots: UpgradeDef[] = [];
-  private draft: UpgradeDef[] = [];
-  private draftPicked = false;
-  private draftChoice: UpgradeDef | null = null;
   private rerolls = 0;
 
   constructor(private readonly onContinue: () => void) {
@@ -29,10 +26,7 @@ export class Shop {
     this.run = run;
     this.rng = new Rng(levelSeed(run.runSeed, run.levelIndex) ^ 0x5f356495);
     this.rerolls = 0;
-    this.slots = this.sample(5);
-    this.draft = this.sample(3);
-    this.draftPicked = false;
-    this.draftChoice = null;
+    this.slots = this.sample(3);
     this.render();
   }
 
@@ -55,7 +49,7 @@ export class Shop {
     if (this.run.gold < cost) return;
     this.run.gold -= cost;
     this.rerolls++;
-    this.slots = this.sample(5);
+    this.slots = this.sample(3);
     this.render();
   }
 
@@ -69,18 +63,10 @@ export class Shop {
     this.render();
   }
 
-  private pickDraft(def: UpgradeDef): void {
-    if (this.draftPicked) return;
-    this.run.upgrades.push(def.id);
-    this.draftPicked = true;
-    this.draftChoice = def;
-    this.render();
-  }
-
   private card(def: UpgradeDef, priceLabel: string, cls: string, onClick: () => void): HTMLElement {
     const el = document.createElement('div');
     el.className = 'scard' + (cls ? ' ' + cls : '');
-    el.innerHTML = `<div class="sc-name">${def.name}</div><div class="sc-desc">${def.desc}</div><div class="sc-price ${cls}">${priceLabel}</div>`;
+    el.innerHTML = `<div class="sc-icon">${def.icon}</div><div class="sc-body"><div class="sc-name">${def.name}</div><div class="sc-desc">${def.desc}</div><div class="sc-price ${cls}">${priceLabel}</div></div>`;
     if (!cls.includes('disabled') && !cls.includes('picked')) el.onclick = onClick;
     return el;
   }
@@ -97,12 +83,5 @@ export class Shop {
       slots.appendChild(this.card(def, `${price}g`, afford ? '' : 'cant disabled', () => this.buy(def)));
     }
     if (!this.slots.length) slots.innerHTML = '<div class="sc-desc">All wares bought.</div>';
-
-    const draft = $('shopDraft'); draft.innerHTML = '';
-    for (const def of this.draft) {
-      const picked = this.draftChoice === def;
-      const cls = this.draftPicked ? (picked ? 'picked' : 'disabled') : '';
-      draft.appendChild(this.card(def, this.draftPicked ? (picked ? 'chosen ✓' : '—') : 'free', cls, () => this.pickDraft(def)));
-    }
   }
 }

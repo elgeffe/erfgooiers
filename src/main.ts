@@ -10,7 +10,7 @@ import { simRng, uiRng } from './engine/rng';
 import { Modifiers } from './game/Modifiers';
 import { Objective } from './game/Objectives';
 import { specsFor } from './data/upgrades';
-import { levelFor, pickObjective, type LevelDef } from './data/levels';
+import { levelFor, pickObjective, sandboxLevel, type LevelDef } from './data/levels';
 import { RUN_LEVELS, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
@@ -39,6 +39,7 @@ let run: RunState | null = null;
 let game: Game | null = null;
 let phase: Phase = 'menu';
 let currentLevel: LevelDef | null = null;
+let sandbox = false;             // free-build mode: no objective, no timer, no save
 
 // per-run tallies for the summary screen (reset when a run starts)
 let clearedThisRun = 0;
@@ -49,7 +50,7 @@ const shop = new Shop(shopContinue);
 // ---------- level lifecycle ----------
 function startLevel(): void {
   if (!run) return;
-  const level = levelFor(run.levelIndex);
+  const level = sandbox ? sandboxLevel() : levelFor(run.levelIndex);
   currentLevel = level;
   const seed = currentLevelSeed(run);
   // Seed the non-world streams deterministically from the level seed so a
@@ -66,23 +67,30 @@ function startLevel(): void {
   game.sfx = name => audio.play(name as any);
   audio.setLevel(level.index);
   game.onGold = amt => { if (run) { run.gold += amt; goldEarnedThisRun += amt; ui.setGold(run.gold); } };
-  // pick this level's objective variant deterministically from the seed
-  const objDef = pickObjective(level, ((seed >>> 8) % 9973) / 9973);
-  game.objective = new Objective(objDef);
+  // pick this level's objective variant deterministically (skipped in sandbox)
+  if (sandbox) {
+    game.objective = null;
+  } else {
+    const objDef = pickObjective(level, ((seed >>> 8) % 9973) / 9973);
+    game.objective = new Objective(objDef);
+  }
   game.init(level.kit);
   ui.setGame(game);
   controls.setGame(game);
   ui.setGold(run.gold);
-  ui.setLevel(level.index, level.name);
-  ui.setObjective(game.objective.brief());
-  ui.updateObjective(game.objective.evaluate(game).label, 0, level.hardTimer);
+  ui.setSandbox(sandbox);
+  if (game.objective) {
+    ui.setLevel(level.index, level.name);
+    ui.setObjective(game.objective.brief());
+    ui.updateObjective(game.objective.evaluate(game).label, 0, level.hardTimer);
+  }
   view.centerOn(world.wx(game.store.x) + 0.5, world.wz(game.store.y) + 2);
   view.drawMinimap(game.units);
 
   simAcc = 0;
   phase = 'playing';
   showScreen(null);
-  Save.saveRun(run); // persist at the level's start so a reload resumes here
+  if (!sandbox) Save.saveRun(run); // persist at the level's start so a reload resumes here
 }
 
 function disposeLevel(): void {
@@ -94,12 +102,14 @@ function disposeLevel(): void {
 // ---------- transitions ----------
 function goMenu(): void {
   phase = 'menu';
+  sandbox = false;
   audio.setLevel(0);
   renderMenu();
   showScreen('menu');
 }
 
 function newRunFromMenu(): void {
+  sandbox = false;
   run = newRun(1 + Math.floor(Math.random() * 2147483645));
   meta.stats.runs++;
   Save.saveMeta(meta);
@@ -108,9 +118,19 @@ function newRunFromMenu(): void {
   startLevel();
 }
 
+/** Free-build mode: a big, timer-free, objective-free map that never touches the save. */
+function startSandbox(): void {
+  sandbox = true;
+  run = newRun(1 + Math.floor(Math.random() * 2147483645));
+  clearedThisRun = 0;
+  goldEarnedThisRun = 0;
+  startLevel();
+}
+
 function continueRun(): void {
   const saved = Save.loadRun();
   if (!saved) { goMenu(); return; }
+  sandbox = false;
   run = saved;
   clearedThisRun = Math.max(0, saved.levelIndex - 1);
   goldEarnedThisRun = saved.gold;
@@ -162,7 +182,8 @@ function shopContinue(): void {
 
 function abandonRun(): void {
   if (phase === 'playing') disposeLevel();
-  Save.clearRun();
+  if (!sandbox) Save.clearRun();
+  sandbox = false;
   run = null;
   goMenu();
 }
@@ -220,6 +241,7 @@ $('menuLogo').innerHTML = logoSVG(40);
 $('introLogo').innerHTML = logoSVG(40);
 ($('btnNewRun') as HTMLButtonElement).onclick = newRunFromMenu;
 ($('btnContinue') as HTMLButtonElement).onclick = continueRun;
+($('btnSandbox') as HTMLButtonElement).onclick = startSandbox;
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
 ($('btnHelp') as HTMLButtonElement).onclick = () => $('intro').style.display = 'flex';
 ($('startBtn') as HTMLButtonElement).onclick = () => $('intro').style.display = 'none';
@@ -269,6 +291,14 @@ function frame(now: number): void {
     // resolve the level last: a win or a timeout tears the level down
     if (st.done) onLevelClear();
     else if (remaining <= 0) onDefeat();
+  } else if (phase === 'playing' && game && currentLevel) {
+    // sandbox: tick the sim with no objective/timer to resolve against
+    simAcc += dt * game.simSpeed;
+    let steps = 0;
+    while (simAcc >= TICK && steps < MAX_STEPS) { game.update(TICK); simAcc -= TICK; steps++; }
+    if (simAcc > TICK) simAcc = 0;
+    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); }
+    mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
   }
 
   view.render();
