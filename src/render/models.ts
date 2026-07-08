@@ -38,6 +38,24 @@ export function noOutline<T extends THREE.Material>(m: T): T {
   return m;
 }
 
+/** Give a material a crisper, thicker ink edge than the scene default so the
+ *  object it clothes reads sharply against the busy scenery. Thickness is in
+ *  the same screen-space (NDC) units as GRAPHICS.outlineThickness. */
+export function sharpOutline<T extends THREE.Material>(m: T, thickness: number): T {
+  m.userData.outlineParameters = {
+    thickness,
+    color: new THREE.Color(GRAPHICS.outlineColor).toArray(),
+    alpha: Math.min(1, GRAPHICS.outlineAlpha + 0.15),
+  };
+  return m;
+}
+
+// Crisper ink for the things the eye tracks most: the little folk and the
+// gold they scurry after. Scaled off the scene default so one tweak in
+// constants.ts carries through here too.
+const UNIT_INK = GRAPHICS.outlineThickness * 1.7;
+const GOLD_INK = GRAPHICS.outlineThickness * 2.0;
+
 /** Every lit scene material funnels through here so the whole look flips
  *  between cel-shaded toon and flat Lambert on GRAPHICS.toon. Transparent
  *  materials never get ink outlines — expanded backfaces read wrong on them. */
@@ -57,6 +75,20 @@ function mat(hex: number): SceneMaterial {
 // Solid material when placed, translucent when previewing (ghost).
 function mkMat(hex: number, ghost: boolean): SceneMaterial {
   return ghost ? stdMat({ color: hex, transparent: true, opacity: 0.55 }) : mat(hex);
+}
+
+// A parallel cache for unit materials, kept separate from `matCache` so the
+// sharper unit ink never bleeds onto scenery props that reuse the same colour.
+const unitMatCache: Record<number, SceneMaterial> = {};
+function umat(hex: number): SceneMaterial {
+  if (!unitMatCache[hex]) unitMatCache[hex] = sharpOutline(stdMat({ color: hex }), UNIT_INK);
+  return unitMatCache[hex];
+}
+// Shared sharp-edged gold for the coin heaps scattered on the map.
+let goldMat: SceneMaterial | null = null;
+function goldSharp(): SceneMaterial {
+  if (!goldMat) goldMat = sharpOutline(stdMat({ color: 0xffd24a }), GOLD_INK);
+  return goldMat;
 }
 
 // ---------- shared primitive geometries ----------
@@ -232,7 +264,7 @@ export function makeDeposit(kind: 'stone' | 'gold' | 'coal'): THREE.Group {
 /** A little heap of gold coins the hero/serfs pick up off the map. */
 export function makePickup(): THREE.Group {
   const g = new THREE.Group();
-  const gold = mat(0xffd24a);
+  const gold = goldSharp();
   const coin = new THREE.CylinderGeometry(0.13, 0.13, 0.035, 12);
   const spots = [[0, 0.02, 0, 0], [0.1, 0.02, 0.06, 0.5], [-0.08, 0.02, 0.09, 1.1], [0.03, 0.055, 0.02, 0.3], [-0.04, 0.055, -0.05, 0.8], [0.02, 0.09, 0.03, 0.2]];
   for (const [x, y, z, rot] of spots) {
@@ -247,15 +279,15 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
   if (role === 'boar') return makeBeast(colorHex);
   if (role === 'dragon') return makeDragon(colorHex);
   const g = new THREE.Group();
-  const body = new THREE.Mesh(geoBody, mat(colorHex)); body.position.y = 0.21; body.castShadow = true;
-  const head = new THREE.Mesh(geoHead, mat(0xe8c9a0)); head.position.y = 0.55; head.castShadow = true;
+  const body = new THREE.Mesh(geoBody, umat(colorHex)); body.position.y = 0.21; body.castShadow = true;
+  const head = new THREE.Mesh(geoHead, umat(0xe8c9a0)); head.position.y = 0.55; head.castShadow = true;
   g.add(body, head);
 
   // little arms with skin-toned hands, angled out from the body
-  const skin = mat(0xe8c9a0);
-  const ink = mat(0x2a2018);
+  const skin = umat(0xe8c9a0);
+  const ink = umat(0x2a2018);
   for (const sx of [-1, 1]) {
-    const arm = new THREE.Mesh(geoArm, mat(colorHex));
+    const arm = new THREE.Mesh(geoArm, umat(colorHex));
     arm.position.set(sx * 0.19, 0.26, 0.02); arm.rotation.z = sx * 0.22; arm.castShadow = true;
     const hand = new THREE.Mesh(geoHand, skin);
     hand.position.set(sx * 0.23, 0.13, 0.03);
@@ -278,6 +310,8 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
 // Give each role its own little hat + outfit accent so trades read at a glance.
 // Head sits at y≈0.55 (r 0.14); hats perch around y≈0.66–0.9.
 function dressUnit(g: THREE.Group, role: string): void {
+  // Hats, aprons and weapons share the units' crisper ink, not the scenery cache.
+  const mat = umat;
   const add = (m: THREE.Object3D, castsShadow = true) => { m.castShadow = castsShadow; g.add(m); };
   // small helpers
   const brim = (col: number, r: number, h: number, y: number) => new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 12), mat(col)).translateY(y);
@@ -383,8 +417,16 @@ function dressUnit(g: THREE.Group, role: string): void {
       add(axe());
       break;
     }
-    default: { // serf — simple tan cap
-      add(dome(0xcdbb8f, 0.155, 0.65));
+    default: { // serf — a jaunty maroon fez with a dark tassel
+      const fez = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.145, 0.2, 14), mat(0x9e2b25));
+      fez.position.y = 0.77; add(fez);
+      // flat crown disc, a touch darker, caps the truncated cone
+      add(brim(0x7f2019, 0.115, 0.02, 0.87), false);
+      // tassel: a short cord flopping off one side to a little tuft
+      const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.16, 5), mat(0x241c14));
+      cord.position.set(0.11, 0.82, 0.03); cord.rotation.z = 0.6; add(cord, false);
+      const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.032, 6, 5), mat(0x241c14));
+      tuft.position.set(0.18, 0.74, 0.03); tuft.scale.y = 1.3; add(tuft, false);
       break;
     }
   }
