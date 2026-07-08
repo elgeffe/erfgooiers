@@ -518,6 +518,35 @@ export class Game {
     }
   }
 
+  /**
+   * An unposted villager ambles between spots near the village centre, pausing
+   * between strolls. Purely cosmetic — a villager is plucked out of this loop the
+   * moment `staffBuildings` assigns it to an unstaffed building.
+   */
+  private villagerStroll(u: Unit, dt: number): void {
+    u.mesh.visible = true;
+    if (u.wstate !== 'stroll' && u.wstate !== 'strollWait') { u.wstate = 'strollWait'; u.timer = rnd() * 2.5; }
+    if (u.wstate === 'strollWait') {
+      u.status = 'Idling in the village';
+      u.mesh.position.y = 0;
+      u.timer -= dt;
+      if (u.timer > 0) return;
+      const g = this.guild ?? this.store, cx = g.x + 1, cy = g.y + 1;
+      for (let tries = 0; tries < 8; tries++) {
+        const x = cx + Math.round((rnd() - 0.5) * 14), y = cy + Math.round((rnd() - 0.5) * 14);
+        const t = this.world.T(x, y);
+        if (!t || t.type === 'water' || t.b || t.site || t.dep) continue;
+        if (this.sendTo(u, x, y)) { u.wstate = 'stroll'; return; }
+      }
+      u.timer = 1 + rnd() * 2;                 // nowhere to go — wait, then retry
+      return;
+    }
+    // wstate === 'stroll'
+    u.status = 'Strolling';
+    if (u.path) this.moveUnit(u, dt);
+    else { u.wstate = 'strollWait'; u.timer = 1.5 + rnd() * 3; }
+  }
+
   // =====================================================================
   //  Growth
   // =====================================================================
@@ -919,6 +948,17 @@ export class Game {
     if (setup.boss) this.spawnBoss(setup.boss);
   }
 
+  /**
+   * The next scheduled raid wave for the HUD countdown: seconds until it lands
+   * plus its size, or null when this level has no more scheduled waves.
+   */
+  nextWave(): { in: number; count: number } | null {
+    const w = this.enemy?.waves;
+    if (!w || this.waveIdx >= w.length) return null;
+    const def = w[this.waveIdx];
+    return { in: Math.max(0, def.at - this.elapsed), count: def.count };
+  }
+
   private combatDirector(sdt: number): void {
     if (!this.enemy) return;
     // launch scheduled raid waves at the castle
@@ -1063,6 +1103,7 @@ export class Game {
       if (this.isFighter(u)) this.combatUpdate(u, sdt);
       else if (u.role === 'serf') this.serfUpdate(u, sdt);
       else if (u.role === 'laborer') this.laborerUpdate(u, sdt);
+      else if (u.role === 'villager' && !u.home) this.villagerStroll(u, sdt);
       else this.workerUpdate(u, sdt);
     }
     this.sweepDead();

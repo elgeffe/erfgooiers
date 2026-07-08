@@ -1,5 +1,7 @@
 import { DEFS, MENU_CATEGORIES } from '../data/buildings';
 import { ITEMS, RES_SHOWN } from '../data/items';
+import { UPGRADE_BY_ID } from '../data/upgrades';
+import { META_BY_ID } from '../data/metaUpgrades';
 import { ROAD_STONE_COST } from '../constants';
 import { installFavicon, logoSVG } from './logo';
 import { audio } from '../audio/Audio';
@@ -31,6 +33,9 @@ export class UI {
   private unitsOpen = false;
   private unitTab = 'all';
   private lastTabsHTML = '';
+  private perksOpen = false;
+  private perkUpgrades: string[] = [];
+  private perkUnlocks: string[] = [];
 
   constructor() {
     $('logo').innerHTML = logoSVG(30);
@@ -39,6 +44,7 @@ export class UI {
     this.buildMenu();
     this.wireSpeed();
     this.wireUnitPanel();
+    this.wirePerkPanel();
     this.wireInspector();
   }
 
@@ -46,6 +52,8 @@ export class UI {
   setGame(game: Game): void {
     this.game = game;
     this.showInspector(null);
+    this.updateWave(null);
+    this.setPerksOpen(false);
     this.setSpeed(1);
     this.refreshResbar();
     this.refreshBuildCosts();
@@ -81,6 +89,15 @@ export class UI {
 
   /** Show the run's gold total in the HUD chip. */
   setGold(n: number): void { $('goldText').textContent = String(n); }
+
+  /** Refresh the "next raid" countdown banner, or hide it when no wave is pending. */
+  updateWave(info: { in: number; count: number } | null): void {
+    const el = $('wavebar') as HTMLElement;
+    if (!info) { el.style.display = 'none'; return; }
+    el.style.display = 'flex';
+    $('waveText').textContent = `Next raid in ${fmtTime(info.in)} · ${info.count} raiders`;
+    el.classList.toggle('imminent', info.in <= 10);
+  }
 
   /** Toggle sandbox HUD: no objective card, no timer, no debug-win button. */
   setSandbox(on: boolean): void {
@@ -293,7 +310,7 @@ export class UI {
   // ---------- worker panel ----------
   private wireUnitPanel(): void {
     const toggle = $('unitsToggle'), panel = $('unitpanel');
-    toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : 'block'; this.renderUnits(); };
+    toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; if (this.unitsOpen && this.perksOpen) this.setPerksOpen(false); panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : 'block'; this.renderUnits(); };
     document.addEventListener('keydown', e => { if (e.key === 'u') toggle.click(); });
     const h3 = $('unitTitle');
     h3.style.cursor = 'pointer'; h3.title = 'Click to collapse';
@@ -343,6 +360,51 @@ export class UI {
       s += `<div class="urow"><div class="dot" style="background:#${u.colorHex.toString(16).padStart(6, '0')}"></div><div class="info"><div class="rn">${u.roleName}</div><div class="st">${u.status}</div></div><div class="hbar" title="Hunger — feed workers at a Tavern to keep them fast"><div style="width:${Math.round(u.hunger)}%;background:${hcol}"></div></div></div>`;
     }
     $('unitlist').innerHTML = s || '<div class="urow" style="color:var(--ink-dim);justify-content:center">none of this kind</div>';
+  }
+
+  // ---------- heritage / power-up panel ----------
+  private wirePerkPanel(): void {
+    $('btnPerks').addEventListener('click', () => this.setPerksOpen(!this.perksOpen));
+    $('closePerks').addEventListener('click', () => this.setPerksOpen(false));
+  }
+
+  private setPerksOpen(open: boolean): void {
+    this.perksOpen = open;
+    ($('perkpanel') as HTMLElement).style.display = open ? 'block' : 'none';
+    // the perk panel shares the left column with the worker panel — close that one
+    if (open && this.unitsOpen) $('unitTitle').click();
+    if (open) this.renderPerks();
+  }
+
+  /** Hand the panel this run's owned shop power-ups and permanent Heritage unlocks. */
+  setPerks(upgrades: string[], unlocks: string[]): void {
+    this.perkUpgrades = upgrades;
+    this.perkUnlocks = unlocks;
+    $('btnPerks').textContent = `🃏 Cards · ${upgrades.length + unlocks.length}`;
+    if (this.perksOpen) this.renderPerks();
+  }
+
+  private perkRow(icon: string, name: string, desc: string): string {
+    return `<div class="perkrow"><div class="pk-icon">${icon}</div><div class="pk-body"><div class="pk-name">${name}</div><div class="pk-desc">${desc}</div></div></div>`;
+  }
+
+  private renderPerks(): void {
+    let s = '';
+    if (this.perkUnlocks.length) {
+      s += '<div class="sect">Heritage — permanent</div>';
+      for (const id of this.perkUnlocks) { const d = META_BY_ID[id]; if (d) s += this.perkRow(d.icon, d.name, d.desc); }
+    }
+    // shop upgrades stack, so fold duplicates into an ×N count
+    const counts: Record<string, number> = {};
+    for (const id of this.perkUpgrades) counts[id] = (counts[id] || 0) + 1;
+    const ids = Object.keys(counts);
+    s += '<div class="sect">Power-ups this run</div>';
+    if (ids.length) {
+      for (const id of ids) { const d = UPGRADE_BY_ID[id]; if (d) s += this.perkRow(d.icon, d.name + (counts[id] > 1 ? ` ×${counts[id]}` : ''), d.desc); }
+    } else {
+      s += '<div class="invrow" style="color:var(--ink-dim)">No shop power-ups yet — buy some between levels.</div>';
+    }
+    $('perklist').innerHTML = s;
   }
 
   // ---------- toasts ----------

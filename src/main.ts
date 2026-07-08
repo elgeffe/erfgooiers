@@ -80,6 +80,7 @@ function startLevel(): void {
   }
   game.init(level.kit);
   ui.setGame(game);
+  ui.setPerks(run.upgrades, meta.unlocks);
   controls.setGame(game);
   game.setEnemies(sandbox ? null : (level.enemies ?? null));
   if (!sandbox && level.startArmy) {
@@ -349,7 +350,7 @@ function frame(now: number): void {
 
     const st = game.objective.evaluate(game);
     const remaining = currentLevel.hardTimer - game.elapsed;
-    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateObjective(st.label, st.ratio, remaining); }
+    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateObjective(st.label, st.ratio, remaining); ui.updateWave(game.nextWave()); }
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
 
     // resolve the level last: win, castle lost, or timeout tears the level down
