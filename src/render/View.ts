@@ -1,14 +1,21 @@
 import * as THREE from 'three';
-import { W, H } from '../constants';
-import { rnd } from '../engine/rng';
+import { uiRng } from '../engine/rng';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Deco, Deposit, Field, Tree, Unit } from '../types';
 import { makeBuilding, makeDeco, makeDeposit, makeFieldCrop, makeScaffold, makeTree, makeUnit } from './models';
+
+// Cosmetic scatter only — must not touch worldgen/gameplay streams.
+const rnd = () => uiRng.next();
 
 /**
  * Owns everything Three.js: renderer, scene, orthographic camera, the ground
  * mesh, doodads, ambiance (clouds, distant hills) and the minimap. It reads the
  * World for tile data but never mutates game state.
+ *
+ * The renderer, camera, lights, placement helpers and minimap are built once
+ * and persist for the whole session. Everything tied to a specific level lives
+ * under `worldGroup`, so `loadWorld()`/`clearWorld()` can tear a level down and
+ * rebuild the next without leaking GPU resources (see `clearWorld`).
  */
 export class View {
   readonly renderer: THREE.WebGLRenderer;
@@ -17,9 +24,11 @@ export class View {
   readonly camTarget = new THREE.Vector3(0, 0, 2);
   viewSize = 13;
 
-  private readonly world: World;
+  private world!: World;
+  private worldGroup = new THREE.Group();
+  private skyTex: THREE.Texture | null = null;
   private readonly CAM_OFF = new THREE.Vector3(28, 34, 28);
-  private readonly groundGeo = new THREE.BufferGeometry();
+  private groundGeo = new THREE.BufferGeometry();
   private readonly _c = new THREE.Color();
   private readonly clouds: THREE.Group[] = [];
 
@@ -39,10 +48,8 @@ export class View {
   // minimap
   private readonly mm: HTMLCanvasElement;
   private readonly mmx: CanvasRenderingContext2D;
-  private readonly MMS = 160 / W;
 
-  constructor(world: World, canvas: HTMLCanvasElement, minimap: HTMLCanvasElement) {
-    this.world = world;
+  constructor(canvas: HTMLCanvasElement, minimap: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
@@ -51,7 +58,7 @@ export class View {
     this.setSize();
     addEventListener('resize', () => this.setSize());
 
-    // lighting — warm sun, cool sky fill
+    // lighting — warm sun, cool sky fill (persists across levels)
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
     this.scene.add(new THREE.HemisphereLight(0xdaeeff, 0x6f8a52, 0.5));
     const sun = new THREE.DirectionalLight(0xfff0d2, 1.15);
@@ -61,11 +68,10 @@ export class View {
     sun.shadow.camera.top = 34; sun.shadow.camera.bottom = -34; sun.shadow.camera.far = 100;
     this.scene.add(sun, sun.target);
 
-    // a few cobble variants so long roads don't tile visibly
+    // a few cobble variants so long roads don't tile visibly (shared, persist)
     for (let i = 0; i < 4; i++) this.roadMats.push(new THREE.MeshLambertMaterial({ map: this.makeRoadTexture() }));
-    this.buildGround();
-    this.populateDoodads();
-    this.buildAmbiance();
+
+    this.scene.add(this.worldGroup);
 
     // road-tile cursor
     this.roadCursor = new THREE.Mesh(
@@ -80,11 +86,54 @@ export class View {
     this.mm = minimap;
     this.mmx = minimap.getContext('2d')!;
     this.mm.addEventListener('pointerdown', e => {
+      if (!this.world) return;
       const r = this.mm.getBoundingClientRect();
-      this.camTarget.x = ((e.clientX - r.left) / r.width) * W - W / 2;
-      this.camTarget.z = ((e.clientY - r.top) / r.height) * H - H / 2;
+      this.camTarget.x = ((e.clientX - r.left) / r.width) * this.world.W - this.world.W / 2;
+      this.camTarget.z = ((e.clientY - r.top) / r.height) * this.world.H - this.world.H / 2;
       this.clampCam(); this.updateCamera();
     });
+  }
+
+  // =====================================================================
+  //  Level lifecycle — build/tear down all per-level scene content
+  // =====================================================================
+  /** Attach a freshly generated world and build its ground, doodads and ambiance. */
+  loadWorld(world: World): void {
+    this.world = world;
+    this.buildGround();
+    this.populateDoodads();
+    this.buildAmbiance();
+  }
+
+  /**
+   * Dispose every GPU resource under `worldGroup` and reset per-level caches.
+   * Shared geometries/materials (from models.ts and the road overlay) are
+   * disposed too, but Three re-uploads them lazily the next time a mesh uses
+   * them, so the next level rebuilds cleanly. Watch `renderer.info.memory` —
+   * geometry/texture counts must return to baseline between levels.
+   */
+  clearWorld(): void {
+    const geos = new Set<THREE.BufferGeometry>();
+    const mats = new Set<THREE.Material>();
+    this.worldGroup.traverse((o: any) => {
+      if (o.geometry) geos.add(o.geometry);
+      const m = o.material;
+      if (m) { if (Array.isArray(m)) m.forEach((x: THREE.Material) => mats.add(x)); else mats.add(m); }
+    });
+    geos.forEach(g => g.dispose());
+    mats.forEach(m => { const map = (m as any).map as THREE.Texture | undefined; if (map) map.dispose(); m.dispose(); });
+
+    this.scene.remove(this.worldGroup);
+    this.worldGroup = new THREE.Group();
+    this.scene.add(this.worldGroup);
+
+    if (this.skyTex) { this.skyTex.dispose(); this.skyTex = null; }
+    this.scene.background = null;
+    this.scene.fog = null;
+    this.roadMeshes.clear();
+    this.clouds.length = 0;
+    this.millSails.length = 0;
+    this.ghostKey = null;
   }
 
   // =====================================================================
@@ -103,6 +152,7 @@ export class View {
     this.camera.updateProjectionMatrix();
   }
   clampCam(): void {
+    const W = this.world ? this.world.W : 48, H = this.world ? this.world.H : 48;
     this.camTarget.x = Math.max(-W / 2, Math.min(W / 2, this.camTarget.x));
     this.camTarget.z = Math.max(-H / 2, Math.min(H / 2, this.camTarget.z));
   }
@@ -115,6 +165,7 @@ export class View {
 
   /** Screen point → world tile (or null off-map). */
   tileAt(cx: number, cy: number): { x: number; y: number } | null {
+    const W = this.world.W, H = this.world.H;
     const ndc = new THREE.Vector2((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1);
     const rc = new THREE.Raycaster(); rc.setFromCamera(ndc, this.camera);
     const t = -rc.ray.origin.y / rc.ray.direction.y;
@@ -127,8 +178,8 @@ export class View {
   // =====================================================================
   //  Scene helpers
   // =====================================================================
-  add(o: THREE.Object3D): void { this.scene.add(o); }
-  remove(o: THREE.Object3D): void { this.scene.remove(o); }
+  add(o: THREE.Object3D): void { this.worldGroup.add(o); }
+  remove(o: THREE.Object3D): void { this.worldGroup.remove(o); }
 
   createBuildingMesh(def: BuildingDef): THREE.Group { return makeBuilding(def, false); }
   createScaffold(def: BuildingDef) { return makeScaffold(def); }
@@ -136,7 +187,7 @@ export class View {
   createUnit(colorHex: number, role: string, tileX: number, tileY: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
     const u = makeUnit(colorHex, role);
     u.group.position.set(this.world.wx(tileX), 0, this.world.wz(tileY));
-    this.scene.add(u.group);
+    this.worldGroup.add(u.group);
     return u;
   }
 
@@ -145,27 +196,27 @@ export class View {
     g.position.set(this.world.wx(x) + (rnd() - 0.5) * 0.3, 0, this.world.wz(y) + (rnd() - 0.5) * 0.3);
     const s = tree.s * Math.max(0.15, tree.growth);
     g.scale.set(s, s, s);
-    this.scene.add(g);
+    this.worldGroup.add(g);
     tree.meshes = [g];
   }
   addDeposit(x: number, y: number, dep: Deposit): void {
     const g = makeDeposit(dep.kind);
     g.position.set(this.world.wx(x), 0, this.world.wz(y));
-    this.scene.add(g);
+    this.worldGroup.add(g);
     dep.meshes = [g];
   }
   addDeco(x: number, y: number, deco: Deco): void {
     const g = makeDeco(deco.kind);
     const baseY = this.world.tiles[y][x].type === 'water' ? -0.14 : 0;
     g.position.set(this.world.wx(x) + (rnd() - 0.5) * 0.3, g.position.y + baseY, this.world.wz(y) + (rnd() - 0.5) * 0.3);
-    this.scene.add(g);
+    this.worldGroup.add(g);
     deco.meshes = [g];
   }
   /** Plant the visible wheat on a farm plot; growth drives its height. */
   addFieldCrop(x: number, y: number, field: Field): void {
     const g = makeFieldCrop();
     g.position.set(this.world.wx(x), 0, this.world.wz(y));
-    this.scene.add(g);
+    this.worldGroup.add(g);
     field.meshes = [g];
     this.scaleFieldCrop(field);
   }
@@ -173,12 +224,12 @@ export class View {
     const m = field.meshes[0];
     if (m) m.scale.y = 0.12 + 0.88 * Math.min(1, field.growth);
   }
-  removeMeshes(meshes: THREE.Object3D[]): void { for (const m of meshes) this.scene.remove(m); }
+  removeMeshes(meshes: THREE.Object3D[]): void { for (const m of meshes) this.worldGroup.remove(m); }
 
   // =====================================================================
   //  Ground
   // =====================================================================
-  private tileVertexBase(tx: number, ty: number) { return (ty * W + tx) * 6 * 3; }
+  private tileVertexBase(tx: number, ty: number) { return (ty * this.world.W + tx) * 6 * 3; }
 
   private lerpHex(a: number, b: number, t: number): number {
     const c1 = new THREE.Color(a), c2 = new THREE.Color(b); c1.lerp(c2, t); return c1.getHex();
@@ -201,6 +252,8 @@ export class View {
   refreshTile(tx: number, ty: number): void { const c = this.tileBaseColor(tx, ty); this.setTileColor(tx, ty, c.hex, c.sh); }
 
   private buildGround(): void {
+    const W = this.world.W, H = this.world.H;
+    this.groundGeo = new THREE.BufferGeometry();
     const pos = new Float32Array(W * H * 6 * 3), col = new Float32Array(W * H * 6 * 3);
     const norm = new Float32Array(W * H * 6 * 3); for (let i = 0; i < norm.length; i += 3) norm[i + 1] = 1;
     this.groundGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -218,14 +271,15 @@ export class View {
     }
     const ground = new THREE.Mesh(this.groundGeo, new THREE.MeshLambertMaterial({ vertexColors: true }));
     ground.receiveShadow = true;
-    this.scene.add(ground);
+    this.worldGroup.add(ground);
     // the slab top must sit below the recessed water tiles (y −0.14) or it
     // shows through every lake and pond as a dark green sheet
     const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 2, 2, H + 2), new THREE.MeshLambertMaterial({ color: 0x4f6b3c }));
-    slab.position.y = -1.16; this.scene.add(slab);
+    slab.position.y = -1.16; this.worldGroup.add(slab);
   }
 
   private populateDoodads(): void {
+    const W = this.world.W, H = this.world.H;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const t = this.world.tiles[y][x];
       if (t.tree) this.addTree(x, y, t.tree);
@@ -305,13 +359,13 @@ export class View {
     m.rotation.z = Math.floor(rnd() * 4) * (Math.PI / 2);   // rotate for variety
     m.position.set(this.world.wx(x), 0.02, this.world.wz(y));
     m.receiveShadow = true;
-    this.scene.add(m);
+    this.worldGroup.add(m);
     this.roadMeshes.set(key, m);
   }
   removeRoad(x: number, y: number): void {
     const key = x + ',' + y;
     const m = this.roadMeshes.get(key);
-    if (m) { this.scene.remove(m); this.roadMeshes.delete(key); }
+    if (m) { this.worldGroup.remove(m); this.roadMeshes.delete(key); }
   }
 
   // =====================================================================
@@ -319,6 +373,7 @@ export class View {
   //  a distant windmill and drifting clouds
   // =====================================================================
   private buildAmbiance(): void {
+    const W = this.world.W, H = this.world.H;
     // gradient sky: deep blue overhead fading to a warm pale horizon
     const sky = document.createElement('canvas'); sky.width = 1; sky.height = 256;
     const sctx = sky.getContext('2d')!;
@@ -327,13 +382,14 @@ export class View {
     grad.addColorStop(0.55, '#a9d3ea');
     grad.addColorStop(1, '#e9f2ea');
     sctx.fillStyle = grad; sctx.fillRect(0, 0, 1, 256);
-    this.scene.background = new THREE.CanvasTexture(sky);
+    this.skyTex = new THREE.CanvasTexture(sky);
+    this.scene.background = this.skyTex;
     this.scene.fog = new THREE.Fog(0xddecee, 62, 150);
 
     // a broad meadow plain reaching out to the horizon beneath the map plinth
     const plain = new THREE.Mesh(new THREE.CircleGeometry(240, 48), new THREE.MeshLambertMaterial({ color: 0x7fae66 }));
     plain.rotation.x = -Math.PI / 2; plain.position.y = -2.1;
-    this.scene.add(plain);
+    this.worldGroup.add(plain);
 
     // low rolling hill domes in three hazier and hazier rings
     const hillTones = [0x8cbc70, 0x7aa96a, 0x6f9d74, 0x678f79].map(c => new THREE.MeshLambertMaterial({ color: c }));
@@ -347,7 +403,7 @@ export class View {
         const hill = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 12), hillTones[Math.min(3, ring + (i % 2))]);
         hill.scale.y = h / r;
         hill.position.set(Math.cos(ang) * rad, -2.1, Math.sin(ang) * rad);
-        this.scene.add(hill);
+        this.worldGroup.add(hill);
       }
     }
 
@@ -361,11 +417,11 @@ export class View {
       const s = 0.9 + rnd() * 1.4;
       const crown = new THREE.Mesh(new THREE.ConeGeometry(0.75 * s, 2.6 * s, 6), rnd() < 0.5 ? folA : folB);
       crown.position.set(Math.cos(ang) * rad, -2.1 + 1.5 * s, Math.sin(ang) * rad);
-      this.scene.add(crown);
+      this.worldGroup.add(crown);
       if (rnd() < 0.35) {
         const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1 * s, 0.14 * s, 0.5 * s, 5), trunkM);
         trunk.position.set(crown.position.x, -2.1 + 0.22 * s, crown.position.z);
-        this.scene.add(trunk);
+        this.worldGroup.add(trunk);
       }
     }
 
@@ -388,7 +444,7 @@ export class View {
     mill.add(sails);
     mill.position.set(Math.cos(millAng) * W * 1.05, -2.1, Math.sin(millAng) * W * 1.05);
     mill.lookAt(0, -2.1, 0);
-    this.scene.add(mill);
+    this.worldGroup.add(mill);
     this.millSails.push(sails);
 
     // soft clouds
@@ -403,7 +459,7 @@ export class View {
         c.add(puff);
       }
       c.position.set((rnd() - 0.5) * W * 1.4, 14 + rnd() * 6, (rnd() - 0.5) * H * 1.4);
-      this.scene.add(c);
+      this.worldGroup.add(c);
       this.clouds.push(c);
     }
   }
@@ -418,7 +474,7 @@ export class View {
     }
     for (const c of this.clouds) {
       c.position.x += dt * 0.6;
-      if (c.position.x > W * 0.8) c.position.x = -W * 0.8;
+      if (c.position.x > this.world.W * 0.8) c.position.x = -this.world.W * 0.8;
     }
     for (const s of this.millSails) s.rotation.z += dt * 0.45;
   }
@@ -476,7 +532,9 @@ export class View {
   //  Minimap & render
   // =====================================================================
   drawMinimap(units: Unit[]): void {
-    const mmx = this.mmx, MMS = this.MMS;
+    if (!this.world) return;
+    const W = this.world.W, H = this.world.H;
+    const mmx = this.mmx, MMS = this.mm.width / W;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const t = this.world.tiles[y][x];
       let c = '#6fae52';

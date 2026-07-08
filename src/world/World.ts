@@ -1,25 +1,54 @@
-import { W, H } from '../constants';
-import { rnd } from '../engine/rng';
+import { W as DEFAULT_W, H as DEFAULT_H } from '../constants';
+import { worldRng } from '../engine/rng';
 import type { DecoKind, Tile } from '../types';
+
+// Worldgen pulls exclusively from this stream (reseeded per level) so a level's
+// map is fully determined by its seed, independent of sim/cosmetic call order.
+const rnd = () => worldRng.next();
+
+/** Per-level map parameters. Densities scale with the level; see data/levels. */
+export interface WorldParams {
+  seed: number;
+  w?: number;
+  h?: number;
+  treeStands?: number;   // number of woodland clusters
+  oreVeins?: number;     // ore clusters placed (stone/gold/coal mix)
+  waterScale?: number;   // 0 = dry, 1 = default lake+ponds, >1 = wetter
+  meadows?: number;      // lavender patches
+}
 
 /**
  * Pure map state: the tile grid plus generation and spatial queries.
  * Holds no Three.js — the View reads these tiles to build/refresh meshes.
  *
- * Generation is fully procedural and reseeded on every load (see main.ts),
- * so each session lands in a freshly shaped patch of Het Gooi: a great lake
- * with small ponds, scattered ore, mixed woodland, lavender meadows and
+ * Generation is fully procedural and seeded from `WorldParams.seed`, so a given
+ * run seed + level index always lands in the same patch of Het Gooi: a great
+ * lake with small ponds, scattered ore, mixed woodland, lavender meadows and
  * reedy shallows.
  */
 export class World {
-  readonly W = W;
-  readonly H = H;
+  readonly W: number;
+  readonly H: number;
   readonly tiles: Tile[][] = [];
 
-  constructor() {
-    for (let y = 0; y < H; y++) {
+  private readonly p: Required<WorldParams>;
+
+  constructor(params: WorldParams = { seed: 1337 }) {
+    this.p = {
+      seed: params.seed,
+      w: params.w ?? DEFAULT_W,
+      h: params.h ?? DEFAULT_H,
+      treeStands: params.treeStands ?? 6,
+      oreVeins: params.oreVeins ?? 4,
+      waterScale: params.waterScale ?? 1,
+      meadows: params.meadows ?? 3,
+    };
+    this.W = this.p.w;
+    this.H = this.p.h;
+    worldRng.reseed(this.p.seed);
+    for (let y = 0; y < this.H; y++) {
       this.tiles[y] = [];
-      for (let x = 0; x < W; x++) {
+      for (let x = 0; x < this.W; x++) {
         this.tiles[y][x] = { type: 'grass', road: false, b: null, site: null, tree: null, dep: null, field: null, deco: null, cshade: 0.9 + rnd() * 0.2 };
       }
     }
@@ -28,12 +57,12 @@ export class World {
 
   /** Bounds-checked tile accessor. */
   T(x: number, y: number): Tile | null {
-    return (x >= 0 && y >= 0 && x < W && y < H) ? this.tiles[y][x] : null;
+    return (x >= 0 && y >= 0 && x < this.W && y < this.H) ? this.tiles[y][x] : null;
   }
 
   /** World-space centre of a tile column/row (grid is centred on origin). */
-  wx(tx: number): number { return tx - W / 2 + 0.5; }
-  wz(ty: number): number { return ty - H / 2 + 0.5; }
+  wx(tx: number): number { return tx - this.W / 2 + 0.5; }
+  wz(ty: number): number { return ty - this.H / 2 + 0.5; }
 
   /** Can a unit stand on / walk through this tile? */
   passable(x: number, y: number): boolean {
@@ -50,6 +79,7 @@ export class World {
 
   // ---------- generation ----------
   private generate(): void {
+    const W = this.W, H = this.H;
     const blob = (cx: number, cy: number, r: number, fn: (t: Tile) => void) => {
       for (let y = Math.max(0, cy - r); y <= Math.min(H - 1, cy + r); y++)
         for (let x = Math.max(0, cx - r); x <= Math.min(W - 1, cx + r); x++) {
@@ -66,12 +96,14 @@ export class World {
 
     // the large body: a chain of overlapping blobs wandering along the map's
     // outer band, producing one big irregular lake with bays and headlands
+    const wet = this.p.waterScale;
     const ang0 = rnd() * Math.PI * 2;
     let lx = W / 2 + Math.cos(ang0) * W * 0.4;
     let ly = H / 2 + Math.sin(ang0) * H * 0.4;
     let drift = ang0 + Math.PI / 2 + (rnd() - 0.5) * 0.8; // wander roughly tangentially
-    for (let i = 0; i < 6; i++) {
-      const r = 5 + Math.floor(rnd() * 3);
+    const lakeBlobs = Math.round(6 * wet);
+    for (let i = 0; i < lakeBlobs; i++) {
+      const r = Math.max(2, Math.round((5 + Math.floor(rnd() * 3)) * Math.min(1.4, wet)));
       const cx = Math.round(Math.max(2, Math.min(W - 3, lx)));
       const cy = Math.round(Math.max(2, Math.min(H - 3, ly)));
       if (!nearCentre(cx, cy, r)) water(cx, cy, r);
@@ -81,7 +113,7 @@ export class World {
     }
 
     // small ponds dotted about the rest of the meadow
-    const ponds = 2 + Math.floor(rnd() * 2);
+    const ponds = Math.round((2 + Math.floor(rnd() * 2)) * wet);
     for (let i = 0; i < ponds; i++) {
       const r = 2 + Math.floor(rnd() * 2);
       let cx = 0, cy = 0, guard = 0;
@@ -98,9 +130,10 @@ export class World {
         if (t && t.type === 'grass' && !t.dep) { t.dep = { kind, amt: 6 + Math.floor(rnd() * 9), meshes: [] }; placed++; }
       }
     };
-    // ore veins — random clusters of each kind
-    const kinds: Array<'stone' | 'gold' | 'coal'> = ['stone', 'stone', 'gold', 'coal'];
-    for (const kind of kinds) {
+    // ore veins — random clusters, weighted toward stone
+    const kindPool: Array<'stone' | 'gold' | 'coal'> = ['stone', 'stone', 'gold', 'coal'];
+    for (let i = 0; i < this.p.oreVeins; i++) {
+      const kind = kindPool[i % kindPool.length];
       const cx = 5 + Math.floor(rnd() * (W - 10)), cy = 5 + Math.floor(rnd() * (H - 10));
       deposits(cx, cy, 3 + Math.floor(rnd() * 2), kind, 5 + Math.floor(rnd() * 5));
     }
@@ -117,14 +150,12 @@ export class World {
         }
       }
     };
-    const stands = 5 + Math.floor(rnd() * 3);
-    for (let i = 0; i < stands; i++) {
+    for (let i = 0; i < this.p.treeStands; i++) {
       forest(5 + Math.floor(rnd() * (W - 10)), 5 + Math.floor(rnd() * (H - 10)), 4 + Math.floor(rnd() * 3), 12 + Math.floor(rnd() * 16));
     }
 
     // ---- lavender meadows: dense purple patches of rows ----
-    const meadows = 2 + Math.floor(rnd() * 2);
-    for (let i = 0; i < meadows; i++) {
+    for (let i = 0; i < this.p.meadows; i++) {
       const cx = 6 + Math.floor(rnd() * (W - 12)), cy = 6 + Math.floor(rnd() * (H - 12));
       blob(cx, cy, 2 + Math.floor(rnd() * 3), t => {
         if (t.type === 'grass' && !t.tree && !t.dep && !t.deco && rnd() < 0.85) this.setDeco(t, 'lavender');

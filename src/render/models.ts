@@ -1,6 +1,9 @@
 import * as THREE from 'three';
-import { rnd } from '../engine/rng';
+import { uiRng } from '../engine/rng';
 import type { BuildingDef, DecoKind } from '../types';
+
+// Mesh scatter is purely cosmetic — it must never touch gameplay/worldgen streams.
+const rnd = () => uiRng.next();
 
 /* =====================================================================
    Mesh builders — the "look" of Het Gooi. Every builder returns a THREE

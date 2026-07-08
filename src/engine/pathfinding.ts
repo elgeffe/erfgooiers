@@ -1,4 +1,4 @@
-import { W, H, TILE_COST_ROAD, TILE_COST_GRASS } from '../constants';
+import { TILE_COST_ROAD, TILE_COST_GRASS } from '../constants';
 import type { World } from '../world/World';
 import type { Coord } from '../types';
 
@@ -9,6 +9,7 @@ import type { Coord } from '../types';
 // The goal tile is always considered enterable even if occupied (door tiles).
 export function findPath(world: World, sx: number, sy: number, ex: number, ey: number): Coord[] | null {
   if (sx === ex && sy === ey) return [];
+  const W = world.W, H = world.H;
   const tiles = world.tiles;
   const open: { x: number; y: number; f: number }[] = [];
   const gS = new Map<number, number>();

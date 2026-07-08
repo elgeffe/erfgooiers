@@ -8,14 +8,19 @@
 <body>
 <canvas id="game"></canvas>
 
+<div id="hud">
 <div id="topbar">
   <div id="brand"><span id="logo"></span><div id="restitle" class="serif">Erfgooiers</div></div>
   <div id="resbar"></div>
-  <div id="objective"><span style="color:var(--ink-dim)">Objective</span><b id="objText">Mint 10 coins — 0/10</b></div>
+  <div id="objective"><span style="color:var(--ink-dim)">Objective</span><b id="objText">—</b></div>
   <div id="speedctl">
     <button id="sp0" title="Pause (space)">⏸</button>
     <button id="sp1" class="on" title="Normal speed">1×</button>
     <button id="sp3" title="Fast">3×</button>
+  </div>
+  <div id="runctl">
+    <button id="btnDebugWin" title="Debug: clear this level and go to the shop">✓ Win</button>
+    <button id="btnToMenu" title="Abandon this run and return to the menu">Menu</button>
   </div>
 </div>
 
@@ -35,22 +40,59 @@
 
 <div id="buildmenu"></div>
 <div id="hint"></div>
-<div id="toasts"></div>
 <div id="minimapWrap"><canvas id="minimap" width="160" height="160"></canvas></div>
+</div><!-- /#hud -->
+
+<div id="toasts"></div>
+
+<!-- ---------- main menu ---------- -->
+<div id="menu" class="screen">
+  <div class="card">
+    <h1 class="serif"><span id="menuLogo"></span>Erfgooiers</h1>
+    <div class="tag">A browser roguelite economy builder — clear ten short levels of Het Gooi, shop between each, lose it all if a level beats you.</div>
+    <div id="metaLine" class="metaline"></div>
+    <div class="btns">
+      <button id="btnContinue">Continue run</button>
+      <button id="btnNewRun">New run</button>
+      <button id="btnHelp" class="ghost">How to play</button>
+      <button id="btnClearSave" class="danger" title="Wipe the saved run and all meta-progress">Clear save data</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- shop (placeholder until Phase 1) ---------- -->
+<div id="shop" class="screen">
+  <div class="card">
+    <h1 class="serif">The Shop</h1>
+    <div class="tag">Level cleared. Upgrades and drafts arrive in Phase 1 — for now, press on.</div>
+    <div id="shopGold" class="metaline"></div>
+    <div class="btns"><button id="btnShopContinue">To the next level →</button></div>
+  </div>
+</div>
+
+<!-- ---------- run summary ---------- -->
+<div id="summary" class="screen">
+  <div class="card">
+    <h1 class="serif" id="sumTitle">Run over</h1>
+    <div class="tag" id="sumSub"></div>
+    <div id="sumBody" class="metaline"></div>
+    <div class="btns"><button id="btnSumMenu">Back to menu</button></div>
+  </div>
+</div>
 
 <div id="intro">
   <div id="introCard">
-    <h1 class="serif"><span id="introLogo"></span>Erfgooiers</h1>
+    <h1 class="serif"><span id="introLogo"></span>How to play</h1>
     <div class="tag">A cozy physical economy — every plank, loaf and coin is carried by hand.</div>
     <ul>
       <li><span class="k">Build</span><span>Place buildings from the bottom menu. Serfs haul timber &amp; stone from your storehouse to the site, then a laborer constructs it.</span></li>
       <li><span class="k">Watch</span><span>Specialists gather and craft; serfs automatically carry goods between buildings. Nothing teleports.</span></li>
       <li><span class="k">Roads</span><span>Paint roads (free) — workers prefer them and walk 30% faster on them.</span></li>
       <li><span class="k">Chains</span><span>Trees → trunks → timber · Farm → mill → bakery · Quarry → stone · Gold + coal → the Mint.</span></li>
-      <li><span class="k">Goal</span><span>Mint 10 gold coins.</span></li>
+      <li><span class="k">Run</span><span>Clear each level to reach the shop; a failed level ends the run. Debug “✓ Win” advances a level for now.</span></li>
       <li><span class="k">Controls</span><span>WASD / arrows or right-drag to pan · wheel to zoom · <b>R</b> rotates a building while placing · click a building to inspect · Esc cancels.</span></li>
     </ul>
-    <button id="startBtn">Begin</button>
+    <button id="startBtn">Close</button>
   </div>
 </div>
 

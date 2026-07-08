@@ -1,13 +1,29 @@
 import * as THREE from 'three';
-import { BASE_SPEED, BUILD_TIME, CARRY_CAP, H, OUT_CAP, W } from '../constants';
+import { BASE_SPEED, BUILD_TIME, CARRY_CAP, OUT_CAP } from '../constants';
 import { DEFS } from '../data/buildings';
 import { ITEMS } from '../data/items';
-import { rnd } from '../engine/rng';
+import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
 import type { Building, BuildingKey, Site, Unit } from '../types';
 import { doorTile } from './util';
+
+// Gameplay events use the sim stream (reseeded per level), never worldgen/cosmetic.
+const rnd = () => simRng.next();
+
+/** The goods and workers a level hands you at the start (before run upgrades). */
+export interface StartKit {
+  stock: Partial<Record<string, number>>;
+  serfs: number;
+  laborers: number;
+}
+
+export const DEFAULT_KIT: StartKit = {
+  stock: { timber: 16, stone: 12, bread: 8 },
+  serfs: 6,
+  laborers: 2,
+};
 
 /**
  * The simulation: buildings, construction sites, units and the serf logistics
@@ -34,20 +50,23 @@ export class Game {
   // =====================================================================
   //  Setup
   // =====================================================================
-  init(): void {
+  init(kit: StartKit = DEFAULT_KIT): void {
+    const { W, H } = this.world;
     const tiles = this.world.tiles;
-    for (let y = 24; y < 30; y++) for (let x = 21; x < 28; x++) {
-      const t = tiles[y][x];
+    // clear a build zone at the map centre for the starting settlement
+    const cx = Math.floor(W / 2) - 1, cy = Math.floor(H / 2) - 1;
+    for (let y = cy - 1; y < cy + 5; y++) for (let x = cx - 2; x < cx + 5; x++) {
+      const t = this.world.T(x, y); if (!t) continue;
       if (t.tree) this.removeTree(x, y);
       if (t.dep) this.removeDep(x, y);
       if (t.deco) this.removeDeco(x, y);
       t.type = 'grass'; this.view.refreshTile(x, y);
     }
-    this.store = this.placeBuilding('storehouse', 23, 25, true);
-    this.store.stock = { timber: 16, stone: 12, bread: 8, trunk: 0, wheat: 0, flour: 0, goldore: 0, coal: 0, coin: 0 };
+    this.store = this.placeBuilding('storehouse', cx, cy, true);
+    this.store.stock = { timber: 0, stone: 0, bread: 0, trunk: 0, wheat: 0, flour: 0, goldore: 0, coal: 0, coin: 0, ...kit.stock };
     const d = doorTile(this.store);
-    for (let i = 0; i < 6; i++) this.spawnUnit('serf', 0xd8c49a, { x: d.x - 2 + (i % 4), y: d.y + Math.floor(i / 4) });
-    for (let i = 0; i < 2; i++) { const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + i, y: d.y }); u.roleName = 'Laborer'; }
+    for (let i = 0; i < kit.serfs; i++) this.spawnUnit('serf', 0xd8c49a, { x: d.x - 2 + (i % 4), y: d.y + Math.floor(i / 4) });
+    for (let i = 0; i < kit.laborers; i++) { const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + i, y: d.y }); u.roleName = 'Laborer'; }
   }
 
   // =====================================================================
@@ -294,6 +313,7 @@ export class Game {
 
   private findNode(b: Building): any {
     const g = b.def.gather!, cx = b.x + 0.5, cy = b.y + 0.5;
+    const { W, H } = this.world;
     const tiles = this.world.tiles;
     let best: any = null, bd = 1e9;
     if (g.node === 'field') {
@@ -395,6 +415,7 @@ export class Game {
   //  Growth
   // =====================================================================
   private growthUpdate(dt: number): void {
+    const { W, H } = this.world;
     const tiles = this.world.tiles;
     for (const b of this.buildings) { if (b.def.fields) for (const f of b.fieldsList) { const t = tiles[f.y][f.x]; if (t.field && t.field.growth < 1) { t.field.growth += dt / 22; if (t.field.growth > 1) t.field.growth = 1; this.view.scaleFieldCrop(t.field); } } }
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const t = tiles[y][x]; if (t.tree && t.tree.growth < 1) { t.tree.growth += dt / 40; if (t.tree.growth > 1) t.tree.growth = 1; const s = t.tree.s * Math.max(0.15, t.tree.growth); (t.tree.meshes[0] as THREE.Object3D).scale.set(s, s, s); } }
@@ -421,6 +442,7 @@ export class Game {
   }
 
   private depositInRange(kind: string, tx: number, ty: number, range: number): boolean {
+    const { W, H } = this.world;
     const tiles = this.world.tiles;
     for (let y = Math.max(0, ty - range); y <= Math.min(H - 1, ty + 1 + range); y++) for (let x = Math.max(0, tx - range); x <= Math.min(W - 1, tx + 1 + range); x++) {
       const t = tiles[y][x]; if (t.dep && t.dep.kind === kind && t.dep.amt > 0) return true;
@@ -428,6 +450,7 @@ export class Game {
     return false;
   }
   private nearTree(tx: number, ty: number, r: number): boolean {
+    const { W, H } = this.world;
     const tiles = this.world.tiles;
     for (let y = Math.max(0, ty - r); y <= Math.min(H - 1, ty + 1 + r); y++) for (let x = Math.max(0, tx - r); x <= Math.min(W - 1, tx + 1 + r); x++) if (tiles[y][x].tree) return true;
     return false;

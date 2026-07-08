@@ -8,28 +8,40 @@ const $ = (id: string) => document.getElementById(id)!;
 
 /**
  * All DOM overlay: resource bar, objective, speed controls, build menu,
- * inspector, worker panel, toasts and the intro card. Reads state from the
- * Game; pushes build-mode changes out through the `onMode` callback (wired to
- * Controls in main.ts).
+ * inspector, worker panel, toasts. Reads state from the current Game; pushes
+ * build-mode changes out through the `onMode` callback (wired to Controls).
+ *
+ * The DOM is wired once in the constructor; `setGame()` rebinds it to each
+ * level's fresh Game as levels are torn down and rebuilt.
  */
 export class UI {
   onMode: (m: Mode) => void = () => {};
 
+  private game: Game | null = null;
   private readonly resEls: Record<string, HTMLElement> = {};
-  private objDone = false;
   private unitsOpen = false;
 
-  constructor(private readonly game: Game) {
+  constructor() {
     $('logo').innerHTML = logoSVG(30);
-    $('introLogo').innerHTML = logoSVG(40);
     installFavicon();
     this.buildResbar();
     this.buildMenu();
     this.wireSpeed();
     this.wireUnitPanel();
     this.wireInspector();
-    $('startBtn').onclick = () => { $('intro').style.display = 'none'; };
   }
+
+  /** Bind the HUD to a level's Game and reset transient UI state. */
+  setGame(game: Game): void {
+    this.game = game;
+    this.showInspector(null);
+    this.setSpeed(1);
+    this.refreshResbar();
+    this.renderUnits();
+  }
+
+  /** Set the objective card text (driven by main until Phase 1's Objectives). */
+  setObjective(text: string): void { $('objText').textContent = text; }
 
   // ---------- resource bar & objective ----------
   private buildResbar(): void {
@@ -42,10 +54,8 @@ export class UI {
     }
   }
   private refreshResbar(): void {
+    if (!this.game) return;
     for (const k of RES_SHOWN) this.resEls[k].textContent = String(this.game.countItem(k));
-    const c = this.game.countItem('coin');
-    $('objText').textContent = this.objDone ? 'Complete! ✦' : `Mint 10 coins — ${c}/10`;
-    if (c >= 10 && !this.objDone) { this.objDone = true; this.toast('✦ Objective complete — 10 coins minted! ✦'); }
   }
 
   // ---------- build menu ----------
@@ -85,15 +95,15 @@ export class UI {
     $('sp3').onclick = () => this.setSpeed(3);
   }
   setSpeed(s: number): void {
-    this.game.simSpeed = s;
+    if (this.game) this.game.simSpeed = s;
     $('sp0').classList.toggle('on', s === 0);
     $('sp1').classList.toggle('on', s === 1);
     $('sp3').classList.toggle('on', s === 3);
   }
-  togglePause(): void { this.setSpeed(this.game.simSpeed === 0 ? 1 : 0); }
+  togglePause(): void { if (this.game) this.setSpeed(this.game.simSpeed === 0 ? 1 : 0); }
 
   // ---------- inspector ----------
-  private wireInspector(): void { $('closeInsp').onclick = () => this.game.select(null); }
+  private wireInspector(): void { $('closeInsp').onclick = () => this.game?.select(null); }
   showInspector(obj: any): void {
     $('inspector').style.display = obj ? 'block' : 'none';
     if (obj) this.renderInspector();
@@ -104,7 +114,7 @@ export class UI {
     return s || '<div class="invrow" style="color:var(--ink-dim)">empty</div>';
   }
   private renderInspector(): void {
-    const o = this.game.selected; if (!o) return;
+    const o = this.game?.selected; if (!o) return;
     $('inspName').textContent = o.def.name + (o.isSite ? ' — site' : '');
     $('inspSub').textContent = o.def.desc || '';
     let body = '';
@@ -139,7 +149,7 @@ export class UI {
     h3.onclick = () => { this.unitsOpen = false; panel.style.display = 'none'; toggle.style.display = 'block'; };
   }
   private renderUnits(): void {
-    if (!this.unitsOpen) return;
+    if (!this.unitsOpen || !this.game) return;
     let s = '';
     for (const u of this.game.units) {
       const hcol = u.hunger > 50 ? 'var(--good)' : u.hunger > 25 ? 'var(--accent)' : 'var(--bad)';
@@ -157,6 +167,7 @@ export class UI {
 
   /** Periodic refresh from the game loop. */
   tick(): void {
+    if (!this.game) return;
     this.refreshResbar();
     this.renderUnits();
     if (this.game.selected) this.renderInspector();

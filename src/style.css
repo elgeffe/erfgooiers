@@ -24,6 +24,10 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 #speedctl{display:flex;gap:4px;}
 #speedctl button{background:var(--panel2);color:var(--ink-dim);border:1px solid rgba(255,255,255,.08);border-radius:5px;width:34px;height:26px;cursor:pointer;font-weight:700;font-size:12px;}
 #speedctl button.on{background:var(--accent);color:#241a0e;border-color:var(--accent);}
+#runctl{display:flex;gap:4px;}
+#runctl button{background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.08);border-radius:5px;height:26px;padding:0 10px;cursor:pointer;font-weight:600;font-size:12px;}
+#runctl #btnDebugWin{background:rgba(143,191,107,.25);border-color:var(--good);color:#d6f0bf;}
+#runctl button:hover{border-color:var(--accent);}
 /* ---------- build menu ---------- */
 #buildmenu{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:6px;align-items:flex-end;background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:10px;padding:8px;box-shadow:0 6px 24px rgba(0,0,0,.5);max-width:min(96vw, calc(100vw - 200px));}
 .bcard{width:74px;background:var(--panel2);border:1px solid rgba(255,255,255,.07);border-radius:7px;padding:6px 4px 5px;cursor:pointer;text-align:center;transition:transform .08s, border-color .08s;user-select:none;}
@@ -70,7 +74,7 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 @keyframes tin{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:none;}}
 #hint{position:absolute;bottom:118px;left:50%;transform:translateX(-50%);color:var(--ink-dim);font-size:11.5px;background:rgba(26,20,16,.75);padding:4px 12px;border-radius:6px;pointer-events:none;display:none;}
 /* ---------- intro ---------- */
-#intro{position:absolute;inset:0;background:rgba(15,11,8,.72);display:flex;align-items:center;justify-content:center;z-index:20;}
+#intro{position:absolute;inset:0;background:rgba(15,11,8,.72);display:none;align-items:center;justify-content:center;z-index:30;}
 #introCard{width:430px;background:var(--panel);border:1px solid rgba(217,164,65,.4);border-radius:14px;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.6);}
 #introCard h1{font-size:22px;color:var(--accent);margin-bottom:4px;display:flex;align-items:center;gap:10px;}
 #introCard .tag{color:var(--ink-dim);font-size:12px;margin-bottom:14px;}
@@ -79,3 +83,18 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 #introCard li .k{color:var(--accent);font-weight:700;flex:none;width:78px;}
 #introCard button{width:100%;background:var(--accent);color:#241a0e;border:none;border-radius:8px;padding:10px;font-size:14px;font-weight:700;cursor:pointer;}
 #introCard button:hover{background:#e8b855;}
+/* ---------- full-screen menu / shop / summary ---------- */
+#hud{display:none;}
+.screen{position:absolute;inset:0;background:radial-gradient(120% 120% at 50% 0%,rgba(40,30,20,.86),rgba(15,11,8,.94));display:none;align-items:center;justify-content:center;z-index:25;}
+.screen .card{width:440px;max-width:92vw;background:var(--panel);border:1px solid rgba(217,164,65,.4);border-radius:14px;padding:28px 30px;box-shadow:0 20px 60px rgba(0,0,0,.6);text-align:center;}
+.screen .card h1{font-size:26px;color:var(--accent);margin-bottom:6px;display:flex;align-items:center;justify-content:center;gap:10px;}
+.screen .card .tag{color:var(--ink-dim);font-size:12.5px;line-height:1.5;margin-bottom:16px;}
+.screen .metaline{font-size:12.5px;color:var(--ink);background:rgba(217,164,65,.1);border:1px solid rgba(217,164,65,.28);border-radius:8px;padding:8px 12px;margin-bottom:18px;}
+.screen .metaline b{color:var(--accent);}
+.screen .btns{display:flex;flex-direction:column;gap:9px;}
+.screen .btns button{background:var(--accent);color:#241a0e;border:none;border-radius:8px;padding:11px;font-size:14px;font-weight:700;cursor:pointer;}
+.screen .btns button:hover{background:#e8b855;}
+.screen .btns button.ghost{background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.1);}
+.screen .btns button.ghost:hover{background:#4a3823;}
+.screen .btns button.danger{background:transparent;color:var(--bad);border:1px solid rgba(201,107,74,.5);font-weight:600;font-size:12.5px;padding:8px;}
+.screen .btns button.danger:hover{background:rgba(201,107,74,.15);}

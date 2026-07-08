@@ -15,6 +15,7 @@ const FWD = new THREE.Vector3(-1, 0, -1).normalize();
  * the build rotation; drives the View's ghost/road cursor.
  */
 export class Controls {
+  private game: Game | null = null;
   private mode: Mode = null;
   private buildRot = 0;
   private ghostTile: { x: number; y: number } | null = null;
@@ -25,7 +26,7 @@ export class Controls {
   private roadPainting = false;
   private demoDragging = false;
 
-  constructor(private readonly game: Game, private readonly view: View, private readonly ui: UI) {
+  constructor(private readonly view: View, private readonly ui: UI) {
     const canvas = this.view.renderer.domElement;
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('pointerdown', e => this.onDown(e));
@@ -34,6 +35,12 @@ export class Controls {
     canvas.addEventListener('wheel', e => { e.preventDefault(); this.view.zoom(e.deltaY > 0 ? 1.1 : 0.9); }, { passive: false });
     addEventListener('keydown', e => this.onKey(e));
     addEventListener('keyup', e => { this.keys[e.key.toLowerCase()] = false; });
+  }
+
+  /** Bind to a level's Game; clears any active build mode. */
+  setGame(game: Game): void {
+    this.game = game;
+    this.setMode(null);
   }
 
   setMode(m: Mode): void {
@@ -54,7 +61,7 @@ export class Controls {
   }
 
   private refreshGhost(tx: number, ty: number): void {
-    if (!this.mode || this.mode.type !== 'build') return;
+    if (!this.game || !this.mode || this.mode.type !== 'build') return;
     const key = this.mode.key;
     this.view.showGhost(DEFS[key], key, tx, ty, this.buildRot, this.game.canPlace(key, tx, ty, this.buildRot));
     this.ghostTile = { x: tx, y: ty };
@@ -64,7 +71,7 @@ export class Controls {
   private onDown(e: PointerEvent): void {
     this.lastMouse = { x: e.clientX, y: e.clientY };
     if (e.button === 2 || e.button === 1) { this.dragging = true; return; }
-    if (e.button !== 0) return;
+    if (e.button !== 0 || !this.game) return;
     const t = this.view.tileAt(e.clientX, e.clientY);
     if (!t) return;
     const m = this.mode;
@@ -83,8 +90,8 @@ export class Controls {
     }
     this.lastMouse = { x: e.clientX, y: e.clientY };
     const m = this.mode;
-    if (this.roadPainting) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.game.paintRoad(t.x, t.y); }
-    if (this.demoDragging) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.game.demolishAt(t.x, t.y, true); }
+    if (this.game && this.roadPainting) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.game.paintRoad(t.x, t.y); }
+    if (this.game && this.demoDragging) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.game.demolishAt(t.x, t.y, true); }
     if (m && (m.type === 'road' || m.type === 'demolish')) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.view.showRoadCursor(t.x, t.y, m.type); else this.view.hideRoadCursor(); }
     if (m && m.type === 'build') { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.refreshGhost(t.x, t.y); }
   }
@@ -92,7 +99,7 @@ export class Controls {
   // ---------- keyboard ----------
   private onKey(e: KeyboardEvent): void {
     this.keys[e.key.toLowerCase()] = true;
-    if (e.key === 'Escape') { this.setMode(null); this.game.select(null); }
+    if (e.key === 'Escape') { this.setMode(null); this.game?.select(null); }
     if ((e.key === 'r' || e.key === 'R') && this.mode && this.mode.type === 'build') {
       this.buildRot = (this.buildRot + 1) % 4;
       if (this.ghostTile) this.refreshGhost(this.ghostTile.x, this.ghostTile.y);
