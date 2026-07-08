@@ -127,6 +127,7 @@ export class AudioEngine {
   private mood: Mood = MOOD_MAJOR;        // mood the current bar is playing in
   private pendingMood: Mood = MOOD_MAJOR; // mood to switch to at the next bar
   private activeProg = MOOD_MAJOR.prog;   // the chosen progression for this play
+  private dynamic = false;                // sandbox: drift through the moods over time
 
   constructor() {
     this.muted = localStorage.getItem(MUTE_KEY) === '1';
@@ -144,6 +145,13 @@ export class AudioEngine {
     // If nothing is playing yet, adopt it straight away.
     if (!this.timer) { this.mood = this.pendingMood; this.activeProg = pickProg(this.mood); }
   }
+
+  /**
+   * Sandbox mode: let the score drift through every mood tier over time so a
+   * long free-build session slowly evolves from sunlit major to urgent minor
+   * and back, rather than sitting on one texture.
+   */
+  setDynamic(on: boolean): void { this.dynamic = on; }
 
   /** Create the context on the first user gesture and (if unmuted) start music. */
   unlock(): void {
@@ -215,6 +223,10 @@ export class AudioEngine {
     // Bars are long and overlapping, so schedule one whole bar a little ahead
     // of the audio clock and let its sustained voices ring across the next.
     while (this.nextNote < ctx.currentTime + 0.4) {
+      // Sandbox: every 4 bars drift to the next mood tier, cycling endlessly.
+      if (this.dynamic && this.step % 4 === 0) {
+        this.pendingMood = MOODS[((this.step / 4) | 0) % MOODS.length];
+      }
       // Adopt any queued mood change at the bar boundary so shifts glide in.
       if (this.pendingMood !== this.mood) {
         this.mood = this.pendingMood;

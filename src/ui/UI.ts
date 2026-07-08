@@ -179,9 +179,16 @@ export class UI {
     // fires on press and survives re-renders.
     $('inspBody').addEventListener('pointerdown', e => {
       const t = e.target as HTMLElement;
-      if (!t || !t.closest('#plotBtn')) return;
       const o = this.game?.selected;
-      if (o && o.def && o.def.fields) { audio.play('click'); this.onMode({ type: 'plot', building: o }); }
+      if (t && t.closest('#plotBtn')) {
+        if (o && o.def && o.def.fields) { audio.play('click'); this.onMode({ type: 'plot', building: o }); }
+        return;
+      }
+      const trainBtn = t && t.closest('[data-train]') as HTMLElement | null;
+      if (trainBtn && o && o.def && (o.def.military || o.def.trainer)) {
+        this.game!.trainUnit(o, trainBtn.dataset.train!);
+        this.renderInspector();
+      }
     });
   }
   showInspector(obj: any): void {
@@ -220,7 +227,7 @@ export class UI {
     } else if (o.def.store) {
       body += '<div class="sect">Stock</div>' + this.invRowsHTML(o.stock);
     } else {
-      if (!o.active) body += '<div class="hnote">Waiting for worker to arrive…</div>';
+      if (!o.active) body += o.def.worker ? '<div class="hnote">Waiting for a trained villager to staff it…</div>' : '<div class="hnote">Waiting for worker to arrive…</div>';
       if (o.def.recipe) {
         body += `<div class="sect">Production</div><div class="bar"><div style="width:${Math.round(o.prog * 100)}%"></div></div>`;
         body += '<div class="sect">Inputs</div>' + this.invRowsHTML(o.inp);
@@ -228,7 +235,15 @@ export class UI {
       } else if (o.def.gather) {
         body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
       } else if (o.def.tavern) {
-        body += `<div class="sect">Provisions (feeds workers within ${o.def.tavern.range} tiles)</div>` + this.invRowsHTML(o.inp);
+        const tv = o.def.tavern;
+        body += `<div class="sect">Provisions (any food · serves up to ${tv.capacity} workers)</div>` + this.invRowsHTML(o.inp);
+        const fed: any[] = o.fedUnits || [];
+        body += `<div class="sect">Feeding now (${fed.length}/${tv.capacity})</div>`;
+        if (fed.length) {
+          for (const u of fed) body += `<div class="invrow"><div class="dot" style="background:#${u.colorHex.toString(16).padStart(6, '0')};border-radius:50%"></div>${u.roleName}<b style="font-weight:400;color:var(--ink-dim);font-size:11px">${u.status}</b></div>`;
+        } else {
+          body += '<div class="invrow" style="color:var(--ink-dim)">no one is dining right now</div>';
+        }
       }
       if (o.def.fields) {
         const cap = o.def.plots ?? 8;
@@ -238,6 +253,19 @@ export class UI {
           : '<div class="hnote">Plot limit reached.</div>';
       }
       if (o.worker) body += `<div class="sect">Worker</div><div class="invrow"><div class="dot" style="background:#${o.def.wcolor.toString(16).padStart(6, '0')};border-radius:50%"></div>${o.worker.roleName}<b style="font-weight:400;color:var(--ink-dim);font-size:11px">${o.worker.status}</b></div>`;
+      if (o.def.military || o.def.trainer) {
+        const mil = o.def.military || o.def.trainer;
+        const costStr = Object.entries(mil.cost).map(([k, n]) => `${n} ${ITEMS[k as keyof typeof ITEMS].name.toLowerCase()}`).join(' + ') || 'free';
+        body += `<div class="sect">Train (${costStr} each)</div>`;
+        if (!o.active) body += '<div class="hnote">Building still being raised…</div>';
+        else {
+          for (const kind of mil.trains) body += `<button class="inspbtn" data-train="${kind}">+ ${kind[0].toUpperCase() + kind.slice(1)}</button>`;
+          const q = o.trainQ || [];
+          body += `<div class="sect">Training queue (${q.length})</div>`;
+          if (q.length) { body += `<div class="bar"><div style="width:${Math.round((o.prog || 0) * 100)}%"></div></div>`; body += `<div class="invrow">${q.map((k: string) => k).join(', ')}</div>`; }
+          else body += '<div class="invrow" style="color:var(--ink-dim)">idle</div>';
+        }
+      }
     }
     $('inspBody').innerHTML = body;
   }

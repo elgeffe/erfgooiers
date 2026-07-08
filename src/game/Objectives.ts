@@ -1,11 +1,13 @@
 import type { ItemKey } from '../types';
+import { UNITS, type UnitKind } from '../data/units';
 import type { Game } from './Game';
 
 /**
  * Level goals as data. Evaluated each tick against the live Game; `produce` and
  * `collect` count events (production, gold-pile pickups) rather than net stock,
  * so consuming an item later doesn't undo progress. `stock` checks current
- * holdings and can require several goods at once.
+ * holdings and can require several goods at once. Combat goals (`survive`,
+ * `slay`, `destroy`) count kills / cleared waves / razed enemy buildings.
  */
 export interface StockReq { item: ItemKey; n: number; }
 
@@ -13,7 +15,10 @@ export type ObjectiveDef =
   | { kind: 'stock'; reqs: StockReq[] }
   | { kind: 'produce'; item: ItemKey; n: number }
   | { kind: 'produceMulti'; reqs: StockReq[] }
-  | { kind: 'collect'; n: number };
+  | { kind: 'collect'; n: number }
+  | { kind: 'survive'; waves: number }
+  | { kind: 'slay'; unit: UnitKind; n: number }
+  | { kind: 'destroy'; n: number };
 
 const ITEM_LABEL: Record<string, string> = {
   trunk: 'Trunk', timber: 'Timber', stone: 'Stone', wheat: 'Wheat', flour: 'Flour',
@@ -27,6 +32,9 @@ export interface ObjectiveStatus { done: boolean; label: string; ratio: number; 
 export class Objective {
   private readonly produced: Record<string, number> = {};   // production events per item
   private collected = 0;  // gold piles picked up (collect kind)
+  private readonly kills: Record<string, number> = {};      // enemy/wild kills per unit kind
+  private wavesCleared = 0;
+  private structures = 0; // enemy buildings destroyed
 
   constructor(readonly def: ObjectiveDef) {}
 
@@ -40,12 +48,27 @@ export class Objective {
     if (this.def.kind === 'collect') this.collected++;
   }
 
+  /** Fired by Game when a unit dies (role = its unit kind, faction = its side). */
+  onKill(role: string, faction: string): void {
+    if (faction === 'player') return;
+    this.kills[role] = (this.kills[role] || 0) + 1;
+  }
+
+  /** Fired by Game when a spawned raid wave is fully wiped out. */
+  onWaveCleared(): void { this.wavesCleared++; }
+
+  /** Fired by Game when a hostile building is razed. */
+  onStructureDestroyed(faction: string): void { if (faction !== 'player') this.structures++; }
+
   /** One-line brief for the objective card. */
   brief(): string {
     const d = this.def;
     if (d.kind === 'stock') return 'Stock ' + d.reqs.map(r => `${r.n} ${ITEM_LABEL[r.item].toLowerCase()}`).join(' + ');
     if (d.kind === 'produce') return `Produce ${d.n} ${ITEM_LABEL[d.item].toLowerCase()}`;
     if (d.kind === 'produceMulti') return 'Produce ' + d.reqs.map(r => `${r.n} ${ITEM_LABEL[r.item].toLowerCase()}`).join(' + ');
+    if (d.kind === 'survive') return `Survive ${d.waves} raid wave${d.waves > 1 ? 's' : ''}`;
+    if (d.kind === 'slay') return `Slay ${d.n} ${UNITS[d.unit].name.toLowerCase()}${d.n > 1 ? 's' : ''}`;
+    if (d.kind === 'destroy') return `Destroy ${d.n} enemy ${d.n > 1 ? 'strongholds' : 'stronghold'}`;
     return `Collect ${d.n} gold piles`;
   }
 
@@ -79,7 +102,20 @@ export class Objective {
       }
       return { done, label: parts.join(' · '), ratio: need ? have / need : 1 };
     }
-    const c = Math.min(d.n, this.collected);
-    return { done: this.collected >= d.n, label: `Gold piles ${c}/${d.n}`, ratio: c / d.n };
+    if (d.kind === 'collect') {
+      const c = Math.min(d.n, this.collected);
+      return { done: this.collected >= d.n, label: `Gold piles ${c}/${d.n}`, ratio: c / d.n };
+    }
+    if (d.kind === 'survive') {
+      const w = Math.min(d.waves, this.wavesCleared);
+      return { done: this.wavesCleared >= d.waves, label: `Waves survived ${w}/${d.waves}`, ratio: w / d.waves };
+    }
+    if (d.kind === 'slay') {
+      const k = Math.min(d.n, this.kills[d.unit] || 0);
+      return { done: (this.kills[d.unit] || 0) >= d.n, label: `${UNITS[d.unit].name} slain ${k}/${d.n}`, ratio: k / d.n };
+    }
+    // destroy
+    const s = Math.min(d.n, this.structures);
+    return { done: this.structures >= d.n, label: `Strongholds razed ${s}/${d.n}`, ratio: s / d.n };
   }
 }

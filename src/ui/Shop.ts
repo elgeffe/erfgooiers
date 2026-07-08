@@ -15,6 +15,8 @@ export class Shop {
   private rng!: Rng;
   private slots: UpgradeDef[] = [];
   private rerolls = 0;
+  private freeReroll = false;      // Heritage unlock: first reroll each visit is free
+  private usedFreeReroll = false;
 
   constructor(private readonly onContinue: () => void) {
     ($('btnShopContinue') as HTMLButtonElement).onclick = () => this.onContinue();
@@ -22,10 +24,12 @@ export class Shop {
   }
 
   /** Show the shop for the run's just-cleared level. */
-  open(run: RunState): void {
+  open(run: RunState, freeReroll = false): void {
     this.run = run;
     this.rng = new Rng(levelSeed(run.runSeed, run.levelIndex) ^ 0x5f356495);
     this.rerolls = 0;
+    this.freeReroll = freeReroll;
+    this.usedFreeReroll = false;
     this.slots = this.sample(3);
     this.render();
   }
@@ -42,11 +46,15 @@ export class Shop {
     return out;
   }
 
-  private rerollCost(): number { return 5 + this.rerolls * 4 + (this.run.levelIndex - 1) * 2; }
+  private rerollCost(): number {
+    if (this.freeReroll && !this.usedFreeReroll) return 0;
+    return 5 + this.rerolls * 4 + (this.run.levelIndex - 1) * 2;
+  }
 
   private reroll(): void {
     const cost = this.rerollCost();
     if (this.run.gold < cost) return;
+    if (cost === 0) this.usedFreeReroll = true;
     this.run.gold -= cost;
     this.rerolls++;
     this.slots = this.sample(3);
