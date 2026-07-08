@@ -57,7 +57,18 @@ export class Modifiers {
   }
 
   /** Walk speed (tiles/s) for a unit, before the road bonus. */
-  unitSpeed(u: Unit): number { return BASE_SPEED * this.accMult('unitSpeed', u.role) * hungerFactor(u.hunger); }
+  unitSpeed(u: Unit): number { return (u.spd || BASE_SPEED) * this.accMult('unitSpeed', u.role) * hungerFactor(u.hunger); }
+
+  /** Combat stat multiplier for a unit kind — upgrades/mutators scale these at spawn. */
+  combatMult(stat: 'hp' | 'damage' | 'speed' | 'range', kind: string): number {
+    return this.accMult('combat:' + stat, kind);
+  }
+
+  /** Multiplier on a building's max HP (castle-toughness upgrades, enemy mutators). */
+  buildingHpMult(faction: string): number { return this.accMult('buildingHp', faction); }
+
+  /** Multiplier on the player's castle HP (Heritage 'Stout Castle'). */
+  castleHpMult(): number { return this.accMult('castleHp'); }
 
   /** Seconds of laborer work to raise a building. */
   buildTime(): number { return BUILD_TIME * this.accMult('buildTime'); }

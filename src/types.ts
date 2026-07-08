@@ -6,24 +6,38 @@ export type ItemKey =
   | 'grape' | 'wine' | 'meat' | 'sausage' | 'fish';
 
 export type BuildingKey =
-  | 'storehouse' | 'woodcutter' | 'forester' | 'sawmill' | 'quarry'
+  | 'storehouse' | 'guildhall' | 'woodcutter' | 'forester' | 'sawmill' | 'quarry'
   | 'farm' | 'mill' | 'bakery' | 'goldmine' | 'coalmine' | 'mint'
-  | 'vineyard' | 'winery' | 'pigfarm' | 'butcher' | 'tavern' | 'fishery';
+  | 'vineyard' | 'winery' | 'pigfarm' | 'butcher' | 'tavern' | 'fishery'
+  | 'barracks' | 'banditcamp' | 'watchtower' | 'enemycastle';
 
 export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'field' | 'fish';
+
+/** Which side a unit or building belongs to. Economy workers are always 'player'. */
+export type Faction = 'player' | 'enemy' | 'wild';
+
+/** A player-issued command to a controllable unit (hero / soldiers). */
+export interface UnitOrder {
+  type: 'move' | 'attack' | 'attackMove';
+  x: number; y: number;
+  foe: Unit | null;
+}
 
 /** Purely decorative ground scatter (no gameplay effect). */
 export type DecoKind = 'lavender' | 'flowers' | 'bush' | 'reed' | 'lily';
 
 /** Which mesh builder in render/models.ts renders a building. */
-export type ModelKind = 'cottage' | 'windmill' | 'farm' | 'barn' | 'mine';
+export type ModelKind = 'cottage' | 'windmill' | 'farm' | 'barn' | 'mine' | 'tavern';
 
 export interface ItemDef { name: string; color: string; hex: number; }
 
 export interface GatherDef { node: NodeKind; out: ItemKey | null; time: number; range: number; }
 export interface RecipeDef { inp: Partial<Record<ItemKey, number>>; out: ItemKey; time: number; }
-/** A tavern serves a food good, refilling the hunger of nearby workers. */
-export interface TavernDef { food: ItemKey; range: number; time: number; }
+/** A tavern feeds nearby workers any of several foods; capacity caps how many it serves. */
+export interface TavernDef { foods: ItemKey[]; capacity: number; time: number; }
+
+/** A barracks trains military units for a resource cost over time. */
+export interface MilitaryDef { trains: string[]; time: number; cost: Partial<Record<ItemKey, number>>; }
 
 export interface BuildingDef {
   name: string;
@@ -41,6 +55,9 @@ export interface BuildingDef {
   plots?: number;              // max crop/pasture plots the player may attach
   worker?: string;
   wcolor?: number;
+  hp?: number;                 // max structure HP (combat); defaults to 100
+  military?: MilitaryDef;      // barracks: trainable military units
+  trainer?: MilitaryDef;       // guild hall: trainable civilian workers
 }
 
 export interface Coord { x: number; y: number; }
@@ -80,7 +97,12 @@ export interface Building {
   fieldsList: Coord[];
   mesh: THREE.Group;
   name: string;
+  faction: Faction;
+  hp: number;
+  maxHp: number;
   stock?: Record<string, number>;
+  fedUnits?: Unit[];           // taverns: who was served last cycle (for the inspector)
+  trainQ?: string[];           // barracks: queued unit kinds being trained
   removed?: boolean;
   isSite?: false;
 }
@@ -99,6 +121,7 @@ export interface Site {
   frame: THREE.Group;
   isSite: true;
   name: string;
+  priority?: boolean;          // player-flagged: get materials & a builder first
   removed?: boolean;
 }
 
@@ -123,6 +146,22 @@ export interface Unit {
   hunger: number;
   bob: number;
   status: string;
+  // ---- combat (economy workers use defaults: player faction, dmg 0) ----
+  faction: Faction;
+  spd: number;          // base walk speed (tiles/s)
+  hp: number;
+  maxHp: number;
+  dmg: number;          // damage per hit (0 = non-combatant)
+  range: number;        // attack reach in tiles
+  atkCd: number;        // seconds between attacks
+  atkTimer: number;     // cooldown remaining
+  dead: boolean;        // flagged this tick, swept after the update pass
+  raider: boolean;      // enemy that marches on the castle (vs. camp guards that hold)
+  foe: Unit | null;     // current combat target (unit)
+  foeB: Building | null; // current combat target (building)
+  order: UnitOrder | null;
+  special: number;      // boss ability cooldown (dragon stomp)
+  hpBar: THREE.Object3D | null;
 }
 
 /** UI/Controls interaction mode. */

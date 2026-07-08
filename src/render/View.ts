@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { uiRng } from '../engine/rng';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
-import { makeBuilding, makeDeco, makeDeposit, makeFieldCrop, makeFish, makePickup, makePig, makeScaffold, makeTree, makeUnit } from './models';
+import { makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFish, makePickup, makePig, makeScaffold, makeTree, makeUnit } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -67,6 +67,22 @@ export class View {
   private readonly mm: HTMLCanvasElement;
   private readonly mmx: CanvasRenderingContext2D;
 
+  // ---------- gore layer (cosmetic; bodies linger, then fade) ----------
+  private readonly goreGroup = new THREE.Group();
+  private readonly goreBodies: { obj: THREE.Mesh; age: number; mat: THREE.Material }[] = [];
+  private readonly MAX_BODIES = 300;
+  private readonly CORPSE_LIFE = 150;   // seconds a body lies before it starts fading (~2.5 min)
+  private readonly CORPSE_FADE = 20;    // seconds to fade out once its time is up
+
+  // ---------- unit selection rings (pooled, persist across levels) ----------
+  private readonly selRings: THREE.Mesh[] = [];
+  private readonly selRingGeo = new THREE.RingGeometry(0.32, 0.44, 18);
+  private readonly selRingMat = new THREE.MeshBasicMaterial({ color: 0x46c256, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+
+  // ---------- HP bars (pooled, billboarded, persist across levels) ----------
+  private readonly hpBarGroup = new THREE.Group();
+  private readonly hpBars: { group: THREE.Group; fill: THREE.Mesh }[] = [];
+
   constructor(canvas: HTMLCanvasElement, minimap: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -99,6 +115,9 @@ export class View {
     this.roadCursor.rotation.x = -Math.PI / 2; this.roadCursor.position.y = 0.03; this.roadCursor.visible = false;
     this.scene.add(this.roadCursor);
     this.scene.add(this.ghost); this.ghost.visible = false;
+    this.scene.add(this.goreGroup);
+    this.scene.add(this.hpBarGroup);
+    this.scene.add(this.goreGroup);
 
     // minimap navigation
     this.mm = minimap;
@@ -156,6 +175,48 @@ export class View {
     this.lakeTiles = [];
     this.millSails.length = 0;
     this.ghostKey = null;
+    this.clearGore();
+  }
+
+  // =====================================================================
+  //  Gore layer
+  // =====================================================================
+  /** A hit no longer sprays blood — kept as a no-op so the callback stays wired. */
+  spawnHurt(_x: number, _z: number): void { /* bodies only; no blood pools */ }
+
+  /** A persistent corpse where a unit died; it lingers, then fades (see ageGore). */
+  spawnCorpse(x: number, z: number, colorHex: number): void {
+    const body = makeCorpse(colorHex);          // single merged mesh, its own opaque material
+    body.position.set(x, 0, z);
+    body.rotation.y = rnd() * Math.PI * 2;
+    this.goreGroup.add(body);
+    this.goreBodies.push({ obj: body, age: 0, mat: body.material as THREE.Material });
+    if (this.goreBodies.length > this.MAX_BODIES) this.cullBody(this.goreBodies.shift()!);
+  }
+
+  /** Age corpses in real time; keep them opaque until their time is up, then fade & cull. */
+  private ageGore(dt: number): void {
+    for (let i = this.goreBodies.length - 1; i >= 0; i--) {
+      const c = this.goreBodies[i];
+      c.age += dt;
+      if (c.age <= this.CORPSE_LIFE) continue;
+      const k = 1 - (c.age - this.CORPSE_LIFE) / this.CORPSE_FADE;
+      if (k <= 0) { this.cullBody(c); this.goreBodies.splice(i, 1); continue; }
+      const m = c.mat as THREE.Material & { opacity: number };
+      if (!m.transparent) { m.transparent = true; m.needsUpdate = true; }  // only now joins the transparent pass
+      m.opacity = k;
+    }
+  }
+
+  private cullBody(c: { obj: THREE.Mesh; mat: THREE.Material }): void {
+    this.goreGroup.remove(c.obj);
+    c.obj.geometry.dispose();
+    c.mat.dispose();
+  }
+
+  private clearGore(): void {
+    for (const c of this.goreBodies) this.cullBody(c);
+    this.goreBodies.length = 0;
   }
 
   // =====================================================================
@@ -201,6 +262,64 @@ export class View {
     const t = -rc.ray.origin.y / rc.ray.direction.y;
     const p = rc.ray.origin.clone().add(rc.ray.direction.clone().multiplyScalar(t));
     return { x: p.x, z: p.z };
+  }
+
+  /** World-space point → screen pixels (for box-selection hit tests). */
+  worldToScreen(x: number, y: number, z: number): { x: number; y: number } {
+    const v = new THREE.Vector3(x, y, z).project(this.camera);
+    return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight };
+  }
+
+  /** Show green selection rings under the given units (pooled; persists across levels). */
+  showSelection(units: Unit[]): void {
+    while (this.selRings.length < units.length) {
+      const r = new THREE.Mesh(this.selRingGeo, this.selRingMat);
+      r.rotation.x = -Math.PI / 2; this.scene.add(r); this.selRings.push(r);
+    }
+    for (let i = 0; i < this.selRings.length; i++) {
+      const r = this.selRings[i];
+      if (i < units.length) { r.visible = true; const p = units[i].mesh.position; r.position.set(p.x, 0.06, p.z); }
+      else r.visible = false;
+    }
+  }
+
+  /** Billboarded HP bars over damaged fighters and enemy/damaged buildings (pooled). */
+  updateHealthBars(units: Unit[], buildings: Building[]): void {
+    let i = 0;
+    const use = (wx: number, wy: number, wz: number, ratio: number): void => {
+      let bar = this.hpBars[i];
+      if (!bar) { bar = this.makeHpBar(); this.hpBarGroup.add(bar.group); this.hpBars.push(bar); }
+      bar.group.visible = true;
+      bar.group.position.set(wx, wy, wz);
+      bar.group.quaternion.copy(this.camera.quaternion);
+      const r = Math.max(0, Math.min(1, ratio));
+      bar.fill.scale.x = Math.max(0.001, r);
+      bar.fill.position.x = -0.34 * (1 - r);
+      (bar.fill.material as THREE.MeshBasicMaterial).color.setHex(r > 0.5 ? 0x46c256 : r > 0.25 ? 0xd9a441 : 0xc96b4a);
+      i++;
+    };
+    for (const u of units) {
+      if (u.dead || (u.dmg <= 0 && u.faction === 'player') || u.hp >= u.maxHp) continue;
+      const p = u.mesh.position, s = u.mesh.scale.y || 1;
+      use(p.x, p.y + 0.95 * s + 0.2, p.z, u.hp / u.maxHp);
+    }
+    for (const b of buildings) {
+      if (b.removed) continue;
+      const enemy = b.faction !== 'player';
+      if (!enemy && b.hp >= b.maxHp) continue;   // show player buildings only when hurt
+      use(this.world.wx(b.x) + 0.5, 2.3, this.world.wz(b.y) + 0.5, b.hp / b.maxHp);
+    }
+    for (; i < this.hpBars.length; i++) this.hpBars[i].group.visible = false;
+  }
+
+  private makeHpBar(): { group: THREE.Group; fill: THREE.Mesh } {
+    const g = new THREE.Group(); g.renderOrder = 999;
+    const bg = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.11), new THREE.MeshBasicMaterial({ color: 0x140f0a, depthTest: false, transparent: true, opacity: 0.85 }));
+    const fill = new THREE.Mesh(new THREE.PlaneGeometry(0.68, 0.075), new THREE.MeshBasicMaterial({ color: 0x46c256, depthTest: false }));
+    (bg.material as THREE.Material).depthWrite = false; (fill.material as THREE.Material).depthWrite = false;
+    fill.position.z = 0.001;
+    g.add(bg, fill);
+    return { group: g, fill };
   }
 
   // =====================================================================
@@ -495,19 +614,39 @@ export class View {
     this.worldGroup.add(mill);
     this.millSails.push(sails);
 
-    // soft clouds drifting high above, spread wide around the board
+    // soft clouds drifting high above, spread wide around the board. Most are
+    // plain puffballs, but a sparse few take (rough) animal shapes for fun.
     const cloudSpan = boardR * 2 + 30;
     this.cloudBound = cloudSpan / 2;
     const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+    const mk = (c: THREE.Group, x: number, z: number, s: number, y = 0): void => {
+      const p = new THREE.Mesh(new THREE.SphereGeometry(s, 8, 6), cloudMat);
+      p.position.set(x, y + rnd() * 0.25, z); p.scale.y = 0.6; c.add(p);
+    };
+    // each builder sketches an animal silhouette in the horizontal plane
+    const animals: Array<(c: THREE.Group) => void> = [
+      c => { mk(c, -1.2, 0, 0.5); mk(c, 0, 0, 1.3); mk(c, 1.5, 0, 0.95); mk(c, 1.85, -0.5, 0.42); mk(c, 2.15, -0.85, 0.32); mk(c, 1.85, 0.5, 0.42); mk(c, 2.15, 0.85, 0.32); }, // bunny
+      c => { mk(c, 0, 0, 1.25); mk(c, 1.45, 0, 0.85); mk(c, 1.7, -0.42, 0.3); mk(c, 1.7, 0.42, 0.3); mk(c, -1.3, 0.3, 0.4); mk(c, -1.75, 0.65, 0.32); }, // cat
+      c => { mk(c, 0, 0, 1.15); mk(c, 1.25, 0.1, 0.8); mk(c, 1.95, 0.1, 0.32); mk(c, -1.0, 0.2, 0.55, 0.2); }, // duck
+      c => { mk(c, 0.3, 0, 1.25); mk(c, -0.5, 0, 0.9); mk(c, -1.7, -0.5, 0.45); mk(c, -1.7, 0.5, 0.45); }, // fish
+      c => { mk(c, 0, 0, 1.5); mk(c, 1.6, 0, 1.0); mk(c, 2.3, 0.1, 0.5); mk(c, 2.75, 0.42, 0.4); mk(c, 3.05, 0.78, 0.3); mk(c, 1.3, -0.78, 0.5); mk(c, -1.5, 0, 0.55); }, // elephant
+      c => { mk(c, 0, 0, 1.25); mk(c, 1.55, 0, 0.85); mk(c, 2.15, 0, 0.4); mk(c, 1.4, -0.55, 0.4); mk(c, -1.4, 0.2, 0.4, 0.2); }, // dog
+    ];
     for (let i = 0; i < 8; i++) {
       const c = new THREE.Group();
-      const n = 3 + Math.floor(rnd() * 3);
-      for (let j = 0; j < n; j++) {
-        const puff = new THREE.Mesh(new THREE.SphereGeometry(1 + rnd() * 1.2, 8, 6), cloudMat);
-        puff.position.set((j - n / 2) * 1.5 + rnd(), rnd() * 0.6, rnd() * 1.4);
-        puff.scale.y = 0.6;
-        c.add(puff);
+      if (rnd() < 0.3) {
+        animals[Math.floor(rnd() * animals.length)](c);  // sparse: ~2–3 of 8 are critters
+      } else {
+        const n = 3 + Math.floor(rnd() * 3);
+        for (let j = 0; j < n; j++) {
+          const puff = new THREE.Mesh(new THREE.SphereGeometry(1 + rnd() * 1.2, 8, 6), cloudMat);
+          puff.position.set((j - n / 2) * 1.5 + rnd(), rnd() * 0.6, rnd() * 1.4);
+          puff.scale.y = 0.6;
+          c.add(puff);
+        }
       }
+      c.scale.setScalar(0.9 + rnd() * 0.5);
+      c.rotation.y = rnd() * Math.PI * 2;   // face a random way so critters vary
       c.position.set((rnd() - 0.5) * cloudSpan, 14 + rnd() * 6, (rnd() - 0.5) * cloudSpan);
       this.worldGroup.add(c);
       this.clouds.push(c);
@@ -529,6 +668,7 @@ export class View {
     for (const s of this.millSails) s.rotation.z += dt * 0.45;
     this.updatePigs(dt, buildings);
     this.updateFish(dt);
+    this.ageGore(dt);
   }
 
   /** Scatter cute fish across the lake's water tiles (not the small ponds). */

@@ -29,6 +29,8 @@ export class UI {
   private game: Game | null = null;
   private readonly resEls: Record<string, HTMLElement> = {};
   private unitsOpen = false;
+  private unitTab = 'all';
+  private lastTabsHTML = '';
 
   constructor() {
     $('logo').innerHTML = logoSVG(30);
@@ -179,9 +181,26 @@ export class UI {
     // fires on press and survives re-renders.
     $('inspBody').addEventListener('pointerdown', e => {
       const t = e.target as HTMLElement;
-      if (!t || !t.closest('#plotBtn')) return;
       const o = this.game?.selected;
-      if (o && o.def && o.def.fields) { audio.play('click'); this.onMode({ type: 'plot', building: o }); }
+      if (t && t.closest('#plotBtn')) {
+        if (o && o.def && o.def.fields) { audio.play('click'); this.onMode({ type: 'plot', building: o }); }
+        return;
+      }
+      if (t && t.closest('#prioBtn')) {
+        if (o && o.isSite) { this.game!.togglePriority(o); this.renderInspector(); }
+        return;
+      }
+      const trainBtn = t && t.closest('[data-train]') as HTMLElement | null;
+      if (trainBtn && o && o.def && (o.def.military || o.def.trainer)) {
+        this.game!.trainUnit(o, trainBtn.dataset.train!);
+        this.renderInspector();
+        return;
+      }
+      const cancelBtn = t && t.closest('[data-cancel]') as HTMLElement | null;
+      if (cancelBtn && o && o.def && (o.def.military || o.def.trainer)) {
+        this.game!.cancelTrain(o, parseInt(cancelBtn.dataset.cancel!, 10));
+        this.renderInspector();
+      }
     });
   }
   showInspector(obj: any): void {
@@ -217,10 +236,11 @@ export class UI {
       for (const k in o.needs) body += `<div class="invrow"><div class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color}"></div>${ITEMS[k as keyof typeof ITEMS].name}<b>${o.delivered[k] || 0} / ${o.needs[k]}</b></div>`;
       if (o.ready) body += `<div class="sect">Construction</div><div class="bar"><div style="width:${Math.round(o.progress * 100)}%"></div></div>`;
       else body += '<div class="hnote">Waiting for serfs to deliver materials…</div>';
+      body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize construction'}</button>`;
     } else if (o.def.store) {
       body += '<div class="sect">Stock</div>' + this.invRowsHTML(o.stock);
     } else {
-      if (!o.active) body += '<div class="hnote">Waiting for worker to arrive…</div>';
+      if (!o.active) body += o.def.worker ? '<div class="hnote">Waiting for a trained villager to staff it…</div>' : '<div class="hnote">Waiting for worker to arrive…</div>';
       if (o.def.recipe) {
         body += `<div class="sect">Production</div><div class="bar"><div style="width:${Math.round(o.prog * 100)}%"></div></div>`;
         body += '<div class="sect">Inputs</div>' + this.invRowsHTML(o.inp);
@@ -228,7 +248,15 @@ export class UI {
       } else if (o.def.gather) {
         body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
       } else if (o.def.tavern) {
-        body += `<div class="sect">Provisions (feeds workers within ${o.def.tavern.range} tiles)</div>` + this.invRowsHTML(o.inp);
+        const tv = o.def.tavern;
+        body += `<div class="sect">Provisions (any food · serves up to ${tv.capacity} workers)</div>` + this.invRowsHTML(o.inp);
+        const fed: any[] = o.fedUnits || [];
+        body += `<div class="sect">Feeding now (${fed.length}/${tv.capacity})</div>`;
+        if (fed.length) {
+          for (const u of fed) body += `<div class="invrow"><div class="dot" style="background:#${u.colorHex.toString(16).padStart(6, '0')};border-radius:50%"></div>${u.roleName}<b style="font-weight:400;color:var(--ink-dim);font-size:11px">${u.status}</b></div>`;
+        } else {
+          body += '<div class="invrow" style="color:var(--ink-dim)">no one is dining right now</div>';
+        }
       }
       if (o.def.fields) {
         const cap = o.def.plots ?? 8;
@@ -238,6 +266,26 @@ export class UI {
           : '<div class="hnote">Plot limit reached.</div>';
       }
       if (o.worker) body += `<div class="sect">Worker</div><div class="invrow"><div class="dot" style="background:#${o.def.wcolor.toString(16).padStart(6, '0')};border-radius:50%"></div>${o.worker.roleName}<b style="font-weight:400;color:var(--ink-dim);font-size:11px">${o.worker.status}</b></div>`;
+      if (o.def.military || o.def.trainer) {
+        const mil = o.def.military || o.def.trainer;
+        const costStr = Object.entries(mil.cost).map(([k, n]) => `${n} ${ITEMS[k as keyof typeof ITEMS].name.toLowerCase()}`).join(' + ') || 'free';
+        body += `<div class="sect">Train (${costStr} each)</div>`;
+        if (!o.active) body += '<div class="hnote">Building still being raised…</div>';
+        else {
+          for (const kind of mil.trains) body += `<button class="inspbtn" data-train="${kind}">+ ${kind[0].toUpperCase() + kind.slice(1)}</button>`;
+          const q = o.trainQ || [];
+          body += `<div class="sect">Training queue (${q.length})${q.length ? ' — click to cancel' : ''}</div>`;
+          if (q.length) {
+            body += `<div class="bar"><div style="width:${Math.round((o.prog || 0) * 100)}%"></div></div>`;
+            body += '<div class="tqueue">';
+            for (let i = 0; i < q.length; i++) {
+              const name = q[i][0].toUpperCase() + q[i].slice(1);
+              body += `<button class="tqchip${i === 0 ? ' active' : ''}" data-cancel="${i}" title="Cancel this order"><span>${i + 1}. ${name}</span> ✕</button>`;
+            }
+            body += '</div>';
+          } else body += '<div class="invrow" style="color:var(--ink-dim)">empty — queue units with the buttons above</div>';
+        }
+      }
     }
     $('inspBody').innerHTML = body;
   }
@@ -247,18 +295,54 @@ export class UI {
     const toggle = $('unitsToggle'), panel = $('unitpanel');
     toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : 'block'; this.renderUnits(); };
     document.addEventListener('keydown', e => { if (e.key === 'u') toggle.click(); });
-    const h3 = panel.querySelector('h3') as HTMLElement;
+    const h3 = $('unitTitle');
     h3.style.cursor = 'pointer'; h3.title = 'Click to collapse';
     h3.onclick = () => { this.unitsOpen = false; panel.style.display = 'none'; toggle.style.display = 'block'; };
+    $('unitTabs').addEventListener('click', e => {
+      const b = (e.target as HTMLElement).closest('.utab') as HTMLElement | null;
+      if (b) { this.unitTab = b.dataset.tab!; this.renderUnits(); }
+    });
   }
+
+  /** Which worker-panel tab a unit's role belongs to. */
+  private unitCat(role: string): 'serf' | 'villager' | 'laborer' | 'military' | 'specialist' {
+    if (role === 'serf') return 'serf';
+    if (role === 'villager') return 'villager';
+    if (role === 'laborer') return 'laborer';
+    if (role === 'soldier' || role === 'archer') return 'military';
+    return 'specialist';
+  }
+
   private renderUnits(): void {
     if (!this.unitsOpen || !this.game) return;
+    const players = this.game.units.filter(u => u.faction === 'player');
+    const counts: Record<string, number> = { all: players.length, serf: 0, villager: 0, laborer: 0, specialist: 0, military: 0 };
+    for (const u of players) counts[this.unitCat(u.role)]++;
+    $('unitTitle').textContent = `Workers · ${players.length}`;
+    const tabsDef: { id: string; label: string }[] = [
+      { id: 'all', label: 'All' },
+      { id: 'serf', label: 'Serfs' },
+      { id: 'laborer', label: 'Builders' },
+      { id: 'villager', label: 'Villagers' },
+      { id: 'specialist', label: 'Trades' },
+      { id: 'military', label: 'Army' },
+    ];
+    // fall back to All if the active tab emptied out
+    if (this.unitTab !== 'all' && counts[this.unitTab] === 0) this.unitTab = 'all';
+    let tabs = '';
+    for (const c of tabsDef) {
+      if (c.id !== 'all' && counts[c.id] === 0 && this.unitTab !== c.id) continue;
+      tabs += `<button class="utab${this.unitTab === c.id ? ' on' : ''}" data-tab="${c.id}">${c.label} <b>${counts[c.id]}</b></button>`;
+    }
+    if (tabs !== this.lastTabsHTML) { $('unitTabs').innerHTML = tabs; this.lastTabsHTML = tabs; }
+
+    const shown = this.unitTab === 'all' ? players : players.filter(u => this.unitCat(u.role) === this.unitTab);
     let s = '';
-    for (const u of this.game.units) {
+    for (const u of shown) {
       const hcol = u.hunger > 50 ? 'var(--good)' : u.hunger > 25 ? 'var(--accent)' : 'var(--bad)';
       s += `<div class="urow"><div class="dot" style="background:#${u.colorHex.toString(16).padStart(6, '0')}"></div><div class="info"><div class="rn">${u.roleName}</div><div class="st">${u.status}</div></div><div class="hbar" title="Hunger — feed workers at a Tavern to keep them fast"><div style="width:${Math.round(u.hunger)}%;background:${hcol}"></div></div></div>`;
     }
-    $('unitlist').innerHTML = s;
+    $('unitlist').innerHTML = s || '<div class="urow" style="color:var(--ink-dim);justify-content:center">none of this kind</div>';
   }
 
   // ---------- toasts ----------

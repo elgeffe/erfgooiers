@@ -2,7 +2,11 @@ import type { BuildingDef, BuildingKey } from '../types';
 
 export const DEFS: Record<BuildingKey, BuildingDef> = {
   storehouse: { name: 'Storehouse', desc: 'Stores every good', model: 'barn',
-    cost: {}, roof: 0x9a3b2e, wall: 0xcaa46e, store: true },
+    cost: {}, roof: 0x9a3b2e, wall: 0xcaa46e, store: true, hp: 500 },
+
+  guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & laborers)', model: 'cottage',
+    cost: { timber: 4, stone: 3 }, roof: 0x4a6a7a, wall: 0xcaa46e, accent: 0xffd24a, hp: 250,
+    trainer: { trains: ['villager', 'serf', 'laborer'], time: 5, cost: { bread: 1 } } },
 
   woodcutter: { name: "Woodcutter's Hut", desc: 'Chops nearby trees → trunks', model: 'cottage',
     cost: { timber: 2, stone: 1 }, roof: 0x6b4a2f, wall: 0xa07850,
@@ -60,21 +64,34 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: { timber: 2, stone: 2 }, roof: 0x7a3320, wall: 0xc4a075, accent: 0x9c4a2f,
     recipe: { inp: { meat: 1 }, out: 'sausage', time: 6 }, worker: 'Butcher', wcolor: 0x9c4a2f },
 
-  tavern: { name: 'Tavern', desc: 'Serves bread to keep nearby workers fed & fast', model: 'cottage',
-    cost: { timber: 3, stone: 2 }, roof: 0x8a5a2b, wall: 0xcaa46e, accent: 0xffb060,
-    tavern: { food: 'bread', range: 8, time: 5 }, worker: 'Taverner', wcolor: 0xb5763a },
+  tavern: { name: 'Tavern', desc: 'Serves any food (bread, sausage, wine, fish…) to keep workers fed & fast', model: 'tavern',
+    cost: { timber: 4, stone: 3 }, roof: 0x8a5a2b, wall: 0xcaa46e, accent: 0xffb060,
+    tavern: { foods: ['bread', 'sausage', 'wine', 'fish'], capacity: 6, time: 4 }, worker: 'Taverner', wcolor: 0xb5763a },
 
   fishery: { name: 'Fishery', desc: 'Nets fish from the lake — build on the shore', model: 'cottage',
     cost: { timber: 3, stone: 1 }, roof: 0x3f6f7a, wall: 0xbfae8e, accent: 0x7fb0c4,
     gather: { node: 'fish', out: 'fish', time: 4, range: 6 }, worker: 'Fisher', wcolor: 0x4f93a8 },
+
+  barracks: { name: 'Barracks', desc: 'Trains soldiers & archers (costs coin & timber)', model: 'barn',
+    cost: { timber: 4, stone: 3 }, roof: 0x5a4a6a, wall: 0xb0a48c, accent: 0x8a5a2b, hp: 200,
+    military: { trains: ['soldier', 'archer'], time: 6, cost: { timber: 1, coin: 1 } } },
+
+  banditcamp: { name: 'Bandit Camp', desc: 'A den of raiders', model: 'barn',
+    cost: {}, roof: 0x4a2e20, wall: 0x6b4a34, accent: 0x3a2a20, hp: 180 },
+
+  watchtower: { name: 'Watchtower', desc: 'A fortified enemy archer tower', model: 'mine',
+    cost: {}, roof: 0x4a5056, wall: 0x777d82, accent: 0x9c3b3b, hp: 260 },
+
+  enemycastle: { name: 'Enemy Keep', desc: 'The enemy stronghold', model: 'barn',
+    cost: {}, roof: 0x3a2a3a, wall: 0x8a8078, accent: 0x5a1a26, hp: 900 },
 };
 
 /** Build-menu tabs, grouping buildings by the goal / production chain they serve. */
 export interface BuildCategory { id: string; name: string; keys: BuildingKey[]; stub?: string; }
 
 export const MENU_CATEGORIES: BuildCategory[] = [
-  { id: 'materials', name: 'Materials', keys: ['woodcutter', 'sawmill', 'forester', 'quarry'] },
+  { id: 'materials', name: 'Materials', keys: ['guildhall', 'woodcutter', 'sawmill', 'forester', 'quarry'] },
   { id: 'food', name: 'Food', keys: ['farm', 'mill', 'bakery', 'pigfarm', 'butcher', 'vineyard', 'winery', 'fishery', 'tavern'] },
   { id: 'coin', name: 'Coin', keys: ['goldmine', 'coalmine', 'mint'] },
-  { id: 'military', name: 'Military', keys: [], stub: 'Barracks, soldiers & archers arrive in a later phase.' },
+  { id: 'military', name: 'Military', keys: ['barracks'] },
 ];

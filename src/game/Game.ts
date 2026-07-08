@@ -1,12 +1,14 @@
 import * as THREE from 'three';
-import { ROAD_STONE_COST, PLOT_RANGE } from '../constants';
+import { ROAD_STONE_COST, PLOT_RANGE, BASE_SPEED } from '../constants';
 import { DEFS } from '../data/buildings';
 import { ITEMS } from '../data/items';
+import { UNITS, type UnitKind } from '../data/units';
+import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
-import type { Building, BuildingKey, Coord, Site, Unit } from '../types';
+import type { Building, BuildingKey, Coord, Faction, Site, Unit } from '../types';
 import { doorTile } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
@@ -19,12 +21,14 @@ export interface StartKit {
   stock: Partial<Record<string, number>>;
   serfs: number;
   laborers: number;
+  villagers?: number;   // untrained recruits the Guild Hall starts with (default 4)
 }
 
 export const DEFAULT_KIT: StartKit = {
   stock: { timber: 16, stone: 10, bread: 8 },
-  serfs: 6,
-  laborers: 2,
+  serfs: 4,
+  laborers: 1,
+  villagers: 7,
 };
 
 /**
@@ -38,6 +42,7 @@ export class Game {
   readonly sites: Site[] = [];
   readonly units: Unit[] = [];
   store!: Building;
+  guild!: Building;
   selected: any = null;
   simSpeed = 1;
 
@@ -45,6 +50,8 @@ export class Game {
   elapsed = 0;
   /** The level's objective tracker, or null (e.g. debug/sandbox). */
   objective: Objective | null = null;
+  /** Set true when the castle is razed (or later, the hero dies) — main ends the run. */
+  defeat = false;
 
   toast: (msg: string, cls?: string) => void = () => {};
   onSelect: (obj: any) => void = () => {};
@@ -52,6 +59,12 @@ export class Game {
   onGold: (amount: number) => void = () => {};
   /** Play a named sound effect (wired to the AudioEngine by main). */
   sfx: (name: string) => void = () => {};
+  /** A unit took a hit at a world point — main wires this to the gore layer. */
+  onHurt: (x: number, z: number, faction: Faction) => void = () => {};
+  /** A unit died at a world point — main spawns a corpse + blood pool. */
+  onDeath: (x: number, z: number, faction: Faction, colorHex: number) => void = () => {};
+  /** A combat unit was killed — main updates objectives/tallies. */
+  onKill: (u: Unit) => void = () => {};
 
   private readonly pickups: { x: number; y: number }[] = [];
   private dispatchT = 0;
@@ -88,20 +101,28 @@ export class Game {
     const laborers = kit.laborers + this.mods.extraLaborers();
     for (let i = 0; i < serfs; i++) this.spawnUnit('serf', 0xd8c49a, { x: d.x - 2 + (i % 4), y: d.y + Math.floor(i / 4) });
     for (let i = 0; i < laborers; i++) { const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + (i % 3), y: d.y + Math.floor(i / 3) }); u.roleName = 'Laborer'; }
+    // the Guild Hall trains the villagers who staff your buildings (separate from storage)
+    this.guild = this.placeBuilding('guildhall', cx + 3, cy, true);
+    const gd = doorTile(this.guild);
+    const villagers = kit.villagers ?? DEFAULT_KIT.villagers ?? 4;
+    for (let i = 0; i < villagers; i++) this.spawnCivilian('villager', { x: gd.x - 1 + (i % 4), y: gd.y + 1 + Math.floor(i / 4) });
   }
 
   // =====================================================================
   //  Buildings / sites
   // =====================================================================
-  placeBuilding(key: BuildingKey, tx: number, ty: number, instant = false, rot = 0): Building {
+  placeBuilding(key: BuildingKey, tx: number, ty: number, instant = false, rot = 0, faction: Faction = 'player'): Building {
     const def = DEFS[key];
     const mesh = this.view.createBuildingMesh(def);
     mesh.rotation.y = -rot * Math.PI / 2;
     mesh.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
     this.view.add(mesh);
+    const facMult = faction === 'player' ? (def.store ? this.mods.castleHpMult() : 1) : (this.mods.buildingHpMult(faction) || 1);
+    const maxHp = Math.round((def.hp ?? 100) * facMult);
     const b: Building = {
       key, def, x: tx, y: ty, rot, active: false, inp: {}, out: {}, incoming: {},
       prog: 0, working: false, worker: null, fieldsList: [], mesh, name: def.name,
+      faction, hp: maxHp, maxHp,
     };
     const tiles = this.world.tiles;
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].b = b; if (tiles[y][x].tree) this.removeTree(x, y); if (tiles[y][x].deco) this.removeDeco(x, y); }
@@ -167,11 +188,8 @@ export class Game {
     const b = this.placeBuilding(s.key, s.x, s.y, false, s.rot);
     this.toast(s.def.name + ' completed');
     this.sfx('build');
-    if (s.def.worker) {
-      const u = this.spawnUnit(s.def.worker.toLowerCase(), s.def.wcolor!, this.store ? doorTile(this.store) : doorTile(b));
-      u.home = b; u.wstate = 'goHome'; u.roleName = s.def.worker;
-      b.worker = u;
-    } else b.active = true;
+    // worker buildings stay unstaffed until a trained villager reports in (staffBuildings)
+    if (!s.def.worker) b.active = true;
     if (this.selected === s) this.select(b);
   }
 
@@ -184,8 +202,28 @@ export class Game {
       role, roleName: role[0].toUpperCase() + role.slice(1), colorHex, mesh: group, itemMesh,
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
       home: null, wstate: 'idle', timer: 0, target: null, hunger: 70 + rnd() * 30, bob: 0, status: 'Idle',
+      faction: 'player', spd: BASE_SPEED, hp: 20, maxHp: 20, dmg: 0, range: 0, atkCd: 1, atkTimer: 0,
+      dead: false, raider: false, foe: null, foeB: null, order: null, special: 0, hpBar: null,
     };
     this.units.push(u);
+    return u;
+  }
+
+  /** Spawn a combat unit (player soldier/archer, or enemy/wild fighter) from its def. */
+  spawnFighter(kind: UnitKind, tile: { x: number; y: number }, faction?: Faction): Unit {
+    const def = UNITS[kind];
+    const fac = faction ?? def.faction;
+    const u = this.spawnUnit(kind, def.color, tile);
+    u.roleName = def.name;
+    u.faction = fac;
+    u.spd = def.speed * this.mods.combatMult('speed', kind);
+    u.maxHp = u.hp = Math.round(def.hp * this.mods.combatMult('hp', kind));
+    u.dmg = def.dmg * this.mods.combatMult('damage', kind);
+    u.range = def.range * this.mods.combatMult('range', kind);
+    u.atkCd = def.atkCd;
+    u.hunger = 100; // fighters don't idle for hunger
+    u.status = def.name;
+    u.mesh.scale.setScalar(def.scale);
     return u;
   }
 
@@ -236,7 +274,7 @@ export class Game {
     for (const s of this.sites) {
       for (const it in s.needs) {
         const rem = s.needs[it] - (s.delivered[it] || 0) - (s.incoming[it] || 0);
-        for (let i = 0; i < rem; i++) demands.push({ pri: 0, to: s, item: it });
+        for (let i = 0; i < rem; i++) demands.push({ pri: s.priority ? -1 : 0, to: s, item: it });
       }
     }
     for (const b of this.buildings) {
@@ -248,9 +286,13 @@ export class Game {
     }
     for (const b of this.buildings) {
       if (!b.active || !b.def.tavern) continue;
-      const it = b.def.tavern.food;
-      const have = (b.inp[it] || 0) + (b.incoming[it] || 0);
-      if (have < carryCap) demands.push({ pri: 1, to: b, item: it });
+      const tv = b.def.tavern;
+      const total = tv.foods.reduce((s, f) => s + (b.inp[f] || 0) + (b.incoming[f] || 0), 0);
+      if (total >= tv.capacity) continue;
+      for (const it of tv.foods) {
+        const have = (b.inp[it] || 0) + (b.incoming[it] || 0);
+        if (have < 2) demands.push({ pri: 1, to: b, item: it });
+      }
     }
     for (const b of this.buildings) {
       if (!b.active || b.def.store) continue;
@@ -348,7 +390,11 @@ export class Game {
     }
     u.status = 'Idle';
     u.mesh.position.y = 0;
-    for (const s of this.sites) { if (s.ready && !s.builder) { s.builder = u; u.target = s; u.wstate = 'build'; break; } }
+    // build prioritized sites first, then any other ready site
+    let target: Site | null = null;
+    for (const s of this.sites) { if (s.ready && !s.builder && s.priority) { target = s; break; } }
+    if (!target) for (const s of this.sites) { if (s.ready && !s.builder) { target = s; break; } }
+    if (target) { target.builder = u; u.target = target; u.wstate = 'build'; }
   }
 
   private outTotal(b: Building): number { let n = 0; for (const k in b.out) n += b.out[k]; return n; }
@@ -568,7 +614,11 @@ export class Game {
       this.view.removeMeshes(t.field.meshes); t.field = null; this.view.refreshTile(tx, ty); return;
     }
     if (dragOnly) return;
-    if (t.b) { if (t.b.def.store) { this.toast('The storehouse cannot be demolished', 'err'); return; } this.sfx('demolish'); this.removeBuilding(t.b); return; }
+    if (t.b) {
+      if (t.b.def.store) { this.toast('The storehouse cannot be demolished', 'err'); return; }
+      if (t.b.faction !== 'player') { this.toast('Enemy strongholds must be destroyed in battle', 'err'); return; }
+      this.sfx('demolish'); this.removeBuilding(t.b); this.toast(t.b.def.name + ' demolished'); return;
+    }
     if (t.site) { this.sfx('demolish'); this.removeSite(t.site); return; }
   }
 
@@ -592,7 +642,6 @@ export class Game {
     this.view.remove(b.mesh);
     this.buildings.splice(this.buildings.indexOf(b), 1);
     if (this.selected === b) this.select(null);
-    this.toast(b.def.name + ' demolished');
   }
 
   select(obj: any): void { this.selected = obj; this.onSelect(obj); }
@@ -642,6 +691,366 @@ export class Game {
   }
 
   // =====================================================================
+  //  Combat
+  // =====================================================================
+  /** Are two factions hostile? Player fights all non-player; enemy/wild fight the player. */
+  private hostile(a: Faction, b: Faction): boolean {
+    if (a === b) return false;
+    return a === 'player' ? b !== 'player' : b === 'player';
+  }
+
+  /** True for units that run the combat behavior (soldiers, bandits, boars, dragon…). */
+  private isFighter(u: Unit): boolean { return (UNITS as any)[u.role] !== undefined; }
+
+  private unitDist(a: Unit, b: Unit): number {
+    const dx = a.mesh.position.x - b.mesh.position.x, dz = a.mesh.position.z - b.mesh.position.z;
+    return Math.hypot(dx, dz);
+  }
+
+  /** Nearest hostile fighter within the aggro radius, or null. */
+  private acquireTarget(u: Unit): Unit | null {
+    const AGGRO = 13;
+    let best: Unit | null = null, bd = AGGRO * AGGRO;
+    for (const o of this.units) {
+      if (o.dead || o === u) continue;
+      if (!this.hostile(u.faction, o.faction)) continue;
+      const dx = o.tx - u.tx, dy = o.ty - u.ty, d2 = dx * dx + dy * dy;
+      if (d2 < bd) { bd = d2; best = o; }
+    }
+    return best;
+  }
+
+  private faceUnit(u: Unit, foe: Unit): void {
+    const dx = foe.mesh.position.x - u.mesh.position.x, dz = foe.mesh.position.z - u.mesh.position.z;
+    if (dx || dz) u.mesh.rotation.y = Math.atan2(dx, dz);
+  }
+
+  private attack(attacker: Unit, foe: Unit): void {
+    foe.hp -= attacker.dmg;
+    this.onHurt(foe.mesh.position.x, foe.mesh.position.z, foe.faction);
+    // retaliation: an idle victim turns on its attacker
+    if (!foe.foe && this.hostile(foe.faction, attacker.faction)) foe.foe = attacker;
+    if (foe.hp <= 0) this.killUnit(foe);
+  }
+
+  private killUnit(u: Unit): void {
+    if (u.dead) return;
+    u.dead = true;
+    this.onDeath(u.mesh.position.x, u.mesh.position.z, u.faction, u.colorHex);
+    this.onKill(u);
+    this.objective?.onKill(u.role, u.faction);
+    for (const o of this.units) if (o.foe === u) o.foe = null;
+  }
+
+  private combatUpdate(u: Unit, dt: number): void {
+    u.atkTimer = Math.max(0, u.atkTimer - dt);
+    if (u.role === 'dragon') this.dragonSpecial(u, dt);
+
+    let foe = u.foe;
+    if (foe && foe.dead) foe = null;
+    if (u.order && u.order.type === 'attack' && u.order.foe && !u.order.foe.dead) foe = u.order.foe;
+    // pure 'move' orders don't auto-seek (lets you march past enemies); everything else does
+    const canSeek = !u.order || u.order.type !== 'move';
+    if (!foe && canSeek) foe = this.acquireTarget(u);
+    u.foe = foe;
+
+    if (foe) {
+      const d = this.unitDist(u, foe);
+      if (d <= u.range + 0.1) {
+        u.path = null;
+        this.faceUnit(u, foe);
+        u.mesh.position.y = 0;
+        if (u.atkTimer <= 0) { u.atkTimer = u.atkCd; this.attack(u, foe); }
+      } else {
+        // chase — throttle A* so hundreds of pursuers don't re-path every tick
+        if (!u.path) { u.timer -= dt; if (u.timer <= 0) { this.sendTo(u, foe.tx, foe.ty); u.timer = 0.4 + rnd() * 0.35; } }
+        this.moveUnit(u, dt);
+      }
+      return;
+    }
+
+    // no unit foe: go for a hostile building (castle for raiders, camps for the player army)
+    let bt = u.foeB;
+    if (bt && bt.removed) bt = null;
+    if (!bt && canSeek) bt = this.buildingTargetFor(u);
+    u.foeB = bt;
+    if (bt) {
+      const c = this.buildingCenter(bt);
+      const dx = c.x - u.mesh.position.x, dz = c.z - u.mesh.position.z;
+      const d = Math.hypot(dx, dz);
+      if (d <= u.range + 1.15) {
+        u.path = null;
+        u.mesh.rotation.y = Math.atan2(dx, dz);
+        u.mesh.position.y = 0;
+        if (u.atkTimer <= 0) { u.atkTimer = u.atkCd; this.attackBuilding(u, bt); }
+      } else {
+        if (!u.path) { u.timer -= dt; if (u.timer <= 0) { const dr = doorTile(bt); this.sendTo(u, dr.x, dr.y); u.timer = 0.5 + rnd() * 0.4; } }
+        this.moveUnit(u, dt);
+      }
+      return;
+    }
+
+    // no foe: follow a move/attack-move order, else idle in place
+    if (u.order && (u.order.type === 'move' || u.order.type === 'attackMove')) {
+      if (!u.path) {
+        if (u.tx === u.order.x && u.ty === u.order.y) { u.order = null; }
+        else if (!this.sendTo(u, u.order.x, u.order.y)) { u.order = null; }
+      }
+      if (u.path) this.moveUnit(u, dt); else u.mesh.position.y = 0;
+    } else {
+      u.mesh.position.y = 0;
+    }
+  }
+
+  private buildingCenter(b: Building): { x: number; z: number } {
+    return { x: this.world.wx(b.x) + 0.5, z: this.world.wz(b.y) + 0.5 };
+  }
+
+  /** The building a fighter should march on: raiders storm the nearest player building,
+   *  the player army razes the nearest enemy stronghold in reach. */
+  private buildingTargetFor(u: Unit): Building | null {
+    if (u.faction === 'wild') return null; // beasts fight units, not walls
+    if (u.faction !== 'player' && !u.raider) return null; // camp guards hold their ground
+    const RANGE = u.faction === 'player' ? 18 : 1e9; // raiders always march on the castle
+    let best: Building | null = null, bd = RANGE * RANGE;
+    for (const b of this.buildings) {
+      if (b.removed || !this.hostile(u.faction, b.faction)) continue;
+      const c = this.buildingCenter(b);
+      const dx = c.x - u.mesh.position.x, dz = c.z - u.mesh.position.z, d2 = dx * dx + dz * dz;
+      if (d2 < bd) { bd = d2; best = b; }
+    }
+    return best;
+  }
+
+  private attackBuilding(u: Unit, b: Building): void {
+    b.hp -= u.dmg;
+    this.onHurt(this.buildingCenter(b).x, this.buildingCenter(b).z, b.faction);
+    if (b.hp <= 0) this.destroyBuilding(b);
+  }
+
+  private destroyBuilding(b: Building): void {
+    if (b.removed) return;
+    const c = this.buildingCenter(b);
+    for (let i = 0; i < 4; i++) this.onDeath(c.x + (rnd() - 0.5) * 1.4, c.z + (rnd() - 0.5) * 1.4, b.faction, b.def.roof);
+    this.objective?.onStructureDestroyed(b.faction);
+    for (const o of this.units) if (o.foeB === b) o.foeB = null;
+    const isCastle = b === this.store;
+    this.removeBuilding(b);
+    this.toast(b.def.name + (b.faction === 'player' ? ' has fallen!' : ' destroyed!'), 'err');
+    if (isCastle) this.defeat = true;
+  }
+
+  /** The dragon's periodic fire-breath: an area stomp that scorches nearby
+   *  player units and any building it stands over. */
+  private dragonSpecial(u: Unit, dt: number): void {
+    u.special -= dt;
+    if (u.special > 0) return;
+    const R = 3.6;
+    let hit = false;
+    for (const o of this.units) {
+      if (o.dead || o.faction !== 'player') continue;
+      const dx = o.mesh.position.x - u.mesh.position.x, dz = o.mesh.position.z - u.mesh.position.z;
+      if (dx * dx + dz * dz <= R * R) { o.hp -= 26; this.onHurt(o.mesh.position.x, o.mesh.position.z, o.faction); hit = true; if (o.hp <= 0) this.killUnit(o); }
+    }
+    for (const b of this.buildings) {
+      if (b.removed || b.faction !== 'player') continue;
+      const c = this.buildingCenter(b);
+      const dx = c.x - u.mesh.position.x, dz = c.z - u.mesh.position.z;
+      if (dx * dx + dz * dz <= (R + 1.2) * (R + 1.2)) this.attackBuilding(u, b);
+    }
+    if (hit) this.sfx('error');
+    u.special = 4.5;
+  }
+
+  /** Toggle a construction site's priority (materials & builders go there first). */
+  togglePriority(s: Site): void {
+    s.priority = !s.priority;
+    this.sfx('click');
+    this.toast(s.priority ? s.def.name + ' prioritized' : s.def.name + ' no longer prioritized');
+  }
+
+  /** Issue a command to a unit (used by Controls for hero/army orders). */
+  orderUnit(u: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null): void {
+    u.order = { type, x, y, foe };
+    u.foe = type === 'attack' ? foe : null;
+    u.path = null;
+  }
+
+  /** Scatter `count` fighters of a kind around a world point (sandbox/level spawner). */
+  spawnSquad(kind: UnitKind, count: number, worldX: number, worldZ: number, faction?: Faction): Unit[] {
+    const W = this.world.W, H = this.world.H;
+    const cx = Math.max(2, Math.min(W - 3, Math.floor(worldX + W / 2)));
+    const cy = Math.max(2, Math.min(H - 3, Math.floor(worldZ + H / 2)));
+    const out: Unit[] = [];
+    const tryTile = (x: number, y: number): void => {
+      if (out.length >= count || this.units.length >= 1600) return; // cap for perf
+      const t = this.world.T(x, y);
+      if (!t || t.type === 'water' || t.b || t.site || t.dep) return;
+      out.push(this.spawnFighter(kind, { x, y }, faction));
+    };
+    tryTile(cx, cy);
+    for (let r = 1; r < 14 && out.length < count; r++) {
+      for (let dx = -r; dx <= r && out.length < count; dx++)
+        for (let dy = -r; dy <= r && out.length < count; dy++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // ring perimeter only
+          tryTile(cx + dx, cy + dy);
+        }
+    }
+    return out;
+  }
+
+  // =====================================================================
+  //  Enemy director — waves, camps, wild beasts, a boss and a commander
+  // =====================================================================
+  private enemy: EnemySetup | null = null;
+  private waveIdx = 0;
+  private waves: { units: Unit[]; cleared: boolean }[] = [];
+  private commanderT = 0;
+  private camps: Building[] = [];
+
+  /** Configure and spawn a level's enemy presence (called by main after init). */
+  setEnemies(setup: EnemySetup | null): void {
+    this.enemy = setup;
+    this.waveIdx = 0; this.waves = []; this.commanderT = 0; this.camps = [];
+    if (!setup) return;
+    if (setup.wild) for (const w of setup.wild) this.spawnWild(w.kind, w.count);
+    if (setup.camps) for (const c of setup.camps) for (let i = 0; i < c.count; i++) this.spawnStronghold('banditcamp', c.guards);
+    if (setup.keep) { const camp = this.spawnStronghold('enemycastle', setup.keep.guards); if (camp && setup.towers) for (let i = 0; i < setup.towers; i++) this.spawnTowerNear(camp); }
+    if (setup.boss) this.spawnBoss(setup.boss);
+  }
+
+  private combatDirector(sdt: number): void {
+    if (!this.enemy) return;
+    // launch scheduled raid waves at the castle
+    const w = this.enemy.waves;
+    if (w) while (this.waveIdx < w.length && this.elapsed >= w[this.waveIdx].at) {
+      const def = w[this.waveIdx++];
+      this.waves.push({ units: this.spawnRaid(def.kind, def.count, 'edge'), cleared: false });
+      this.toast('A raid approaches!', 'err'); this.sfx('error');
+    }
+    // count a wave as cleared once every raider in it is dead
+    for (const wv of this.waves) {
+      if (wv.cleared || !wv.units.length) continue;
+      if (wv.units.every(u => u.dead)) { wv.cleared = true; this.objective?.onWaveCleared(); this.toast('Raid repelled!'); }
+    }
+    // the enemy commander sends fresh squads on a timer
+    const cmd = this.enemy.commander;
+    if (cmd) { this.commanderT += sdt; if (this.commanderT >= cmd.every) { this.commanderT = 0; this.spawnRaid(cmd.kind, cmd.count, cmd.from ?? 'camp'); } }
+    // watchtowers loose arrows at the nearest player fighter
+    this.towerFire(sdt);
+  }
+
+  private towerFire(sdt: number): void {
+    for (const b of this.buildings) {
+      if (b.removed || b.faction === 'player' || b.key !== 'watchtower') continue;
+      b.prog += sdt;
+      if (b.prog < 1.6) continue;
+      b.prog = 0;
+      const c = this.buildingCenter(b);
+      let best: Unit | null = null, bd = 6 * 6;
+      for (const u of this.units) {
+        if (u.dead || u.faction !== 'player' || u.dmg <= 0) continue;
+        const dx = u.mesh.position.x - c.x, dz = u.mesh.position.z - c.z, d2 = dx * dx + dz * dz;
+        if (d2 < bd) { bd = d2; best = u; }
+      }
+      if (best) { best.hp -= 12; this.onHurt(best.mesh.position.x, best.mesh.position.z, best.faction); if (best.hp <= 0) this.killUnit(best); }
+    }
+  }
+
+  /** A raid squad from a map edge (or a camp), ordered to march on the castle. */
+  private spawnRaid(kind: UnitKind, count: number, from: 'edge' | 'camp'): Unit[] {
+    let ox: number, oz: number;
+    if (from === 'camp' && this.camps.length) { const c = this.camps[Math.floor(rnd() * this.camps.length)]; ox = this.world.wx(c.x); oz = this.world.wz(c.y); }
+    else { const e = this.randomEdge(); ox = e.x; oz = e.z; }
+    const squad = this.spawnSquad(kind, count, ox, oz, 'enemy');
+    const castle = this.store;
+    for (const u of squad) { u.raider = true; if (castle) this.orderUnit(u, 'attackMove', castle.x + 1, castle.y + 1); }
+    return squad;
+  }
+
+  private randomEdge(): { x: number; z: number } {
+    const W = this.world.W, H = this.world.H;
+    const side = Math.floor(rnd() * 4);
+    let tx = 1, ty = 1;
+    if (side === 0) { tx = 1 + Math.floor(rnd() * (W - 2)); ty = 1; }
+    else if (side === 1) { tx = 1 + Math.floor(rnd() * (W - 2)); ty = H - 2; }
+    else if (side === 2) { tx = 1; ty = 1 + Math.floor(rnd() * (H - 2)); }
+    else { tx = W - 2; ty = 1 + Math.floor(rnd() * (H - 2)); }
+    return { x: this.world.wx(tx), z: this.world.wz(ty) };
+  }
+
+  /** Scatter wild beasts across the map, clear of the central build zone. */
+  private spawnWild(kind: UnitKind, count: number): void {
+    const W = this.world.W, H = this.world.H, cx = W / 2, cy = H / 2;
+    let placed = 0, tries = 0;
+    while (placed < count && tries < count * 40) {
+      tries++;
+      const x = 2 + Math.floor(rnd() * (W - 4)), y = 2 + Math.floor(rnd() * (H - 4));
+      if (Math.abs(x - cx) < 7 && Math.abs(y - cy) < 7) continue;
+      const t = this.world.T(x, y);
+      if (!t || t.type === 'water' || t.b || t.site || t.dep) continue;
+      this.spawnFighter(kind, { x, y }, 'wild'); placed++;
+    }
+  }
+
+  /** Place an enemy stronghold away from the centre and post guards around it. */
+  private spawnStronghold(key: BuildingKey, guards: number): Building | null {
+    const spot = this.findStrongholdSpot();
+    if (!spot) return null;
+    const b = this.placeBuilding(key, spot.x, spot.y, true, 0, 'enemy');
+    b.active = true;
+    this.camps.push(b);
+    this.spawnSquad('bandit', guards, this.world.wx(spot.x), this.world.wz(spot.y), 'enemy');
+    return b;
+  }
+
+  private spawnTowerNear(b: Building): void {
+    for (let r = 3; r < 8; r++) {
+      for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r], [r, r], [-r, -r]]) {
+        const x = b.x + dx, y = b.y + dy;
+        if (this.areaClear(x, y)) { const t = this.placeBuilding('watchtower', x, y, true, 0, 'enemy'); t.active = true; return; }
+      }
+    }
+  }
+
+  private spawnBoss(kind: UnitKind): void {
+    const e = this.randomEdge();
+    const squad = this.spawnSquad(kind, 1, e.x, e.z, 'wild');
+    const castle = this.store;
+    for (const u of squad) { u.raider = true; if (castle) this.orderUnit(u, 'attackMove', castle.x + 1, castle.y + 1); }
+    this.toast('The Dragon of Het Gooi descends!', 'err');
+  }
+
+  private areaClear(tx: number, ty: number): boolean {
+    for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) {
+      const t = this.world.T(x, y);
+      if (!t || t.type === 'water' || t.b || t.site || t.dep || t.road) return false;
+    }
+    return true;
+  }
+
+  private findStrongholdSpot(): { x: number; y: number } | null {
+    const W = this.world.W, H = this.world.H, cx = W / 2, cy = H / 2;
+    for (let tries = 0; tries < 400; tries++) {
+      const x = 2 + Math.floor(rnd() * (W - 5)), y = 2 + Math.floor(rnd() * (H - 5));
+      if (Math.abs(x - cx) < 9 && Math.abs(y - cy) < 9) continue; // keep clear of the player's start
+      if (this.areaClear(x, y)) return { x, y };
+    }
+    return null;
+  }
+
+  /** Remove units flagged dead this tick (deferred so combat iteration stays stable). */
+  private sweepDead(): void {
+    for (let i = this.units.length - 1; i >= 0; i--) {
+      const u = this.units[i];
+      if (!u.dead) continue;
+      if (this.selected === u) this.select(null);
+      this.view.remove(u.mesh);
+      this.units.splice(i, 1);
+    }
+  }
+
+  // =====================================================================
   //  Simulation tick (already scaled by sim speed)
   // =====================================================================
   update(sdt: number): void {
@@ -649,18 +1058,93 @@ export class Game {
     this.dispatchT += sdt;
     if (this.dispatchT > 0.45) { this.dispatchT = 0; this.dispatch(); }
     for (const u of this.units) {
+      if (u.dead) continue;
       u.hunger = Math.max(0, u.hunger - sdt * 100 / 600);
-      if (u.role === 'serf') this.serfUpdate(u, sdt);
+      if (this.isFighter(u)) this.combatUpdate(u, sdt);
+      else if (u.role === 'serf') this.serfUpdate(u, sdt);
       else if (u.role === 'laborer') this.laborerUpdate(u, sdt);
       else this.workerUpdate(u, sdt);
     }
+    this.sweepDead();
     this.growthUpdate(sdt);
     this.serveTaverns(sdt);
+    this.trainQueues(sdt);
+    this.staffBuildings();
+    this.combatDirector(sdt);
     this.fieldT += sdt;
     if (this.fieldT > 0.5) { this.fieldT = 0; this.fieldRecolor(); }
   }
 
-  /** Taverns burn one food good on a timer to refill the hunger of nearby workers. */
+  /** Queue a unit at a barracks/guild hall, paying its cost from the store. */
+  trainUnit(b: Building, kind: string): boolean {
+    const spec = b.def.military ?? b.def.trainer;
+    if (!spec || !b.active || !spec.trains.includes(kind)) return false;
+    const store = this.store;
+    if (!store || !store.stock) return false;
+    for (const k in spec.cost) if ((store.stock[k] || 0) < (spec.cost as any)[k]) { this.toast('Not enough resources to train a ' + kind, 'err'); this.sfx('error'); return false; }
+    for (const k in spec.cost) store.stock[k] -= (spec.cost as any)[k];
+    (b.trainQ ||= []).push(kind);
+    this.sfx('click');
+    return true;
+  }
+
+  /** Cancel a queued training order by index, refunding its cost to the store. */
+  cancelTrain(b: Building, index: number): void {
+    if (!b.trainQ || index < 0 || index >= b.trainQ.length) return;
+    const spec = b.def.military ?? b.def.trainer;
+    b.trainQ.splice(index, 1);
+    if (index === 0) b.prog = 0;           // scrap progress on the in-flight unit
+    if (spec && this.store?.stock) for (const k in spec.cost) this.store.stock[k] = (this.store.stock[k] || 0) + (spec.cost as any)[k];
+    this.sfx('click');
+  }
+
+  /** Spawn a civilian worker (serf / laborer / villager) at a tile. */
+  private spawnCivilian(role: string, tile: { x: number; y: number }): Unit {
+    if (role === 'serf') return this.spawnUnit('serf', 0xd8c49a, tile);
+    if (role === 'laborer') { const u = this.spawnUnit('laborer', 0xc97b3d, tile); u.roleName = 'Laborer'; return u; }
+    const u = this.spawnUnit('villager', 0xcdbb8f, tile); u.roleName = 'Villager'; u.status = 'Awaiting a post'; return u;
+  }
+
+  /** Barracks & guild halls turn their player-built queue into units over time. */
+  private trainQueues(sdt: number): void {
+    for (const b of this.buildings) {
+      const spec = b.def.military ?? b.def.trainer;
+      if (!spec || !b.active) continue;
+      if (!b.trainQ || !b.trainQ.length) { b.prog = 0; continue; }
+      b.prog += sdt / spec.time;
+      if (b.prog >= 1) {
+        b.prog = 0;
+        const kind = b.trainQ.shift()!;
+        const d = doorTile(b);
+        if ((UNITS as any)[kind]) this.spawnFighter(kind as UnitKind, { x: d.x, y: d.y }, 'player');
+        else this.spawnCivilian(kind, { x: d.x, y: d.y });
+        this.sfx('build');
+      }
+    }
+  }
+
+  /** Send an idle villager to become the specialist of each unstaffed building. */
+  private staffBuildings(): void {
+    for (const b of this.buildings) {
+      if (b.removed || !b.def.worker || b.worker || b.faction !== 'player') continue;
+      let best: Unit | null = null, bd = 1e9;
+      for (const u of this.units) {
+        if (u.dead || u.role !== 'villager' || u.home) continue;
+        const dd = Math.abs(u.tx - b.x) + Math.abs(u.ty - b.y);
+        if (dd < bd) { bd = dd; best = u; }
+      }
+      if (!best) continue;
+      const tile = { x: best.tx, y: best.ty };
+      this.view.remove(best.mesh); this.units.splice(this.units.indexOf(best), 1);
+      if (this.selected === best) this.select(null);
+      const def = b.def;
+      const u = this.spawnUnit(def.worker!.toLowerCase(), def.wcolor!, tile);
+      u.home = b; u.wstate = 'goHome'; u.roleName = def.worker!;
+      b.worker = u;
+    }
+  }
+
+  /** Taverns burn food on a timer to refill the hunger of workers, up to capacity. */
   private serveTaverns(sdt: number): void {
     for (const b of this.buildings) {
       const tv = b.def.tavern;
@@ -668,12 +1152,20 @@ export class Game {
       b.prog += sdt / tv.time;
       if (b.prog < 1) continue;
       b.prog = 0;
-      if ((b.inp[tv.food] || 0) <= 0) continue;
-      b.inp[tv.food]--;
-      const cx = b.x + 1, cy = b.y + 1;
-      for (const u of this.units) {
-        if (Math.abs(u.tx - cx) + Math.abs(u.ty - cy) <= tv.range) u.hunger = 100;
+      // hungriest player workers first (fighters don't dine here); unlimited range
+      const eaters = this.units
+        .filter(u => u.faction === 'player' && !this.isFighter(u) && u.hunger < 90)
+        .sort((a, c) => a.hunger - c.hunger)
+        .slice(0, tv.capacity);
+      const fed: Unit[] = [];
+      for (const u of eaters) {
+        const food = tv.foods.find(f => (b.inp[f] || 0) > 0);
+        if (!food) break;                  // out of provisions this cycle
+        b.inp[food]--;
+        u.hunger = 100;
+        fed.push(u);
       }
+      b.fedUnits = fed;
     }
   }
 }

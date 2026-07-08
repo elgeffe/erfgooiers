@@ -10,6 +10,7 @@ import { simRng, uiRng } from './engine/rng';
 import { Modifiers } from './game/Modifiers';
 import { Objective } from './game/Objectives';
 import { specsFor } from './data/upgrades';
+import { META_UPGRADES, META_BY_ID, metaSpecsFor, hasMetaSpecial } from './data/metaUpgrades';
 import { levelFor, pickObjective, sandboxLevel, type LevelDef } from './data/levels';
 import { RUN_LEVELS, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
@@ -60,13 +61,16 @@ function startLevel(): void {
 
   const world = new World({ seed, ...level.world });
   view.loadWorld(world);
-  const mods = new Modifiers(specsFor(run.upgrades));
+  const mods = new Modifiers([...specsFor(run.upgrades), ...metaSpecsFor(meta.unlocks)]);
   game = new Game(world, view, mods);
   game.toast = (m, c) => ui.toast(m, c);
   game.onSelect = o => ui.showInspector(o);
   game.sfx = name => audio.play(name as any);
   audio.setLevel(level.index);
+  audio.setDynamic(sandbox);
   game.onGold = amt => { if (run) { run.gold += amt; goldEarnedThisRun += amt; ui.setGold(run.gold); } };
+  game.onHurt = (x, z) => view.spawnHurt(x, z);
+  game.onDeath = (x, z, _fac, color) => view.spawnCorpse(x, z, color);
   // pick this level's objective variant deterministically (skipped in sandbox)
   if (sandbox) {
     game.objective = null;
@@ -77,8 +81,14 @@ function startLevel(): void {
   game.init(level.kit);
   ui.setGame(game);
   controls.setGame(game);
+  game.setEnemies(sandbox ? null : (level.enemies ?? null));
+  if (!sandbox && level.startArmy) {
+    const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
+    for (const a of level.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
+  }
   ui.setGold(run.gold);
   ui.setSandbox(sandbox);
+  ($('sandboxbar') as HTMLElement).style.display = sandbox ? 'flex' : 'none';
   if (game.objective) {
     ui.setLevel(level.index, level.name);
     ui.setObjective(game.objective.brief());
@@ -104,6 +114,7 @@ function goMenu(): void {
   phase = 'menu';
   sandbox = false;
   audio.setLevel(0);
+  audio.setDynamic(false);
   renderMenu();
   showScreen('menu');
 }
@@ -111,6 +122,7 @@ function goMenu(): void {
 function newRunFromMenu(): void {
   sandbox = false;
   run = newRun(1 + Math.floor(Math.random() * 2147483645));
+  if (hasMetaSpecial(meta.unlocks, 'startGold')) run.gold = 25;
   meta.stats.runs++;
   Save.saveMeta(meta);
   clearedThisRun = 0;
@@ -156,7 +168,7 @@ function onLevelClear(): void {
   const last = run.levelIndex >= RUN_LEVELS;
   disposeLevel();
   if (last) { phase = 'summary'; renderSummary(true); showScreen('summary'); Save.clearRun(); run = null; }
-  else { phase = 'shop'; shop.open(run); showScreen('shop'); Save.saveRun(run); }
+  else { phase = 'shop'; shop.open(run, hasMetaSpecial(meta.unlocks, 'freeReroll')); showScreen('shop'); Save.saveRun(run); }
 }
 
 /** The hard timer expired — the run is over. */
@@ -211,10 +223,10 @@ function clearSaveData(): void {
 }
 
 // ---------- screens (DOM overlays) ----------
-type ScreenId = 'menu' | 'shop' | 'summary' | null;
+type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | null;
 function showScreen(id: ScreenId): void {
   $('pausemenu').style.display = 'none';
-  for (const s of ['menu', 'shop', 'summary']) $(s).style.display = id === s ? 'flex' : 'none';
+  for (const s of ['menu', 'shop', 'summary', 'heritage']) $(s).style.display = id === s ? 'flex' : 'none';
   $('hud').style.display = phase === 'playing' ? 'block' : 'none';
 }
 
@@ -236,17 +248,61 @@ function renderSummary(victory: boolean): void {
     `<b>${meta.heritage}</b> Heritage banked · lifetime levels cleared: ${meta.stats.levelsCleared}`;
 }
 
+// ---------- heritage shop (main menu) ----------
+function openHeritage(): void { renderHeritage(); showScreen('heritage'); }
+
+function renderHeritage(): void {
+  $('heritageMeta').innerHTML = `<b>${meta.heritage}</b> Heritage to spend`;
+  const grid = $('heritageGrid'); grid.innerHTML = '';
+  for (const def of META_UPGRADES) {
+    const owned = meta.unlocks.includes(def.id);
+    const afford = meta.heritage >= def.cost;
+    const cls = owned ? 'picked' : afford ? '' : 'cant disabled';
+    const price = owned ? 'owned ✓' : `${def.cost} Heritage`;
+    const el = document.createElement('div');
+    el.className = 'scard' + (cls ? ' ' + cls : '');
+    el.innerHTML = `<div class="sc-icon">${def.icon}</div><div class="sc-body"><div class="sc-name">${def.name}</div><div class="sc-desc">${def.desc}</div><div class="sc-price ${cls}">${price}</div></div>`;
+    if (!owned && afford) el.onclick = () => buyMeta(def.id);
+    grid.appendChild(el);
+  }
+}
+
+function buyMeta(id: string): void {
+  const def = META_BY_ID[id];
+  if (!def || meta.unlocks.includes(id) || meta.heritage < def.cost) return;
+  meta.heritage -= def.cost;
+  meta.unlocks.push(id);
+  Save.saveMeta(meta);
+  audio.play('coin');
+  renderHeritage();
+}
+
 // ---------- wire screen + debug buttons ----------
 $('menuLogo').innerHTML = logoSVG(40);
 $('introLogo').innerHTML = logoSVG(40);
 ($('btnNewRun') as HTMLButtonElement).onclick = newRunFromMenu;
 ($('btnContinue') as HTMLButtonElement).onclick = continueRun;
 ($('btnSandbox') as HTMLButtonElement).onclick = startSandbox;
+
+// ---------- sandbox spawn toolbar ----------
+function sandboxSpawn(kind: 'soldier' | 'archer' | 'bandit' | 'boar' | 'dragon', count: number): void {
+  if (!game) return;
+  const c = view.camTarget;
+  const squad = game.spawnSquad(kind, count, c.x, c.z);
+  if (squad.length) ui.toast(`Spawned ${squad.length} ${kind}${squad.length > 1 ? 's' : ''}`);
+}
+($('sbSoldier') as HTMLButtonElement).onclick = () => sandboxSpawn('soldier', 12);
+($('sbArcher') as HTMLButtonElement).onclick = () => sandboxSpawn('archer', 8);
+($('sbBandit') as HTMLButtonElement).onclick = () => sandboxSpawn('bandit', 12);
+($('sbBoar') as HTMLButtonElement).onclick = () => sandboxSpawn('boar', 6);
+($('sbDragon') as HTMLButtonElement).onclick = () => sandboxSpawn('dragon', 1);
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
 ($('btnHelp') as HTMLButtonElement).onclick = () => $('intro').style.display = 'flex';
 ($('startBtn') as HTMLButtonElement).onclick = () => $('intro').style.display = 'none';
 ($('btnSumMenu') as HTMLButtonElement).onclick = goMenu;
 ($('btnDebugWin') as HTMLButtonElement).onclick = debugWin;
+($('btnHeritage') as HTMLButtonElement).onclick = openHeritage;
+($('btnHeritageBack') as HTMLButtonElement).onclick = goMenu;
 ($('btnToMenu') as HTMLButtonElement).onclick = openPauseMenu;
 ($('btnResume') as HTMLButtonElement).onclick = resumeGame;
 ($('btnAbandon') as HTMLButtonElement).onclick = () => { resumeGame(); abandonRun(); };
@@ -263,6 +319,13 @@ btnSound.onclick = e => { e.stopPropagation(); audio.toggleMute(); renderSound()
 addEventListener('pointerdown', () => audio.unlock(), { once: true });
 renderSound();
 
+// ---------- fullscreen ----------
+($('btnFullscreen') as HTMLButtonElement).onclick = e => {
+  e.stopPropagation();
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+  else document.exitFullscreen?.();
+};
+
 // ---------- main loop (fixed-timestep sim, real-time render) ----------
 const TICK = 1 / 20;          // 20 sim steps/second — determinism & replay ready
 const MAX_STEPS = 6;          // clamp catch-up so a slow frame can't spiral
@@ -276,6 +339,7 @@ function frame(now: number): void {
 
   controls.update(dt);                       // keyboard camera panning
   if (game) view.animate(dt, game.buildings); // sails & clouds (real-time, ignores pause)
+  if (phase === 'playing' && game) view.updateHealthBars(game.units, game.buildings);
 
   if (phase === 'playing' && game && currentLevel && game.objective) {
     simAcc += dt * game.simSpeed;
@@ -288,8 +352,9 @@ function frame(now: number): void {
     uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateObjective(st.label, st.ratio, remaining); }
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
 
-    // resolve the level last: a win or a timeout tears the level down
+    // resolve the level last: win, castle lost, or timeout tears the level down
     if (st.done) onLevelClear();
+    else if (game.defeat) onDefeat();
     else if (remaining <= 0) onDefeat();
   } else if (phase === 'playing' && game && currentLevel) {
     // sandbox: tick the sim with no objective/timer to resolve against

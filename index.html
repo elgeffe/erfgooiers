@@ -12,10 +12,6 @@
 <div id="topbar">
   <div id="brand"><span id="logo"></span><div id="restitle" class="serif">Erfgooiers</div></div>
   <div id="resbar"></div>
-  <div id="objective">
-    <div class="obj-head"><span id="objLabel" style="color:var(--ink-dim)">Objective</span><b id="objText">—</b></div>
-    <div class="obj-bar"><div id="objBar"></div></div>
-  </div>
   <div id="goldChip" title="Gold — your shop currency"><span class="coin"></span><b id="goldText">0</b></div>
   <div id="timerChip" title="Time remaining this level">0:00</div>
   <div id="speedctl">
@@ -24,6 +20,7 @@
     <button id="sp3" title="Fast">3×</button>
   </div>
   <div id="soundctl">
+    <button id="btnFullscreen" title="Toggle fullscreen">⛶</button>
     <button id="btnSound" title="Toggle sound">🔊</button>
   </div>
   <div id="runctl">
@@ -32,11 +29,18 @@
   </div>
 </div>
 
+<div id="objective">
+  <div class="q-head">Objective</div>
+  <div class="obj-head"><span id="objLabel">Objective</span><b id="objText">—</b></div>
+  <div class="obj-bar"><div id="objBar"></div></div>
+</div>
+
 <button id="unitsToggle">Workers</button>
 <div id="unitpanel" class="panel">
-  <h3 class="serif">Workers</h3>
+  <h3 class="serif" id="unitTitle">Workers</h3>
+  <div id="unitTabs"></div>
   <div id="unitlist"></div>
-  <div class="hnote">Hunger is stubbed — no productivity effect yet.</div>
+  <div class="hnote">Feed workers at a Tavern to keep them fast.</div>
 </div>
 
 <div id="inspector" class="panel">
@@ -48,9 +52,18 @@
 
 <div id="buildmenu"></div>
 <div id="hint"></div>
+<div id="sandboxbar">
+  <span class="sb-title">Sandbox</span>
+  <button id="sbSoldier" title="Spawn player soldiers at the camera">⚔️ Soldiers</button>
+  <button id="sbArcher" title="Spawn player archers">🏹 Archers</button>
+  <button id="sbBandit" title="Spawn enemy bandits">🗡️ Bandits</button>
+  <button id="sbBoar" title="Spawn wild boars">🐗 Boars</button>
+  <button id="sbDragon" title="Spawn the dragon">🐉 Dragon</button>
+</div>
 <div id="minimapWrap"><canvas id="minimap" width="160" height="160"></canvas></div>
 </div><!-- /#hud -->
 
+<div id="selbox"></div>
 <div id="toasts"></div>
 
 <!-- ---------- main menu ---------- -->
@@ -62,6 +75,7 @@
     <div class="btns">
       <button id="btnContinue">Continue run</button>
       <button id="btnNewRun">New run</button>
+      <button id="btnHeritage" class="ghost">Heritage — spend Erfgoed</button>
       <button id="btnSandbox" class="ghost">Sandbox — free build</button>
       <button id="btnHelp" class="ghost">How to play</button>
       <button id="btnClearSave" class="danger" title="Wipe the saved run and all meta-progress">Clear save data</button>
@@ -79,6 +93,19 @@
     <div class="btns row">
       <button id="btnReroll" class="ghost">Reroll wares (<span id="rerollCost">0</span>g)</button>
       <button id="btnShopContinue">To the next level →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- heritage shop (main menu) ---------- -->
+<div id="heritage" class="screen">
+  <div class="card shopcard">
+    <h1 class="serif">Heritage — Erfgoed</h1>
+    <div id="heritageMeta" class="metaline"></div>
+    <div class="shopsect">Permanent unlocks — kept across every run</div>
+    <div id="heritageGrid" class="shopgrid"></div>
+    <div class="btns row">
+      <button id="btnHeritageBack">Back to menu</button>
     </div>
   </div>
 </div>

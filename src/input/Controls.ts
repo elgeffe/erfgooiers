@@ -3,7 +3,7 @@ import { DEFS } from '../data/buildings';
 import type { Game } from '../game/Game';
 import type { View } from '../render/View';
 import type { UI } from '../ui/UI';
-import type { Mode } from '../types';
+import type { Mode, Unit } from '../types';
 
 // Isometric screen-space basis vectors for panning.
 const RIGHT = new THREE.Vector3(1, 0, -1).normalize();
@@ -27,12 +27,18 @@ export class Controls {
   private plotPainting = false;
   private demoDragging = false;
 
+  // army selection (left-drag box; right-click orders)
+  private selUnits: Unit[] = [];
+  private boxStart: { x: number; y: number } | null = null;
+  private boxing = false;
+  private readonly selbox = document.getElementById('selbox') as HTMLElement | null;
+
   constructor(private readonly view: View, private readonly ui: UI) {
     const canvas = this.view.renderer.domElement;
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('pointerdown', e => this.onDown(e));
     addEventListener('pointermove', e => this.onMove(e));
-    addEventListener('pointerup', () => { this.dragging = false; this.roadPainting = false; this.plotPainting = false; this.demoDragging = false; });
+    addEventListener('pointerup', e => this.onUp(e));
     canvas.addEventListener('wheel', e => { e.preventDefault(); this.view.zoom(e.deltaY > 0 ? 1.1 : 0.9); }, { passive: false });
     addEventListener('keydown', e => this.onKey(e));
     addEventListener('keyup', e => { this.keys[e.key.toLowerCase()] = false; });
@@ -41,6 +47,7 @@ export class Controls {
   /** Bind to a level's Game; clears any active build mode. */
   setGame(game: Game): void {
     this.game = game;
+    this.selUnits = [];
     this.setMode(null);
   }
 
@@ -74,8 +81,10 @@ export class Controls {
   // ---------- pointer ----------
   private onDown(e: PointerEvent): void {
     this.lastMouse = { x: e.clientX, y: e.clientY };
-    // right-click cancels an active placement mode; otherwise right/middle pan
+    // right-click cancels an active placement mode
     if (e.button === 2 && this.mode) { this.setMode(null); return; }
+    // right-click with an army selected = issue an order (no camera pan)
+    if (e.button === 2 && this.game && this.selUnits.length) { this.orderSelection(e); return; }
     if (e.button === 2 || e.button === 1) { this.dragging = true; return; }
     if (e.button !== 0 || !this.game) return;
     const t = this.view.tileAt(e.clientX, e.clientY);
@@ -85,10 +94,9 @@ export class Controls {
     if (m && m.type === 'plot') { this.plotPainting = true; this.game.placePlot(t.x, t.y, m.building); return; }
     if (m && m.type === 'demolish') { this.demoDragging = true; this.game.demolishAt(t.x, t.y, false); return; }
     if (m && m.type === 'build') { this.game.tryPlace(m.key, t.x, t.y, this.buildRot); if (!this.keys['shift']) this.setMode(null); return; }
-    const gp = this.view.groundPoint(e.clientX, e.clientY);
-    const u = this.game.pickUnit(gp.x, gp.z);
-    if (u) { this.game.select(u); return; }
-    this.game.selectAt(t.x, t.y);
+    // no mode: begin a potential selection box (resolved on pointerup)
+    this.boxStart = { x: e.clientX, y: e.clientY };
+    this.boxing = false;
   }
 
   private onMove(e: PointerEvent): void {
@@ -98,6 +106,11 @@ export class Controls {
       const v = RIGHT.clone().multiplyScalar(-dx * scale * 0.72).add(FWD.clone().multiplyScalar(dy * scale));
       this.view.pan(v);
     }
+    // grow the selection box once the pointer moves past a small threshold
+    if (this.boxStart) {
+      const dx = e.clientX - this.boxStart.x, dy = e.clientY - this.boxStart.y;
+      if (this.boxing || dx * dx + dy * dy > 36) { this.boxing = true; this.drawSelBox(e.clientX, e.clientY); }
+    }
     this.lastMouse = { x: e.clientX, y: e.clientY };
     const m = this.mode;
     if (this.game && this.roadPainting) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.game.paintRoad(t.x, t.y); }
@@ -105,6 +118,70 @@ export class Controls {
     if (this.game && this.demoDragging) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.game.demolishAt(t.x, t.y, true); }
     if (m && (m.type === 'road' || m.type === 'demolish' || m.type === 'plot')) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.view.showRoadCursor(t.x, t.y, m.type); else this.view.hideRoadCursor(); }
     if (m && m.type === 'build') { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.refreshGhost(t.x, t.y); }
+  }
+
+  private onUp(e: PointerEvent): void {
+    this.dragging = false; this.roadPainting = false; this.plotPainting = false; this.demoDragging = false;
+    if (this.boxStart && this.game) {
+      if (this.boxing) this.selectBox(this.boxStart.x, this.boxStart.y, e.clientX, e.clientY);
+      else this.clickSelect(e);
+    }
+    this.boxStart = null; this.boxing = false;
+    if (this.selbox) this.selbox.style.display = 'none';
+  }
+
+  /** A plain left-click with no drag: pick a single unit/building or clear. */
+  private clickSelect(e: PointerEvent): void {
+    if (!this.game) return;
+    const t = this.view.tileAt(e.clientX, e.clientY);
+    if (!t) return;
+    const gp = this.view.groundPoint(e.clientX, e.clientY);
+    const u = this.game.pickUnit(gp.x, gp.z);
+    if (u) {
+      this.game.select(u);
+      this.selUnits = u.faction === 'player' && u.dmg > 0 ? [u] : [];
+      return;
+    }
+    this.selUnits = [];
+    this.game.selectAt(t.x, t.y);
+  }
+
+  /** Box-select every player fighter whose screen position falls in the rectangle. */
+  private selectBox(x0: number, y0: number, x1: number, y1: number): void {
+    if (!this.game) return;
+    const minX = Math.min(x0, x1), maxX = Math.max(x0, x1);
+    const minY = Math.min(y0, y1), maxY = Math.max(y0, y1);
+    const picked: Unit[] = [];
+    for (const u of this.game.units) {
+      if (u.faction !== 'player' || u.dmg <= 0) continue;
+      const s = this.view.worldToScreen(u.mesh.position.x, u.mesh.position.y, u.mesh.position.z);
+      if (s.x >= minX && s.x <= maxX && s.y >= minY && s.y <= maxY) picked.push(u);
+    }
+    this.selUnits = picked;
+    if (picked.length) this.ui.toast(`${picked.length} selected`);
+  }
+
+  /** Right-click order for the current selection: attack a hostile, else attack-move. */
+  private orderSelection(e: PointerEvent): void {
+    if (!this.game) return;
+    const gp = this.view.groundPoint(e.clientX, e.clientY);
+    const foe = this.game.pickUnit(gp.x, gp.z);
+    const t = this.view.tileAt(e.clientX, e.clientY);
+    if (foe && foe.faction !== 'player') {
+      for (const u of this.selUnits) this.game.orderUnit(u, 'attack', foe.tx, foe.ty, foe);
+    } else if (t) {
+      for (const u of this.selUnits) this.game.orderUnit(u, 'attackMove', t.x, t.y);
+    }
+  }
+
+  private drawSelBox(x: number, y: number): void {
+    if (!this.selbox || !this.boxStart) return;
+    const minX = Math.min(this.boxStart.x, x), minY = Math.min(this.boxStart.y, y);
+    this.selbox.style.display = 'block';
+    this.selbox.style.left = minX + 'px';
+    this.selbox.style.top = minY + 'px';
+    this.selbox.style.width = Math.abs(x - this.boxStart.x) + 'px';
+    this.selbox.style.height = Math.abs(y - this.boxStart.y) + 'px';
   }
 
   // ---------- keyboard ----------
@@ -128,5 +205,11 @@ export class Controls {
     if (this.keys['a'] || this.keys['arrowleft']) add(RIGHT, -pan);
     if (this.keys['d'] || this.keys['arrowright']) add(RIGHT, pan);
     if (v) this.view.pan(v);
+
+    // keep the selection live: drop any fighters that have died, then draw rings
+    if (this.game && this.selUnits.length) {
+      this.selUnits = this.selUnits.filter(u => !u.dead && this.game!.units.indexOf(u) >= 0);
+    }
+    this.view.showSelection(this.selUnits);
   }
 }
