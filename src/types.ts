@@ -10,6 +10,9 @@ export type BuildingKey =
 
 export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'field';
 
+/** Purely decorative ground scatter (no gameplay effect). */
+export type DecoKind = 'lavender' | 'flowers' | 'bush' | 'reed' | 'lily';
+
 /** Which mesh builder in render/models.ts renders a building. */
 export type ModelKind = 'cottage' | 'windmill' | 'farm' | 'barn' | 'mine';
 
@@ -36,8 +39,9 @@ export interface BuildingDef {
 
 export interface Coord { x: number; y: number; }
 
-export interface Tree { growth: number; reserved: boolean; meshes: THREE.Object3D[]; s: number; }
+export interface Tree { growth: number; reserved: boolean; meshes: THREE.Object3D[]; s: number; kind: number; }
 export interface Deposit { kind: 'stone' | 'gold' | 'coal'; amt: number; meshes: THREE.Object3D[]; }
+export interface Deco { kind: DecoKind; meshes: THREE.Object3D[]; }
 export interface Field { farm: Building; growth: number; }
 
 export interface Tile {
@@ -48,6 +52,7 @@ export interface Tile {
   tree: Tree | null;
   dep: Deposit | null;
   field: Field | null;
+  deco: Deco | null;
   cshade: number;
 }
 

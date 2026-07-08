@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { rnd } from '../engine/rng';
-import type { BuildingDef } from '../types';
+import type { BuildingDef, DecoKind } from '../types';
 
 /* =====================================================================
    Mesh builders — the "look" of Het Gooi. Every builder returns a THREE
@@ -29,18 +29,144 @@ const geoPost = new THREE.BoxGeometry(0.1, 0.7, 0.1);
 const geoBody = new THREE.CylinderGeometry(0.16, 0.2, 0.42, 7);
 const geoHead = new THREE.SphereGeometry(0.14, 8, 7);
 const geoItem = new THREE.BoxGeometry(0.24, 0.18, 0.24);
+const geoBlade = new THREE.BoxGeometry(0.03, 0.34, 0.03);
+
+const FOL_GREENS = [0x4e7a3a, 0x557f38, 0x476f36, 0x5f8c40, 0x6a9a44];
 
 // =====================================================================
-//  Doodads
+//  Doodads — trees come in a few species/heights for a mixed woodland
 // =====================================================================
-export function makeTree(): THREE.Group {
+export function makeTree(kind = 0): THREE.Group {
   const g = new THREE.Group();
-  const trunk = new THREE.Mesh(geoTrunk, mat(0x7a5a3a)); trunk.position.y = 0.25; trunk.castShadow = true;
-  const folColor = [0x4e7a3a, 0x557f38, 0x476f36, 0x5f8c40][Math.floor(rnd() * 4)];
-  const fol = new THREE.Mesh(geoFol, mat(folColor)); fol.position.y = 0.85; fol.castShadow = true;
-  const fol2 = new THREE.Mesh(geoFol2, mat(folColor)); fol2.position.y = 1.28; fol2.castShadow = true;
-  g.add(trunk, fol, fol2);
+  const green = FOL_GREENS[Math.floor(rnd() * FOL_GREENS.length)];
+  switch (kind % 4) {
+    case 0: { // classic layered conifer
+      const trunk = new THREE.Mesh(geoTrunk, mat(0x7a5a3a)); trunk.position.y = 0.25; trunk.castShadow = true;
+      const fol = new THREE.Mesh(geoFol, mat(green)); fol.position.y = 0.85; fol.castShadow = true;
+      const fol2 = new THREE.Mesh(geoFol2, mat(green)); fol2.position.y = 1.28; fol2.castShadow = true;
+      g.add(trunk, fol, fol2);
+      break;
+    }
+    case 1: { // tall slender pine — three stacked cones
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.7, 6), mat(0x6f5334)); trunk.position.y = 0.35; trunk.castShadow = true; g.add(trunk);
+      const dark = mat(0x3f6d34);
+      for (let i = 0; i < 3; i++) {
+        const c = new THREE.Mesh(new THREE.ConeGeometry(0.42 - i * 0.1, 0.7, 7), dark);
+        c.position.y = 0.85 + i * 0.5; c.castShadow = true; g.add(c);
+      }
+      break;
+    }
+    case 2: { // round broadleaf — bushy sphere canopy
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.55, 6), mat(0x7d5a37)); trunk.position.y = 0.28; trunk.castShadow = true; g.add(trunk);
+      const cm = mat(green);
+      const crown = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 7), cm); crown.position.y = 0.95; crown.scale.y = 0.9; crown.castShadow = true; g.add(crown);
+      for (const [ox, oy, oz] of [[0.32, 0.75, 0], [-0.28, 0.82, 0.2], [0.05, 1.2, -0.15]]) {
+        const p = new THREE.Mesh(new THREE.SphereGeometry(0.3, 7, 6), cm); p.position.set(ox, oy, oz); p.castShadow = true; g.add(p);
+      }
+      break;
+    }
+    default: { // slim birch — pale trunk, small oval crown
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.95, 6), mat(0xe6e2d6)); trunk.position.y = 0.48; trunk.castShadow = true; g.add(trunk);
+      const cm = mat(0x87b455);
+      const crown = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 7), cm); crown.position.y = 1.12; crown.scale.y = 1.25; crown.castShadow = true; g.add(crown);
+      const crown2 = new THREE.Mesh(new THREE.SphereGeometry(0.26, 7, 6), cm); crown2.position.set(0.12, 0.92, 0.08); crown2.castShadow = true; g.add(crown2);
+      break;
+    }
+  }
   g.rotation.y = rnd() * Math.PI;
+  return g;
+}
+
+// =====================================================================
+//  Decorative ground scatter — lavender, wildflowers, bushes, reeds, lilies
+// =====================================================================
+export function makeDeco(kind: DecoKind): THREE.Group {
+  switch (kind) {
+    case 'lavender': return lavender();
+    case 'flowers': return wildflowers();
+    case 'bush': return bush();
+    case 'reed': return reeds();
+    default: return lily();
+  }
+}
+
+function lavender(): THREE.Group {
+  const g = new THREE.Group();
+  const stem = mat(0x5f7d43);
+  const flowerCols = [0x9b6fc4, 0x8455b8, 0xa87fd0];
+  const n = 5 + Math.floor(rnd() * 4);
+  for (let i = 0; i < n; i++) {
+    const s = new THREE.Mesh(geoBlade, stem);
+    const px = (rnd() - 0.5) * 0.7, pz = (rnd() - 0.5) * 0.7;
+    s.position.set(px, 0.17, pz); s.rotation.z = (rnd() - 0.5) * 0.3;
+    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.02, 0.2, 5), mat(flowerCols[Math.floor(rnd() * 3)]));
+    tip.position.set(px, 0.38, pz);
+    g.add(s, tip);
+  }
+  return g;
+}
+
+function wildflowers(): THREE.Group {
+  const g = new THREE.Group();
+  const stem = mat(0x5f8c40);
+  const cols = [0xffffff, 0xffd94a, 0xff8fb0, 0xf2f27a];
+  const n = 3 + Math.floor(rnd() * 3);
+  for (let i = 0; i < n; i++) {
+    const px = (rnd() - 0.5) * 0.7, pz = (rnd() - 0.5) * 0.7;
+    const s = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.16, 0.02), stem); s.position.set(px, 0.08, pz);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), mat(cols[Math.floor(rnd() * cols.length)])); head.position.set(px, 0.18, pz);
+    g.add(s, head);
+  }
+  return g;
+}
+
+function bush(): THREE.Group {
+  const g = new THREE.Group();
+  const green = mat(FOL_GREENS[Math.floor(rnd() * FOL_GREENS.length)]);
+  for (const [ox, oy, oz, r] of [[0, 0.16, 0, 0.26], [0.22, 0.13, 0.08, 0.2], [-0.16, 0.12, -0.14, 0.18]] as number[][]) {
+    const p = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 6), green); p.position.set(ox, oy, oz); p.scale.y = 0.85; p.castShadow = true; g.add(p);
+  }
+  // a few berries for interest
+  if (rnd() < 0.5) {
+    const berry = mat(0xd23b4a);
+    for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.03, 5, 4), berry); b.position.set((rnd() - 0.5) * 0.4, 0.2 + rnd() * 0.1, (rnd() - 0.5) * 0.4); g.add(b); }
+  }
+  return g;
+}
+
+function reeds(): THREE.Group {
+  const g = new THREE.Group();
+  const stem = mat(0x6f8f3e);
+  const n = 6 + Math.floor(rnd() * 5);
+  for (let i = 0; i < n; i++) {
+    const px = (rnd() - 0.5) * 0.8, pz = (rnd() - 0.5) * 0.8;
+    const h = 0.5 + rnd() * 0.5;
+    const blade = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.02, h, 4), stem);
+    blade.position.set(px, h / 2, pz); blade.rotation.z = (rnd() - 0.5) * 0.35;
+    g.add(blade);
+    if (rnd() < 0.4) { // cattail head
+      const cat = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.14, 6), mat(0x7a4a28));
+      cat.position.set(px, h, pz); g.add(cat);
+    }
+  }
+  g.position.y = 0.02;
+  return g;
+}
+
+function lily(): THREE.Group {
+  const g = new THREE.Group();
+  const pad = mat(0x3f7a44);
+  const n = 1 + Math.floor(rnd() * 3);
+  for (let i = 0; i < n; i++) {
+    const px = (rnd() - 0.5) * 0.7, pz = (rnd() - 0.5) * 0.7;
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.15 + rnd() * 0.08, 10), pad);
+    disc.rotation.x = -Math.PI / 2; disc.position.set(px, 0.005, pz); g.add(disc);
+    if (rnd() < 0.5) { // a flower on the pad
+      const f = new THREE.Mesh(new THREE.SphereGeometry(0.055, 7, 5), mat(rnd() < 0.5 ? 0xf4c6dd : 0xfbf3ea));
+      f.scale.y = 0.6; f.position.set(px, 0.05, pz); g.add(f);
+    }
+  }
+  g.position.y = 0.03;
   return g;
 }
 
@@ -60,14 +186,86 @@ export function makeDeposit(kind: 'stone' | 'gold' | 'coal'): THREE.Group {
   return g;
 }
 
-export function makeUnit(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
+export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group; itemMesh: THREE.Mesh } {
   const g = new THREE.Group();
   const body = new THREE.Mesh(geoBody, mat(colorHex)); body.position.y = 0.21; body.castShadow = true;
   const head = new THREE.Mesh(geoHead, mat(0xe8c9a0)); head.position.y = 0.55; head.castShadow = true;
+  g.add(body, head);
+  dressUnit(g, role);
   const item = new THREE.Mesh(geoItem, new THREE.MeshLambertMaterial({ color: 0xffffff }));
   item.position.y = 0.82; item.visible = false;
-  g.add(body, head, item);
+  g.add(item);
   return { group: g, itemMesh: item };
+}
+
+// Give each role its own little hat + outfit accent so trades read at a glance.
+// Head sits at y≈0.55 (r 0.14); hats perch around y≈0.66–0.9.
+function dressUnit(g: THREE.Group, role: string): void {
+  const add = (m: THREE.Mesh, castsShadow = true) => { m.castShadow = castsShadow; g.add(m); };
+  // small helpers
+  const brim = (col: number, r: number, h: number, y: number) => new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 12), mat(col)).translateY(y);
+  const dome = (col: number, r: number, y: number) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat(col)); m.position.y = y; m.scale.y = 0.75; return m; };
+  const apron = (col: number) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.34, 0.06), mat(col)); m.position.set(0, 0.24, 0.19); m.userData.marker = true; return m; };
+  const strap = (x: number) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.34, 0.04), mat(0x3f5aa0)); m.position.set(x, 0.28, 0.19); m.userData.marker = true; return m; };
+
+  switch (role) {
+    case 'woodcutter': { // red knit beanie
+      add(dome(0xb5352f, 0.16, 0.66));
+      add(brim(0xd6493f, 0.165, 0.06, 0.6), false);
+      break;
+    }
+    case 'forester': { // green pointed hood
+      const hat = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.3, 8), mat(0x3f6d3a)); hat.position.y = 0.74; add(hat);
+      add(brim(0x355c31, 0.19, 0.05, 0.62), false);
+      break;
+    }
+    case 'carpenter': { // brown flat cap + work apron
+      add(brim(0x6b4a2f, 0.17, 0.09, 0.66));
+      add(apron(0x8a6a44));
+      break;
+    }
+    case 'stonemason': { // grey dusty cap
+      add(dome(0x9aa0a3, 0.16, 0.66));
+      add(brim(0x8a9094, 0.185, 0.04, 0.62), false);
+      break;
+    }
+    case 'farmer': { // wide straw hat
+      add(brim(0xd9bd63, 0.28, 0.03, 0.66), false);
+      add(new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.16, 10), mat(0xcaa94e)).translateY(0.72));
+      add(strap(-0.09)); add(strap(0.09)); // overalls
+      break;
+    }
+    case 'miller': { // soft white cap
+      add(dome(0xefe9dc, 0.17, 0.66));
+      break;
+    }
+    case 'baker': { // tall white toque
+      add(brim(0xf4efe6, 0.15, 0.16, 0.72));
+      add(dome(0xfbf7ef, 0.17, 0.82));
+      add(apron(0xf0e6d2));
+      break;
+    }
+    case 'miner': case 'collier': { // hard hat + head lamp
+      const helmCol = role === 'miner' ? 0xd8af43 : 0x35353c;
+      add(dome(helmCol, 0.165, 0.66));
+      add(brim(helmCol, 0.19, 0.04, 0.62), false);
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.045, 7, 6), mat(0xfff2a8)); lamp.position.set(0, 0.69, 0.15); add(lamp, false);
+      break;
+    }
+    case 'minter': { // green cap with a gold band
+      add(dome(0x2f6f52, 0.16, 0.67));
+      add(brim(0xd4af37, 0.17, 0.05, 0.6), false);
+      break;
+    }
+    case 'laborer': { // brown flat cap (builders)
+      add(brim(0x8a5a34, 0.17, 0.08, 0.65));
+      break;
+    }
+    default: { // serf — simple tan cap
+      add(dome(0xcdbb8f, 0.155, 0.65));
+      break;
+    }
+  }
 }
 
 // =====================================================================
@@ -110,6 +308,18 @@ function addChimney(g: THREE.Group, ghost: boolean): void {
   const cap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.3), mkMat(0x5b4433, ghost));
   cap.position.set(0.5, 1.68, -0.3); cap.userData.marker = true;
   g.add(ch, cap);
+  if (ghost) return;
+  // drifting smoke — puffs rise & fade; View.animate cycles them via userData.smoke
+  const puffs: THREE.Mesh[] = [];
+  const N = 4;
+  for (let i = 0; i < N; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.12, 7, 6), new THREE.MeshLambertMaterial({ color: 0xbfbfbf, transparent: true, opacity: 0 }));
+    m.userData.marker = true;
+    m.userData.smokePhase = i / N;          // stagger the puffs up the plume
+    m.position.set(0.5, 1.75, -0.3);
+    g.add(m); puffs.push(m);
+  }
+  g.userData.smoke = { puffs, base: new THREE.Vector3(0.5, 1.75, -0.3) };
 }
 function addLogpile(g: THREE.Group, ghost: boolean): void {
   const logMat = mkMat(0x8a5a2b, ghost);
