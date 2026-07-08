@@ -221,6 +221,11 @@ Each phase ends in a playable, committable state. **Playtest after every phase.*
 ### Phase 0 — Foundations (refactor before features)
 
 > Goal: the app can tear down and rebuild a level, deterministically, with a state machine around it.
+>
+> **Status: ✔ Complete.** Named RNG streams (`worldRng`/`simRng`/`uiRng`) + `levelSeed`;
+> parameterized `World`; `View.loadWorld()`/`clearWorld()` rebuild levels without leaking GPU
+> resources; `RunState` state machine (`menu → playing → shop → summary`); fixed-timestep sim
+> (20 ticks/s); versioned `localStorage` save (`SaveGame.ts`) with a menu "Clear save data" button.
 
 1. **Split the RNG into named streams** (`src/engine/rng.ts`): `worldRng(seed)` for
    generation, `simRng` for gameplay, `uiRng` for cosmetics. Today one global stream
@@ -251,6 +256,14 @@ level 2's start. Same run seed twice → identical maps.
 ### Phase 1 — The roguelite skeleton (objectives, gold, shop, modifiers)
 
 > Goal: a full winnable/losable 10-level run, economy objectives only. This is the moment the game becomes a game.
+>
+> **Status: ✔ Complete.** `Modifiers` mediates every tunable (`unitSpeed`/`buildTime`/`gatherTime`/
+> `recipeTime`/`carryCap`/`buildingCost`/`fieldGrowth`/`goldGain` + start-kit bumps); `Objectives`
+> supports `stock`/`produce`/`collect` with per-tick evaluation and a HUD card + progress bar + timer;
+> data-driven `data/levels.ts` (10 levels, economy placeholders for 5–10) with per-level world-gen
+> params, kits, soft/hard timers and rewards; gold + scattered gold piles (`Tile.pickup`, serfs
+> auto-collect); shop screen (`ui/Shop.ts` + `data/upgrades.ts`) with 5 weighted slots, a 1-of-3 free
+> draft and a paid reroll; hard-timer fail state → run summary awarding Heritage.
 
 1. **Modifier system** — `src/game/Modifiers.ts`. One object the sim consults instead of
    raw constants: `mods.unitSpeed(u)`, `mods.buildTime()`, `mods.carryCap()`,

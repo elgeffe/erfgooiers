@@ -15,6 +15,7 @@ export interface WorldParams {
   oreVeins?: number;     // ore clusters placed (stone/gold/coal mix)
   waterScale?: number;   // 0 = dry, 1 = default lake+ponds, >1 = wetter
   meadows?: number;      // lavender patches
+  goldPiles?: number;    // scattered gold pickups the hero/serfs collect
 }
 
 /**
@@ -42,6 +43,7 @@ export class World {
       oreVeins: params.oreVeins ?? 4,
       waterScale: params.waterScale ?? 1,
       meadows: params.meadows ?? 3,
+      goldPiles: params.goldPiles ?? 0,
     };
     this.W = this.p.w;
     this.H = this.p.h;
@@ -49,7 +51,7 @@ export class World {
     for (let y = 0; y < this.H; y++) {
       this.tiles[y] = [];
       for (let x = 0; x < this.W; x++) {
-        this.tiles[y][x] = { type: 'grass', road: false, b: null, site: null, tree: null, dep: null, field: null, deco: null, cshade: 0.9 + rnd() * 0.2 };
+        this.tiles[y][x] = { type: 'grass', road: false, b: null, site: null, tree: null, dep: null, field: null, deco: null, pickup: null, cshade: 0.9 + rnd() * 0.2 };
       }
     }
     this.generate();
@@ -178,6 +180,17 @@ export class World {
       const r = rnd();
       if (r < 0.045) this.setDeco(t, 'flowers');
       else if (r < 0.065) this.setDeco(t, 'bush');
+    }
+
+    // ---- gold piles: scattered pickups for collection quests & gold income ----
+    let piles = 0, pguard = 0;
+    while (piles < this.p.goldPiles && pguard++ < 500) {
+      const x = 3 + Math.floor(rnd() * (W - 6)), y = 3 + Math.floor(rnd() * (H - 6));
+      const t = this.T(x, y);
+      if (t && t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep && !t.field && !t.pickup && !central(x, y)) {
+        t.pickup = { gold: 3 + Math.floor(rnd() * 5), reserved: false, meshes: [] };
+        piles++;
+      }
     }
   }
 

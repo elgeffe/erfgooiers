@@ -12,14 +12,22 @@
 <div id="topbar">
   <div id="brand"><span id="logo"></span><div id="restitle" class="serif">Erfgooiers</div></div>
   <div id="resbar"></div>
-  <div id="objective"><span style="color:var(--ink-dim)">Objective</span><b id="objText">—</b></div>
+  <div id="objective">
+    <div class="obj-head"><span style="color:var(--ink-dim)">Objective</span><b id="objText">—</b></div>
+    <div class="obj-bar"><div id="objBar"></div></div>
+  </div>
+  <div id="goldChip" title="Gold — your shop currency"><span class="coin"></span><b id="goldText">0</b></div>
+  <div id="timerChip" title="Time remaining this level">0:00</div>
   <div id="speedctl">
     <button id="sp0" title="Pause (space)">⏸</button>
     <button id="sp1" class="on" title="Normal speed">1×</button>
     <button id="sp3" title="Fast">3×</button>
   </div>
+  <div id="soundctl">
+    <button id="btnSound" title="Toggle sound">🔊</button>
+  </div>
   <div id="runctl">
-    <button id="btnDebugWin" title="Debug: clear this level and go to the shop">✓ Win</button>
+    <button id="btnDebugWin" title="Debug: instantly clear this level">✓ Win</button>
     <button id="btnToMenu" title="Abandon this run and return to the menu">Menu</button>
   </div>
 </div>
@@ -60,13 +68,19 @@
   </div>
 </div>
 
-<!-- ---------- shop (placeholder until Phase 1) ---------- -->
+<!-- ---------- shop (between levels) ---------- -->
 <div id="shop" class="screen">
-  <div class="card">
+  <div class="card shopcard">
     <h1 class="serif">The Shop</h1>
-    <div class="tag">Level cleared. Upgrades and drafts arrive in Phase 1 — for now, press on.</div>
     <div id="shopGold" class="metaline"></div>
-    <div class="btns"><button id="btnShopContinue">To the next level →</button></div>
+    <div class="shopsect">Wares — buy any you can afford (effects stack across the run)</div>
+    <div id="shopSlots" class="shopgrid"></div>
+    <div class="shopsect">Free draft — choose one</div>
+    <div id="shopDraft" class="shopgrid"></div>
+    <div class="btns row">
+      <button id="btnReroll" class="ghost">Reroll wares (<span id="rerollCost">0</span>g)</button>
+      <button id="btnShopContinue">To the next level →</button>
+    </div>
   </div>
 </div>
 

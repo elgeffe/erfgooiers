@@ -4,10 +4,16 @@ import { View } from './render/View';
 import { Game } from './game/Game';
 import { UI } from './ui/UI';
 import { Controls } from './input/Controls';
+import { Shop } from './ui/Shop';
 import { logoSVG } from './ui/logo';
 import { simRng, uiRng } from './engine/rng';
+import { Modifiers } from './game/Modifiers';
+import { Objective } from './game/Objectives';
+import { specsFor } from './data/upgrades';
+import { levelFor, pickObjective, type LevelDef } from './data/levels';
 import { RUN_LEVELS, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
+import { audio } from './audio/Audio';
 
 /* =====================================================================
    Erfgooiers — roguelite economy builder set in Het Gooi.
@@ -32,25 +38,43 @@ let meta: MetaState = Save.loadMeta();
 let run: RunState | null = null;
 let game: Game | null = null;
 let phase: Phase = 'menu';
+let currentLevel: LevelDef | null = null;
+
+// per-run tallies for the summary screen (reset when a run starts)
+let clearedThisRun = 0;
+let goldEarnedThisRun = 0;
+
+const shop = new Shop(shopContinue);
 
 // ---------- level lifecycle ----------
 function startLevel(): void {
   if (!run) return;
+  const level = levelFor(run.levelIndex);
+  currentLevel = level;
   const seed = currentLevelSeed(run);
   // Seed the non-world streams deterministically from the level seed so a
   // replayed level looks and plays identically. World reseeds worldRng itself.
   simRng.reseed(seed ^ 0x5bd1e995);
   uiRng.reseed(seed ^ 0x27d4eb2f);
 
-  const world = new World({ seed });
+  const world = new World({ seed, ...level.world });
   view.loadWorld(world);
-  game = new Game(world, view);
+  const mods = new Modifiers(specsFor(run.upgrades));
+  game = new Game(world, view, mods);
   game.toast = (m, c) => ui.toast(m, c);
   game.onSelect = o => ui.showInspector(o);
-  game.init();
+  game.sfx = name => audio.play(name as any);
+  audio.setLevel(level.index);
+  game.onGold = amt => { if (run) { run.gold += amt; goldEarnedThisRun += amt; ui.setGold(run.gold); } };
+  // pick this level's objective variant deterministically from the seed
+  const objDef = pickObjective(level, ((seed >>> 8) % 9973) / 9973);
+  game.objective = new Objective(objDef);
+  game.init(level.kit);
   ui.setGame(game);
   controls.setGame(game);
-  ui.setObjective(`Level ${run.levelIndex} / ${RUN_LEVELS} — debug: press “✓ Win” to clear`);
+  ui.setGold(run.gold);
+  ui.setObjective(`Level ${level.index} · ${level.name} — ${game.objective.brief()}`);
+  ui.updateObjective(game.objective.evaluate(game).label, 0, level.hardTimer);
   view.centerOn(world.wx(game.store.x) + 0.5, world.wz(game.store.y) + 2);
   view.drawMinimap(game.units);
 
@@ -63,11 +87,13 @@ function startLevel(): void {
 function disposeLevel(): void {
   view.clearWorld();
   game = null;
+  currentLevel = null;
 }
 
 // ---------- transitions ----------
 function goMenu(): void {
   phase = 'menu';
+  audio.setLevel(0);
   renderMenu();
   showScreen('menu');
 }
@@ -76,6 +102,8 @@ function newRunFromMenu(): void {
   run = newRun(1 + Math.floor(Math.random() * 2147483645));
   meta.stats.runs++;
   Save.saveMeta(meta);
+  clearedThisRun = 0;
+  goldEarnedThisRun = 0;
   startLevel();
 }
 
@@ -83,21 +111,46 @@ function continueRun(): void {
   const saved = Save.loadRun();
   if (!saved) { goMenu(); return; }
   run = saved;
+  clearedThisRun = Math.max(0, saved.levelIndex - 1);
+  goldEarnedThisRun = saved.gold;
   startLevel();
 }
 
-function debugWin(): void {
-  if (phase !== 'playing' || !run) return;
-  const speedBonus = 0; // Phase 1 adds the under-target-time bonus
-  run.gold += 20 + run.levelIndex * 5 + speedBonus;
+/** Award gold/Heritage for a cleared level, then advance to shop or victory. */
+function onLevelClear(): void {
+  if (phase !== 'playing' || !run || !currentLevel || !game) return;
+  const speedy = game.elapsed <= currentLevel.timeTarget;
+  const base = currentLevel.reward + (speedy ? Math.round(currentLevel.reward * 0.5) : 0);
+  const reward = Math.max(1, Math.round(base * game.mods.goldMult()));
+  run.gold += reward;
+  goldEarnedThisRun += reward;
+  clearedThisRun++;
   meta.stats.levelsCleared++;
   meta.stats.bestLevel = Math.max(meta.stats.bestLevel, run.levelIndex);
-  meta.heritage += 3 + run.levelIndex; // bank Heritage now, even without a sink yet
+  meta.heritage += 3 + run.levelIndex; // banked now, sink arrives in Phase 4
   Save.saveMeta(meta);
-  disposeLevel();
+  audio.play('coin');
+  ui.toast(`Level cleared! +${reward} gold${speedy ? ' — speed bonus!' : ''}`);
 
-  if (run.levelIndex >= RUN_LEVELS) { phase = 'summary'; renderSummary(true); showScreen('summary'); Save.clearRun(); run = null; }
-  else { phase = 'shop'; renderShop(); showScreen('shop'); Save.saveRun(run); }
+  const last = run.levelIndex >= RUN_LEVELS;
+  disposeLevel();
+  if (last) { phase = 'summary'; renderSummary(true); showScreen('summary'); Save.clearRun(); run = null; }
+  else { phase = 'shop'; shop.open(run); showScreen('shop'); Save.saveRun(run); }
+}
+
+/** The hard timer expired — the run is over. */
+function onDefeat(): void {
+  if (phase !== 'playing' || !run) return;
+  audio.play('error');
+  ui.toast('Out of time — the run ends here', 'err');
+  disposeLevel();
+  phase = 'summary'; renderSummary(false); showScreen('summary');
+  Save.clearRun();
+  run = null;
+}
+
+function debugWin(): void {
+  if (phase === 'playing') onLevelClear();
 }
 
 function shopContinue(): void {
@@ -137,17 +190,13 @@ function renderMenu(): void {
     `<b>${meta.heritage}</b> Heritage · runs: ${meta.stats.runs} · levels cleared: ${meta.stats.levelsCleared} · best: level ${meta.stats.bestLevel || 0}`;
 }
 
-function renderShop(): void {
-  if (!run) return;
-  $('shopGold').innerHTML = `<b>${run.gold}</b> gold · next: level ${run.levelIndex + 1} / ${RUN_LEVELS}`;
-}
-
 function renderSummary(victory: boolean): void {
   $('sumTitle').textContent = victory ? 'Run complete — victory!' : 'Run over';
   $('sumSub').textContent = victory
     ? `You cleared all ${RUN_LEVELS} levels of Het Gooi.`
-    : 'Your run has ended.';
+    : 'The clock beat you. Your gold and upgrades are gone — but the Heritage remains.';
   $('sumBody').innerHTML =
+    `Cleared <b>${clearedThisRun}</b> level(s) this run · gold earned <b>${goldEarnedThisRun}</b> (lost) · ` +
     `<b>${meta.heritage}</b> Heritage banked · lifetime levels cleared: ${meta.stats.levelsCleared}`;
 }
 
@@ -159,10 +208,21 @@ $('introLogo').innerHTML = logoSVG(40);
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
 ($('btnHelp') as HTMLButtonElement).onclick = () => $('intro').style.display = 'flex';
 ($('startBtn') as HTMLButtonElement).onclick = () => $('intro').style.display = 'none';
-($('btnShopContinue') as HTMLButtonElement).onclick = shopContinue;
 ($('btnSumMenu') as HTMLButtonElement).onclick = goMenu;
 ($('btnDebugWin') as HTMLButtonElement).onclick = debugWin;
 ($('btnToMenu') as HTMLButtonElement).onclick = abandonRun;
+
+// ---------- audio ----------
+const btnSound = $('btnSound') as HTMLButtonElement;
+function renderSound(): void {
+  btnSound.textContent = audio.isMuted ? '🔇' : '🔊';
+  btnSound.classList.toggle('off', audio.isMuted);
+  btnSound.title = audio.isMuted ? 'Sound off — click to unmute' : 'Sound on — click to mute';
+}
+btnSound.onclick = e => { e.stopPropagation(); audio.toggleMute(); renderSound(); };
+// Browsers gate audio behind a user gesture: unlock on the first interaction.
+addEventListener('pointerdown', () => audio.unlock(), { once: true });
+renderSound();
 
 // ---------- main loop (fixed-timestep sim, real-time render) ----------
 const TICK = 1 / 20;          // 20 sim steps/second — determinism & replay ready
@@ -178,14 +238,20 @@ function frame(now: number): void {
   controls.update(dt);                       // keyboard camera panning
   if (game) view.animate(dt, game.buildings); // sails & clouds (real-time, ignores pause)
 
-  if (phase === 'playing' && game) {
+  if (phase === 'playing' && game && currentLevel && game.objective) {
     simAcc += dt * game.simSpeed;
     let steps = 0;
     while (simAcc >= TICK && steps < MAX_STEPS) { game.update(TICK); simAcc -= TICK; steps++; }
     if (simAcc > TICK) simAcc = 0;            // drop the backlog rather than fast-forward
 
-    uiT += dt; if (uiT > 0.4) { uiT = 0; ui.tick(); }
+    const st = game.objective.evaluate(game);
+    const remaining = currentLevel.hardTimer - game.elapsed;
+    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateObjective(st.label, st.ratio, remaining); }
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
+
+    // resolve the level last: a win or a timeout tears the level down
+    if (st.done) onLevelClear();
+    else if (remaining <= 0) onDefeat();
   }
 
   view.render();

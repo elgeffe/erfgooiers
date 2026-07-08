@@ -43,6 +43,8 @@ export interface Tree { growth: number; reserved: boolean; meshes: THREE.Object3
 export interface Deposit { kind: 'stone' | 'gold' | 'coal'; amt: number; meshes: THREE.Object3D[]; }
 export interface Deco { kind: DecoKind; meshes: THREE.Object3D[]; }
 export interface Field { farm: Building; growth: number; meshes: THREE.Object3D[]; }
+/** A gold pile on the map; serfs (later the hero) walk over and collect it. */
+export interface Pickup { gold: number; reserved: boolean; meshes: THREE.Object3D[]; }
 
 export interface Tile {
   type: 'grass' | 'water';
@@ -53,6 +55,7 @@ export interface Tile {
   dep: Deposit | null;
   field: Field | null;
   deco: Deco | null;
+  pickup: Pickup | null;
   cshade: number;
 }
 
@@ -105,6 +108,7 @@ export interface Unit {
   pathI: number;
   task: Task | null;
   carrying: string | null;
+  collect: Coord | null;
   home: Building | null;
   wstate: string;
   timer: number;

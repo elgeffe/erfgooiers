@@ -1,13 +1,14 @@
 import * as THREE from 'three';
-import { BASE_SPEED, BUILD_TIME, CARRY_CAP, OUT_CAP } from '../constants';
 import { DEFS } from '../data/buildings';
 import { ITEMS } from '../data/items';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
-import type { Building, BuildingKey, Site, Unit } from '../types';
+import type { Building, BuildingKey, Coord, Site, Unit } from '../types';
 import { doorTile } from './util';
+import { Modifiers } from './Modifiers';
+import type { Objective } from './Objectives';
 
 // Gameplay events use the sim stream (reseeded per level), never worldgen/cosmetic.
 const rnd = () => simRng.next();
@@ -39,13 +40,23 @@ export class Game {
   selected: any = null;
   simSpeed = 1;
 
+  /** Sim seconds elapsed this level (drives the hard timer & speed bonus). */
+  elapsed = 0;
+  /** The level's objective tracker, or null (e.g. debug/sandbox). */
+  objective: Objective | null = null;
+
   toast: (msg: string, cls?: string) => void = () => {};
   onSelect: (obj: any) => void = () => {};
+  /** Called when gold is picked up off the map (already run through goldMult). */
+  onGold: (amount: number) => void = () => {};
+  /** Play a named sound effect (wired to the AudioEngine by main). */
+  sfx: (name: string) => void = () => {};
 
+  private readonly pickups: { x: number; y: number }[] = [];
   private dispatchT = 0;
   private fieldT = 0;
 
-  constructor(private readonly world: World, private readonly view: View) {}
+  constructor(private readonly world: World, private readonly view: View, readonly mods: Modifiers = new Modifiers()) {}
 
   // =====================================================================
   //  Setup
@@ -53,6 +64,8 @@ export class Game {
   init(kit: StartKit = DEFAULT_KIT): void {
     const { W, H } = this.world;
     const tiles = this.world.tiles;
+    // index the map's gold piles so serfs can be dispatched to collect them
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (tiles[y][x].pickup) this.pickups.push({ x, y });
     // clear a build zone at the map centre for the starting settlement
     const cx = Math.floor(W / 2) - 1, cy = Math.floor(H / 2) - 1;
     for (let y = cy - 1; y < cy + 5; y++) for (let x = cx - 2; x < cx + 5; x++) {
@@ -63,10 +76,15 @@ export class Game {
       t.type = 'grass'; this.view.refreshTile(x, y);
     }
     this.store = this.placeBuilding('storehouse', cx, cy, true);
+    // base kit stock, then run-upgrade start bonuses on top
     this.store.stock = { timber: 0, stone: 0, bread: 0, trunk: 0, wheat: 0, flour: 0, goldore: 0, coal: 0, coin: 0, ...kit.stock };
+    const bonus = this.mods.startStock();
+    for (const k in bonus) this.store.stock[k] = (this.store.stock[k] || 0) + (bonus as Record<string, number>)[k];
     const d = doorTile(this.store);
-    for (let i = 0; i < kit.serfs; i++) this.spawnUnit('serf', 0xd8c49a, { x: d.x - 2 + (i % 4), y: d.y + Math.floor(i / 4) });
-    for (let i = 0; i < kit.laborers; i++) { const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + i, y: d.y }); u.roleName = 'Laborer'; }
+    const serfs = kit.serfs + this.mods.extraSerfs();
+    const laborers = kit.laborers + this.mods.extraLaborers();
+    for (let i = 0; i < serfs; i++) this.spawnUnit('serf', 0xd8c49a, { x: d.x - 2 + (i % 4), y: d.y + Math.floor(i / 4) });
+    for (let i = 0; i < laborers; i++) { const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + (i % 3), y: d.y + Math.floor(i / 3) }); u.roleName = 'Laborer'; }
   }
 
   // =====================================================================
@@ -115,13 +133,14 @@ export class Game {
     group.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
     this.view.add(group);
     const s: Site = {
-      key, def, x: tx, y: ty, rot, needs: { ...def.cost } as Record<string, number>, delivered: {}, incoming: {},
+      key, def, x: tx, y: ty, rot, needs: this.mods.buildingCost(def) as Record<string, number>, delivered: {}, incoming: {},
       progress: 0, ready: false, builder: null, mesh: group, frame, isSite: true, name: def.name + ' (site)',
     };
     for (const k in s.needs) { s.delivered[k] = 0; s.incoming[k] = 0; }
     const tiles = this.world.tiles;
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].site = s; if (tiles[y][x].tree) this.removeTree(x, y); if (tiles[y][x].deco) this.removeDeco(x, y); }
     this.sites.push(s);
+    this.checkSiteReady(s); // a zero-cost site (cost fully reduced) is ready at once
     return s;
   }
 
@@ -132,6 +151,7 @@ export class Game {
     this.sites.splice(this.sites.indexOf(s), 1);
     const b = this.placeBuilding(s.key, s.x, s.y, false, s.rot);
     this.toast(s.def.name + ' completed');
+    this.sfx('build');
     if (s.def.worker) {
       const u = this.spawnUnit(s.def.worker.toLowerCase(), s.def.wcolor!, this.store ? doorTile(this.store) : doorTile(b));
       u.home = b; u.wstate = 'goHome'; u.roleName = s.def.worker;
@@ -147,7 +167,7 @@ export class Game {
     const { group, itemMesh } = this.view.createUnit(colorHex, role, tile.x, tile.y);
     const u: Unit = {
       role, roleName: role[0].toUpperCase() + role.slice(1), colorHex, mesh: group, itemMesh,
-      tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null,
+      tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
       home: null, wstate: 'idle', timer: 0, target: null, hunger: 70 + rnd() * 30, bob: 0, status: 'Idle',
     };
     this.units.push(u);
@@ -172,7 +192,7 @@ export class Game {
     const tgt = new THREE.Vector3(this.world.wx(node.x), 0, this.world.wz(node.y));
     const cur = u.mesh.position;
     const curTile = this.world.T(u.tx, u.ty);
-    const sp = BASE_SPEED * (curTile && curTile.road ? 1.3 : 1);
+    const sp = this.mods.unitSpeed(u) * (curTile && curTile.road ? 1.3 : 1);
     const d = tgt.clone().sub(cur); d.y = 0;
     const dist = d.length();
     const step = sp * dt;
@@ -194,8 +214,9 @@ export class Game {
   private bDist(a: any, b: any): number { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
 
   private dispatch(): void {
-    let idle = this.units.filter(u => u.role === 'serf' && !u.task);
+    let idle = this.units.filter(u => u.role === 'serf' && !u.task && !u.collect);
     if (!idle.length) return;
+    const carryCap = this.mods.carryCap(), outCap = this.mods.outCap();
     const demands: any[] = [];
     for (const s of this.sites) {
       for (const it in s.needs) {
@@ -207,7 +228,7 @@ export class Game {
       if (!b.active || !b.def.recipe) continue;
       for (const it in b.def.recipe.inp) {
         const have = (b.inp[it] || 0) + (b.incoming[it] || 0);
-        if (have < CARRY_CAP) demands.push({ pri: 1, to: b, item: it });
+        if (have < carryCap) demands.push({ pri: 1, to: b, item: it });
       }
     }
     for (const b of this.buildings) {
@@ -215,7 +236,7 @@ export class Game {
       for (const it in b.out) {
         if (b.out[it] > 0) {
           const wanted = demands.some(d => d.item === it);
-          if (!wanted || b.out[it] >= OUT_CAP - 1) demands.push({ pri: 2, to: this.store, item: it, from: b });
+          if (!wanted || b.out[it] >= outCap - 1) demands.push({ pri: 2, to: this.store, item: it, from: b });
         }
       }
     }
@@ -248,6 +269,7 @@ export class Game {
   }
 
   private serfUpdate(u: Unit, dt: number): void {
+    if (u.collect && !u.task) { this.collectUpdate(u, dt); return; }
     const t = u.task;
     if (!t) { u.status = 'Idle'; return; }
     if (t.phase === 'pickup') {
@@ -279,6 +301,50 @@ export class Game {
     this.setCarrying(u, null); u.task = null; u.status = 'Idle';
   }
 
+  // =====================================================================
+  //  Gold-pile collection (serfs auto-collect; the hero takes over in Phase 2)
+  // =====================================================================
+  /** Assign idle serfs to the nearest unreserved gold pile. */
+  private dispatchPickups(): void {
+    if (!this.pickups.length) return;
+    const idle = this.units.filter(u => u.role === 'serf' && !u.task && !u.collect);
+    if (!idle.length) return;
+    const taken = new Set<Unit>();
+    for (const p of this.pickups) {
+      const t = this.world.T(p.x, p.y);
+      if (!t || !t.pickup || t.pickup.reserved) continue;
+      let su: Unit | null = null, sd = 1e9;
+      for (const u of idle) { if (taken.has(u)) continue; const dd = Math.abs(u.tx - p.x) + Math.abs(u.ty - p.y); if (dd < sd) { sd = dd; su = u; } }
+      if (!su) break;
+      t.pickup.reserved = true;
+      su.collect = { x: p.x, y: p.y };
+      su.status = 'Fetching gold';
+      taken.add(su);
+    }
+  }
+
+  private collectUpdate(u: Unit, dt: number): void {
+    const c = u.collect!;
+    const t = this.world.T(c.x, c.y);
+    if (!t || !t.pickup) { u.collect = null; u.status = 'Idle'; return; }
+    if (u.tx === c.x && u.ty === c.y && !u.path) {
+      const gain = Math.max(1, Math.round(t.pickup.gold * this.mods.goldMult()));
+      this.view.removeMeshes(t.pickup.meshes);
+      t.pickup = null;
+      const i = this.pickups.findIndex(p => p.x === c.x && p.y === c.y);
+      if (i >= 0) this.pickups.splice(i, 1);
+      u.collect = null; u.status = 'Idle'; u.mesh.position.y = 0;
+      this.onGold(gain);
+      this.sfx('coin');
+      this.objective?.onCollect();
+      this.toast('Collected a gold pile (+' + gain + ' gold)');
+      return;
+    }
+    if (!u.path) { if (!this.sendTo(u, c.x, c.y)) { if (t.pickup) t.pickup.reserved = false; u.collect = null; u.status = 'Idle'; return; } }
+    if (u.path) this.moveUnit(u, dt); else u.mesh.position.y = 0;
+    u.status = 'Fetching gold';
+  }
+
   private checkSiteReady(s: Site): void {
     for (const k in s.needs) if ((s.delivered[k] || 0) < s.needs[k]) return;
     s.ready = true;
@@ -295,7 +361,7 @@ export class Game {
       const d = doorTile(s);
       if (u.tx === d.x && u.ty === d.y && !u.path) {
         u.status = 'Building ' + s.def.name;
-        s.progress += dt / BUILD_TIME;
+        s.progress += dt / this.mods.buildTime();
         u.bob += dt * 12; u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.07;
         s.frame.scale.y = Math.max(0.05, s.progress);
         s.frame.position.y = 0;
@@ -356,11 +422,11 @@ export class Game {
       if (b.working) {
         u.status = 'Working';
         u.bob += dt * 10; u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.05;
-        b.prog += dt / def.recipe.time;
-        if (b.prog >= 1) { b.prog = 0; b.working = false; b.out[def.recipe.out] = (b.out[def.recipe.out] || 0) + 1; }
+        b.prog += dt / this.mods.recipeTime(def);
+        if (b.prog >= 1) { b.prog = 0; b.working = false; b.out[def.recipe.out] = (b.out[def.recipe.out] || 0) + 1; this.objective?.onProduce(def.recipe.out); }
       } else {
         u.status = 'Waiting for materials';
-        if (this.outTotal(b) < OUT_CAP) {
+        if (this.outTotal(b) < this.mods.outCap()) {
           let can = true;
           for (const k in def.recipe.inp) if ((b.inp[k] || 0) < (def.recipe.inp as any)[k]) can = false;
           if (can) { for (const k in def.recipe.inp) b.inp[k] -= (def.recipe.inp as any)[k]; b.working = true; b.prog = 0; }
@@ -370,7 +436,7 @@ export class Game {
     }
     if (u.wstate === 'home') {
       u.mesh.position.y = 0;
-      if (this.outTotal(b) >= OUT_CAP) { u.status = 'Output full'; return; }
+      if (this.outTotal(b) >= this.mods.outCap()) { u.status = 'Output full'; return; }
       const node = this.findNode(b);
       if (!node) { u.status = 'No resources in range'; return; }
       u.target = node;
@@ -379,7 +445,7 @@ export class Game {
     }
     if (u.wstate === 'toNode') {
       const n = u.target;
-      if (u.tx === n.x && u.ty === n.y && !u.path) { u.wstate = 'gather'; u.timer = def.gather!.time; }
+      if (u.tx === n.x && u.ty === n.y && !u.path) { u.wstate = 'gather'; u.timer = this.mods.gatherTime(def); }
       else if (!u.path) { if (!this.sendTo(u, n.x, n.y)) { u.wstate = 'home'; u.target = null; return; } }
       if (u.path) this.moveUnit(u, dt);
       u.status = 'Heading out';
@@ -391,8 +457,8 @@ export class Game {
       u.timer -= dt;
       if (u.timer <= 0) {
         const n = u.target, t = this.world.tiles[n.y][n.x];
-        if (def.gather!.node === 'tree') { if (t.tree) this.removeTree(n.x, n.y); this.setCarrying(u, 'trunk'); }
-        else if (def.gather!.node === 'field') { if (t.field) { t.field.growth = 0; this.view.refreshTile(n.x, n.y); this.view.scaleFieldCrop(t.field); } this.setCarrying(u, 'wheat'); }
+        if (def.gather!.node === 'tree') { if (t.tree) this.removeTree(n.x, n.y); this.setCarrying(u, 'trunk'); this.sfx('chop'); }
+        else if (def.gather!.node === 'field') { if (t.field) { t.field.growth = 0; this.view.refreshTile(n.x, n.y); this.view.scaleFieldCrop(t.field); } this.setCarrying(u, 'wheat'); this.sfx('harvest'); }
         else if (def.gather!.node === 'plant') {
           if (!t.tree && !t.b && !t.site && !t.road && !t.field && !t.dep) { if (t.deco) this.removeDeco(n.x, n.y); t.tree = { growth: 0.12, reserved: false, meshes: [], s: 0.85 + rnd() * 0.4, kind: Math.floor(rnd() * 4) }; this.view.addTree(n.x, n.y, t.tree); }
         } else { if (t.dep) { t.dep.amt--; if (t.dep.amt <= 0) this.removeDep(n.x, n.y); } this.setCarrying(u, def.gather!.out); }
@@ -403,7 +469,7 @@ export class Game {
     if (u.wstate === 'return') {
       const d = doorTile(b);
       if (u.tx === d.x && u.ty === d.y && !u.path) {
-        if (u.carrying) { b.out[u.carrying] = (b.out[u.carrying] || 0) + 1; this.setCarrying(u, null); }
+        if (u.carrying) { b.out[u.carrying] = (b.out[u.carrying] || 0) + 1; this.objective?.onProduce(u.carrying); this.setCarrying(u, null); }
         u.wstate = 'home';
       } else if (!u.path) { if (!this.sendTo(u, d.x, d.y)) { u.wstate = 'home'; this.setCarrying(u, null); } }
       if (u.path) this.moveUnit(u, dt);
@@ -417,7 +483,8 @@ export class Game {
   private growthUpdate(dt: number): void {
     const { W, H } = this.world;
     const tiles = this.world.tiles;
-    for (const b of this.buildings) { if (b.def.fields) for (const f of b.fieldsList) { const t = tiles[f.y][f.x]; if (t.field && t.field.growth < 1) { t.field.growth += dt / 22; if (t.field.growth > 1) t.field.growth = 1; this.view.scaleFieldCrop(t.field); } } }
+    const fg = this.mods.fieldGrowth();
+    for (const b of this.buildings) { if (b.def.fields) for (const f of b.fieldsList) { const t = tiles[f.y][f.x]; if (t.field && t.field.growth < 1) { t.field.growth += dt / 22 * fg; if (t.field.growth > 1) t.field.growth = 1; this.view.scaleFieldCrop(t.field); } } }
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const t = tiles[y][x]; if (t.tree && t.tree.growth < 1) { t.tree.growth += dt / 40; if (t.tree.growth > 1) t.tree.growth = 1; const s = t.tree.s * Math.max(0.15, t.tree.growth); (t.tree.meshes[0] as THREE.Object3D).scale.set(s, s, s); } }
   }
   private fieldRecolor(): void { for (const b of this.buildings) { if (b.def.fields) for (const f of b.fieldsList) this.view.refreshTile(f.x, f.y); } }
@@ -457,14 +524,16 @@ export class Game {
   }
 
   tryPlace(key: BuildingKey, tx: number, ty: number, rot: number): void {
-    if (!this.canPlace(key, tx, ty, rot)) { this.toast('Cannot build here — the entrance tile must be clear too', 'err'); return; }
+    if (!this.canPlace(key, tx, ty, rot)) { this.sfx('error'); this.toast('Cannot build here — the entrance tile must be clear too', 'err'); return; }
     const def = DEFS[key];
     if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.toast('No stone deposits in range — build near the grey rocks', 'err'); return; }
     if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.toast('No gold deposits in range', 'err'); return; }
     if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.toast('No coal deposits in range', 'err'); return; }
     if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.toast('Warning: few trees nearby', 'err');
-    for (const k in def.cost) { if (this.countItem(k) < (def.cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name + ' in the world — site will wait', 'err'); break; } }
+    const cost = this.mods.buildingCost(def);
+    for (const k in cost) { if (this.countItem(k) < (cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name + ' in the world — site will wait', 'err'); break; } }
     this.placeSite(key, tx, ty, rot);
+    this.sfx('place');
     this.toast(def.name + ' site placed — serfs will deliver materials');
   }
 
@@ -480,8 +549,8 @@ export class Game {
     const t = this.world.T(tx, ty); if (!t) return;
     if (t.road) { t.road = false; this.view.refreshTile(tx, ty); this.view.removeRoad(tx, ty); return; }
     if (dragOnly) return;
-    if (t.b) { if (t.b.def.store) { this.toast('The storehouse cannot be demolished', 'err'); return; } this.removeBuilding(t.b); return; }
-    if (t.site) { this.removeSite(t.site); return; }
+    if (t.b) { if (t.b.def.store) { this.toast('The storehouse cannot be demolished', 'err'); return; } this.sfx('demolish'); this.removeBuilding(t.b); return; }
+    if (t.site) { this.sfx('demolish'); this.removeSite(t.site); return; }
   }
 
   private removeSite(s: Site): void {
@@ -521,8 +590,9 @@ export class Game {
   //  Simulation tick (already scaled by sim speed)
   // =====================================================================
   update(sdt: number): void {
+    this.elapsed += sdt;
     this.dispatchT += sdt;
-    if (this.dispatchT > 0.45) { this.dispatchT = 0; this.dispatch(); }
+    if (this.dispatchT > 0.45) { this.dispatchT = 0; this.dispatch(); this.dispatchPickups(); }
     for (const u of this.units) {
       u.hunger = Math.max(0, u.hunger - sdt * 100 / 600);
       if (u.role === 'serf') this.serfUpdate(u, sdt);

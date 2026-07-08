@@ -189,6 +189,20 @@ export function makeDeposit(kind: 'stone' | 'gold' | 'coal'): THREE.Group {
   return g;
 }
 
+/** A little heap of gold coins the hero/serfs pick up off the map. */
+export function makePickup(): THREE.Group {
+  const g = new THREE.Group();
+  const gold = mat(0xffd24a);
+  const coin = new THREE.CylinderGeometry(0.13, 0.13, 0.035, 12);
+  const spots = [[0, 0.02, 0, 0], [0.1, 0.02, 0.06, 0.5], [-0.08, 0.02, 0.09, 1.1], [0.03, 0.055, 0.02, 0.3], [-0.04, 0.055, -0.05, 0.8], [0.02, 0.09, 0.03, 0.2]];
+  for (const [x, y, z, rot] of spots) {
+    const c = new THREE.Mesh(coin, gold);
+    c.position.set(x, y, z); c.rotation.y = rot; c.rotation.x = (rnd() - 0.5) * 0.2; c.castShadow = true;
+    g.add(c);
+  }
+  return g;
+}
+
 export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group; itemMesh: THREE.Mesh } {
   const g = new THREE.Group();
   const body = new THREE.Mesh(geoBody, mat(colorHex)); body.position.y = 0.21; body.castShadow = true;

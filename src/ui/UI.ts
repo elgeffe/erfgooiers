@@ -1,10 +1,18 @@
 import { DEFS, MENU_ORDER } from '../data/buildings';
 import { ITEMS, RES_SHOWN } from '../data/items';
 import { installFavicon, logoSVG } from './logo';
+import { audio } from '../audio/Audio';
 import type { Game } from '../game/Game';
 import type { BuildingDef, Mode } from '../types';
 
 const $ = (id: string) => document.getElementById(id)!;
+
+/** Format seconds as m:ss (clamped at zero). */
+function fmtTime(s: number): string {
+  s = Math.max(0, Math.ceil(s));
+  const m = Math.floor(s / 60);
+  return m + ':' + String(s % 60).padStart(2, '0');
+}
 
 /**
  * All DOM overlay: resource bar, objective, speed controls, build menu,
@@ -37,11 +45,36 @@ export class UI {
     this.showInspector(null);
     this.setSpeed(1);
     this.refreshResbar();
+    this.refreshBuildCosts();
     this.renderUnits();
+  }
+
+  /** Update build-menu card costs to reflect the run's cost-reducing upgrades. */
+  private refreshBuildCosts(): void {
+    if (!this.game) return;
+    const mods = this.game.mods;
+    document.querySelectorAll<HTMLElement>('.bcard[data-key]').forEach(el => {
+      const key = el.dataset.key!;
+      if (!(key in DEFS)) return;
+      const costEl = el.querySelector('.cost');
+      if (costEl) costEl.innerHTML = this.costHTML(mods.buildingCost(DEFS[key as keyof typeof DEFS]));
+    });
   }
 
   /** Set the objective card text (driven by main until Phase 1's Objectives). */
   setObjective(text: string): void { $('objText').textContent = text; }
+
+  /** Per-tick objective card update: label, progress ratio (0..1), seconds left. */
+  updateObjective(label: string, ratio: number, remaining: number): void {
+    $('objText').textContent = label;
+    ($('objBar') as HTMLElement).style.width = Math.round(Math.max(0, Math.min(1, ratio)) * 100) + '%';
+    const t = $('timerChip');
+    t.textContent = fmtTime(remaining);
+    t.classList.toggle('low', remaining <= 30);
+  }
+
+  /** Show the run's gold total in the HUD chip. */
+  setGold(n: number): void { $('goldText').textContent = String(n); }
 
   // ---------- resource bar & objective ----------
   private buildResbar(): void {
@@ -74,17 +107,17 @@ export class UI {
       const def = DEFS[key];
       const el = document.createElement('div'); el.className = 'bcard'; el.dataset.key = key; el.title = def.desc;
       el.innerHTML = `<div class="icon">${this.iconSVG(def)}</div><div class="nm">${def.name}</div><div class="cost">${this.costHTML(def.cost)}</div>`;
-      el.onclick = () => this.onMode({ type: 'build', key });
+      el.onclick = () => { audio.play('click'); this.onMode({ type: 'build', key }); };
       menu.appendChild(el);
     }
     const sep = document.createElement('div'); sep.className = 'bsep'; menu.appendChild(sep);
     const road = document.createElement('div'); road.className = 'bcard'; road.dataset.key = 'road'; road.title = 'Workers route along roads and walk 30% faster on them';
     road.innerHTML = '<div class="icon"><svg width="30" height="26" viewBox="0 0 30 26"><path d="M4 24 C10 14 20 12 26 2" stroke="#b9a179" stroke-width="6" fill="none" stroke-linecap="round"/></svg></div><div class="nm">Road</div><div class="cost"><i>free · drag</i></div>';
-    road.onclick = () => this.onMode({ type: 'road' });
+    road.onclick = () => { audio.play('click'); this.onMode({ type: 'road' }); };
     menu.appendChild(road);
     const dl = document.createElement('div'); dl.className = 'bcard'; dl.dataset.key = 'demolish'; dl.title = 'Remove roads, sites and buildings';
     dl.innerHTML = '<div class="icon"><svg width="30" height="26" viewBox="0 0 30 26"><path d="M7 5 L23 21 M23 5 L7 21" stroke="#c96b4a" stroke-width="4" fill="none" stroke-linecap="round"/></svg></div><div class="nm">Demolish</div><div class="cost"><i>click / drag</i></div>';
-    dl.onclick = () => this.onMode({ type: 'demolish' });
+    dl.onclick = () => { audio.play('click'); this.onMode({ type: 'demolish' }); };
     menu.appendChild(dl);
   }
 

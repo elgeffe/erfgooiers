@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { uiRng } from '../engine/rng';
 import type { World } from '../world/World';
-import type { Building, BuildingDef, Deco, Deposit, Field, Tree, Unit } from '../types';
-import { makeBuilding, makeDeco, makeDeposit, makeFieldCrop, makeScaffold, makeTree, makeUnit } from './models';
+import type { Building, BuildingDef, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
+import { makeBuilding, makeDeco, makeDeposit, makeFieldCrop, makePickup, makeScaffold, makeTree, makeUnit } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -44,6 +44,7 @@ export class View {
 
   // ambient scenery that turns in real time (distant windmill sails)
   private readonly millSails: THREE.Object3D[] = [];
+  private cloudBound = 40;
 
   // minimap
   private readonly mm: HTMLCanvasElement;
@@ -205,6 +206,12 @@ export class View {
     this.worldGroup.add(g);
     dep.meshes = [g];
   }
+  addPickup(x: number, y: number, pickup: Pickup): void {
+    const g = makePickup();
+    g.position.set(this.world.wx(x), 0.02, this.world.wz(y));
+    this.worldGroup.add(g);
+    pickup.meshes = [g];
+  }
   addDeco(x: number, y: number, deco: Deco): void {
     const g = makeDeco(deco.kind);
     const baseY = this.world.tiles[y][x].type === 'water' ? -0.14 : 0;
@@ -285,6 +292,7 @@ export class View {
       if (t.tree) this.addTree(x, y, t.tree);
       if (t.dep) this.addDeposit(x, y, t.dep);
       if (t.deco) this.addDeco(x, y, t.deco);
+      if (t.pickup) this.addPickup(x, y, t.pickup);
     }
   }
 
@@ -391,14 +399,20 @@ export class View {
     plain.rotation.x = -Math.PI / 2; plain.position.y = -2.1;
     this.worldGroup.add(plain);
 
+    // The board reaches its corners at `boardR`; keep every background element
+    // beyond boardR + GAP so scenery never sits on top of the play area. Each
+    // element's own radius is added in, so its *inner* edge clears the gap.
+    const boardR = Math.hypot(W / 2, H / 2);
+    const GAP = 12;
+
     // low rolling hill domes in three hazier and hazier rings
     const hillTones = [0x8cbc70, 0x7aa96a, 0x6f9d74, 0x678f79].map(c => new THREE.MeshLambertMaterial({ color: c }));
     for (let ring = 0; ring < 3; ring++) {
-      const count = 10 + ring * 4;
+      const count = 12 + ring * 5;
       for (let i = 0; i < count; i++) {
         const ang = (i / count) * Math.PI * 2 + rnd() * 0.5;
-        const rad = W * (0.88 + ring * 0.45) + rnd() * 10;
-        const r = 10 + ring * 8 + rnd() * 8;
+        const r = 9 + ring * 7 + rnd() * 7;
+        const rad = boardR + GAP + r + ring * 22 + rnd() * 10; // inner edge = rad - r ≥ boardR + GAP
         const h = (2.5 + rnd() * 2.5) * (1 + ring * 0.5);
         const hill = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 12), hillTones[Math.min(3, ring + (i % 2))]);
         hill.scale.y = h / r;
@@ -407,14 +421,14 @@ export class View {
       }
     }
 
-    // a hazy treeline between the plinth and the hills
+    // a hazy treeline out in the meadow ring, between the plinth and the hills
     const folA = new THREE.MeshLambertMaterial({ color: 0x4a7350 });
     const folB = new THREE.MeshLambertMaterial({ color: 0x3f6a5e });
     const trunkM = new THREE.MeshLambertMaterial({ color: 0x5b4433 });
     for (let i = 0; i < 90; i++) {
       const ang = rnd() * Math.PI * 2;
-      const rad = W * 0.78 + rnd() * 12;
       const s = 0.9 + rnd() * 1.4;
+      const rad = boardR + 5 + rnd() * (GAP - 4); // sits in the gap ring, clear of the board
       const crown = new THREE.Mesh(new THREE.ConeGeometry(0.75 * s, 2.6 * s, 6), rnd() < 0.5 ? folA : folB);
       crown.position.set(Math.cos(ang) * rad, -2.1 + 1.5 * s, Math.sin(ang) * rad);
       this.worldGroup.add(crown);
@@ -427,6 +441,7 @@ export class View {
 
     // one far-off windmill turning on the plain — a little postcard of Het Gooi
     const millAng = rnd() * Math.PI * 2;
+    const millRad = boardR + 38;
     const mill = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.7, 5.2, 8), new THREE.MeshLambertMaterial({ color: 0x6b5540 }));
     body.position.y = 2.6; mill.add(body);
@@ -442,12 +457,14 @@ export class View {
       sails.add(arm);
     }
     mill.add(sails);
-    mill.position.set(Math.cos(millAng) * W * 1.05, -2.1, Math.sin(millAng) * W * 1.05);
+    mill.position.set(Math.cos(millAng) * millRad, -2.1, Math.sin(millAng) * millRad);
     mill.lookAt(0, -2.1, 0);
     this.worldGroup.add(mill);
     this.millSails.push(sails);
 
-    // soft clouds
+    // soft clouds drifting high above, spread wide around the board
+    const cloudSpan = boardR * 2 + 30;
+    this.cloudBound = cloudSpan / 2;
     const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
     for (let i = 0; i < 8; i++) {
       const c = new THREE.Group();
@@ -458,7 +475,7 @@ export class View {
         puff.scale.y = 0.6;
         c.add(puff);
       }
-      c.position.set((rnd() - 0.5) * W * 1.4, 14 + rnd() * 6, (rnd() - 0.5) * H * 1.4);
+      c.position.set((rnd() - 0.5) * cloudSpan, 14 + rnd() * 6, (rnd() - 0.5) * cloudSpan);
       this.worldGroup.add(c);
       this.clouds.push(c);
     }
@@ -474,7 +491,7 @@ export class View {
     }
     for (const c of this.clouds) {
       c.position.x += dt * 0.6;
-      if (c.position.x > this.world.W * 0.8) c.position.x = -this.world.W * 0.8;
+      if (c.position.x > this.cloudBound) c.position.x = -this.cloudBound;
     }
     for (const s of this.millSails) s.rotation.z += dt * 0.45;
   }
@@ -543,6 +560,7 @@ export class View {
       else if (t.field) c = '#d3bd56';
       else if (t.tree) c = '#3d5c2e';
       else if (t.dep) c = t.dep.kind === 'stone' ? '#9aa0a3' : t.dep.kind === 'gold' ? '#c9a94e' : '#3d3d44';
+      if (t.pickup) c = '#ffd24a';
       if (t.b) c = '#7a4a2e';
       if (t.site) c = '#d9a441';
       mmx.fillStyle = c;
