@@ -29,6 +29,7 @@ export class UI {
   private game: Game | null = null;
   private readonly resEls: Record<string, HTMLElement> = {};
   private unitsOpen = false;
+  private unitTab = 'all';
 
   constructor() {
     $('logo').innerHTML = logoSVG(30);
@@ -275,18 +276,55 @@ export class UI {
     const toggle = $('unitsToggle'), panel = $('unitpanel');
     toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : 'block'; this.renderUnits(); };
     document.addEventListener('keydown', e => { if (e.key === 'u') toggle.click(); });
-    const h3 = panel.querySelector('h3') as HTMLElement;
+    const h3 = $('unitTitle');
     h3.style.cursor = 'pointer'; h3.title = 'Click to collapse';
     h3.onclick = () => { this.unitsOpen = false; panel.style.display = 'none'; toggle.style.display = 'block'; };
+    $('unitTabs').addEventListener('click', e => {
+      const b = (e.target as HTMLElement).closest('.utab') as HTMLElement | null;
+      if (b) { this.unitTab = b.dataset.tab!; this.renderUnits(); }
+    });
   }
+
+  /** Which worker-panel tab a unit's role belongs to. */
+  private unitCat(role: string): 'serf' | 'villager' | 'laborer' | 'military' | 'specialist' {
+    if (role === 'serf') return 'serf';
+    if (role === 'villager') return 'villager';
+    if (role === 'laborer') return 'laborer';
+    if (role === 'soldier' || role === 'archer') return 'military';
+    return 'specialist';
+  }
+
   private renderUnits(): void {
     if (!this.unitsOpen || !this.game) return;
+    const players = this.game.units.filter(u => u.faction === 'player');
+    const counts: Record<string, number> = { all: players.length, serf: 0, villager: 0, laborer: 0, specialist: 0, military: 0 };
+    for (const u of players) counts[this.unitCat(u.role)]++;
+    $('unitTitle').textContent = `Workers · ${players.length}`;
+
+    const tabsDef: { id: string; label: string }[] = [
+      { id: 'all', label: 'All' },
+      { id: 'serf', label: 'Serfs' },
+      { id: 'laborer', label: 'Builders' },
+      { id: 'villager', label: 'Idle' },
+      { id: 'specialist', label: 'Trades' },
+      { id: 'military', label: 'Army' },
+    ];
+    // fall back to All if the active tab emptied out
+    if (this.unitTab !== 'all' && counts[this.unitTab] === 0) this.unitTab = 'all';
+    let tabs = '';
+    for (const c of tabsDef) {
+      if (c.id !== 'all' && counts[c.id] === 0 && this.unitTab !== c.id) continue;
+      tabs += `<button class="utab${this.unitTab === c.id ? ' on' : ''}" data-tab="${c.id}">${c.label} <b>${counts[c.id]}</b></button>`;
+    }
+    $('unitTabs').innerHTML = tabs;
+
+    const shown = this.unitTab === 'all' ? players : players.filter(u => this.unitCat(u.role) === this.unitTab);
     let s = '';
-    for (const u of this.game.units) {
+    for (const u of shown) {
       const hcol = u.hunger > 50 ? 'var(--good)' : u.hunger > 25 ? 'var(--accent)' : 'var(--bad)';
       s += `<div class="urow"><div class="dot" style="background:#${u.colorHex.toString(16).padStart(6, '0')}"></div><div class="info"><div class="rn">${u.roleName}</div><div class="st">${u.status}</div></div><div class="hbar" title="Hunger — feed workers at a Tavern to keep them fast"><div style="width:${Math.round(u.hunger)}%;background:${hcol}"></div></div></div>`;
     }
-    $('unitlist').innerHTML = s;
+    $('unitlist').innerHTML = s || '<div class="urow" style="color:var(--ink-dim);justify-content:center">none of this kind</div>';
   }
 
   // ---------- toasts ----------

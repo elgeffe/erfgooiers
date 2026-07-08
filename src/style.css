@@ -76,6 +76,11 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 /* ---------- serf panel ---------- */
 #unitpanel{left:12px;top:56px;width:236px;max-height:calc(100% - 220px);overflow:hidden auto;display:none;}
 #unitpanel h3{font-size:13px;color:var(--accent);margin-bottom:6px;}
+#unitTabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:7px;}
+.utab{background:var(--panel2);color:var(--ink-dim);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:3px 7px;font-size:10.5px;cursor:pointer;display:flex;align-items:center;gap:4px;}
+.utab:hover{border-color:var(--accent);}
+.utab.on{background:rgba(217,164,65,.16);border-color:var(--accent);color:var(--ink);}
+.utab b{font-variant-numeric:tabular-nums;color:var(--accent);font-size:11px;}
 .urow{display:flex;align-items:center;gap:7px;padding:4px 2px;border-bottom:1px solid rgba(255,255,255,.05);}
 .urow .dot{width:10px;height:10px;border-radius:50%;flex:none;}
 .urow .info{flex:1;min-width:0;}
