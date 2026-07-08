@@ -2,11 +2,13 @@ import type * as THREE from 'three';
 
 export type ItemKey =
   | 'trunk' | 'timber' | 'stone' | 'wheat' | 'flour'
-  | 'bread' | 'goldore' | 'coal' | 'coin';
+  | 'bread' | 'goldore' | 'coal' | 'coin'
+  | 'grape' | 'wine' | 'meat' | 'sausage';
 
 export type BuildingKey =
   | 'storehouse' | 'woodcutter' | 'forester' | 'sawmill' | 'quarry'
-  | 'farm' | 'mill' | 'bakery' | 'goldmine' | 'coalmine' | 'mint';
+  | 'farm' | 'mill' | 'bakery' | 'goldmine' | 'coalmine' | 'mint'
+  | 'vineyard' | 'winery' | 'pigfarm' | 'butcher';
 
 export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'field';
 

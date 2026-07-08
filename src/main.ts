@@ -166,6 +166,19 @@ function abandonRun(): void {
   goMenu();
 }
 
+/** Open the in-game pause menu, freezing the sim until the player resumes. */
+function openPauseMenu(): void {
+  if (phase !== 'playing') return;
+  ui.setSpeed(0);
+  $('pausemenu').style.display = 'flex';
+}
+
+/** Close the pause menu and resume the active game. */
+function resumeGame(): void {
+  $('pausemenu').style.display = 'none';
+  if (phase === 'playing') ui.setSpeed(1);
+}
+
 function clearSaveData(): void {
   if (phase === 'playing') disposeLevel();
   Save.clearAll();
@@ -178,6 +191,7 @@ function clearSaveData(): void {
 // ---------- screens (DOM overlays) ----------
 type ScreenId = 'menu' | 'shop' | 'summary' | null;
 function showScreen(id: ScreenId): void {
+  $('pausemenu').style.display = 'none';
   for (const s of ['menu', 'shop', 'summary']) $(s).style.display = id === s ? 'flex' : 'none';
   $('hud').style.display = phase === 'playing' ? 'block' : 'none';
 }
@@ -210,7 +224,9 @@ $('introLogo').innerHTML = logoSVG(40);
 ($('startBtn') as HTMLButtonElement).onclick = () => $('intro').style.display = 'none';
 ($('btnSumMenu') as HTMLButtonElement).onclick = goMenu;
 ($('btnDebugWin') as HTMLButtonElement).onclick = debugWin;
-($('btnToMenu') as HTMLButtonElement).onclick = abandonRun;
+($('btnToMenu') as HTMLButtonElement).onclick = openPauseMenu;
+($('btnResume') as HTMLButtonElement).onclick = resumeGame;
+($('btnAbandon') as HTMLButtonElement).onclick = () => { resumeGame(); abandonRun(); };
 
 // ---------- audio ----------
 const btnSound = $('btnSound') as HTMLButtonElement;

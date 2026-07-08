@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { uiRng } from '../engine/rng';
 import type { World } from '../world/World';
-import type { Building, BuildingDef, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
+import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { makeBuilding, makeDeco, makeDeposit, makeFieldCrop, makePickup, makeScaffold, makeTree, makeUnit } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
@@ -36,6 +36,11 @@ export class View {
   private ghost: THREE.Group = new THREE.Group();
   private ghostKey: string | null = null;
   private readonly roadCursor: THREE.Mesh;
+
+  // green markers over building/site entrance tiles, shown while painting roads
+  private readonly entranceMarkers: THREE.Mesh[] = [];
+  private readonly entranceGeo = new THREE.PlaneGeometry(0.9, 0.9);
+  private readonly entranceMat = new THREE.MeshBasicMaterial({ color: 0x46c256, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
 
   // cobbled road overlay meshes, keyed by "x,y"
   private readonly roadMeshes = new Map<string, THREE.Mesh>();
@@ -544,6 +549,23 @@ export class View {
     }
   }
   hideRoadCursor(): void { this.roadCursor.visible = false; }
+
+  /** Highlight the given entrance tiles in green (used while painting roads). */
+  showEntranceMarkers(coords: Coord[]): void {
+    for (let i = 0; i < coords.length; i++) {
+      let m = this.entranceMarkers[i];
+      if (!m) {
+        m = new THREE.Mesh(this.entranceGeo, this.entranceMat);
+        m.rotation.x = -Math.PI / 2; m.position.y = 0.05;
+        this.scene.add(m);
+        this.entranceMarkers[i] = m;
+      }
+      m.visible = true;
+      m.position.x = this.world.wx(coords[i].x); m.position.z = this.world.wz(coords[i].y);
+    }
+    for (let i = coords.length; i < this.entranceMarkers.length; i++) this.entranceMarkers[i].visible = false;
+  }
+  hideEntranceMarkers(): void { for (const m of this.entranceMarkers) m.visible = false; }
 
   // =====================================================================
   //  Minimap & render

@@ -43,10 +43,27 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
   mint: { name: 'Mint', desc: 'Gold ore + coal → coins', model: 'cottage',
     cost: { timber: 2, stone: 3 }, roof: 0xd9a441, wall: 0x9c8a6a, accent: 0xffd24a,
     recipe: { inp: { goldore: 1, coal: 1 }, out: 'coin', time: 6 }, worker: 'Minter', wcolor: 0xd4af37 },
+
+  vineyard: { name: 'Vineyard', desc: 'Grows & harvests grapes', model: 'farm',
+    cost: { timber: 3, stone: 1 }, roof: 0x6a3d6e, wall: 0xb08a5c,
+    gather: { node: 'field', out: 'grape', time: 2.5, range: 0 }, worker: 'Vintner', wcolor: 0x7a4b8a, fields: true },
+
+  winery: { name: 'Winery', desc: 'Grapes → wine', model: 'cottage',
+    cost: { timber: 2, stone: 2 }, roof: 0x5c1f2b, wall: 0xc4a075, accent: 0x7b2233,
+    recipe: { inp: { grape: 1 }, out: 'wine', time: 6 }, worker: 'Winemaker', wcolor: 0x7b2233 },
+
+  pigfarm: { name: 'Pig Farm', desc: 'Wheat feeds pigs → meat', model: 'farm',
+    cost: { timber: 3, stone: 2 }, roof: 0xb56a6a, wall: 0xb08a5c, accent: 0xc96b6b,
+    recipe: { inp: { wheat: 1 }, out: 'meat', time: 6 }, worker: 'Swineherd', wcolor: 0xc96b6b },
+
+  butcher: { name: 'Butchery', desc: 'Meat → sausages', model: 'cottage',
+    cost: { timber: 2, stone: 2 }, roof: 0x7a3320, wall: 0xc4a075, accent: 0x9c4a2f,
+    recipe: { inp: { meat: 1 }, out: 'sausage', time: 6 }, worker: 'Butcher', wcolor: 0x9c4a2f },
 };
 
 /** Order of build cards in the bottom menu. */
 export const MENU_ORDER: BuildingKey[] = [
   'woodcutter', 'sawmill', 'forester', 'quarry', 'farm',
-  'mill', 'bakery', 'goldmine', 'coalmine', 'mint',
+  'mill', 'bakery', 'vineyard', 'winery', 'pigfarm', 'butcher',
+  'goldmine', 'coalmine', 'mint',
 ];

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ROAD_STONE_COST } from '../constants';
 import { DEFS } from '../data/buildings';
 import { ITEMS } from '../data/items';
 import { simRng } from '../engine/rng';
@@ -21,7 +22,7 @@ export interface StartKit {
 }
 
 export const DEFAULT_KIT: StartKit = {
-  stock: { timber: 16, stone: 12, bread: 8 },
+  stock: { timber: 16, stone: 10, bread: 8 },
   serfs: 6,
   laborers: 2,
 };
@@ -55,6 +56,7 @@ export class Game {
   private readonly pickups: { x: number; y: number }[] = [];
   private dispatchT = 0;
   private fieldT = 0;
+  private roadWarnT = 0;
 
   constructor(private readonly world: World, private readonly view: View, readonly mods: Modifiers = new Modifiers()) {}
 
@@ -77,7 +79,7 @@ export class Game {
     }
     this.store = this.placeBuilding('storehouse', cx, cy, true);
     // base kit stock, then run-upgrade start bonuses on top
-    this.store.stock = { timber: 0, stone: 0, bread: 0, trunk: 0, wheat: 0, flour: 0, goldore: 0, coal: 0, coin: 0, ...kit.stock };
+    this.store.stock = { timber: 0, stone: 0, bread: 0, trunk: 0, wheat: 0, flour: 0, goldore: 0, coal: 0, coin: 0, grape: 0, wine: 0, meat: 0, sausage: 0, ...kit.stock };
     const bonus = this.mods.startStock();
     for (const k in bonus) this.store.stock[k] = (this.store.stock[k] || 0) + (bonus as Record<string, number>)[k];
     const d = doorTile(this.store);
@@ -269,7 +271,6 @@ export class Game {
   }
 
   private serfUpdate(u: Unit, dt: number): void {
-    if (u.collect && !u.task) { this.collectUpdate(u, dt); return; }
     const t = u.task;
     if (!t) { u.status = 'Idle'; return; }
     if (t.phase === 'pickup') {
@@ -299,50 +300,6 @@ export class Game {
     else if (t.to.def && !t.to.def.store) t.to.incoming[t.item] = Math.max(0, (t.to.incoming[t.item] || 0) - 1);
     if (u.carrying && this.store) this.store.stock![u.carrying] = (this.store.stock![u.carrying] || 0) + 1;
     this.setCarrying(u, null); u.task = null; u.status = 'Idle';
-  }
-
-  // =====================================================================
-  //  Gold-pile collection (serfs auto-collect; the hero takes over in Phase 2)
-  // =====================================================================
-  /** Assign idle serfs to the nearest unreserved gold pile. */
-  private dispatchPickups(): void {
-    if (!this.pickups.length) return;
-    const idle = this.units.filter(u => u.role === 'serf' && !u.task && !u.collect);
-    if (!idle.length) return;
-    const taken = new Set<Unit>();
-    for (const p of this.pickups) {
-      const t = this.world.T(p.x, p.y);
-      if (!t || !t.pickup || t.pickup.reserved) continue;
-      let su: Unit | null = null, sd = 1e9;
-      for (const u of idle) { if (taken.has(u)) continue; const dd = Math.abs(u.tx - p.x) + Math.abs(u.ty - p.y); if (dd < sd) { sd = dd; su = u; } }
-      if (!su) break;
-      t.pickup.reserved = true;
-      su.collect = { x: p.x, y: p.y };
-      su.status = 'Fetching gold';
-      taken.add(su);
-    }
-  }
-
-  private collectUpdate(u: Unit, dt: number): void {
-    const c = u.collect!;
-    const t = this.world.T(c.x, c.y);
-    if (!t || !t.pickup) { u.collect = null; u.status = 'Idle'; return; }
-    if (u.tx === c.x && u.ty === c.y && !u.path) {
-      const gain = Math.max(1, Math.round(t.pickup.gold * this.mods.goldMult()));
-      this.view.removeMeshes(t.pickup.meshes);
-      t.pickup = null;
-      const i = this.pickups.findIndex(p => p.x === c.x && p.y === c.y);
-      if (i >= 0) this.pickups.splice(i, 1);
-      u.collect = null; u.status = 'Idle'; u.mesh.position.y = 0;
-      this.onGold(gain);
-      this.sfx('coin');
-      this.objective?.onCollect();
-      this.toast('Collected a gold pile (+' + gain + ' gold)');
-      return;
-    }
-    if (!u.path) { if (!this.sendTo(u, c.x, c.y)) { if (t.pickup) t.pickup.reserved = false; u.collect = null; u.status = 'Idle'; return; } }
-    if (u.path) this.moveUnit(u, dt); else u.mesh.position.y = 0;
-    u.status = 'Fetching gold';
   }
 
   private checkSiteReady(s: Site): void {
@@ -458,7 +415,7 @@ export class Game {
       if (u.timer <= 0) {
         const n = u.target, t = this.world.tiles[n.y][n.x];
         if (def.gather!.node === 'tree') { if (t.tree) this.removeTree(n.x, n.y); this.setCarrying(u, 'trunk'); this.sfx('chop'); }
-        else if (def.gather!.node === 'field') { if (t.field) { t.field.growth = 0; this.view.refreshTile(n.x, n.y); this.view.scaleFieldCrop(t.field); } this.setCarrying(u, 'wheat'); this.sfx('harvest'); }
+        else if (def.gather!.node === 'field') { if (t.field) { t.field.growth = 0; this.view.refreshTile(n.x, n.y); this.view.scaleFieldCrop(t.field); } this.setCarrying(u, def.gather!.out ?? 'wheat'); this.sfx('harvest'); }
         else if (def.gather!.node === 'plant') {
           if (!t.tree && !t.b && !t.site && !t.road && !t.field && !t.dep) { if (t.deco) this.removeDeco(n.x, n.y); t.tree = { growth: 0.12, reserved: false, meshes: [], s: 0.85 + rnd() * 0.4, kind: Math.floor(rnd() * 4) }; this.view.addTree(n.x, n.y, t.tree); }
         } else { if (t.dep) { t.dep.amt--; if (t.dep.amt <= 0) this.removeDep(n.x, n.y); } this.setCarrying(u, def.gather!.out); }
@@ -540,6 +497,12 @@ export class Game {
   paintRoad(tx: number, ty: number): void {
     const t = this.world.T(tx, ty);
     if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep) return;
+    if ((this.store.stock?.['stone'] || 0) < ROAD_STONE_COST) {
+      const now = Date.now();
+      if (now - this.roadWarnT > 1500) { this.roadWarnT = now; this.toast('Out of stone — quarry more to build roads', 'err'); this.sfx('error'); }
+      return;
+    }
+    this.store.stock!['stone'] -= ROAD_STONE_COST;
     if (t.tree) this.removeTree(tx, ty);
     if (t.deco) this.removeDeco(tx, ty);
     t.road = true; this.view.refreshTile(tx, ty); this.view.addRoad(tx, ty);
@@ -578,12 +541,36 @@ export class Game {
 
   select(obj: any): void { this.selected = obj; this.onSelect(obj); }
 
-  /** Click-select a building/site at a tile (used by Controls). */
+  /** Door/entrance tiles of every building and site — highlighted while painting roads. */
+  entranceTiles(): Coord[] {
+    const out: Coord[] = [];
+    for (const b of this.buildings) out.push(doorTile(b));
+    for (const s of this.sites) out.push(doorTile(s));
+    return out;
+  }
+
+  /** Click-select a building/site at a tile, or collect a gold pile (used by Controls). */
   selectAt(tx: number, ty: number): void {
     const t = this.world.tiles[ty][tx];
+    if (t.pickup) { this.collectGoldAt(tx, ty); return; }
     if (t.b) this.select(t.b);
     else if (t.site) this.select(t.site);
     else this.select(null);
+  }
+
+  /** The player clicked a gold pile on the map — collect it instantly. */
+  collectGoldAt(tx: number, ty: number): void {
+    const t = this.world.T(tx, ty);
+    if (!t || !t.pickup) return;
+    const gain = Math.max(1, Math.round(t.pickup.gold * this.mods.goldMult()));
+    this.view.removeMeshes(t.pickup.meshes);
+    t.pickup = null;
+    const i = this.pickups.findIndex(p => p.x === tx && p.y === ty);
+    if (i >= 0) this.pickups.splice(i, 1);
+    this.onGold(gain);
+    this.sfx('coin');
+    this.objective?.onCollect();
+    this.toast('Collected a gold pile (+' + gain + ' gold)');
   }
 
   // =====================================================================
@@ -592,7 +579,7 @@ export class Game {
   update(sdt: number): void {
     this.elapsed += sdt;
     this.dispatchT += sdt;
-    if (this.dispatchT > 0.45) { this.dispatchT = 0; this.dispatch(); this.dispatchPickups(); }
+    if (this.dispatchT > 0.45) { this.dispatchT = 0; this.dispatch(); }
     for (const u of this.units) {
       u.hunger = Math.max(0, u.hunger - sdt * 100 / 600);
       if (u.role === 'serf') this.serfUpdate(u, sdt);

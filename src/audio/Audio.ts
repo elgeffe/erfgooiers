@@ -18,65 +18,68 @@ const MUTE_KEY = 'erfgooiers.muted';
 const hz = (midi: number): number => 440 * Math.pow(2, (midi - 69) / 12);
 
 /**
- * A musical "mood". Each progression entry is one bar: a bass root plus the
- * melody pool the scheduler draws from for that bar. Higher tiers lean into
- * minor keys, quicken the tempo, thicken the pad and add a soft frame-drum
- * pulse — so the score darkens and tightens as the run gets harder without
- * ever losing its folk, hand-made feel.
+ * A musical "mood" — an evolving ambient texture rather than a tune. Each
+ * progression entry is one bar: a bass root plus the chord tones that ring as
+ * sustained pads. Higher tiers lean into minor keys and layer on more texture
+ * (a high shimmer, a breath of air, a low drone, a soft frame-drum pulse), so
+ * the score deepens and tightens as the run gets harder — no melody line to
+ * distract, just shifting harmonic colour.
  */
 interface Mood {
-  bpm: number;                                      // tempo
-  prog: { bass: number; pool: number[] }[];         // one entry per bar
-  rest: number;                                     // chance of a rest on off-beats
-  lift: number;                                     // chance of a high-octave ornament
-  pad: number;                                      // pad voice level (× base)
-  fb: number;                                       // delay feedback (tension/space)
-  drum: number;                                     // frame-drum hits per bar (0 = none)
-  lead: boolean;                                    // sprinkle leading-tone grace notes
+  bpm: number;                                       // tempo (bar length & drum)
+  prog: { bass: number; chord: number[] }[];         // one sustained chord per bar
+  pad: number;                                       // pad voice level (× base)
+  fb: number;                                        // delay feedback (space)
+  shimmer: number;                                   // high octave sparkle (0 = none)
+  air: number;                                        // breathy noise texture (0 = none)
+  drone: number;                                     // low sustained drone (0 = none)
+  drum: number;                                      // frame-drum hits per bar (0 = none)
 }
 
-// Tier 0 — sunlit C major (I–V–vi–IV): the idyllic opening mood.
+// Tier 0 — sunlit C major (I–V–vi–IV): warm, clean, idyllic. Pads only.
 const MOOD_MAJOR: Mood = {
-  bpm: 96, rest: 0.28, lift: 0.15, pad: 1, fb: 0.16, drum: 0, lead: false,
+  bpm: 60, pad: 1, fb: 0.16, shimmer: 0, air: 0, drone: 0, drum: 0,
   prog: [
-    { bass: 48, pool: [72, 74, 76, 79, 81] }, // C  — I
-    { bass: 43, pool: [71, 74, 76, 79, 83] }, // G  — V
-    { bass: 45, pool: [72, 74, 76, 81, 84] }, // Am — vi
-    { bass: 41, pool: [72, 74, 77, 81, 84] }, // F  — IV
+    { bass: 48, chord: [60, 64, 67] }, // C  — I
+    { bass: 43, chord: [55, 59, 62] }, // G  — V
+    { bass: 45, chord: [57, 60, 64] }, // Am — vi
+    { bass: 41, chord: [53, 57, 60] }, // F  — IV
   ],
 };
 
-// Tier 1 — wistful A minor (vi–IV–I–V): the same folk warmth turned pensive.
+// Tier 1 — wistful A minor (vi–IV–I–V): the same warmth turned pensive; a
+// faint high shimmer begins to hang over the chords.
 const MOOD_WISTFUL: Mood = {
-  bpm: 100, rest: 0.3, lift: 0.16, pad: 1.1, fb: 0.32, drum: 0, lead: false,
+  bpm: 60, pad: 1.05, fb: 0.24, shimmer: 0.4, air: 0.03, drone: 0, drum: 0,
   prog: [
-    { bass: 45, pool: [69, 72, 74, 76, 79] }, // Am
-    { bass: 41, pool: [69, 72, 74, 77, 81] }, // F
-    { bass: 48, pool: [72, 74, 76, 79, 81] }, // C
-    { bass: 43, pool: [71, 74, 76, 79, 83] }, // G
+    { bass: 45, chord: [57, 60, 64] }, // Am
+    { bass: 41, chord: [53, 57, 60] }, // F
+    { bass: 48, chord: [60, 64, 67] }, // C
+    { bass: 43, chord: [55, 59, 62] }, // G
   ],
 };
 
-// Tier 2 — a D-minor lament (i–VI–III–VII): darker, with a low drum on the beat.
+// Tier 2 — a D-minor lament (i–VI–III–VII): darker, with a breath of air, a
+// low drone and a slow drum settling in beneath the pads.
 const MOOD_MINOR: Mood = {
-  bpm: 108, rest: 0.24, lift: 0.18, pad: 1.15, fb: 0.36, drum: 2, lead: false,
+  bpm: 66, pad: 1.1, fb: 0.32, shimmer: 0.5, air: 0.06, drone: 0.08, drum: 2,
   prog: [
-    { bass: 38, pool: [74, 77, 79, 81, 84] }, // Dm
-    { bass: 46, pool: [74, 77, 79, 82, 86] }, // Bb
-    { bass: 41, pool: [72, 74, 77, 81, 84] }, // F
-    { bass: 48, pool: [72, 76, 79, 81, 84] }, // C
+    { bass: 38, chord: [62, 65, 69] }, // Dm
+    { bass: 46, chord: [58, 62, 65] }, // Bb
+    { bass: 41, chord: [53, 57, 60] }, // F
+    { bass: 48, chord: [60, 64, 67] }, // C
   ],
 };
 
 // Tier 3 — an urgent E harmonic minor (i–VI–iv–V) with a raised leading tone;
-// quicker, driving, tense. Reserved for the run's final, hardest stretch.
+// thick pads, more air, a stronger drone and a driving drum. The final stretch.
 const MOOD_URGENT: Mood = {
-  bpm: 116, rest: 0.2, lift: 0.2, pad: 1.2, fb: 0.42, drum: 4, lead: true,
+  bpm: 76, pad: 1.15, fb: 0.4, shimmer: 0.6, air: 0.09, drone: 0.12, drum: 4,
   prog: [
-    { bass: 40, pool: [76, 79, 81, 83, 86] }, // Em
-    { bass: 48, pool: [72, 76, 79, 84, 88] }, // C
-    { bass: 45, pool: [76, 81, 84, 86, 88] }, // Am
-    { bass: 47, pool: [75, 78, 83, 86, 87] }, // B (D# leading tone)
+    { bass: 40, chord: [64, 67, 71] }, // Em
+    { bass: 48, chord: [60, 64, 67] }, // C
+    { bass: 45, chord: [57, 60, 64] }, // Am
+    { bass: 47, chord: [59, 63, 66] }, // B (D# leading tone)
   ],
 };
 
@@ -101,8 +104,8 @@ export class AudioEngine {
 
   private muted = false;
   private timer = 0;
-  private nextNote = 0;   // ctx time of the next scheduled melody step
-  private step = 0;       // running eighth-note counter
+  private nextNote = 0;   // ctx time of the next bar to schedule
+  private step = 0;       // running bar counter
 
   private mood: Mood = MOOD_MAJOR;        // mood the current bar is playing in
   private pendingMood: Mood = MOOD_MAJOR; // mood to switch to at the next bar
@@ -190,90 +193,97 @@ export class AudioEngine {
 
   private schedule(): void {
     const ctx = this.ctx!;
-    const mood = this.mood;
-    const spb = 60 / mood.bpm;    // seconds per beat
-    const eighth = spb / 2;       // melody moves in eighth notes
-    while (this.nextNote < ctx.currentTime + 0.12) {
-      const inBar = this.step % 8;
-
-      // At the head of every bar: adopt any queued mood change, then lay down
-      // the bass root, a soft pad chord and (on harder tiers) a frame-drum.
-      if (inBar === 0) {
-        if (this.pendingMood !== this.mood) {
-          this.mood = this.pendingMood;
-          if (this.fbGain) this.fbGain.gain.value = this.mood.fb;
-        }
-        const bar = Math.floor(this.step / 8) % this.mood.prog.length;
-        const chord = this.mood.prog[bar];
-        this.bass(hz(chord.bass), this.nextNote, spb * 4);
-        this.pad(chord.bass + 12, this.nextNote, spb * 4);
-        this.pad(chord.bass + 19, this.nextNote, spb * 4);
+    // Bars are long and overlapping, so schedule one whole bar a little ahead
+    // of the audio clock and let its sustained voices ring across the next.
+    while (this.nextNote < ctx.currentTime + 0.4) {
+      // Adopt any queued mood change at the bar boundary so shifts glide in.
+      if (this.pendingMood !== this.mood) {
+        this.mood = this.pendingMood;
+        if (this.fbGain) this.fbGain.gain.value = this.mood.fb;
       }
-
       const m = this.mood;
-      const bar = Math.floor(this.step / 8) % m.prog.length;
-      const chord = m.prog[bar];
+      const barLen = (60 / m.bpm) * 4;
+      const bar = this.step % m.prog.length;
+      const cell = m.prog[bar];
+      const t = this.nextNote;
 
-      // Soft frame-drum: an even pulse that adds urgency on the darker moods.
-      if (m.drum && inBar % (8 / m.drum) === 0) {
-        this.drum(this.nextNote, inBar === 0 ? 0.32 : 0.2);
+      // Warm bass root + the sustained pad chord — the constant harmonic bed.
+      this.bass(hz(cell.bass), t, barLen);
+      for (const n of cell.chord) this.pad(n, t, barLen, 1);
+
+      // Texture layers fade in as the run hardens.
+      if (m.shimmer) for (const n of cell.chord) this.pad(n + 12, t, barLen, m.shimmer * 0.35);
+      if (m.drone) this.drone(hz(cell.bass - 12), t, barLen, m.drone);
+      if (m.air) this.air(t, barLen, m.air);
+      if (m.drum) {
+        const beat = barLen / m.drum;
+        for (let i = 0; i < m.drum; i++) this.drum(t + i * beat, i === 0 ? 0.3 : 0.18);
       }
 
-      // Melody: pluck a pentatonic tone on most eighths, rest now and then so
-      // the tune breathes instead of running on. The downbeat always sounds.
-      if (inBar === 0 || Math.random() > m.rest) {
-        const note = chord.pool[Math.floor(Math.random() * chord.pool.length)];
-        const octave = Math.random() < m.lift ? 12 : 0;
-        this.pluck(hz(note + octave), this.nextNote, eighth * 1.6);
-        // Tense moods sprinkle a quick grace note a semitone below the beat.
-        if (m.lead && inBar !== 0 && Math.random() < 0.18) {
-          this.pluck(hz(note - 1), this.nextNote - eighth * 0.3, eighth * 0.5);
-        }
-      }
-
-      this.nextNote += eighth;
+      this.nextNote += barLen;
       this.step++;
     }
   }
 
-  /** Plucked harp/lute tone: bright attack, exponential decay, soft filter. */
-  private pluck(freq: number, t: number, dur: number): void {
-    const ctx = this.ctx!;
-    const o = ctx.createOscillator();
-    o.type = 'triangle';
-    o.frequency.value = freq;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.5, t + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 2600;
-    o.connect(g); g.connect(lp);
-    lp.connect(this.music);
-    // Only a touch of the melody feeds the delay, scaled by the mood's air.
-    const send = ctx.createGain();
-    send.gain.value = this.mood.fb * 0.5;
-    lp.connect(send); send.connect(this.delay);
-    o.start(t); o.stop(t + dur + 0.05);
-  }
-
-  /** Soft sustained pad voice for the underlying chord. */
-  private pad(midi: number, t: number, dur: number): void {
+  /**
+   * Soft sustained pad voice for a chord tone. Gentle attack, a long sustain
+   * plateau, then a short release at the bar's end — a clean, ringing chord.
+   * Adjacent bars overlap on the release/attack so chords cross-fade smoothly.
+   */
+  private pad(midi: number, t: number, dur: number, level: number): void {
     const ctx = this.ctx!;
     const o = ctx.createOscillator();
     o.type = 'sine';
     o.frequency.value = hz(midi);
     const g = ctx.createGain();
-    const peak = 0.12 * this.mood.pad;
-    // Gentle attack, a long sustain plateau, then a short release at the end
-    // of the bar — a clean, ringing chord rather than a swell that fades out.
+    const peak = 0.075 * this.mood.pad * level;
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(peak, t + 0.35);
-    g.gain.setValueAtTime(peak, t + Math.max(0.35, dur - 0.4));
+    g.gain.linearRampToValueAtTime(peak, t + 0.5);
+    g.gain.setValueAtTime(peak, t + Math.max(0.5, dur - 0.6));
     g.gain.linearRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(this.music);
+    o.connect(g);
+    g.connect(this.music);
+    // A touch of the pad feeds the delay for a sense of space (never smearing).
+    const send = ctx.createGain();
+    send.gain.value = this.mood.fb * 0.35 * level;
+    g.connect(send); send.connect(this.delay);
     o.start(t); o.stop(t + dur + 0.1);
+  }
+
+  /** A low, slowly-beating drone — two detuned sines under a soft lowpass. */
+  private drone(freq: number, t: number, dur: number, level: number): void {
+    const ctx = this.ctx!;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 380;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(level, t + 0.8);
+    g.gain.setValueAtTime(level, t + Math.max(0.8, dur - 0.8));
+    g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    lp.connect(g); g.connect(this.music);
+    for (const detune of [1, 1.004]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = freq * detune;
+      o.connect(lp);
+      o.start(t); o.stop(t + dur + 0.1);
+    }
+  }
+
+  /** A breath of filtered noise that swells across the bar — open-air texture. */
+  private air(t: number, dur: number, level: number): void {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise; src.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 0.6;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(level, t + dur * 0.5);
+    g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    src.connect(bp); bp.connect(g);
+    g.connect(this.music); g.connect(this.delay);
+    src.start(t); src.stop(t + dur + 0.1);
   }
 
   /** A soft frame-drum thump: low filtered noise with a quick body. */

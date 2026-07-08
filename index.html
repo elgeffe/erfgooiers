@@ -28,7 +28,7 @@
   </div>
   <div id="runctl">
     <button id="btnDebugWin" title="Debug: instantly clear this level">✓ Win</button>
-    <button id="btnToMenu" title="Abandon this run and return to the menu">Menu</button>
+    <button id="btnToMenu" title="Pause and open the menu">Menu</button>
   </div>
 </div>
 
@@ -94,6 +94,18 @@
   </div>
 </div>
 
+<!-- ---------- pause menu (in-game) ---------- -->
+<div id="pausemenu" class="screen">
+  <div class="card">
+    <h1 class="serif">Paused</h1>
+    <div class="tag">The game is paused. Resume when you are ready, or abandon this run to return to the main menu.</div>
+    <div class="btns">
+      <button id="btnResume">Resume game</button>
+      <button id="btnAbandon" class="danger" title="Abandon this run and return to the menu">Abandon run</button>
+    </div>
+  </div>
+</div>
+
 <div id="intro">
   <div id="introCard">
     <h1 class="serif"><span id="introLogo"></span>How to play</h1>
@@ -101,8 +113,9 @@
     <ul>
       <li><span class="k">Build</span><span>Place buildings from the bottom menu. Serfs haul timber &amp; stone from your storehouse to the site, then a laborer constructs it.</span></li>
       <li><span class="k">Watch</span><span>Specialists gather and craft; serfs automatically carry goods between buildings. Nothing teleports.</span></li>
-      <li><span class="k">Roads</span><span>Paint roads (free) — workers prefer them and walk 30% faster on them.</span></li>
-      <li><span class="k">Chains</span><span>Trees → trunks → timber · Farm → mill → bakery · Quarry → stone · Gold + coal → the Mint.</span></li>
+      <li><span class="k">Roads</span><span>Paint roads for 1 stone each — workers prefer them and walk 30% faster on them.</span></li>
+      <li><span class="k">Chains</span><span>Trees → trunks → timber · Farm → mill → bakery (bread) · Vineyard → winery (wine) · Farm → pig farm → butchery (sausage) · Gold + coal → the Mint (coins).</span></li>
+      <li><span class="k">Gold</span><span>Click gold piles glinting in the grass to collect them straight into your purse.</span></li>
       <li><span class="k">Run</span><span>Clear each level to reach the shop; a failed level ends the run. Debug “✓ Win” advances a level for now.</span></li>
       <li><span class="k">Controls</span><span>WASD / arrows or right-drag to pan · wheel to zoom · <b>R</b> rotates a building while placing · click a building to inspect · Esc cancels.</span></li>
     </ul>

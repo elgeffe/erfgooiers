@@ -49,6 +49,8 @@ export class Controls {
       e.classList.toggle('on', !!m && ((m.type === 'road' && e.dataset.key === 'road') || (m.type === 'demolish' && e.dataset.key === 'demolish') || (m.type === 'build' && e.dataset.key === m.key))));
     this.view.hideGhost();
     this.view.hideRoadCursor();
+    if (m && m.type === 'road' && this.game) this.view.showEntranceMarkers(this.game.entranceTiles());
+    else this.view.hideEntranceMarkers();
     const hint = document.getElementById('hint')!;
     const menu = document.getElementById('buildmenu')!;
     if (m) {

@@ -10,9 +10,14 @@ export const ITEMS: Record<ItemKey, ItemDef> = {
   goldore: { name: 'Gold ore', color: '#c9a94e', hex: 0xc9a94e },
   coal:    { name: 'Coal',     color: '#3d3d44', hex: 0x3d3d44 },
   coin:    { name: 'Coin',     color: '#ffd24a', hex: 0xffd24a },
+  grape:   { name: 'Grapes',   color: '#7a4b8a', hex: 0x7a4b8a },
+  wine:    { name: 'Wine',     color: '#7b2233', hex: 0x7b2233 },
+  meat:    { name: 'Meat',     color: '#c96b6b', hex: 0xc96b6b },
+  sausage: { name: 'Sausage',  color: '#9c4a2f', hex: 0x9c4a2f },
 };
 
 /** Items surfaced in the top resource bar, in order. */
 export const RES_SHOWN: ItemKey[] = [
-  'timber', 'stone', 'trunk', 'wheat', 'flour', 'bread', 'goldore', 'coal', 'coin',
+  'timber', 'stone', 'trunk', 'wheat', 'flour', 'bread',
+  'grape', 'wine', 'meat', 'sausage', 'goldore', 'coal', 'coin',
 ];
