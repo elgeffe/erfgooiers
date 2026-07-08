@@ -7,8 +7,9 @@ import type { DecoKind, Tile } from '../types';
  * Holds no Three.js — the View reads these tiles to build/refresh meshes.
  *
  * Generation is fully procedural and reseeded on every load (see main.ts),
- * so each session lands in a freshly shaped patch of Het Gooi: wandering
- * ponds, scattered ore, mixed woodland, lavender meadows and reedy shallows.
+ * so each session lands in a freshly shaped patch of Het Gooi: a great lake
+ * with small ponds, scattered ore, mixed woodland, lavender meadows and
+ * reedy shallows.
  */
 export class World {
   readonly W = W;
@@ -57,18 +58,36 @@ export class World {
         }
     };
 
-    // ---- water: a handful of ponds & lakes scattered around the edges ----
+    // ---- water: one large lake plus a few small ponds ----
     // (kept away from the central build zone so the starting settlement fits)
     const central = (x: number, y: number) => Math.hypot(x - W / 2, y - H / 2) < 9;
-    const waterBodies = 3 + Math.floor(rnd() * 3);
-    for (let i = 0; i < waterBodies; i++) {
+    const nearCentre = (cx: number, cy: number, r: number) => Math.hypot(cx - W / 2, cy - H / 2) < 10 + r;
+    const water = (cx: number, cy: number, r: number) => blob(cx, cy, r, t => t.type = 'water');
+
+    // the large body: a chain of overlapping blobs wandering along the map's
+    // outer band, producing one big irregular lake with bays and headlands
+    const ang0 = rnd() * Math.PI * 2;
+    let lx = W / 2 + Math.cos(ang0) * W * 0.4;
+    let ly = H / 2 + Math.sin(ang0) * H * 0.4;
+    let drift = ang0 + Math.PI / 2 + (rnd() - 0.5) * 0.8; // wander roughly tangentially
+    for (let i = 0; i < 6; i++) {
+      const r = 5 + Math.floor(rnd() * 3);
+      const cx = Math.round(Math.max(2, Math.min(W - 3, lx)));
+      const cy = Math.round(Math.max(2, Math.min(H - 3, ly)));
+      if (!nearCentre(cx, cy, r)) water(cx, cy, r);
+      drift += (rnd() - 0.5) * 0.9;
+      lx += Math.cos(drift) * r * 1.1;
+      ly += Math.sin(drift) * r * 1.1;
+    }
+
+    // small ponds dotted about the rest of the meadow
+    const ponds = 2 + Math.floor(rnd() * 2);
+    for (let i = 0; i < ponds; i++) {
+      const r = 2 + Math.floor(rnd() * 2);
       let cx = 0, cy = 0, guard = 0;
       do { cx = 4 + Math.floor(rnd() * (W - 8)); cy = 4 + Math.floor(rnd() * (H - 8)); }
-      while (central(cx, cy) && guard++ < 40);
-      const r = 4 + Math.floor(rnd() * 4);
-      blob(cx, cy, r, t => t.type = 'water');
-      // a wandering finger trailing off the main body for a natural shoreline
-      if (rnd() < 0.7) blob(cx + Math.floor((rnd() * 2 - 1) * r), cy + Math.floor((rnd() * 2 - 1) * r), Math.max(2, r - 2), t => t.type = 'water');
+      while (nearCentre(cx, cy, r) && guard++ < 40);
+      if (!nearCentre(cx, cy, r)) water(cx, cy, r);
     }
 
     const deposits = (cx: number, cy: number, r: number, kind: 'stone' | 'gold' | 'coal', n: number) => {

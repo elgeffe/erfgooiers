@@ -42,7 +42,7 @@ export interface Coord { x: number; y: number; }
 export interface Tree { growth: number; reserved: boolean; meshes: THREE.Object3D[]; s: number; kind: number; }
 export interface Deposit { kind: 'stone' | 'gold' | 'coal'; amt: number; meshes: THREE.Object3D[]; }
 export interface Deco { kind: DecoKind; meshes: THREE.Object3D[]; }
-export interface Field { farm: Building; growth: number; }
+export interface Field { farm: Building; growth: number; meshes: THREE.Object3D[]; }
 
 export interface Tile {
   type: 'grass' | 'water';
