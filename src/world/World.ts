@@ -126,24 +126,37 @@ export class World {
       if (!nearCentre(cx, cy, r)) water(cx, cy, r);
     }
 
-    const deposits = (cx: number, cy: number, r: number, kind: 'stone' | 'gold' | 'coal', n: number) => {
+    const deposits = (cx: number, cy: number, r: number, kind: 'stone' | 'gold' | 'coal', n: number): number => {
       let placed = 0, guard = 0;
       while (placed < n && guard++ < 200) {
         const { x, y } = this.near(cx, cy, r);
         const t = this.T(x, y);
         if (t && t.type === 'grass' && !t.dep) { t.dep = { kind, amt: 6 + Math.floor(rnd() * 9), meshes: [] }; placed++; }
       }
+      return placed;
     };
     // ore veins — random clusters, weighted toward stone
     const kindPool: Array<'stone' | 'gold' | 'coal'> = ['stone', 'stone', 'gold', 'coal'];
+    const oreCount: Record<'stone' | 'gold' | 'coal', number> = { stone: 0, gold: 0, coal: 0 };
     for (let i = 0; i < this.p.oreVeins; i++) {
       const kind = kindPool[i % kindPool.length];
       const cx = 5 + Math.floor(rnd() * (W - 10)), cy = 5 + Math.floor(rnd() * (H - 10));
-      deposits(cx, cy, 3 + Math.floor(rnd() * 2), kind, 5 + Math.floor(rnd() * 5));
+      oreCount[kind] += deposits(cx, cy, 3 + Math.floor(rnd() * 2), kind, 5 + Math.floor(rnd() * 5));
+    }
+    // guarantee a workable minimum of every ore kind: a wetter/late map (or too few
+    // veins) can otherwise drop a vein into the lake and leave a whole resource
+    // (e.g. gold, breaking the mint chain) absent from the map.
+    const MIN_ORE = 6;
+    for (const kind of ['stone', 'gold', 'coal'] as const) {
+      let guard = 0;
+      while (oreCount[kind] < MIN_ORE && guard++ < 120) {
+        const cx = 4 + Math.floor(rnd() * (W - 8)), cy = 4 + Math.floor(rnd() * (H - 8));
+        oreCount[kind] += deposits(cx, cy, 3, kind, MIN_ORE - oreCount[kind]);
+      }
     }
 
     // ---- woodland: mixed stands, tree.kind picks the species/height ----
-    const forest = (cx: number, cy: number, r: number, n: number) => {
+    const forest = (cx: number, cy: number, r: number, n: number): number => {
       let placed = 0, guard = 0;
       while (placed < n && guard++ < 400) {
         const { x, y } = this.near(cx, cy, r);
@@ -153,9 +166,16 @@ export class World {
           placed++;
         }
       }
+      return placed;
     };
+    let treeCount = 0;
     for (let i = 0; i < this.p.treeStands; i++) {
-      forest(5 + Math.floor(rnd() * (W - 10)), 5 + Math.floor(rnd() * (H - 10)), 4 + Math.floor(rnd() * 3), 12 + Math.floor(rnd() * 16));
+      treeCount += forest(5 + Math.floor(rnd() * (W - 10)), 5 + Math.floor(rnd() * (H - 10)), 4 + Math.floor(rnd() * 3), 12 + Math.floor(rnd() * 16));
+    }
+    // guarantee a minimum stock of trees so the timber chain is always viable
+    let tguard = 0;
+    while (treeCount < 14 && tguard++ < 60) {
+      treeCount += forest(5 + Math.floor(rnd() * (W - 10)), 5 + Math.floor(rnd() * (H - 10)), 4, 12);
     }
 
     // ---- lavender meadows: dense purple patches of rows ----

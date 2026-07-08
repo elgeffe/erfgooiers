@@ -30,6 +30,7 @@ export class UI {
   private readonly resEls: Record<string, HTMLElement> = {};
   private unitsOpen = false;
   private unitTab = 'all';
+  private lastTabsHTML = '';
 
   constructor() {
     $('logo').innerHTML = logoSVG(30);
@@ -185,9 +186,19 @@ export class UI {
         if (o && o.def && o.def.fields) { audio.play('click'); this.onMode({ type: 'plot', building: o }); }
         return;
       }
+      if (t && t.closest('#prioBtn')) {
+        if (o && o.isSite) { this.game!.togglePriority(o); this.renderInspector(); }
+        return;
+      }
       const trainBtn = t && t.closest('[data-train]') as HTMLElement | null;
       if (trainBtn && o && o.def && (o.def.military || o.def.trainer)) {
         this.game!.trainUnit(o, trainBtn.dataset.train!);
+        this.renderInspector();
+        return;
+      }
+      const cancelBtn = t && t.closest('[data-cancel]') as HTMLElement | null;
+      if (cancelBtn && o && o.def && (o.def.military || o.def.trainer)) {
+        this.game!.cancelTrain(o, parseInt(cancelBtn.dataset.cancel!, 10));
         this.renderInspector();
       }
     });
@@ -225,6 +236,7 @@ export class UI {
       for (const k in o.needs) body += `<div class="invrow"><div class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color}"></div>${ITEMS[k as keyof typeof ITEMS].name}<b>${o.delivered[k] || 0} / ${o.needs[k]}</b></div>`;
       if (o.ready) body += `<div class="sect">Construction</div><div class="bar"><div style="width:${Math.round(o.progress * 100)}%"></div></div>`;
       else body += '<div class="hnote">Waiting for serfs to deliver materials…</div>';
+      body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize construction'}</button>`;
     } else if (o.def.store) {
       body += '<div class="sect">Stock</div>' + this.invRowsHTML(o.stock);
     } else {
@@ -262,9 +274,16 @@ export class UI {
         else {
           for (const kind of mil.trains) body += `<button class="inspbtn" data-train="${kind}">+ ${kind[0].toUpperCase() + kind.slice(1)}</button>`;
           const q = o.trainQ || [];
-          body += `<div class="sect">Training queue (${q.length})</div>`;
-          if (q.length) { body += `<div class="bar"><div style="width:${Math.round((o.prog || 0) * 100)}%"></div></div>`; body += `<div class="invrow">${q.map((k: string) => k).join(', ')}</div>`; }
-          else body += '<div class="invrow" style="color:var(--ink-dim)">idle</div>';
+          body += `<div class="sect">Training queue (${q.length})${q.length ? ' — click to cancel' : ''}</div>`;
+          if (q.length) {
+            body += `<div class="bar"><div style="width:${Math.round((o.prog || 0) * 100)}%"></div></div>`;
+            body += '<div class="tqueue">';
+            for (let i = 0; i < q.length; i++) {
+              const name = q[i][0].toUpperCase() + q[i].slice(1);
+              body += `<button class="tqchip${i === 0 ? ' active' : ''}" data-cancel="${i}" title="Cancel this order"><span>${i + 1}. ${name}</span> ✕</button>`;
+            }
+            body += '</div>';
+          } else body += '<div class="invrow" style="color:var(--ink-dim)">empty — queue units with the buttons above</div>';
         }
       }
     }
@@ -300,12 +319,11 @@ export class UI {
     const counts: Record<string, number> = { all: players.length, serf: 0, villager: 0, laborer: 0, specialist: 0, military: 0 };
     for (const u of players) counts[this.unitCat(u.role)]++;
     $('unitTitle').textContent = `Workers · ${players.length}`;
-
     const tabsDef: { id: string; label: string }[] = [
       { id: 'all', label: 'All' },
       { id: 'serf', label: 'Serfs' },
       { id: 'laborer', label: 'Builders' },
-      { id: 'villager', label: 'Idle' },
+      { id: 'villager', label: 'Villagers' },
       { id: 'specialist', label: 'Trades' },
       { id: 'military', label: 'Army' },
     ];
@@ -316,7 +334,7 @@ export class UI {
       if (c.id !== 'all' && counts[c.id] === 0 && this.unitTab !== c.id) continue;
       tabs += `<button class="utab${this.unitTab === c.id ? ' on' : ''}" data-tab="${c.id}">${c.label} <b>${counts[c.id]}</b></button>`;
     }
-    $('unitTabs').innerHTML = tabs;
+    if (tabs !== this.lastTabsHTML) { $('unitTabs').innerHTML = tabs; this.lastTabsHTML = tabs; }
 
     const shown = this.unitTab === 'all' ? players : players.filter(u => this.unitCat(u.role) === this.unitTab);
     let s = '';

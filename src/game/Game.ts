@@ -21,12 +21,14 @@ export interface StartKit {
   stock: Partial<Record<string, number>>;
   serfs: number;
   laborers: number;
+  villagers?: number;   // untrained recruits the Guild Hall starts with (default 4)
 }
 
 export const DEFAULT_KIT: StartKit = {
   stock: { timber: 16, stone: 10, bread: 8 },
-  serfs: 6,
-  laborers: 2,
+  serfs: 4,
+  laborers: 1,
+  villagers: 7,
 };
 
 /**
@@ -102,7 +104,8 @@ export class Game {
     // the Guild Hall trains the villagers who staff your buildings (separate from storage)
     this.guild = this.placeBuilding('guildhall', cx + 3, cy, true);
     const gd = doorTile(this.guild);
-    for (let i = 0; i < 8; i++) this.spawnCivilian('villager', { x: gd.x - 1 + (i % 4), y: gd.y + 1 + Math.floor(i / 4) });
+    const villagers = kit.villagers ?? DEFAULT_KIT.villagers ?? 4;
+    for (let i = 0; i < villagers; i++) this.spawnCivilian('villager', { x: gd.x - 1 + (i % 4), y: gd.y + 1 + Math.floor(i / 4) });
   }
 
   // =====================================================================
@@ -271,7 +274,7 @@ export class Game {
     for (const s of this.sites) {
       for (const it in s.needs) {
         const rem = s.needs[it] - (s.delivered[it] || 0) - (s.incoming[it] || 0);
-        for (let i = 0; i < rem; i++) demands.push({ pri: 0, to: s, item: it });
+        for (let i = 0; i < rem; i++) demands.push({ pri: s.priority ? -1 : 0, to: s, item: it });
       }
     }
     for (const b of this.buildings) {
@@ -387,7 +390,11 @@ export class Game {
     }
     u.status = 'Idle';
     u.mesh.position.y = 0;
-    for (const s of this.sites) { if (s.ready && !s.builder) { s.builder = u; u.target = s; u.wstate = 'build'; break; } }
+    // build prioritized sites first, then any other ready site
+    let target: Site | null = null;
+    for (const s of this.sites) { if (s.ready && !s.builder && s.priority) { target = s; break; } }
+    if (!target) for (const s of this.sites) { if (s.ready && !s.builder) { target = s; break; } }
+    if (target) { target.builder = u; u.target = target; u.wstate = 'build'; }
   }
 
   private outTotal(b: Building): number { let n = 0; for (const k in b.out) n += b.out[k]; return n; }
@@ -855,6 +862,13 @@ export class Game {
     u.special = 4.5;
   }
 
+  /** Toggle a construction site's priority (materials & builders go there first). */
+  togglePriority(s: Site): void {
+    s.priority = !s.priority;
+    this.sfx('click');
+    this.toast(s.priority ? s.def.name + ' prioritized' : s.def.name + ' no longer prioritized');
+  }
+
   /** Issue a command to a unit (used by Controls for hero/army orders). */
   orderUnit(u: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null): void {
     u.order = { type, x, y, foe };
@@ -1074,25 +1088,28 @@ export class Game {
     return true;
   }
 
+  /** Cancel a queued training order by index, refunding its cost to the store. */
+  cancelTrain(b: Building, index: number): void {
+    if (!b.trainQ || index < 0 || index >= b.trainQ.length) return;
+    const spec = b.def.military ?? b.def.trainer;
+    b.trainQ.splice(index, 1);
+    if (index === 0) b.prog = 0;           // scrap progress on the in-flight unit
+    if (spec && this.store?.stock) for (const k in spec.cost) this.store.stock[k] = (this.store.stock[k] || 0) + (spec.cost as any)[k];
+    this.sfx('click');
+  }
+
   /** Spawn a civilian worker (serf / laborer / villager) at a tile. */
   private spawnCivilian(role: string, tile: { x: number; y: number }): Unit {
     if (role === 'serf') return this.spawnUnit('serf', 0xd8c49a, tile);
     if (role === 'laborer') { const u = this.spawnUnit('laborer', 0xc97b3d, tile); u.roleName = 'Laborer'; return u; }
-    const u = this.spawnUnit('villager', 0xcdbb8f, tile); u.roleName = 'Villager'; return u;
+    const u = this.spawnUnit('villager', 0xcdbb8f, tile); u.roleName = 'Villager'; u.status = 'Awaiting a post'; return u;
   }
 
-  private idleVillagers(): number { let n = 0; for (const u of this.units) if (!u.dead && u.role === 'villager' && !u.home) n++; return n; }
-
-  /** Barracks/guild halls turn their queue into units; guild halls also keep a
-   *  small reserve of idle villagers topped up automatically (no cost). */
+  /** Barracks & guild halls turn their player-built queue into units over time. */
   private trainQueues(sdt: number): void {
     for (const b of this.buildings) {
       const spec = b.def.military ?? b.def.trainer;
       if (!spec || !b.active) continue;
-      if (b.def.trainer && (!b.trainQ || !b.trainQ.length)) {
-        if (this.idleVillagers() < 3) b.trainQ = ['villager'];
-        else { b.prog = 0; continue; }
-      }
       if (!b.trainQ || !b.trainQ.length) { b.prog = 0; continue; }
       b.prog += sdt / spec.time;
       if (b.prog >= 1) {

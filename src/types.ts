@@ -121,6 +121,7 @@ export interface Site {
   frame: THREE.Group;
   isSite: true;
   name: string;
+  priority?: boolean;          // player-flagged: get materials & a builder first
   removed?: boolean;
 }
 

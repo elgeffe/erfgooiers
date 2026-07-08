@@ -614,19 +614,39 @@ export class View {
     this.worldGroup.add(mill);
     this.millSails.push(sails);
 
-    // soft clouds drifting high above, spread wide around the board
+    // soft clouds drifting high above, spread wide around the board. Most are
+    // plain puffballs, but a sparse few take (rough) animal shapes for fun.
     const cloudSpan = boardR * 2 + 30;
     this.cloudBound = cloudSpan / 2;
     const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+    const mk = (c: THREE.Group, x: number, z: number, s: number, y = 0): void => {
+      const p = new THREE.Mesh(new THREE.SphereGeometry(s, 8, 6), cloudMat);
+      p.position.set(x, y + rnd() * 0.25, z); p.scale.y = 0.6; c.add(p);
+    };
+    // each builder sketches an animal silhouette in the horizontal plane
+    const animals: Array<(c: THREE.Group) => void> = [
+      c => { mk(c, -1.2, 0, 0.5); mk(c, 0, 0, 1.3); mk(c, 1.5, 0, 0.95); mk(c, 1.85, -0.5, 0.42); mk(c, 2.15, -0.85, 0.32); mk(c, 1.85, 0.5, 0.42); mk(c, 2.15, 0.85, 0.32); }, // bunny
+      c => { mk(c, 0, 0, 1.25); mk(c, 1.45, 0, 0.85); mk(c, 1.7, -0.42, 0.3); mk(c, 1.7, 0.42, 0.3); mk(c, -1.3, 0.3, 0.4); mk(c, -1.75, 0.65, 0.32); }, // cat
+      c => { mk(c, 0, 0, 1.15); mk(c, 1.25, 0.1, 0.8); mk(c, 1.95, 0.1, 0.32); mk(c, -1.0, 0.2, 0.55, 0.2); }, // duck
+      c => { mk(c, 0.3, 0, 1.25); mk(c, -0.5, 0, 0.9); mk(c, -1.7, -0.5, 0.45); mk(c, -1.7, 0.5, 0.45); }, // fish
+      c => { mk(c, 0, 0, 1.5); mk(c, 1.6, 0, 1.0); mk(c, 2.3, 0.1, 0.5); mk(c, 2.75, 0.42, 0.4); mk(c, 3.05, 0.78, 0.3); mk(c, 1.3, -0.78, 0.5); mk(c, -1.5, 0, 0.55); }, // elephant
+      c => { mk(c, 0, 0, 1.25); mk(c, 1.55, 0, 0.85); mk(c, 2.15, 0, 0.4); mk(c, 1.4, -0.55, 0.4); mk(c, -1.4, 0.2, 0.4, 0.2); }, // dog
+    ];
     for (let i = 0; i < 8; i++) {
       const c = new THREE.Group();
-      const n = 3 + Math.floor(rnd() * 3);
-      for (let j = 0; j < n; j++) {
-        const puff = new THREE.Mesh(new THREE.SphereGeometry(1 + rnd() * 1.2, 8, 6), cloudMat);
-        puff.position.set((j - n / 2) * 1.5 + rnd(), rnd() * 0.6, rnd() * 1.4);
-        puff.scale.y = 0.6;
-        c.add(puff);
+      if (rnd() < 0.3) {
+        animals[Math.floor(rnd() * animals.length)](c);  // sparse: ~2–3 of 8 are critters
+      } else {
+        const n = 3 + Math.floor(rnd() * 3);
+        for (let j = 0; j < n; j++) {
+          const puff = new THREE.Mesh(new THREE.SphereGeometry(1 + rnd() * 1.2, 8, 6), cloudMat);
+          puff.position.set((j - n / 2) * 1.5 + rnd(), rnd() * 0.6, rnd() * 1.4);
+          puff.scale.y = 0.6;
+          c.add(puff);
+        }
       }
+      c.scale.setScalar(0.9 + rnd() * 0.5);
+      c.rotation.y = rnd() * Math.PI * 2;   // face a random way so critters vary
       c.position.set((rnd() - 0.5) * cloudSpan, 14 + rnd() * 6, (rnd() - 0.5) * cloudSpan);
       this.worldGroup.add(c);
       this.clouds.push(c);
