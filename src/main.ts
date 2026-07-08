@@ -4,6 +4,10 @@ import { View } from './render/View';
 import { Game } from './game/Game';
 import { UI } from './ui/UI';
 import { Controls } from './input/Controls';
+import { reseed } from './engine/rng';
+
+// Fresh seed on every load → a newly generated Het Gooi each session.
+reseed(1 + Math.floor(Math.random() * 2147483645));
 
 /* =====================================================================
    Erfgooiers — a cozy physical-economy prototype set in Het Gooi.

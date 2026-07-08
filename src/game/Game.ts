@@ -40,6 +40,7 @@ export class Game {
       const t = tiles[y][x];
       if (t.tree) this.removeTree(x, y);
       if (t.dep) this.removeDep(x, y);
+      if (t.deco) this.removeDeco(x, y);
       t.type = 'grass'; this.view.refreshTile(x, y);
     }
     this.store = this.placeBuilding('storehouse', 23, 25, true);
@@ -63,7 +64,7 @@ export class Game {
       prog: 0, working: false, worker: null, fieldsList: [], mesh, name: def.name,
     };
     const tiles = this.world.tiles;
-    for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].b = b; if (tiles[y][x].tree) this.removeTree(x, y); }
+    for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].b = b; if (tiles[y][x].tree) this.removeTree(x, y); if (tiles[y][x].deco) this.removeDeco(x, y); }
     this.buildings.push(b);
     if (def.fields) this.createFields(b);
     if (instant) b.active = true;
@@ -77,6 +78,7 @@ export class Game {
         if (x >= farm.x - 1 && x <= farm.x + 2 && y >= farm.y - 1 && y <= farm.y + 2) continue;
         const t = this.world.T(x, y);
         if (t && t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep && !t.road && !t.field) {
+          if (t.deco) this.removeDeco(x, y);
           t.field = { farm, growth: rnd() * 0.5 }; farm.fieldsList.push({ x, y }); this.view.refreshTile(x, y); n++;
         }
       }
@@ -85,6 +87,7 @@ export class Game {
 
   removeTree(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.tree) { this.view.removeMeshes(t.tree.meshes); t.tree = null; } }
   removeDep(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.dep) { this.view.removeMeshes(t.dep.meshes); t.dep = null; } }
+  removeDeco(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.deco) { this.view.removeMeshes(t.deco.meshes); t.deco = null; } }
 
   placeSite(key: BuildingKey, tx: number, ty: number, rot = 0): Site {
     const def = DEFS[key];
@@ -98,7 +101,7 @@ export class Game {
     };
     for (const k in s.needs) { s.delivered[k] = 0; s.incoming[k] = 0; }
     const tiles = this.world.tiles;
-    for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].site = s; if (tiles[y][x].tree) this.removeTree(x, y); }
+    for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].site = s; if (tiles[y][x].tree) this.removeTree(x, y); if (tiles[y][x].deco) this.removeDeco(x, y); }
     this.sites.push(s);
     return s;
   }
@@ -122,7 +125,7 @@ export class Game {
   //  Units
   // =====================================================================
   spawnUnit(role: string, colorHex: number, tile: { x: number; y: number }): Unit {
-    const { group, itemMesh } = this.view.createUnit(colorHex, tile.x, tile.y);
+    const { group, itemMesh } = this.view.createUnit(colorHex, role, tile.x, tile.y);
     const u: Unit = {
       role, roleName: role[0].toUpperCase() + role.slice(1), colorHex, mesh: group, itemMesh,
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null,
@@ -371,7 +374,7 @@ export class Game {
         if (def.gather!.node === 'tree') { if (t.tree) this.removeTree(n.x, n.y); this.setCarrying(u, 'trunk'); }
         else if (def.gather!.node === 'field') { if (t.field) { t.field.growth = 0; this.view.refreshTile(n.x, n.y); } this.setCarrying(u, 'wheat'); }
         else if (def.gather!.node === 'plant') {
-          if (!t.tree && !t.b && !t.site && !t.road && !t.field && !t.dep) { t.tree = { growth: 0.12, reserved: false, meshes: [], s: 0.85 + rnd() * 0.4 }; this.view.addTree(n.x, n.y, t.tree); }
+          if (!t.tree && !t.b && !t.site && !t.road && !t.field && !t.dep) { if (t.deco) this.removeDeco(n.x, n.y); t.tree = { growth: 0.12, reserved: false, meshes: [], s: 0.85 + rnd() * 0.4, kind: Math.floor(rnd() * 4) }; this.view.addTree(n.x, n.y, t.tree); }
         } else { if (t.dep) { t.dep.amt--; if (t.dep.amt <= 0) this.removeDep(n.x, n.y); } this.setCarrying(u, def.gather!.out); }
         u.wstate = 'return'; u.mesh.position.y = 0;
       }
@@ -446,12 +449,13 @@ export class Game {
     const t = this.world.T(tx, ty);
     if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep) return;
     if (t.tree) this.removeTree(tx, ty);
-    t.road = true; this.view.refreshTile(tx, ty);
+    if (t.deco) this.removeDeco(tx, ty);
+    t.road = true; this.view.refreshTile(tx, ty); this.view.addRoad(tx, ty);
   }
 
   demolishAt(tx: number, ty: number, dragOnly: boolean): void {
     const t = this.world.T(tx, ty); if (!t) return;
-    if (t.road) { t.road = false; this.view.refreshTile(tx, ty); return; }
+    if (t.road) { t.road = false; this.view.refreshTile(tx, ty); this.view.removeRoad(tx, ty); return; }
     if (dragOnly) return;
     if (t.b) { if (t.b.def.store) { this.toast('The storehouse cannot be demolished', 'err'); return; } this.removeBuilding(t.b); return; }
     if (t.site) { this.removeSite(t.site); return; }
