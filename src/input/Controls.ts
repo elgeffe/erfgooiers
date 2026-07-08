@@ -24,6 +24,7 @@ export class Controls {
   private dragging = false;
   private lastMouse: { x: number; y: number } | null = null;
   private roadPainting = false;
+  private plotPainting = false;
   private demoDragging = false;
 
   constructor(private readonly view: View, private readonly ui: UI) {
@@ -31,7 +32,7 @@ export class Controls {
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('pointerdown', e => this.onDown(e));
     addEventListener('pointermove', e => this.onMove(e));
-    addEventListener('pointerup', () => { this.dragging = false; this.roadPainting = false; this.demoDragging = false; });
+    addEventListener('pointerup', () => { this.dragging = false; this.roadPainting = false; this.plotPainting = false; this.demoDragging = false; });
     canvas.addEventListener('wheel', e => { e.preventDefault(); this.view.zoom(e.deltaY > 0 ? 1.1 : 0.9); }, { passive: false });
     addEventListener('keydown', e => this.onKey(e));
     addEventListener('keyup', e => { this.keys[e.key.toLowerCase()] = false; });
@@ -46,7 +47,7 @@ export class Controls {
   setMode(m: Mode): void {
     this.mode = m;
     document.querySelectorAll<HTMLElement>('.bcard').forEach(e =>
-      e.classList.toggle('on', !!m && ((m.type === 'road' && e.dataset.key === 'road') || (m.type === 'demolish' && e.dataset.key === 'demolish') || (m.type === 'build' && e.dataset.key === m.key))));
+      e.classList.toggle('on', !!m && ((m.type === 'road' && e.dataset.key === 'road') || (m.type === 'plot' && e.dataset.key === 'plot') || (m.type === 'demolish' && e.dataset.key === 'demolish') || (m.type === 'build' && e.dataset.key === m.key))));
     this.view.hideGhost();
     this.view.hideRoadCursor();
     if (m && m.type === 'road' && this.game) this.view.showEntranceMarkers(this.game.entranceTiles());
@@ -57,7 +58,8 @@ export class Controls {
       hint.style.display = 'block';
       hint.style.bottom = (menu.getBoundingClientRect().height + 22) + 'px';
       hint.textContent = m.type === 'road' ? 'Click & drag to paint road — Esc to stop'
-        : m.type === 'demolish' ? 'Click a building or site — drag over roads to remove — Esc to stop'
+        : m.type === 'plot' ? `Click & drag to add plots for the ${m.building.name} — Esc to stop`
+        : m.type === 'demolish' ? 'Click a building or site — drag over roads & plots to remove — Esc to stop'
           : `Click to place ${DEFS[m.key].name} — R to rotate · Esc to cancel`;
     } else hint.style.display = 'none';
   }
@@ -72,14 +74,20 @@ export class Controls {
   // ---------- pointer ----------
   private onDown(e: PointerEvent): void {
     this.lastMouse = { x: e.clientX, y: e.clientY };
+    // right-click cancels an active placement mode; otherwise right/middle pan
+    if (e.button === 2 && this.mode) { this.setMode(null); return; }
     if (e.button === 2 || e.button === 1) { this.dragging = true; return; }
     if (e.button !== 0 || !this.game) return;
     const t = this.view.tileAt(e.clientX, e.clientY);
     if (!t) return;
     const m = this.mode;
     if (m && m.type === 'road') { this.roadPainting = true; this.game.paintRoad(t.x, t.y); return; }
+    if (m && m.type === 'plot') { this.plotPainting = true; this.game.placePlot(t.x, t.y, m.building); return; }
     if (m && m.type === 'demolish') { this.demoDragging = true; this.game.demolishAt(t.x, t.y, false); return; }
     if (m && m.type === 'build') { this.game.tryPlace(m.key, t.x, t.y, this.buildRot); if (!this.keys['shift']) this.setMode(null); return; }
+    const gp = this.view.groundPoint(e.clientX, e.clientY);
+    const u = this.game.pickUnit(gp.x, gp.z);
+    if (u) { this.game.select(u); return; }
     this.game.selectAt(t.x, t.y);
   }
 
@@ -93,8 +101,9 @@ export class Controls {
     this.lastMouse = { x: e.clientX, y: e.clientY };
     const m = this.mode;
     if (this.game && this.roadPainting) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.game.paintRoad(t.x, t.y); }
+    if (this.game && this.plotPainting && m && m.type === 'plot') { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.game.placePlot(t.x, t.y, m.building); }
     if (this.game && this.demoDragging) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.game.demolishAt(t.x, t.y, true); }
-    if (m && (m.type === 'road' || m.type === 'demolish')) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.view.showRoadCursor(t.x, t.y, m.type); else this.view.hideRoadCursor(); }
+    if (m && (m.type === 'road' || m.type === 'demolish' || m.type === 'plot')) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.view.showRoadCursor(t.x, t.y, m.type); else this.view.hideRoadCursor(); }
     if (m && m.type === 'build') { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.refreshGhost(t.x, t.y); }
   }
 

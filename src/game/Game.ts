@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ROAD_STONE_COST } from '../constants';
+import { ROAD_STONE_COST, PLOT_RANGE } from '../constants';
 import { DEFS } from '../data/buildings';
 import { ITEMS } from '../data/items';
 import { simRng } from '../engine/rng';
@@ -57,6 +57,7 @@ export class Game {
   private dispatchT = 0;
   private fieldT = 0;
   private roadWarnT = 0;
+  private plotWarnT = 0;
 
   constructor(private readonly world: World, private readonly view: View, readonly mods: Modifiers = new Modifiers()) {}
 
@@ -79,7 +80,7 @@ export class Game {
     }
     this.store = this.placeBuilding('storehouse', cx, cy, true);
     // base kit stock, then run-upgrade start bonuses on top
-    this.store.stock = { timber: 0, stone: 0, bread: 0, trunk: 0, wheat: 0, flour: 0, goldore: 0, coal: 0, coin: 0, grape: 0, wine: 0, meat: 0, sausage: 0, ...kit.stock };
+    this.store.stock = { timber: 0, stone: 0, bread: 0, trunk: 0, wheat: 0, flour: 0, goldore: 0, coal: 0, coin: 0, grape: 0, wine: 0, meat: 0, sausage: 0, fish: 0, ...kit.stock };
     const bonus = this.mods.startStock();
     for (const k in bonus) this.store.stock[k] = (this.store.stock[k] || 0) + (bonus as Record<string, number>)[k];
     const d = doorTile(this.store);
@@ -105,23 +106,35 @@ export class Game {
     const tiles = this.world.tiles;
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].b = b; if (tiles[y][x].tree) this.removeTree(x, y); if (tiles[y][x].deco) this.removeDeco(x, y); }
     this.buildings.push(b);
-    if (def.fields) this.createFields(b);
     if (instant) b.active = true;
     return b;
   }
 
-  private createFields(farm: Building): void {
-    let n = 0;
-    for (let r = 2; r <= 4 && n < 7; r++) {
-      for (let y = farm.y - r; y <= farm.y + 1 + r && n < 7; y++) for (let x = farm.x - r; x <= farm.x + 1 + r && n < 7; x++) {
-        if (x >= farm.x - 1 && x <= farm.x + 2 && y >= farm.y - 1 && y <= farm.y + 2) continue;
-        const t = this.world.T(x, y);
-        if (t && t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep && !t.road && !t.field) {
-          if (t.deco) this.removeDeco(x, y);
-          t.field = { farm, growth: rnd() * 0.5, meshes: [] }; farm.fieldsList.push({ x, y }); this.view.refreshTile(x, y); this.view.addFieldCrop(x, y, t.field); n++;
-        }
-      }
+  /** Max plots a fields-building may hold (data-driven, with a safe default). */
+  private fieldCap(b: Building): number { return b.def.plots ?? 8; }
+
+  /**
+   * Player-placed plot: attach a crop/pasture tile to the given fields-building
+   * (the one selected in its inspector) while it has room and range. Click & drag.
+   */
+  placePlot(tx: number, ty: number, b: Building): void {
+    if (b.removed || !b.def.fields) return;
+    const t = this.world.T(tx, ty);
+    if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep) return;
+    if (b.fieldsList.length >= this.fieldCap(b)) {
+      const now = Date.now();
+      if (now - this.plotWarnT > 1500) { this.plotWarnT = now; this.toast(`${b.name} has no room for more plots`, 'err'); this.sfx('error'); }
+      return;
     }
+    if (Math.hypot(tx - (b.x + 0.5), ty - (b.y + 0.5)) > PLOT_RANGE) {
+      const now = Date.now();
+      if (now - this.plotWarnT > 1500) { this.plotWarnT = now; this.toast(`Too far — plots must sit within ${PLOT_RANGE} tiles of the ${b.name}`, 'err'); this.sfx('error'); }
+      return;
+    }
+    if (t.deco) this.removeDeco(tx, ty);
+    t.field = { farm: b, growth: rnd() * 0.4, meshes: [] };
+    b.fieldsList.push({ x: tx, y: ty });
+    this.view.refreshTile(tx, ty); this.view.addFieldCrop(tx, ty, t.field);
   }
 
   removeTree(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.tree) { this.view.removeMeshes(t.tree.meshes); t.tree = null; } }
@@ -232,6 +245,12 @@ export class Game {
         const have = (b.inp[it] || 0) + (b.incoming[it] || 0);
         if (have < carryCap) demands.push({ pri: 1, to: b, item: it });
       }
+    }
+    for (const b of this.buildings) {
+      if (!b.active || !b.def.tavern) continue;
+      const it = b.def.tavern.food;
+      const have = (b.inp[it] || 0) + (b.incoming[it] || 0);
+      if (have < carryCap) demands.push({ pri: 1, to: b, item: it });
     }
     for (const b of this.buildings) {
       if (!b.active || b.def.store) continue;
@@ -350,6 +369,16 @@ export class Game {
       }
       return best;
     }
+    if (g.node === 'fish') {
+      // stand on an empty shore tile that touches lake water and cast a line
+      for (let y = Math.max(0, b.y - g.range); y <= Math.min(H - 1, b.y + 1 + g.range); y++) for (let x = Math.max(0, b.x - g.range); x <= Math.min(W - 1, b.x + 1 + g.range); x++) {
+        const t = tiles[y][x];
+        if (t.type !== 'grass' || t.b || t.site || t.tree || t.dep || t.road || t.field) continue;
+        if (!this.adjLake(x, y)) continue;
+        const d = Math.hypot(x - cx, y - cy); if (d < bd) { bd = d; best = { x, y }; }
+      }
+      return best;
+    }
     for (let y = Math.max(0, b.y - g.range); y <= Math.min(H - 1, b.y + 1 + g.range); y++) for (let x = Math.max(0, b.x - g.range); x <= Math.min(W - 1, b.x + 1 + g.range); x++) {
       const t = tiles[y][x];
       let ok = false;
@@ -366,6 +395,7 @@ export class Game {
     const b = u.home;
     if (!b) return;
     if (u.wstate === 'goHome') {
+      u.mesh.visible = true;
       const d = doorTile(b);
       if (u.tx === d.x && u.ty === d.y && !u.path) { u.wstate = 'home'; b.active = true; this.toast(b.def.name + ' is now staffed'); }
       else if (!u.path) { if (!this.sendTo(u, d.x, d.y)) u.timer = 1; }
@@ -375,7 +405,7 @@ export class Game {
     }
     const def = b.def;
     if (def.recipe) {
-      u.mesh.position.y = 0;
+      u.mesh.visible = false; u.mesh.position.y = 0;
       if (b.working) {
         u.status = 'Working';
         u.bob += dt * 10; u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.05;
@@ -391,7 +421,11 @@ export class Game {
       }
       return;
     }
+    // Non-producing staffed buildings (e.g. the Tavern): the worker just tends
+    // it from inside, so it stays hidden until the building is torn down.
+    if (!def.gather) { u.mesh.visible = false; u.mesh.position.y = 0; u.status = 'Tending'; return; }
     if (u.wstate === 'home') {
+      u.mesh.visible = false;
       u.mesh.position.y = 0;
       if (this.outTotal(b) >= this.mods.outCap()) { u.status = 'Output full'; return; }
       const node = this.findNode(b);
@@ -401,6 +435,7 @@ export class Game {
       u.wstate = 'toNode';
     }
     if (u.wstate === 'toNode') {
+      u.mesh.visible = true;
       const n = u.target;
       if (u.tx === n.x && u.ty === n.y && !u.path) { u.wstate = 'gather'; u.timer = this.mods.gatherTime(def); }
       else if (!u.path) { if (!this.sendTo(u, n.x, n.y)) { u.wstate = 'home'; u.target = null; return; } }
@@ -409,6 +444,7 @@ export class Game {
       return;
     }
     if (u.wstate === 'gather') {
+      u.mesh.visible = true;
       u.status = def.gather!.node === 'plant' ? 'Planting' : 'Gathering';
       u.bob += dt * 11; u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.07;
       u.timer -= dt;
@@ -418,12 +454,14 @@ export class Game {
         else if (def.gather!.node === 'field') { if (t.field) { t.field.growth = 0; this.view.refreshTile(n.x, n.y); this.view.scaleFieldCrop(t.field); } this.setCarrying(u, def.gather!.out ?? 'wheat'); this.sfx('harvest'); }
         else if (def.gather!.node === 'plant') {
           if (!t.tree && !t.b && !t.site && !t.road && !t.field && !t.dep) { if (t.deco) this.removeDeco(n.x, n.y); t.tree = { growth: 0.12, reserved: false, meshes: [], s: 0.85 + rnd() * 0.4, kind: Math.floor(rnd() * 4) }; this.view.addTree(n.x, n.y, t.tree); }
-        } else { if (t.dep) { t.dep.amt--; if (t.dep.amt <= 0) this.removeDep(n.x, n.y); } this.setCarrying(u, def.gather!.out); }
+        } else if (def.gather!.node === 'fish') { this.setCarrying(u, def.gather!.out); this.sfx('harvest'); }
+        else { if (t.dep) { t.dep.amt--; if (t.dep.amt <= 0) this.removeDep(n.x, n.y); } this.setCarrying(u, def.gather!.out); }
         u.wstate = 'return'; u.mesh.position.y = 0;
       }
       return;
     }
     if (u.wstate === 'return') {
+      u.mesh.visible = true;
       const d = doorTile(b);
       if (u.tx === d.x && u.ty === d.y && !u.path) {
         if (u.carrying) { b.out[u.carrying] = (b.out[u.carrying] || 0) + 1; this.objective?.onProduce(u.carrying); this.setCarrying(u, null); }
@@ -480,12 +518,25 @@ export class Game {
     return false;
   }
 
+  /** Is an orthogonal neighbour a lake-water tile (the shore a fisher casts from)? */
+  private adjLake(x: number, y: number): boolean {
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const t = this.world.T(x + dx, y + dy); if (t && t.type === 'water' && t.lake) return true; }
+    return false;
+  }
+  private lakeInRange(tx: number, ty: number, r: number): boolean {
+    const { W, H } = this.world;
+    const tiles = this.world.tiles;
+    for (let y = Math.max(0, ty - r); y <= Math.min(H - 1, ty + 1 + r); y++) for (let x = Math.max(0, tx - r); x <= Math.min(W - 1, tx + 1 + r); x++) if (tiles[y][x].type === 'water' && tiles[y][x].lake) return true;
+    return false;
+  }
+
   tryPlace(key: BuildingKey, tx: number, ty: number, rot: number): void {
     if (!this.canPlace(key, tx, ty, rot)) { this.sfx('error'); this.toast('Cannot build here — the entrance tile must be clear too', 'err'); return; }
     const def = DEFS[key];
     if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.toast('No stone deposits in range — build near the grey rocks', 'err'); return; }
     if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.toast('No gold deposits in range', 'err'); return; }
     if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.toast('No coal deposits in range', 'err'); return; }
+    if (key === 'fishery' && !this.lakeInRange(tx, ty, def.gather!.range)) { this.toast('No fishing water in range — build on the lake shore', 'err'); return; }
     if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.toast('Warning: few trees nearby', 'err');
     const cost = this.mods.buildingCost(def);
     for (const k in cost) { if (this.countItem(k) < (cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name + ' in the world — site will wait', 'err'); break; } }
@@ -511,6 +562,11 @@ export class Game {
   demolishAt(tx: number, ty: number, dragOnly: boolean): void {
     const t = this.world.T(tx, ty); if (!t) return;
     if (t.road) { t.road = false; this.store.stock!['stone'] = (this.store.stock!['stone'] || 0) + ROAD_STONE_COST; this.view.refreshTile(tx, ty); this.view.removeRoad(tx, ty); return; }
+    if (t.field) {
+      const list = t.field.farm.fieldsList, i = list.findIndex(f => f.x === tx && f.y === ty);
+      if (i >= 0) list.splice(i, 1);
+      this.view.removeMeshes(t.field.meshes); t.field = null; this.view.refreshTile(tx, ty); return;
+    }
     if (dragOnly) return;
     if (t.b) { if (t.b.def.store) { this.toast('The storehouse cannot be demolished', 'err'); return; } this.sfx('demolish'); this.removeBuilding(t.b); return; }
     if (t.site) { this.sfx('demolish'); this.removeSite(t.site); return; }
@@ -530,7 +586,7 @@ export class Game {
   private removeBuilding(b: Building): void {
     b.removed = true;
     for (const u of this.units) if (u.task && (u.task.to === b || u.task.from === b)) this.cancelTask(u);
-    if (b.worker) { const w = b.worker; this.view.remove(w.mesh); this.units.splice(this.units.indexOf(w), 1); }
+    if (b.worker) { const w = b.worker; this.view.remove(w.mesh); this.units.splice(this.units.indexOf(w), 1); if (this.selected === w) this.select(null); }
     for (const f of b.fieldsList) { const t = this.world.tiles[f.y][f.x]; if (t.field) { this.view.removeMeshes(t.field.meshes); t.field = null; this.view.refreshTile(f.x, f.y); } }
     for (let y = b.y; y < b.y + 2; y++) for (let x = b.x; x < b.x + 2; x++) this.world.tiles[y][x].b = null;
     this.view.remove(b.mesh);
@@ -540,6 +596,18 @@ export class Game {
   }
 
   select(obj: any): void { this.selected = obj; this.onSelect(obj); }
+
+  /** Nearest visible unit to a world-space ground point, or null (used by Controls). */
+  pickUnit(wx: number, wz: number, radius = 0.6): Unit | null {
+    let best: Unit | null = null, bd = radius * radius;
+    for (const u of this.units) {
+      if (!u.mesh.visible) continue;
+      const dx = u.mesh.position.x - wx, dz = u.mesh.position.z - wz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < bd) { bd = d2; best = u; }
+    }
+    return best;
+  }
 
   /** Door/entrance tiles of every building and site — highlighted while painting roads. */
   entranceTiles(): Coord[] {
@@ -587,7 +655,25 @@ export class Game {
       else this.workerUpdate(u, sdt);
     }
     this.growthUpdate(sdt);
+    this.serveTaverns(sdt);
     this.fieldT += sdt;
     if (this.fieldT > 0.5) { this.fieldT = 0; this.fieldRecolor(); }
+  }
+
+  /** Taverns burn one food good on a timer to refill the hunger of nearby workers. */
+  private serveTaverns(sdt: number): void {
+    for (const b of this.buildings) {
+      const tv = b.def.tavern;
+      if (!tv || !b.active) continue;
+      b.prog += sdt / tv.time;
+      if (b.prog < 1) continue;
+      b.prog = 0;
+      if ((b.inp[tv.food] || 0) <= 0) continue;
+      b.inp[tv.food]--;
+      const cx = b.x + 1, cy = b.y + 1;
+      for (const u of this.units) {
+        if (Math.abs(u.tx - cx) + Math.abs(u.ty - cy) <= tv.range) u.hunger = 100;
+      }
+    }
   }
 }

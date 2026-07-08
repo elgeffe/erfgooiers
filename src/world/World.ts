@@ -51,7 +51,7 @@ export class World {
     for (let y = 0; y < this.H; y++) {
       this.tiles[y] = [];
       for (let x = 0; x < this.W; x++) {
-        this.tiles[y][x] = { type: 'grass', road: false, b: null, site: null, tree: null, dep: null, field: null, deco: null, pickup: null, cshade: 0.9 + rnd() * 0.2 };
+        this.tiles[y][x] = { type: 'grass', road: false, lake: false, b: null, site: null, tree: null, dep: null, field: null, deco: null, pickup: null, cshade: 0.9 + rnd() * 0.2 };
       }
     }
     this.generate();
@@ -95,6 +95,8 @@ export class World {
     const central = (x: number, y: number) => Math.hypot(x - W / 2, y - H / 2) < 9;
     const nearCentre = (cx: number, cy: number, r: number) => Math.hypot(cx - W / 2, cy - H / 2) < 10 + r;
     const water = (cx: number, cy: number, r: number) => blob(cx, cy, r, t => t.type = 'water');
+    // the big body's tiles are tagged as lake (fish live here; ponds stay bare)
+    const lakeWater = (cx: number, cy: number, r: number) => blob(cx, cy, r, t => { t.type = 'water'; t.lake = true; });
 
     // the large body: a chain of overlapping blobs wandering along the map's
     // outer band, producing one big irregular lake with bays and headlands
@@ -108,7 +110,7 @@ export class World {
       const r = Math.max(2, Math.round((5 + Math.floor(rnd() * 3)) * Math.min(1.4, wet)));
       const cx = Math.round(Math.max(2, Math.min(W - 3, lx)));
       const cy = Math.round(Math.max(2, Math.min(H - 3, ly)));
-      if (!nearCentre(cx, cy, r)) water(cx, cy, r);
+      if (!nearCentre(cx, cy, r)) lakeWater(cx, cy, r);
       drift += (rnd() - 0.5) * 0.9;
       lx += Math.cos(drift) * r * 1.1;
       ly += Math.sin(drift) * r * 1.1;

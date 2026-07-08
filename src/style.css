@@ -42,10 +42,17 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 #runctl #btnDebugWin{background:rgba(143,191,107,.25);border-color:var(--good);color:#d6f0bf;}
 #runctl button:hover{border-color:var(--accent);}
 /* ---------- build menu ---------- */
-#buildmenu{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:6px;align-items:flex-end;background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:10px;padding:8px;box-shadow:0 6px 24px rgba(0,0,0,.5);max-width:min(96vw, calc(100vw - 200px));}
+#buildmenu{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px;background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:10px;padding:8px;box-shadow:0 6px 24px rgba(0,0,0,.5);max-width:min(96vw, calc(100vw - 200px));}
+#buildtabs{display:flex;flex-wrap:wrap;justify-content:center;gap:4px;}
+.btab{background:var(--panel2);color:var(--ink-dim);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;user-select:none;transition:color .08s,border-color .08s,background .08s;}
+.btab:hover{color:var(--ink);border-color:var(--accent);}
+.btab.on{color:var(--accent);border-color:var(--accent);background:#4a3823;}
+#buildrow{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;align-items:flex-end;}
 .bcard{width:74px;background:var(--panel2);border:1px solid rgba(255,255,255,.07);border-radius:7px;padding:6px 4px 5px;cursor:pointer;text-align:center;transition:transform .08s, border-color .08s;user-select:none;}
 .bcard:hover{transform:translateY(-2px);border-color:var(--accent);}
 .bcard.on{border-color:var(--accent);background:#4a3823;box-shadow:0 0 0 1px var(--accent);}
+.bcard.stub{width:auto;max-width:220px;min-height:52px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10.5px;line-height:1.35;color:var(--ink-dim);cursor:default;font-style:italic;}
+.bcard.stub:hover{transform:none;border-color:rgba(255,255,255,.07);}
 .bcard .icon{width:30px;height:26px;margin:0 auto 4px;position:relative;}
 .bcard .nm{font-size:9.5px;line-height:1.15;color:var(--ink);font-weight:600;min-height:22px;display:flex;align-items:center;justify-content:center;}
 .bcard .cost{display:flex;justify-content:center;gap:5px;margin-top:2px;font-size:9px;color:var(--ink-dim);}
@@ -63,6 +70,8 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 .bar{height:7px;background:rgba(0,0,0,.4);border-radius:4px;overflow:hidden;margin:4px 0 8px;}
 .bar>div{height:100%;background:var(--accent);border-radius:4px;transition:width .2s linear;}
 .sect{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);margin:8px 0 3px;}
+.inspbtn{width:100%;margin-top:6px;background:var(--accent);color:#241a0e;border:none;border-radius:7px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;}
+.inspbtn:hover{background:#e8b855;}
 #closeInsp{position:absolute;top:6px;right:8px;background:none;border:none;color:var(--ink-dim);cursor:pointer;font-size:14px;}
 /* ---------- serf panel ---------- */
 #unitpanel{left:12px;top:56px;width:236px;max-height:calc(100% - 220px);overflow:hidden auto;display:none;}

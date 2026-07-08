@@ -3,14 +3,14 @@ import type * as THREE from 'three';
 export type ItemKey =
   | 'trunk' | 'timber' | 'stone' | 'wheat' | 'flour'
   | 'bread' | 'goldore' | 'coal' | 'coin'
-  | 'grape' | 'wine' | 'meat' | 'sausage';
+  | 'grape' | 'wine' | 'meat' | 'sausage' | 'fish';
 
 export type BuildingKey =
   | 'storehouse' | 'woodcutter' | 'forester' | 'sawmill' | 'quarry'
   | 'farm' | 'mill' | 'bakery' | 'goldmine' | 'coalmine' | 'mint'
-  | 'vineyard' | 'winery' | 'pigfarm' | 'butcher';
+  | 'vineyard' | 'winery' | 'pigfarm' | 'butcher' | 'tavern' | 'fishery';
 
-export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'field';
+export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'field' | 'fish';
 
 /** Purely decorative ground scatter (no gameplay effect). */
 export type DecoKind = 'lavender' | 'flowers' | 'bush' | 'reed' | 'lily';
@@ -22,6 +22,8 @@ export interface ItemDef { name: string; color: string; hex: number; }
 
 export interface GatherDef { node: NodeKind; out: ItemKey | null; time: number; range: number; }
 export interface RecipeDef { inp: Partial<Record<ItemKey, number>>; out: ItemKey; time: number; }
+/** A tavern serves a food good, refilling the hunger of nearby workers. */
+export interface TavernDef { food: ItemKey; range: number; time: number; }
 
 export interface BuildingDef {
   name: string;
@@ -34,7 +36,9 @@ export interface BuildingDef {
   store?: boolean;
   gather?: GatherDef;
   recipe?: RecipeDef;
+  tavern?: TavernDef;
   fields?: boolean;
+  plots?: number;              // max crop/pasture plots the player may attach
   worker?: string;
   wcolor?: number;
 }
@@ -51,6 +55,7 @@ export interface Pickup { gold: number; reserved: boolean; meshes: THREE.Object3
 export interface Tile {
   type: 'grass' | 'water';
   road: boolean;
+  lake: boolean;               // part of the big fish-stocked lake (not a pond)
   b: Building | null;
   site: Site | null;
   tree: Tree | null;
@@ -124,5 +129,6 @@ export interface Unit {
 export type Mode =
   | { type: 'build'; key: BuildingKey }
   | { type: 'road' }
+  | { type: 'plot'; building: Building }
   | { type: 'demolish' }
   | null;

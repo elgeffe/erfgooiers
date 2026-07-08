@@ -2,10 +2,15 @@ import * as THREE from 'three';
 import { uiRng } from '../engine/rng';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
-import { makeBuilding, makeDeco, makeDeposit, makeFieldCrop, makePickup, makeScaffold, makeTree, makeUnit } from './models';
+import { makeBuilding, makeDeco, makeDeposit, makeFieldCrop, makeFish, makePickup, makePig, makeScaffold, makeTree, makeUnit } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
+
+/** A single grazing pig on a pig-farm pasture (cosmetic, real-time). */
+interface Pig { mesh: THREE.Group; x: number; z: number; tx: number; tz: number; wait: number; big: boolean; }
+/** A single fish swimming in the lake (cosmetic, real-time). */
+interface SwimFish { mesh: THREE.Group; x: number; z: number; tx: number; tz: number; wait: number; speed: number; }
 
 /**
  * Owns everything Three.js: renderer, scene, orthographic camera, the ground
@@ -50,6 +55,13 @@ export class View {
   // ambient scenery that turns in real time (distant windmill sails)
   private readonly millSails: THREE.Object3D[] = [];
   private cloudBound = 40;
+
+  // grazing pigs on each pig-farm's pasture plots (cosmetic, real-time)
+  private readonly pigHerds = new Map<Building, Pig[]>();
+
+  // fish swimming in the lake (cosmetic, real-time)
+  private readonly fish: SwimFish[] = [];
+  private lakeTiles: { x: number; y: number }[] = [];
 
   // minimap
   private readonly mm: HTMLCanvasElement;
@@ -109,6 +121,7 @@ export class View {
     this.buildGround();
     this.populateDoodads();
     this.buildAmbiance();
+    this.spawnFish();
   }
 
   /**
@@ -138,6 +151,9 @@ export class View {
     this.scene.fog = null;
     this.roadMeshes.clear();
     this.clouds.length = 0;
+    this.pigHerds.clear();
+    this.fish.length = 0;
+    this.lakeTiles = [];
     this.millSails.length = 0;
     this.ghostKey = null;
   }
@@ -172,13 +188,19 @@ export class View {
   /** Screen point → world tile (or null off-map). */
   tileAt(cx: number, cy: number): { x: number; y: number } | null {
     const W = this.world.W, H = this.world.H;
+    const p = this.groundPoint(cx, cy);
+    const tx = Math.floor(p.x + W / 2), ty = Math.floor(p.z + H / 2);
+    if (tx < 0 || ty < 0 || tx >= W || ty >= H) return null;
+    return { x: tx, y: ty };
+  }
+
+  /** Screen point → world-space point on the ground plane (y = 0). */
+  groundPoint(cx: number, cy: number): { x: number; z: number } {
     const ndc = new THREE.Vector2((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1);
     const rc = new THREE.Raycaster(); rc.setFromCamera(ndc, this.camera);
     const t = -rc.ray.origin.y / rc.ray.direction.y;
     const p = rc.ray.origin.clone().add(rc.ray.direction.clone().multiplyScalar(t));
-    const tx = Math.floor(p.x + W / 2), ty = Math.floor(p.z + H / 2);
-    if (tx < 0 || ty < 0 || tx >= W || ty >= H) return null;
-    return { x: tx, y: ty };
+    return { x: p.x, z: p.z };
   }
 
   // =====================================================================
@@ -224,9 +246,11 @@ export class View {
     this.worldGroup.add(g);
     deco.meshes = [g];
   }
-  /** Plant the visible wheat on a farm plot; growth drives its height. */
+  /** Plant the visible crop on a plot; growth drives its height, produce its look. */
   addFieldCrop(x: number, y: number, field: Field): void {
-    const g = makeFieldCrop();
+    const out = field.farm.def.gather?.out;
+    const kind = out === 'grape' ? 'grape' : out === 'meat' ? 'pasture' : 'wheat';
+    const g = makeFieldCrop(kind);
     g.position.set(this.world.wx(x), 0, this.world.wz(y));
     this.worldGroup.add(g);
     field.meshes = [g];
@@ -250,7 +274,11 @@ export class View {
     const t = this.world.tiles[ty][tx];
     if (t.type === 'water') return { hex: 0x36648f, sh: 0.9 + ((tx * 7 + ty * 13) % 10) / 100 };
     if (t.road) return { hex: 0xcbb389, sh: 0.96 + ((tx * 3 + ty * 5) % 8) / 100 };
-    if (t.field) return { hex: this.lerpHex(0x8a6b42, 0xe0c24e, Math.min(1, t.field.growth)), sh: 1 };
+    if (t.field) {
+      const out = t.field.farm.def.gather?.out;
+      const ripe = out === 'grape' ? 0x5e7d3a : out === 'meat' ? 0x6fae52 : 0xe0c24e;
+      return { hex: this.lerpHex(0x8a6b42, ripe, Math.min(1, t.field.growth)), sh: 1 };
+    }
     // lush meadow — two greens dithered by position
     const g2 = ((tx * 5 + ty * 11) % 7) / 7;
     return { hex: this.lerpHex(0x6fae52, 0x89c266, g2), sh: t.cshade };
@@ -499,6 +527,90 @@ export class View {
       if (c.position.x > this.cloudBound) c.position.x = -this.cloudBound;
     }
     for (const s of this.millSails) s.rotation.z += dt * 0.45;
+    this.updatePigs(dt, buildings);
+    this.updateFish(dt);
+  }
+
+  /** Scatter cute fish across the lake's water tiles (not the small ponds). */
+  private spawnFish(): void {
+    const lake: { x: number; y: number }[] = [];
+    for (let y = 0; y < this.world.H; y++) for (let x = 0; x < this.world.W; x++) {
+      const t = this.world.tiles[y][x];
+      if (t.type === 'water' && t.lake) lake.push({ x, y });
+    }
+    this.lakeTiles = lake;
+    if (!lake.length) return;
+    const n = Math.min(18, Math.max(4, Math.round(lake.length / 12)));
+    for (let i = 0; i < n; i++) {
+      const c = lake[Math.floor(uiRng.next() * lake.length)];
+      const mesh = makeFish(); this.worldGroup.add(mesh);
+      const x = this.world.wx(c.x) + (uiRng.next() - 0.5) * 0.6, z = this.world.wz(c.y) + (uiRng.next() - 0.5) * 0.6;
+      mesh.position.set(x, 0.05, z);
+      this.fish.push({ mesh, x, z, tx: x, tz: z, wait: uiRng.next() * 2, speed: 0.25 + uiRng.next() * 0.25 });
+    }
+  }
+
+  private fishTarget(fx: number, fz: number): { x: number; z: number } {
+    for (let i = 0; i < 6; i++) {
+      const c = this.lakeTiles[Math.floor(uiRng.next() * this.lakeTiles.length)];
+      const x = this.world.wx(c.x) + (uiRng.next() - 0.5) * 0.6, z = this.world.wz(c.y) + (uiRng.next() - 0.5) * 0.6;
+      if (Math.hypot(x - fx, z - fz) < 5) return { x, z };
+    }
+    return { x: fx, z: fz };
+  }
+
+  private updateFish(dt: number): void {
+    for (const f of this.fish) {
+      if (f.wait > 0) { f.wait -= dt; if (f.wait <= 0) { const t = this.fishTarget(f.x, f.z); f.tx = t.x; f.tz = t.z; } continue; }
+      const dx = f.tx - f.x, dz = f.tz - f.z, dist = Math.hypot(dx, dz);
+      if (dist < 0.05) { f.wait = 0.4 + uiRng.next() * 1.6; continue; }
+      const step = Math.min(f.speed * dt, dist);
+      f.x += dx / dist * step; f.z += dz / dist * step;
+      f.mesh.position.set(f.x, 0.05, f.z);
+      f.mesh.rotation.y = Math.atan2(-dz, dx); // fish model faces +x
+    }
+  }
+
+  /** Little & big pigs wander and graze across each pig-farm's pasture plots. */
+  private updatePigs(dt: number, buildings: Building[]): void {
+    const present = new Set<Building>();
+    for (const b of buildings) {
+      if (b.def.gather?.out !== 'meat' || b.removed || b.fieldsList.length === 0) continue;
+      present.add(b);
+      let herd = this.pigHerds.get(b);
+      if (!herd) { herd = []; this.pigHerds.set(b, herd); }
+      const want = Math.max(2, Math.min(6, b.fieldsList.length + 1));
+      while (herd.length < want) {
+        const big = herd.length % 2 === 0;
+        const mesh = makePig(big); this.worldGroup.add(mesh);
+        const p = this.pigTarget(b);
+        herd.push({ mesh, x: p.x, z: p.z, tx: p.x, tz: p.z, wait: uiRng.next() * 3, big });
+        mesh.position.set(p.x, 0, p.z);
+      }
+      while (herd.length > want) { const p = herd.pop()!; this.worldGroup.remove(p.mesh); }
+      for (const p of herd) this.movePig(p, b, dt);
+    }
+    for (const [b, herd] of this.pigHerds) {
+      if (present.has(b)) continue;
+      for (const p of herd) this.worldGroup.remove(p.mesh);
+      this.pigHerds.delete(b);
+    }
+  }
+
+  private pigTarget(b: Building): { x: number; z: number } {
+    const f = b.fieldsList[Math.floor(uiRng.next() * b.fieldsList.length)];
+    return { x: this.world.wx(f.x) + (uiRng.next() - 0.5) * 0.6, z: this.world.wz(f.y) + (uiRng.next() - 0.5) * 0.6 };
+  }
+
+  private movePig(p: Pig, b: Building, dt: number): void {
+    if (p.wait > 0) { p.wait -= dt; if (p.wait <= 0) { const t = this.pigTarget(b); p.tx = t.x; p.tz = t.z; } return; }
+    const dx = p.tx - p.x, dz = p.tz - p.z, dist = Math.hypot(dx, dz);
+    if (dist < 0.04) { p.wait = 3 + uiRng.next() * 5; return; }
+    const step = Math.min((p.big ? 0.3 : 0.45) * dt, dist);
+    p.x += dx / dist * step; p.z += dz / dist * step;
+    p.mesh.position.set(p.x, 0, p.z);
+    // the pig model faces +x (snout forward), so point +x along the travel vector
+    p.mesh.rotation.y = Math.atan2(-dz, dx);
   }
 
   /** Chimney puffs rise, drift, swell and fade; only visible while the oven works. */
@@ -537,15 +649,15 @@ export class View {
   }
   hideGhost(): void { this.ghost.visible = false; }
 
-  showRoadCursor(tx: number, ty: number, kind: 'road' | 'demolish'): void {
+  showRoadCursor(tx: number, ty: number, kind: 'road' | 'demolish' | 'plot'): void {
     this.roadCursor.visible = true;
     this.roadCursor.position.x = this.world.wx(tx); this.roadCursor.position.z = this.world.wz(ty);
     const t = this.world.T(tx, ty);
     const m = this.roadCursor.material as THREE.MeshBasicMaterial;
-    if (kind === 'demolish') m.color.setHex((t && (t.road || t.b || t.site)) ? 0xcc3322 : 0x777777);
+    if (kind === 'demolish') m.color.setHex((t && (t.road || t.b || t.site || t.field)) ? 0xcc3322 : 0x777777);
     else {
-      const canRoad = !!(t && t.type === 'grass' && !t.b && !t.site && !t.road && !t.field && !t.dep);
-      m.color.setHex(canRoad ? 0xd9a441 : 0xcc3322);
+      const free = !!(t && t.type === 'grass' && !t.b && !t.site && !t.road && !t.field && !t.dep);
+      m.color.setHex(free ? (kind === 'plot' ? 0x46c256 : 0xd9a441) : 0xcc3322);
     }
   }
   hideRoadCursor(): void { this.roadCursor.visible = false; }

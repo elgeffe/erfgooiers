@@ -86,7 +86,8 @@ once, and rebuilds each level via `startLevel()` / `disposeLevel()`.
 ### Add a building / production chain
 1. Add the key to the `BuildingKey` union in [src/types.ts](src/types.ts).
 2. Add a `BuildingDef` to `DEFS` in [src/data/buildings.ts](src/data/buildings.ts) and list
-   it in `MENU_ORDER`. Buildings are either:
+   it under a tab in `MENU_CATEGORIES` (the bottom build menu groups buildings by goal;
+   roads & demolish are always shown). Buildings are either:
    - **gatherers** (`gather: { node, out, time, range }`) — a specialist walks to a map
      node (`tree`/`stone`/`gold`/`coal`/`field`) and returns a good. `fields: true` gives
      the building farm-style crop plots and the `field` node.

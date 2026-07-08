@@ -20,6 +20,13 @@ export interface ModifierSpec {
   filter?: string;
 }
 
+/** Hunger's effect on walk speed: well-fed workers hustle, starving ones drag. */
+export function hungerFactor(hunger: number): number {
+  if (hunger >= 66) return 1.12;   // well fed
+  if (hunger <= 25) return 0.75;   // hungry
+  return 1;                        // content
+}
+
 /**
  * The single object the sim consults instead of raw constants. Every buff,
  * perk, mutator and ascension flows through here — if a feature can't be
@@ -50,7 +57,7 @@ export class Modifiers {
   }
 
   /** Walk speed (tiles/s) for a unit, before the road bonus. */
-  unitSpeed(u: Unit): number { return BASE_SPEED * this.accMult('unitSpeed', u.role); }
+  unitSpeed(u: Unit): number { return BASE_SPEED * this.accMult('unitSpeed', u.role) * hungerFactor(u.hunger); }
 
   /** Seconds of laborer work to raise a building. */
   buildTime(): number { return BUILD_TIME * this.accMult('buildTime'); }
