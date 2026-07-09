@@ -383,11 +383,51 @@ export function makePickup(): THREE.Group {
   return g;
 }
 
+// One shared material for every baked unit body: colors live in the vertices.
+let unitBakedMat: SceneMaterial | null = null;
+function bakedUnitMat(): SceneMaterial {
+  if (!unitBakedMat) unitBakedMat = sharpOutline(stdMat({ vertexColors: true }), UNIT_INK);
+  return unitBakedMat;
+}
+
+/**
+ * Collapse a rigid unit's ~15–20 part meshes into ONE mesh with baked vertex
+ * colours (the makeCorpse technique). A 400-unit battle drops from ~12k meshes
+ * (each rendered twice by the OutlineEffect) to ~800. The item mesh stays
+ * separate — it changes colour and visibility at runtime — and the merged
+ * geometry is per-unit, so it's flagged for disposal when the unit dies.
+ */
+function bakeUnit(built: { group: THREE.Group; itemMesh: THREE.Mesh }): { group: THREE.Group; itemMesh: THREE.Mesh } {
+  const { group, itemMesh } = built;
+  itemMesh.parent!.remove(itemMesh);
+  group.updateMatrixWorld(true);
+  const parts: THREE.BufferGeometry[] = [];
+  group.traverse(o => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const col = (m.material as THREE.MeshLambertMaterial).color;
+    parts.push(paintGeo(m.geometry, col ? col.getHex() : 0xffffff, m.matrixWorld));
+  });
+  const merged = mergeGeometries(parts, false)!;
+  parts.forEach(p => p.dispose());
+  const body = new THREE.Mesh(merged, bakedUnitMat());
+  body.castShadow = true;
+  body.userData.ownGeometry = true; // unique per unit — dispose on removal
+  const g = new THREE.Group();
+  g.add(body, itemMesh);
+  return { group: g, itemMesh };
+}
+
 export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group; itemMesh: THREE.Mesh } {
-  if (role === 'boar') return makeBeast(colorHex);
+  // fliers keep their part meshes — the sim flaps their wings every tick
   if (role === 'dragon') return makeDragon(colorHex);
-  if (role === 'wolf') return makeWolf(colorHex);
   if (role === 'demon') return makeDemon(colorHex);
+  if (role === 'boar') return bakeUnit(makeBeast(colorHex));
+  if (role === 'wolf') return bakeUnit(makeWolf(colorHex));
+  return bakeUnit(makeHumanoid(colorHex, role));
+}
+
+function makeHumanoid(colorHex: number, role: string): { group: THREE.Group; itemMesh: THREE.Mesh } {
   // greenskins & trolls get their own hide; everyone else the usual complexion
   const skinHex = role === 'orc' ? 0x7a9a4a : role === 'troll' ? 0x8fa08a : 0xe8c9a0;
   const g = new THREE.Group();

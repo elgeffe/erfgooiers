@@ -399,7 +399,11 @@ export class View {
 
   /** Buildings and construction sites — placed once, then static (bar their dynamic-flagged parts). */
   add(o: THREE.Object3D): void { this.worldGroup.add(o); this.freeze(o); }
-  remove(o: THREE.Object3D): void { this.worldGroup.remove(o); }
+  remove(o: THREE.Object3D): void {
+    this.worldGroup.remove(o);
+    // baked unit bodies own their merged geometry — free it now, not at level end
+    o.traverse((c) => { if (c.userData.ownGeometry) (c as THREE.Mesh).geometry.dispose(); });
+  }
 
   createBuildingMesh(def: BuildingDef): THREE.Group { return makeBuilding(def, false); }
   createScaffold(def: BuildingDef) { return makeScaffold(def); }
