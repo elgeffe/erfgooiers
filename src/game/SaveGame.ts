@@ -10,9 +10,13 @@ import { newMeta, type MetaState, type RunState } from './RunState';
  * crashing — a corrupt save must never brick the game. `clearAll()` wipes
  * everything, which is the panic button for save-related bugs.
  */
-const VERSION = 1;
-const META_KEY = 'erfgooiers.meta.v1';
-const RUN_KEY = 'erfgooiers.run.v1';
+const VERSION = 2;
+const META_KEY = 'erfgooiers.meta.v2';
+const RUN_KEY = 'erfgooiers.run.v2';
+
+// v1 saves predate the card-slot/contract/mutator run structure and are
+// intentionally not migrated — clean them out so they don't linger forever.
+try { localStorage.removeItem('erfgooiers.meta.v1'); localStorage.removeItem('erfgooiers.run.v1'); } catch { /* ignore */ }
 
 interface Doc<T> { version: number; data: T; }
 

@@ -15,6 +15,7 @@ import type { Objective } from './Objectives';
 
 // Gameplay events use the sim stream (reseeded per level), never worldgen/cosmetic.
 const rnd = () => simRng.next();
+const MAX_UNITS = 11000;
 
 /** The goods and workers a level hands you at the start (before run upgrades). */
 export interface StartKit {
@@ -62,7 +63,7 @@ export class Game {
   /** A unit took a hit at a world point — main wires this to the gore layer. */
   onHurt: (x: number, z: number, faction: Faction) => void = () => {};
   /** A unit died at a world point — main spawns a corpse + blood pool. */
-  onDeath: (x: number, z: number, faction: Faction, colorHex: number) => void = () => {};
+  onDeath: (x: number, z: number, faction: Faction, colorHex: number, role: string, scale: number) => void = () => {};
   /** A combat unit was killed — main updates objectives/tallies. */
   onKill: (u: Unit) => void = () => {};
 
@@ -158,9 +159,12 @@ export class Game {
     this.view.refreshTile(tx, ty); this.view.addFieldCrop(tx, ty, t.field);
   }
 
-  removeTree(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.tree) { this.view.removeMeshes(t.tree.meshes); t.tree = null; } }
-  removeDep(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.dep) { this.view.removeMeshes(t.dep.meshes); t.dep = null; } }
-  removeDeco(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.deco) { this.view.removeMeshes(t.deco.meshes); t.deco = null; } }
+  // Static doodads live in merged scenery chunks; clearing the tile state and
+  // dirtying the chunk re-bakes it without them. Growing trees also carry an
+  // individual mesh, removed via removeMeshes.
+  removeTree(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.tree) { this.view.removeMeshes(t.tree.meshes); t.tree = null; this.view.dirtyTile(x, y); } }
+  removeDep(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.dep) { this.view.removeMeshes(t.dep.meshes); t.dep = null; this.view.dirtyTile(x, y); } }
+  removeDeco(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.deco) { this.view.removeMeshes(t.deco.meshes); t.deco = null; this.view.dirtyTile(x, y); } }
 
   placeSite(key: BuildingKey, tx: number, ty: number, rot = 0): Site {
     const def = DEFS[key];
@@ -251,19 +255,24 @@ export class Game {
   private moveUnit(u: Unit, dt: number): boolean {
     if (!u.path || u.pathI >= u.path.length) { u.path = null; return true; }
     const node = u.path[u.pathI];
-    const tgt = new THREE.Vector3(this.world.wx(node.x), 0, this.world.wz(node.y));
+    // plain scalar math — this runs for every moving unit every tick, so no
+    // per-call Vector3 allocations (GC churn at 20 tps with hundreds of units)
+    const tx = this.world.wx(node.x), tz = this.world.wz(node.y);
     const cur = u.mesh.position;
     const curTile = this.world.T(u.tx, u.ty);
-    const sp = this.mods.unitSpeed(u) * (curTile && curTile.road ? 1.3 : 1);
-    const d = tgt.clone().sub(cur); d.y = 0;
-    const dist = d.length();
+    // corvée roads' downside only drags the player's own folk off-road
+    const offRoad = u.faction === 'player' ? this.mods.offRoadMult() : 1;
+    const sp = this.mods.unitSpeed(u) * (curTile && curTile.road ? 1.3 : offRoad);
+    const dx = tx - cur.x, dz = tz - cur.z;
+    const dist = Math.hypot(dx, dz);
     const step = sp * dt;
     if (dist <= step) {
-      cur.x = tgt.x; cur.z = tgt.z; u.tx = node.x; u.ty = node.y; u.pathI++;
+      cur.x = tx; cur.z = tz; u.tx = node.x; u.ty = node.y; u.pathI++;
       if (u.pathI >= u.path.length) { u.path = null; return true; }
     } else {
-      d.normalize().multiplyScalar(step); cur.add(d);
-      u.mesh.rotation.y = Math.atan2(d.x, d.z);
+      const k = step / dist;
+      cur.x += dx * k; cur.z += dz * k;
+      u.mesh.rotation.y = Math.atan2(dx, dz);
       u.bob += dt * 10;
       u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.045;
       this.syncTile(u);
@@ -310,7 +319,7 @@ export class Game {
     }
     for (const b of this.buildings) {
       if (!b.active || !b.def.recipe) continue;
-      for (const it in b.def.recipe.inp) {
+      for (const it in this.mods.recipeInputs(b.def)) {
         const have = (b.inp[it] || 0) + (b.incoming[it] || 0);
         if (have < carryCap) demands.push({ pri: 1, to: b, item: it });
       }
@@ -488,13 +497,14 @@ export class Game {
         u.status = 'Working';
         u.bob += dt * 10; u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.05;
         b.prog += dt / this.mods.recipeTime(def);
-        if (b.prog >= 1) { b.prog = 0; b.working = false; b.out[def.recipe.out] = (b.out[def.recipe.out] || 0) + 1; this.objective?.onProduce(def.recipe.out); }
+        if (b.prog >= 1) { b.prog = 0; b.working = false; b.out[def.recipe.out] = (b.out[def.recipe.out] || 0) + 1; this.objective?.onProduce(def.recipe.out, this.mods.objectiveWeight(def.recipe.out)); }
       } else {
         u.status = 'Waiting for materials';
         if (this.outTotal(b) < this.mods.outCap()) {
+          const inp = this.mods.recipeInputs(def);
           let can = true;
-          for (const k in def.recipe.inp) if ((b.inp[k] || 0) < (def.recipe.inp as any)[k]) can = false;
-          if (can) { for (const k in def.recipe.inp) b.inp[k] -= (def.recipe.inp as any)[k]; b.working = true; b.prog = 0; }
+          for (const k in inp) if ((b.inp[k] || 0) < (inp as any)[k]) can = false;
+          if (can) { for (const k in inp) b.inp[k] -= (inp as any)[k]; b.working = true; b.prog = 0; }
         } else u.status = 'Output full';
       }
       return;
@@ -528,7 +538,11 @@ export class Game {
       u.timer -= dt;
       if (u.timer <= 0) {
         const n = u.target, t = this.world.tiles[n.y][n.x];
-        if (def.gather!.node === 'tree') { if (t.tree) this.removeTree(n.x, n.y); this.setCarrying(u, 'trunk'); this.sfx('chop'); }
+        if (def.gather!.node === 'tree') {
+          // coppice craft: take the trunk but leave the tree standing
+          if (t.tree) { if (this.mods.preserveTrees()) t.tree.reserved = false; else this.removeTree(n.x, n.y); }
+          this.setCarrying(u, 'trunk'); this.sfx('chop');
+        }
         else if (def.gather!.node === 'field') { if (t.field) { t.field.growth = 0; this.view.refreshTile(n.x, n.y); this.view.scaleFieldCrop(t.field); } this.setCarrying(u, def.gather!.out ?? 'wheat'); this.sfx('harvest'); }
         else if (def.gather!.node === 'plant') {
           if (!t.tree && !t.b && !t.site && !t.road && !t.field && !t.dep) { if (t.deco) this.removeDeco(n.x, n.y); t.tree = { growth: 0.12, reserved: false, meshes: [], s: 0.85 + rnd() * 0.4, kind: Math.floor(rnd() * 4) }; this.view.addTree(n.x, n.y, t.tree); }
@@ -542,7 +556,7 @@ export class Game {
       u.mesh.visible = true;
       const d = doorTile(b);
       if (u.tx === d.x && u.ty === d.y && !u.path) {
-        if (u.carrying) { b.out[u.carrying] = (b.out[u.carrying] || 0) + 1; this.objective?.onProduce(u.carrying); this.setCarrying(u, null); }
+        if (u.carrying) { b.out[u.carrying] = (b.out[u.carrying] || 0) + 1; this.objective?.onProduce(u.carrying, this.mods.objectiveWeight(u.carrying)); this.setCarrying(u, null); }
         u.wstate = 'home';
       } else if (!u.path) { if (!this.sendTo(u, d.x, d.y)) { u.wstate = 'home'; this.setCarrying(u, null); } }
       if (u.path) this.moveUnit(u, dt);
@@ -587,13 +601,36 @@ export class Game {
     const tiles = this.world.tiles;
     const fg = this.mods.fieldGrowth();
     for (const b of this.buildings) { if (b.def.fields) for (const f of b.fieldsList) { const t = tiles[f.y][f.x]; if (t.field && t.field.growth < 1) { t.field.growth += dt / 22 * fg; if (t.field.growth > 1) t.field.growth = 1; this.view.scaleFieldCrop(t.field); } } }
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const t = tiles[y][x]; if (t.tree && t.tree.growth < 1) { t.tree.growth += dt / 40; if (t.tree.growth > 1) t.tree.growth = 1; const s = t.tree.s * Math.max(0.15, t.tree.growth); (t.tree.meshes[0] as THREE.Object3D).scale.set(s, s, s); } }
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const t = tiles[y][x];
+      if (!t.tree || t.tree.growth >= 1) continue;
+      t.tree.growth += dt / 40;
+      if (t.tree.growth >= 1) { t.tree.growth = 1; this.view.treeMatured(x, y, t.tree); continue; }
+      const s = t.tree.s * Math.max(0.15, t.tree.growth);
+      const m = t.tree.meshes[0] as THREE.Object3D | undefined;
+      if (m) m.scale.set(s, s, s);
+    }
   }
   private fieldRecolor(): void { for (const b of this.buildings) { if (b.def.fields) for (const f of b.fieldsList) this.view.refreshTile(f.x, f.y); } }
 
   // =====================================================================
   //  Queries & placement
   // =====================================================================
+  /** Total goods sitting in the storehouse (the end-of-level surplus tally). */
+  stockTotal(): number {
+    let n = 0;
+    const s = this.store?.stock;
+    if (s) for (const k in s) n += s[k];
+    return n;
+  }
+
+  /** Player workers (non-fighters) currently well fed — the tavern tally. */
+  wellFedWorkers(): number {
+    let n = 0;
+    for (const u of this.units) if (!u.dead && u.faction === 'player' && u.dmg === 0 && u.hunger >= 66) n++;
+    return n;
+  }
+
   countItem(item: string): number {
     let n = this.store.stock![item] || 0;
     for (const b of this.buildings) { if (!b.def.store) n += (b.inp[item] || 0) + (b.out[item] || 0); }
@@ -656,20 +693,22 @@ export class Game {
   paintRoad(tx: number, ty: number): void {
     const t = this.world.T(tx, ty);
     if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep) return;
-    if ((this.store.stock?.['stone'] || 0) < ROAD_STONE_COST) {
+    const cost = this.mods.roadCost();
+    if ((this.store.stock?.['stone'] || 0) < cost) {
       const now = Date.now();
       if (now - this.roadWarnT > 1500) { this.roadWarnT = now; this.toast('Out of stone — quarry more to build roads', 'err'); this.sfx('error'); }
       return;
     }
-    this.store.stock!['stone'] -= ROAD_STONE_COST;
+    this.store.stock!['stone'] -= cost;
     if (t.tree) this.removeTree(tx, ty);
     if (t.deco) this.removeDeco(tx, ty);
-    t.road = true; this.view.refreshTile(tx, ty); this.view.addRoad(tx, ty);
+    t.road = true; this.mods.ctx.roadTiles++;
+    this.view.refreshTile(tx, ty); this.view.addRoad(tx, ty);
   }
 
   demolishAt(tx: number, ty: number, dragOnly: boolean): void {
     const t = this.world.T(tx, ty); if (!t) return;
-    if (t.road) { t.road = false; this.store.stock!['stone'] = (this.store.stock!['stone'] || 0) + ROAD_STONE_COST; this.view.refreshTile(tx, ty); this.view.removeRoad(tx, ty); return; }
+    if (t.road) { t.road = false; this.mods.ctx.roadTiles = Math.max(0, this.mods.ctx.roadTiles - 1); this.store.stock!['stone'] = (this.store.stock!['stone'] || 0) + this.mods.roadCost(); this.view.refreshTile(tx, ty); this.view.removeRoad(tx, ty); return; }
     if (t.field) {
       const list = t.field.farm.fieldsList, i = list.findIndex(f => f.x === tx && f.y === ty);
       if (i >= 0) list.splice(i, 1);
@@ -770,15 +809,48 @@ export class Game {
     return Math.hypot(dx, dz);
   }
 
+  // ---------------------------------------------------------------------
+  //  Coarse spatial hash (8×8-tile cells), rebuilt once per tick and shared
+  //  by every proximity query: target acquisition, tower fire, fire volleys
+  //  and projectile impacts. Queries pad by one cell so units that moved
+  //  since the tick started are still found. O(n) build instead of the old
+  //  O(n²) every-fighter-scans-every-unit — matters near the 1,600-unit cap.
+  // ---------------------------------------------------------------------
+  private hashCols = 0;
+  private readonly unitHash = new Map<number, Unit[]>();
+
+  private buildUnitHash(): void {
+    this.unitHash.clear();
+    this.hashCols = (this.world.W >> 3) + 2;
+    for (const u of this.units) {
+      if (u.dead) continue;
+      const k = (u.ty >> 3) * this.hashCols + (u.tx >> 3);
+      let c = this.unitHash.get(k);
+      if (!c) { c = []; this.unitHash.set(k, c); }
+      c.push(u);
+    }
+  }
+
+  /** Visit live units whose tick-start tile is within ~r tiles of (tx, ty). */
+  private forUnitsNear(tx: number, ty: number, r: number, fn: (o: Unit) => void): void {
+    const c0 = Math.max(0, tx - r) >> 3, c1 = Math.max(0, tx + r) >> 3;
+    const r0 = Math.max(0, ty - r) >> 3, r1 = Math.max(0, ty + r) >> 3;
+    for (let cy = r0; cy <= r1; cy++) for (let cx = c0; cx <= c1; cx++) {
+      const cell = this.unitHash.get(cy * this.hashCols + cx);
+      if (!cell) continue;
+      for (const o of cell) fn(o);
+    }
+  }
+
   /** Nearest hostile fighter within the given aggro radius, or null. */
   private acquireTarget(u: Unit, aggro: number): Unit | null {
     let best: Unit | null = null, bd = aggro * aggro;
-    for (const o of this.units) {
-      if (o.dead || o === u) continue;
-      if (!this.hostile(u.faction, o.faction)) continue;
+    this.forUnitsNear(u.tx, u.ty, Math.ceil(aggro) + 1, o => {
+      if (o.dead || o === u) return;
+      if (!this.hostile(u.faction, o.faction)) return;
       const dx = o.tx - u.tx, dy = o.ty - u.ty, d2 = dx * dx + dy * dy;
       if (d2 < bd) { bd = d2; best = o; }
-    }
+    });
     return best;
   }
 
@@ -811,7 +883,7 @@ export class Game {
   private killUnit(u: Unit): void {
     if (u.dead) return;
     u.dead = true;
-    this.onDeath(u.mesh.position.x, u.mesh.position.z, u.faction, u.colorHex);
+    this.onDeath(u.mesh.position.x, u.mesh.position.z, u.faction, u.colorHex, u.role, u.mesh.scale.x || 1);
     this.onKill(u);
     this.objective?.onKill(u.role, u.faction);
     for (const o of this.units) if (o.foe === u) o.foe = null;
@@ -982,7 +1054,7 @@ export class Game {
   private destroyBuilding(b: Building): void {
     if (b.removed) return;
     const c = this.buildingCenter(b);
-    for (let i = 0; i < 4; i++) this.onDeath(c.x + (rnd() - 0.5) * 1.4, c.z + (rnd() - 0.5) * 1.4, b.faction, b.def.roof);
+    for (let i = 0; i < 4; i++) this.onDeath(c.x + (rnd() - 0.5) * 1.4, c.z + (rnd() - 0.5) * 1.4, b.faction, b.def.roof, 'serf', 1);
     this.objective?.onStructureDestroyed(b.faction);
     for (const o of this.units) if (o.foeB === b) o.foeB = null;
     const isCastle = b === this.store;
@@ -1075,13 +1147,16 @@ export class Game {
   }
 
   private impact(p: { ex: number; ez: number; from: Faction; shooter: Unit | null; target: Unit | null; dmg: number; kind: 'arrow' | 'fire' }): void {
+    const W = this.world.W, H = this.world.H;
+    const itx = Math.max(0, Math.min(W - 1, Math.round(p.ex + W / 2 - 0.5)));
+    const ity = Math.max(0, Math.min(H - 1, Math.round(p.ez + H / 2 - 0.5)));
     if (p.kind === 'fire') {
       // splash: scorch hostile units & buildings around the landing point
-      for (const o of this.units) {
-        if (o.dead || !this.hostile(p.from, o.faction)) continue;
+      this.forUnitsNear(itx, ity, 4, o => {
+        if (o.dead || !this.hostile(p.from, o.faction)) return;
         const dx = o.mesh.position.x - p.ex, dz = o.mesh.position.z - p.ez;
         if (dx * dx + dz * dz <= 1.3 * 1.3) this.hurtUnit(p.shooter, o, p.dmg);
-      }
+      });
       for (const b of this.buildings) {
         if (b.removed || !this.hostile(p.from, b.faction)) continue;
         const c = this.buildingCenter(b);
@@ -1099,12 +1174,12 @@ export class Game {
       return;
     }
     let best: Unit | null = null, bd = 0.6 * 0.6;
-    for (const o of this.units) {
-      if (o.dead || !this.hostile(p.from, o.faction)) continue;
+    this.forUnitsNear(itx, ity, 3, o => {
+      if (o.dead || !this.hostile(p.from, o.faction)) return;
       const dx = o.mesh.position.x - p.ex, dz = o.mesh.position.z - p.ez, d2 = dx * dx + dz * dz;
       if (d2 < bd) { bd = d2; best = o; }
-    }
-    if (best) this.hurtUnit(p.shooter, best, p.dmg);
+    });
+    if (best) this.hurtUnit(p.shooter, best as Unit, p.dmg);
   }
 
   /** Flames flare where dragon fire lands, then gutter out. */
@@ -1242,7 +1317,7 @@ export class Game {
     const cy = Math.max(2, Math.min(H - 3, Math.floor(worldZ + H / 2)));
     const out: Unit[] = [];
     const tryTile = (x: number, y: number): void => {
-      if (out.length >= count || this.units.length >= 1600) return; // cap for perf
+      if (out.length >= count || this.units.length >= MAX_UNITS) return; // cap for perf
       const t = this.world.T(x, y);
       if (!t || t.type !== 'grass' || t.b || t.site || t.dep) return;
       out.push(this.spawnFighter(kind, { x, y }, faction));
@@ -1317,11 +1392,11 @@ export class Game {
       if (b.prog < tw.rate) continue;
       const c = this.buildingCenter(b);
       let best: Unit | null = null, bd = tw.range * tw.range;
-      for (const u of this.units) {
-        if (u.dead || !this.hostile(b.faction, u.faction) || u.dmg <= 0) continue;
+      this.forUnitsNear(b.x, b.y, Math.ceil(tw.range) + 2, u => {
+        if (u.dead || !this.hostile(b.faction, u.faction) || u.dmg <= 0) return;
         const dx = u.mesh.position.x - c.x, dz = u.mesh.position.z - c.z, d2 = dx * dx + dz * dz;
         if (d2 < bd) { bd = d2; best = u; }
-      }
+      });
       if (!best) continue; // stay drawn until something wanders into range
       b.prog = 0;
       this.fireArrow(null, b.faction, c.x, 2.1, c.z, best, tw.dmg);
@@ -1349,6 +1424,9 @@ export class Game {
     else { tx = W - 2; ty = 1 + Math.floor(rnd() * (H - 2)); }
     return { x: this.world.wx(tx), z: this.world.wz(ty) };
   }
+
+  /** Extra wild presence from a level mutator (e.g. Wolf Country's packs). */
+  spawnMutatorWild(kind: UnitKind, count: number): void { this.spawnWild(kind, count); }
 
   /** Scatter wild beasts across the map, clear of the central build zone. */
   private spawnWild(kind: UnitKind, count: number): void {
@@ -1424,13 +1502,23 @@ export class Game {
   // =====================================================================
   //  Simulation tick (already scaled by sim speed)
   // =====================================================================
+  private taxT = 0;
+
   update(sdt: number): void {
     this.elapsed += sdt;
+    this.buildUnitHash(); // shared by all proximity queries this tick
     this.dispatchT += sdt;
     if (this.dispatchT > 0.45) { this.dispatchT = 0; this.dispatch(); }
+    // the Taxman mutator collects on the minute
+    const tax = this.mods.taxPerMin();
+    if (tax > 0) {
+      this.taxT += sdt;
+      if (this.taxT >= 60) { this.taxT -= 60; this.onGold(-tax); this.toast(`The Taxman collects ${tax} gold`, 'err'); }
+    }
+    const hungerRate = this.mods.hungerRate();
     for (const u of this.units) {
       if (u.dead) continue;
-      u.hunger = Math.max(0, u.hunger - sdt * 100 / 600);
+      u.hunger = Math.max(0, u.hunger - sdt * 100 / 600 * hungerRate);
       if (this.isFighter(u)) this.combatUpdate(u, sdt);
       else if (u.role === 'serf') this.serfUpdate(u, sdt);
       else if (u.role === 'laborer') this.laborerUpdate(u, sdt);
@@ -1548,6 +1636,9 @@ export class Game {
         fed.push(u);
       }
       b.fedUnits = fed;
+      // tavern tithe: the taproom pays out per meal served
+      const tithe = this.mods.goldPerMeal();
+      if (tithe > 0 && fed.length) { this.onGold(tithe * fed.length); this.sfx('coin'); }
     }
   }
 }

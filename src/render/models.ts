@@ -5,7 +5,29 @@ import { GRAPHICS } from '../constants';
 import type { BuildingDef, DecoKind } from '../types';
 
 // Mesh scatter is purely cosmetic — it must never touch gameplay/worldgen streams.
-const rnd = () => uiRng.next();
+// It normally draws from uiRng, but chunk-baked doodads swap in a per-tile
+// seeded stream (withSeededScatter) so a rebuilt chunk looks identical.
+let activeRnd: () => number = () => uiRng.next();
+const rnd = () => activeRnd();
+
+/**
+ * Run a builder with a deterministic local RNG in place of the uiRng stream.
+ * Chunk-merged scenery is re-baked whenever a tile changes; seeding the
+ * cosmetic scatter from the tile keeps every *other* doodad in the chunk
+ * pixel-identical across rebuilds (and doesn't consume uiRng, so the rest of
+ * the level's cosmetics stay on their deterministic sequence).
+ */
+export function withSeededScatter<T>(seed: number, fn: () => T): T {
+  let s = seed >>> 0;
+  const prev = activeRnd;
+  activeRnd = () => {                        // mulberry32
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  try { return fn(); } finally { activeRnd = prev; }
+}
 
 /* =====================================================================
    Mesh builders — the "look" of Het Gooi. Every builder returns a THREE
@@ -27,6 +49,7 @@ function toonGradient(): THREE.DataTexture {
     for (let i = 0; i < n; i++) data[i] = Math.round(255 * (i + 1) / n);
     gradient = new THREE.DataTexture(data, n, 1, THREE.RedFormat);
     gradient.minFilter = gradient.magFilter = THREE.NearestFilter;
+    gradient.unpackAlignment = 1; // rows of an odd-width R8 texture aren't 4-byte aligned
     gradient.needsUpdate = true;
   }
   return gradient;
@@ -91,23 +114,61 @@ function goldSharp(): SceneMaterial {
   return goldMat;
 }
 
+// =====================================================================
+//  Geometry cache — one GPU buffer per distinct shape, not per instance.
+//  Keys are the constructor parameters, so a builder can call these freely;
+//  anything size-randomized must use a fixed base shape and express its
+//  variation through mesh scale/rotation instead of unique geometry.
+// =====================================================================
+const geoCache = new Map<string, THREE.BufferGeometry>();
+export function cachedGeo<T extends THREE.BufferGeometry>(key: string, make: () => T): T {
+  let g = geoCache.get(key);
+  if (!g) { g = make(); geoCache.set(key, g); }
+  return g as T;
+}
+export const cone = (r: number, h: number, seg: number): THREE.ConeGeometry =>
+  cachedGeo(`cone,${r},${h},${seg}`, () => new THREE.ConeGeometry(r, h, seg));
+export const cyl = (rt: number, rb: number, h: number, seg: number): THREE.CylinderGeometry =>
+  cachedGeo(`cyl,${rt},${rb},${h},${seg}`, () => new THREE.CylinderGeometry(rt, rb, h, seg));
+export const sphere = (r: number, ws: number, hs: number): THREE.SphereGeometry =>
+  cachedGeo(`sph,${r},${ws},${hs}`, () => new THREE.SphereGeometry(r, ws, hs));
+export const box = (w: number, h: number, d: number): THREE.BoxGeometry =>
+  cachedGeo(`box,${w},${h},${d}`, () => new THREE.BoxGeometry(w, h, d));
+export const dodeca = (r: number): THREE.DodecahedronGeometry =>
+  cachedGeo(`dod,${r}`, () => new THREE.DodecahedronGeometry(r, 0));
+export const torus = (r: number, t: number, rs: number, ts: number, arc = Math.PI * 2): THREE.TorusGeometry =>
+  cachedGeo(`tor,${r},${t},${rs},${ts},${arc}`, () => new THREE.TorusGeometry(r, t, rs, ts, arc));
+export const circle = (r: number, seg: number): THREE.CircleGeometry =>
+  cachedGeo(`cir,${r},${seg}`, () => new THREE.CircleGeometry(r, seg));
+export const capsule = (r: number, l: number, cs: number, rs: number): THREE.CapsuleGeometry =>
+  cachedGeo(`caps,${r},${l},${cs},${rs}`, () => new THREE.CapsuleGeometry(r, l, cs, rs));
+
+function flatGeo(key: string, base: THREE.BufferGeometry): THREE.BufferGeometry {
+  return cachedGeo(`flat,${key}`, () => {
+    const g = base.index ? base.toNonIndexed() : base.clone();
+    g.deleteAttribute('normal');
+    g.computeVertexNormals();
+    return g;
+  });
+}
+const flatCone = (r: number, h: number, seg: number): THREE.BufferGeometry => flatGeo(`cone,${r},${h},${seg}`, cone(r, h, seg));
+const flatSphere = (r: number, ws: number, hs: number): THREE.BufferGeometry => flatGeo(`sph,${r},${ws},${hs}`, sphere(r, ws, hs));
+
 // ---------- shared primitive geometries ----------
-const geoTrunk = new THREE.CylinderGeometry(0.07, 0.1, 0.5, 6);
-const geoFol = new THREE.ConeGeometry(0.4, 0.95, 7);
-const geoFol2 = new THREE.ConeGeometry(0.3, 0.7, 7);
-const geoRock = new THREE.DodecahedronGeometry(0.42, 0);
-const geoPost = new THREE.BoxGeometry(0.1, 0.7, 0.1);
+const geoTrunk = cyl(0.07, 0.1, 0.5, 6);
+const geoFol = cone(0.4, 0.95, 7);
+const geoFol2 = cone(0.3, 0.7, 7);
+const geoRock = dodeca(0.42);
+const geoPost = box(0.1, 0.7, 0.1);
 // unit bodies get generous segment counts — the camera lives close to these
 // little folk, and low-poly rounding is what made them read as blurry
-const geoBody = new THREE.CylinderGeometry(0.16, 0.2, 0.42, 12);
-const geoHead = new THREE.SphereGeometry(0.14, 12, 10);
-const geoItem = new THREE.BoxGeometry(0.24, 0.18, 0.24);
-const geoBlade = new THREE.BoxGeometry(0.03, 0.34, 0.03);
-const geoArm = new THREE.BoxGeometry(0.055, 0.26, 0.08);
-const geoHand = new THREE.SphereGeometry(0.05, 8, 6);
-const geoEye = new THREE.SphereGeometry(0.028, 8, 6);
-const geoSmile = new THREE.TorusGeometry(0.042, 0.01, 6, 12, Math.PI);
-const geoBelt = new THREE.CylinderGeometry(0.192, 0.198, 0.055, 12);
+const geoBody = cyl(0.16, 0.2, 0.42, 12);
+const geoHead = sphere(0.14, 12, 10);
+const geoItem = box(0.24, 0.18, 0.24);
+const geoBlade = box(0.03, 0.34, 0.03);
+const geoArm = box(0.055, 0.26, 0.08);
+const geoHand = sphere(0.05, 8, 6);
+const geoBelt = cyl(0.192, 0.198, 0.055, 12);
 
 const FOL_GREENS = [0x4e7a3a, 0x557f38, 0x476f36, 0x5f8c40, 0x6a9a44];
 
@@ -126,28 +187,28 @@ export function makeTree(kind = 0): THREE.Group {
       break;
     }
     case 1: { // tall slender pine — three stacked cones
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.7, 6), mat(0x6f5334)); trunk.position.y = 0.35; trunk.castShadow = true; g.add(trunk);
+      const trunk = new THREE.Mesh(cyl(0.06, 0.09, 0.7, 6), mat(0x6f5334)); trunk.position.y = 0.35; trunk.castShadow = true; g.add(trunk);
       const dark = mat(0x3f6d34);
       for (let i = 0; i < 3; i++) {
-        const c = new THREE.Mesh(new THREE.ConeGeometry(0.42 - i * 0.1, 0.7, 7), dark);
+        const c = new THREE.Mesh(cone(0.42 - i * 0.1, 0.7, 7), dark);
         c.position.y = 0.85 + i * 0.5; c.castShadow = true; g.add(c);
       }
       break;
     }
     case 2: { // round broadleaf — bushy sphere canopy
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.55, 6), mat(0x7d5a37)); trunk.position.y = 0.28; trunk.castShadow = true; g.add(trunk);
+      const trunk = new THREE.Mesh(cyl(0.09, 0.12, 0.55, 6), mat(0x7d5a37)); trunk.position.y = 0.28; trunk.castShadow = true; g.add(trunk);
       const cm = mat(green);
-      const crown = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 7), cm); crown.position.y = 0.95; crown.scale.y = 0.9; crown.castShadow = true; g.add(crown);
+      const crown = new THREE.Mesh(sphere(0.5, 8, 7), cm); crown.position.y = 0.95; crown.scale.y = 0.9; crown.castShadow = true; g.add(crown);
       for (const [ox, oy, oz] of [[0.32, 0.75, 0], [-0.28, 0.82, 0.2], [0.05, 1.2, -0.15]]) {
-        const p = new THREE.Mesh(new THREE.SphereGeometry(0.3, 7, 6), cm); p.position.set(ox, oy, oz); p.castShadow = true; g.add(p);
+        const p = new THREE.Mesh(sphere(0.3, 7, 6), cm); p.position.set(ox, oy, oz); p.castShadow = true; g.add(p);
       }
       break;
     }
     default: { // slim birch — pale trunk, small oval crown
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.95, 6), mat(0xe6e2d6)); trunk.position.y = 0.48; trunk.castShadow = true; g.add(trunk);
+      const trunk = new THREE.Mesh(cyl(0.05, 0.06, 0.95, 6), mat(0xe6e2d6)); trunk.position.y = 0.48; trunk.castShadow = true; g.add(trunk);
       const cm = mat(0x87b455);
-      const crown = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 7), cm); crown.position.y = 1.12; crown.scale.y = 1.25; crown.castShadow = true; g.add(crown);
-      const crown2 = new THREE.Mesh(new THREE.SphereGeometry(0.26, 7, 6), cm); crown2.position.set(0.12, 0.92, 0.08); crown2.castShadow = true; g.add(crown2);
+      const crown = new THREE.Mesh(sphere(0.34, 8, 7), cm); crown.position.y = 1.12; crown.scale.y = 1.25; crown.castShadow = true; g.add(crown);
+      const crown2 = new THREE.Mesh(sphere(0.26, 7, 6), cm); crown2.position.set(0.12, 0.92, 0.08); crown2.castShadow = true; g.add(crown2);
       break;
     }
   }
@@ -177,7 +238,7 @@ function lavender(): THREE.Group {
     const s = new THREE.Mesh(geoBlade, stem);
     const px = (rnd() - 0.5) * 0.7, pz = (rnd() - 0.5) * 0.7;
     s.position.set(px, 0.17, pz); s.rotation.z = (rnd() - 0.5) * 0.3;
-    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.02, 0.2, 5), mat(flowerCols[Math.floor(rnd() * 3)]));
+    const tip = new THREE.Mesh(cyl(0.035, 0.02, 0.2, 5), mat(flowerCols[Math.floor(rnd() * 3)]));
     tip.position.set(px, 0.38, pz);
     g.add(s, tip);
   }
@@ -191,8 +252,8 @@ function wildflowers(): THREE.Group {
   const n = 3 + Math.floor(rnd() * 3);
   for (let i = 0; i < n; i++) {
     const px = (rnd() - 0.5) * 0.7, pz = (rnd() - 0.5) * 0.7;
-    const s = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.16, 0.02), stem); s.position.set(px, 0.08, pz);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), mat(cols[Math.floor(rnd() * cols.length)])); head.position.set(px, 0.18, pz);
+    const s = new THREE.Mesh(box(0.02, 0.16, 0.02), stem); s.position.set(px, 0.08, pz);
+    const head = new THREE.Mesh(sphere(0.05, 6, 5), mat(cols[Math.floor(rnd() * cols.length)])); head.position.set(px, 0.18, pz);
     g.add(s, head);
   }
   return g;
@@ -202,12 +263,12 @@ function bush(): THREE.Group {
   const g = new THREE.Group();
   const green = mat(FOL_GREENS[Math.floor(rnd() * FOL_GREENS.length)]);
   for (const [ox, oy, oz, r] of [[0, 0.16, 0, 0.26], [0.22, 0.13, 0.08, 0.2], [-0.16, 0.12, -0.14, 0.18]] as number[][]) {
-    const p = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 6), green); p.position.set(ox, oy, oz); p.scale.y = 0.85; p.castShadow = true; g.add(p);
+    const p = new THREE.Mesh(sphere(r, 7, 6), green); p.position.set(ox, oy, oz); p.scale.y = 0.85; p.castShadow = true; g.add(p);
   }
   // a few berries for interest
   if (rnd() < 0.5) {
     const berry = mat(0xd23b4a);
-    for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.03, 5, 4), berry); b.position.set((rnd() - 0.5) * 0.4, 0.2 + rnd() * 0.1, (rnd() - 0.5) * 0.4); g.add(b); }
+    for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(sphere(0.03, 5, 4), berry); b.position.set((rnd() - 0.5) * 0.4, 0.2 + rnd() * 0.1, (rnd() - 0.5) * 0.4); g.add(b); }
   }
   return g;
 }
@@ -219,11 +280,12 @@ function reeds(): THREE.Group {
   for (let i = 0; i < n; i++) {
     const px = (rnd() - 0.5) * 0.8, pz = (rnd() - 0.5) * 0.8;
     const h = 0.5 + rnd() * 0.5;
-    const blade = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.02, h, 4), stem);
+    const blade = new THREE.Mesh(cyl(0.012, 0.02, 1, 4), stem);
+    blade.scale.y = h;
     blade.position.set(px, h / 2, pz); blade.rotation.z = (rnd() - 0.5) * 0.35;
     g.add(blade);
     if (rnd() < 0.4) { // cattail head
-      const cat = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.14, 6), mat(0x7a4a28));
+      const cat = new THREE.Mesh(cyl(0.035, 0.035, 0.14, 6), mat(0x7a4a28));
       cat.position.set(px, h, pz); g.add(cat);
     }
   }
@@ -237,10 +299,11 @@ function lily(): THREE.Group {
   const n = 1 + Math.floor(rnd() * 3);
   for (let i = 0; i < n; i++) {
     const px = (rnd() - 0.5) * 0.7, pz = (rnd() - 0.5) * 0.7;
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.15 + rnd() * 0.08, 10), pad);
+    const disc = new THREE.Mesh(circle(0.19, 10), pad);
+    disc.scale.setScalar((0.15 + rnd() * 0.08) / 0.19);
     disc.rotation.x = -Math.PI / 2; disc.position.set(px, 0.005, pz); g.add(disc);
     if (rnd() < 0.5) { // a flower on the pad
-      const f = new THREE.Mesh(new THREE.SphereGeometry(0.055, 7, 5), mat(rnd() < 0.5 ? 0xf4c6dd : 0xfbf3ea));
+      const f = new THREE.Mesh(sphere(0.055, 7, 5), mat(rnd() < 0.5 ? 0xf4c6dd : 0xfbf3ea));
       f.scale.y = 0.6; f.position.set(px, 0.05, pz); g.add(f);
     }
   }
@@ -257,7 +320,7 @@ export function makeDeposit(kind: 'stone' | 'gold' | 'coal' | 'iron'): THREE.Gro
   m2.position.set(0.28, 0.09, -0.2); m2.scale.set(0.5, 0.35, 0.5); m2.rotation.y = rnd() * 3; m2.castShadow = true;
   // a glint of the valuable stuff
   if (kind !== 'stone') {
-    const glint = new THREE.Mesh(new THREE.DodecahedronGeometry(0.12, 0), mat(kind === 'gold' ? 0xffd24a : kind === 'iron' ? 0xb0653a : 0x24242a));
+    const glint = new THREE.Mesh(dodeca(0.12), mat(kind === 'gold' ? 0xffd24a : kind === 'iron' ? 0xb0653a : 0x24242a));
     glint.position.set(-0.18, 0.2, 0.12); g.add(glint);
   }
   g.add(m, m2);
@@ -273,17 +336,19 @@ export function makeMountain(): THREE.Group {
   const rockM = mat(0x7d7d78);
   const darkM = mat(0x64645f);
   const h = 1.1 + rnd() * 0.9;
-  const peak = new THREE.Mesh(new THREE.ConeGeometry(0.58 + rnd() * 0.12, h, 6), rockM);
+  const peak = new THREE.Mesh(cone(1, 1, 6), rockM);
+  peak.scale.set(0.58 + rnd() * 0.12, h, 0.58 + rnd() * 0.12);
   peak.position.set((rnd() - 0.5) * 0.2, h / 2, (rnd() - 0.5) * 0.2);
   peak.rotation.y = rnd() * Math.PI; peak.castShadow = true; g.add(peak);
   // a snowy cap crowns the tallest peaks
   if (h > 1.6) {
-    const snow = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.34, 6), mat(0xf2f3f0));
+    const snow = new THREE.Mesh(cone(0.2, 0.34, 6), mat(0xf2f3f0));
     snow.position.set(peak.position.x, h - 0.16, peak.position.z); snow.rotation.y = peak.rotation.y; g.add(snow);
   }
   for (let i = 0; i < 2; i++) {
     const sh = 0.4 + rnd() * 0.5;
-    const spur = new THREE.Mesh(new THREE.ConeGeometry(0.3 + rnd() * 0.1, sh, 5), i ? darkM : rockM);
+    const spur = new THREE.Mesh(cone(1, 1, 5), i ? darkM : rockM);
+    spur.scale.set(0.3 + rnd() * 0.1, sh, 0.3 + rnd() * 0.1);
     const a = rnd() * Math.PI * 2;
     spur.position.set(Math.cos(a) * 0.32, sh / 2, Math.sin(a) * 0.32);
     spur.rotation.y = rnd() * Math.PI; spur.castShadow = true; g.add(spur);
@@ -305,7 +370,8 @@ export function makeRuinWall(): THREE.Group {
   while (x < 0.48) {
     const w = 0.22 + rnd() * 0.2;
     const h = 0.35 + rnd() * 0.55;
-    const blk = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.34), rnd() < 0.4 ? oldM : stoneM);
+    const blk = new THREE.Mesh(box(1, 1, 1), rnd() < 0.4 ? oldM : stoneM);
+    blk.scale.set(w, h, 0.34);
     blk.position.set(x + w / 2, h / 2, (rnd() - 0.5) * 0.06);
     blk.rotation.y = (rnd() - 0.5) * 0.1; blk.castShadow = true; g.add(blk);
     x += w + 0.02;
@@ -313,7 +379,8 @@ export function makeRuinWall(): THREE.Group {
   // tumbled blocks at the foot of the wall
   for (let i = 0; i < 2 + Math.floor(rnd() * 2); i++) {
     const s = 0.1 + rnd() * 0.08;
-    const b = new THREE.Mesh(new THREE.BoxGeometry(s * 1.4, s, s), oldM);
+    const b = new THREE.Mesh(box(1, 1, 1), oldM);
+    b.scale.set(s * 1.4, s, s);
     b.position.set((rnd() - 0.5) * 0.8, s / 2, (rnd() < 0.5 ? -1 : 1) * (0.26 + rnd() * 0.14));
     b.rotation.y = rnd(); b.castShadow = true; g.add(b);
   }
@@ -326,7 +393,7 @@ export function makePickup(): THREE.Group {
   const g = new THREE.Group();
   const face = goldSharp();
   const rim = sharpOutline(stdMat({ color: 0xc9962e }), GOLD_INK);
-  const coinGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.055, 16);
+  const coinGeo = cyl(0.15, 0.15, 0.055, 16);
   const mats = [rim, face, face]; // cylinder material slots: side, top cap, bottom cap
   const coin = (x: number, y: number, z: number, rot: number, tiltX = 0, tiltZ = 0): void => {
     const c = new THREE.Mesh(coinGeo, mats);
@@ -348,11 +415,50 @@ export function makePickup(): THREE.Group {
   return g;
 }
 
+// One shared material for every baked unit body: colors live in the vertices.
+let unitBakedMat: SceneMaterial | null = null;
+let unitBakedNoOutlineMat: SceneMaterial | null = null;
+function bakedUnitMat(outline: boolean): SceneMaterial {
+  if (!outline) {
+    if (!unitBakedNoOutlineMat) unitBakedNoOutlineMat = noOutline(stdMat({ vertexColors: true }));
+    return unitBakedNoOutlineMat;
+  }
+  if (!unitBakedMat) unitBakedMat = sharpOutline(stdMat({ vertexColors: true }), UNIT_INK);
+  return unitBakedMat;
+}
+
+/**
+ * Collapse a rigid unit's ~15–20 part meshes into ONE mesh with baked vertex
+ * colours (the makeCorpse technique). A 400-unit battle drops from ~12k meshes
+ * (each rendered twice by the OutlineEffect) to ~800. The item mesh stays
+ * separate — it changes colour and visibility at runtime — and the merged
+ * geometry is per-unit, so it's flagged for disposal when the unit dies.
+ */
+function bakeUnit(built: { group: THREE.Group; itemMesh: THREE.Mesh }, outline = true): { group: THREE.Group; itemMesh: THREE.Mesh } {
+  const { group, itemMesh } = built;
+  itemMesh.parent!.remove(itemMesh);
+  const parts: THREE.BufferGeometry[] = [];
+  bakeGroupInto(parts, group);
+  const merged = mergeGeometries(parts, false)!;
+  parts.forEach(p => p.dispose());
+  const body = new THREE.Mesh(merged, bakedUnitMat(outline));
+  body.castShadow = true;
+  body.userData.ownGeometry = true; // unique per unit — dispose on removal
+  const g = new THREE.Group();
+  g.add(body, itemMesh);
+  return { group: g, itemMesh };
+}
+
 export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group; itemMesh: THREE.Mesh } {
-  if (role === 'boar') return makeBeast(colorHex);
+  // fliers keep their part meshes — the sim flaps their wings every tick
   if (role === 'dragon') return makeDragon(colorHex);
-  if (role === 'wolf') return makeWolf(colorHex);
   if (role === 'demon') return makeDemon(colorHex);
+  if (role === 'boar') return bakeUnit(makeBeast(colorHex));
+  if (role === 'wolf') return bakeUnit(makeWolf(colorHex));
+  return bakeUnit(makeHumanoid(colorHex, role), false);
+}
+
+function makeHumanoid(colorHex: number, role: string): { group: THREE.Group; itemMesh: THREE.Mesh } {
   // greenskins & trolls get their own hide; everyone else the usual complexion
   const skinHex = role === 'orc' ? 0x7a9a4a : role === 'troll' ? 0x8fa08a : 0xe8c9a0;
   const g = new THREE.Group();
@@ -361,12 +467,11 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
   g.add(body, head);
   // a dark belt with a little buckle breaks up the tunic and grounds the figure
   const belt = new THREE.Mesh(geoBelt, umat(0x3a2c1f)); belt.position.y = 0.13;
-  const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.02), umat(0xc9a94e)); buckle.position.set(0, 0.13, 0.195);
+  const buckle = new THREE.Mesh(box(0.06, 0.05, 0.02), umat(0xc9a94e)); buckle.position.set(0, 0.13, 0.195);
   g.add(belt, buckle);
 
   // little arms with skin-toned hands, angled out from the body
   const skin = umat(skinHex);
-  const ink = umat(0x2a2018);
   for (const sx of [-1, 1]) {
     const arm = new THREE.Mesh(geoArm, umat(colorHex));
     arm.position.set(sx * 0.19, 0.26, 0.02); arm.rotation.z = sx * 0.22; arm.castShadow = true;
@@ -374,12 +479,6 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
     hand.position.set(sx * 0.23, 0.13, 0.03);
     g.add(arm, hand);
   }
-
-  // a cute little face — two eyes and a smile on the front of the head
-  const eyeL = new THREE.Mesh(geoEye, ink); eyeL.position.set(-0.05, 0.57, 0.125);
-  const eyeR = new THREE.Mesh(geoEye, ink); eyeR.position.set(0.05, 0.57, 0.125);
-  const smile = new THREE.Mesh(geoSmile, ink); smile.position.set(0, 0.53, 0.125); smile.rotation.z = Math.PI;
-  g.add(eyeL, eyeR, smile);
 
   dressUnit(g, role);
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
@@ -395,56 +494,53 @@ function dressUnit(g: THREE.Group, role: string): void {
   const mat = umat;
   const add = (m: THREE.Object3D, castsShadow = true) => { m.castShadow = castsShadow; g.add(m); };
   // small helpers
-  const brim = (col: number, r: number, h: number, y: number) => new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 12), mat(col)).translateY(y);
-  const dome = (col: number, r: number, y: number) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat(col)); m.position.y = y; m.scale.y = 0.75; return m; };
-  const apron = (col: number) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.34, 0.06), mat(col)); m.position.set(0, 0.24, 0.19); m.userData.marker = true; return m; };
-  const strap = (x: number) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.34, 0.04), mat(0x3f5aa0)); m.position.set(x, 0.28, 0.19); m.userData.marker = true; return m; };
+  const brim = (col: number, r: number, h: number, y: number) => new THREE.Mesh(cyl(r, r, h, 12), mat(col)).translateY(y);
+  const dome = (col: number, r: number, y: number) => { const m = new THREE.Mesh(flatSphere(r, 8, 6), mat(col)); m.position.y = y; m.scale.y = 0.75; return m; };
+  const hatCone = (col: number, r: number, h: number, seg: number) => new THREE.Mesh(flatCone(r, h, seg), mat(col));
+  const apron = (col: number) => { const m = new THREE.Mesh(box(0.3, 0.34, 0.06), mat(col)); m.position.set(0, 0.24, 0.19); m.userData.marker = true; return m; };
+  const strap = (x: number) => { const m = new THREE.Mesh(box(0.05, 0.34, 0.04), mat(0x3f5aa0)); m.position.set(x, 0.28, 0.19); m.userData.marker = true; return m; };
   // combat kit — worn chest plate, a helmet, and a weapon held in the right hand
-  const plate = (col: number) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.32, 0.12), mat(col)); m.position.set(0, 0.26, 0.14); m.userData.marker = true; return m; };
-  const shield = (col: number) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.04, 12), mat(col)); m.rotation.x = Math.PI / 2; m.position.set(-0.26, 0.26, 0.08); m.userData.marker = true; return m; };
+  const plate = (col: number) => { const m = new THREE.Mesh(box(0.36, 0.32, 0.12), mat(col)); m.position.set(0, 0.26, 0.14); m.userData.marker = true; return m; };
+  const shield = (col: number) => { const m = new THREE.Mesh(cyl(0.15, 0.15, 0.04, 12), mat(col)); m.rotation.x = Math.PI / 2; m.position.set(-0.26, 0.26, 0.08); m.userData.marker = true; return m; };
   const sword = () => {
     const s = new THREE.Group();
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.42, 0.05), mat(0xd8dde2)); blade.position.y = 0.2;
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.05, 0.05), mat(0x6b4a2f));
-    const hilt = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.05), mat(0x4a3320)); hilt.position.y = -0.08;
+    const blade = new THREE.Mesh(box(0.05, 0.42, 0.05), mat(0xd8dde2)); blade.position.y = 0.2;
+    const guard = new THREE.Mesh(box(0.18, 0.05, 0.05), mat(0x6b4a2f));
+    const hilt = new THREE.Mesh(box(0.05, 0.12, 0.05), mat(0x4a3320)); hilt.position.y = -0.08;
     s.add(blade, guard, hilt); s.position.set(0.28, 0.22, 0.1); s.rotation.z = -0.22; s.userData.marker = true; return s;
   };
   const axe = () => {
     const s = new THREE.Group();
-    const haft = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.4, 0.045), mat(0x5a4030)); haft.position.y = 0.16;
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.04), mat(0x9aa0a3)); head.position.set(0.07, 0.3, 0);
+    const haft = new THREE.Mesh(box(0.045, 0.4, 0.045), mat(0x5a4030)); haft.position.y = 0.16;
+    const head = new THREE.Mesh(box(0.16, 0.14, 0.04), mat(0x9aa0a3)); head.position.set(0.07, 0.3, 0);
     s.add(haft, head); s.position.set(0.28, 0.16, 0.1); s.rotation.z = -0.18; s.userData.marker = true; return s;
   };
   const bow = () => {
-    const b = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.022, 6, 12, Math.PI * 1.25), mat(0x6b4a2f));
+    const b = new THREE.Mesh(torus(0.17, 0.022, 6, 12, Math.PI * 1.25), mat(0x6b4a2f));
     b.position.set(0.27, 0.3, 0.08); b.rotation.set(0, Math.PI / 2, Math.PI / 2 - 0.35); b.userData.marker = true; return b;
   };
-  const quiver = () => { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.28, 7), mat(0x7a5230)); m.position.set(-0.14, 0.34, -0.16); m.rotation.x = 0.4; m.userData.marker = true; return m; };
+  const quiver = () => { const m = new THREE.Mesh(cyl(0.05, 0.05, 0.28, 7), mat(0x7a5230)); m.position.set(-0.14, 0.34, -0.16); m.rotation.x = 0.4; m.userData.marker = true; return m; };
 
   switch (role) {
     case 'woodcutter': { // red knit beanie
       add(dome(0xb5352f, 0.16, 0.66));
-      add(brim(0xd6493f, 0.165, 0.06, 0.6), false);
       break;
     }
     case 'forester': { // green pointed hood
-      const hat = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.3, 8), mat(0x3f6d3a)); hat.position.y = 0.74; add(hat);
-      add(brim(0x355c31, 0.19, 0.05, 0.62), false);
+      const hat = hatCone(0x3f6d3a, 0.18, 0.3, 8); hat.position.y = 0.74; add(hat);
       break;
     }
-    case 'carpenter': { // brown flat cap + work apron
-      add(brim(0x6b4a2f, 0.17, 0.09, 0.66));
+    case 'carpenter': { // brown work cap + apron
+      add(dome(0x6b4a2f, 0.15, 0.66));
       add(apron(0x8a6a44));
       break;
     }
     case 'stonemason': { // grey dusty cap
       add(dome(0x9aa0a3, 0.16, 0.66));
-      add(brim(0x8a9094, 0.185, 0.04, 0.62), false);
       break;
     }
     case 'farmer': { // wide straw hat
-      add(brim(0xd9bd63, 0.28, 0.03, 0.66), false);
-      add(new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.16, 10), mat(0xcaa94e)).translateY(0.72));
+      add(hatCone(0xd9bd63, 0.22, 0.16, 10).translateY(0.72));
       add(strap(-0.09)); add(strap(0.09)); // overalls
       break;
     }
@@ -453,21 +549,18 @@ function dressUnit(g: THREE.Group, role: string): void {
       break;
     }
     case 'baker': { // tall white toque
-      add(brim(0xf4efe6, 0.15, 0.16, 0.72));
-      add(dome(0xfbf7ef, 0.17, 0.82));
+      add(dome(0xfbf7ef, 0.18, 0.75));
       add(apron(0xf0e6d2));
       break;
     }
     case 'miner': case 'collier': { // hard hat + head lamp
       const helmCol = role === 'miner' ? 0xd8af43 : 0x35353c;
       add(dome(helmCol, 0.165, 0.66));
-      add(brim(helmCol, 0.19, 0.04, 0.62), false);
-      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.045, 7, 6), mat(0xfff2a8)); lamp.position.set(0, 0.69, 0.15); add(lamp, false);
+      const lamp = new THREE.Mesh(sphere(0.045, 7, 6), mat(0xfff2a8)); lamp.position.set(0, 0.69, 0.15); add(lamp, false);
       break;
     }
-    case 'minter': { // green cap with a gold band
+    case 'minter': { // green cap
       add(dome(0x2f6f52, 0.16, 0.67));
-      add(brim(0xd4af37, 0.17, 0.05, 0.6), false);
       break;
     }
     case 'laborer': { // brown flat cap (builders)
@@ -476,8 +569,7 @@ function dressUnit(g: THREE.Group, role: string): void {
     }
     case 'soldier': { // steel helmet with a crest, breastplate, sword & shield
       add(dome(0x9298a0, 0.175, 0.66));
-      add(brim(0x82888f, 0.19, 0.04, 0.61), false);
-      const crest = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.11, 0.22), mat(0xb5352f)); crest.position.set(0, 0.79, 0); crest.userData.marker = true; add(crest);
+      const crest = new THREE.Mesh(box(0.04, 0.11, 0.22), mat(0xb5352f)); crest.position.set(0, 0.79, 0); crest.userData.marker = true; add(crest);
       add(plate(0x8f97a6));
       add(shield(0x3f5aa0));
       add(sword());
@@ -485,18 +577,16 @@ function dressUnit(g: THREE.Group, role: string): void {
     }
     case 'knight': { // full helm with plume, heavy plate, sword & kite shield
       add(dome(0x7d8794, 0.185, 0.64));
-      add(brim(0x6a737e, 0.2, 0.1, 0.6), false);
-      const plume = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.22, 6), mat(0xd9a441)); plume.position.set(0, 0.86, -0.02); plume.userData.marker = true; add(plume);
+      const plume = hatCone(0xd9a441, 0.05, 0.22, 6); plume.position.set(0, 0.86, -0.02); plume.userData.marker = true; add(plume);
       add(plate(0x9aa3b0));
       const pauldronMat = mat(0x7d8794);
-      for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.SphereGeometry(0.09, 7, 6), pauldronMat); p.position.set(sx * 0.2, 0.4, 0.02); p.userData.marker = true; add(p); }
+      for (const sx of [-1, 1]) { const p = new THREE.Mesh(sphere(0.09, 7, 6), pauldronMat); p.position.set(sx * 0.2, 0.4, 0.02); p.userData.marker = true; add(p); }
       add(shield(0x8f2f3a));
       add(sword());
       break;
     }
     case 'archer': { // leather cap, green tunic accent, bow & quiver
       add(dome(0x5c6b3a, 0.16, 0.66));
-      add(brim(0x4a5730, 0.175, 0.04, 0.61), false);
       add(plate(0x6b7a44));
       add(bow());
       add(quiver());
@@ -504,9 +594,8 @@ function dressUnit(g: THREE.Group, role: string): void {
     }
     case 'orc': { // horned iron half-helm, shoulder plate, brutish axe
       add(dome(0x3a3a40, 0.17, 0.66));
-      add(brim(0x2f2f36, 0.185, 0.05, 0.61), false);
       for (const sx of [-1, 1]) {
-        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.16, 5), mat(0xd8cdb4));
+        const horn = new THREE.Mesh(cone(0.04, 0.16, 5), mat(0xd8cdb4));
         horn.position.set(sx * 0.15, 0.74, 0); horn.rotation.z = -sx * 0.7; horn.userData.marker = true; add(horn);
       }
       add(plate(0x4a4038));
@@ -514,10 +603,10 @@ function dressUnit(g: THREE.Group, role: string): void {
       break;
     }
     case 'troll': { // hulking hide-clad rock-thrower: ragged pelt, bow & quiver
-      const mane = new THREE.Mesh(new THREE.SphereGeometry(0.15, 7, 6), mat(0x4a5244));
+      const mane = new THREE.Mesh(sphere(0.15, 7, 6), mat(0x4a5244));
       mane.position.y = 0.68; mane.scale.y = 0.7; mane.userData.marker = true; add(mane);
       for (const sx of [-1, 1]) { // big jutting ears
-        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.14, 4), mat(0x8fa08a));
+        const ear = new THREE.Mesh(cone(0.045, 0.14, 4), mat(0x8fa08a));
         ear.position.set(sx * 0.16, 0.6, -0.02); ear.rotation.z = sx * 1.25; ear.userData.marker = true; add(ear);
       }
       add(plate(0x6a5a44));
@@ -526,22 +615,19 @@ function dressUnit(g: THREE.Group, role: string): void {
       break;
     }
     case 'bandit': { // dark hood, ragged leather, crude axe
-      const hood = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.26, 8), mat(0x3a3138)); hood.position.y = 0.72; add(hood);
-      add(brim(0x2f272d, 0.185, 0.05, 0.62), false);
+      const hood = hatCone(0x3a3138, 0.18, 0.26, 8); hood.position.y = 0.72; add(hood);
       add(plate(0x5a4636));
       add(axe());
       break;
     }
-    default: { // serf — a jaunty maroon fez with a dark tassel
-      const fez = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.145, 0.2, 14), mat(0x9e2b25));
+    case 'villager': { // unposted recruit — simple flat red cap
+      add(brim(0xb5352f, 0.16, 0.07, 0.66));
+      break;
+    }
+    default: { // serf — a jaunty maroon fez
+      const fez = new THREE.Mesh(cyl(0.115, 0.145, 0.2, 14), mat(0x9e2b25));
       fez.position.y = 0.77; add(fez);
-      // flat crown disc, a touch darker, caps the truncated cone
       add(brim(0x7f2019, 0.115, 0.02, 0.87), false);
-      // tassel: a short cord flopping off one side to a little tuft
-      const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.16, 5), mat(0x241c14));
-      cord.position.set(0.11, 0.82, 0.03); cord.rotation.z = 0.6; add(cord, false);
-      const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.032, 6, 5), mat(0x241c14));
-      tuft.position.set(0.18, 0.74, 0.03); tuft.scale.y = 1.3; add(tuft, false);
       break;
     }
   }
@@ -558,26 +644,26 @@ function makeBeast(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh
   g.rotation.y = -Math.PI / 2;
   outer.add(g);
   const hide = mat(colorHex);
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), hide);
+  const body = new THREE.Mesh(sphere(0.28, 10, 8), hide);
   body.scale.set(1.5, 0.95, 0.95); body.position.y = 0.3; body.castShadow = true;
-  const hump = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), hide); hump.position.set(-0.05, 0.46, 0); hump.scale.set(1.1, 0.8, 0.9);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 9, 7), hide); head.position.set(0.4, 0.3, 0); head.scale.set(1.05, 0.9, 0.9); head.castShadow = true;
-  const snout = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.16, 8), mat(0x4a3226)); snout.rotation.z = Math.PI / 2; snout.position.set(0.58, 0.27, 0);
+  const hump = new THREE.Mesh(sphere(0.16, 8, 6), hide); hump.position.set(-0.05, 0.46, 0); hump.scale.set(1.1, 0.8, 0.9);
+  const head = new THREE.Mesh(sphere(0.2, 9, 7), hide); head.position.set(0.4, 0.3, 0); head.scale.set(1.05, 0.9, 0.9); head.castShadow = true;
+  const snout = new THREE.Mesh(cyl(0.09, 0.12, 0.16, 8), mat(0x4a3226)); snout.rotation.z = Math.PI / 2; snout.position.set(0.58, 0.27, 0);
   g.add(body, hump, head, snout);
   // tusks, ears, eyes — the tusks jut proudly up-and-forward from the jaw
   for (const s of [-1, 1]) {
-    const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.2, 6), mat(0xf4ecd8));
+    const tusk = new THREE.Mesh(cone(0.035, 0.2, 6), mat(0xf4ecd8));
     tusk.position.set(0.58, 0.22, s * 0.1); tusk.rotation.set(s * 0.35, 0, -0.85); tusk.castShadow = true; g.add(tusk);
-    const tuskTip = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.09, 6), mat(0xfaf5e8));
+    const tuskTip = new THREE.Mesh(cone(0.02, 0.09, 6), mat(0xfaf5e8));
     tuskTip.position.set(0.68, 0.31, s * 0.13); tuskTip.rotation.set(s * 0.35, 0, -0.45); g.add(tuskTip);
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.11, 5), hide); ear.position.set(0.31, 0.46, s * 0.11); g.add(ear);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.024, 6, 5), mat(0x1a120c)); eye.position.set(0.47, 0.34, s * 0.08); g.add(eye);
+    const ear = new THREE.Mesh(cone(0.06, 0.11, 5), hide); ear.position.set(0.31, 0.46, s * 0.11); g.add(ear);
+    const eye = new THREE.Mesh(sphere(0.024, 6, 5), mat(0x1a120c)); eye.position.set(0.47, 0.34, s * 0.08); g.add(eye);
   }
   // four stubby legs + a little tail
   for (const dx of [-0.2, 0.24]) for (const dz of [-0.14, 0.14]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.22, 6), mat(0x3a2a20)); leg.position.set(dx, 0.11, dz); leg.castShadow = true; g.add(leg);
+    const leg = new THREE.Mesh(cyl(0.05, 0.05, 0.22, 6), mat(0x3a2a20)); leg.position.set(dx, 0.11, dz); leg.castShadow = true; g.add(leg);
   }
-  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.16, 5), hide); tail.position.set(-0.42, 0.34, 0); tail.rotation.z = 0.8; g.add(tail);
+  const tail = new THREE.Mesh(cyl(0.02, 0.02, 0.16, 5), hide); tail.position.set(-0.42, 0.34, 0); tail.rotation.z = 0.8; g.add(tail);
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; outer.add(item);
   return { group: outer, itemMesh: item };
 }
@@ -589,16 +675,16 @@ function makeDragon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mes
   g.rotation.y = -Math.PI / 2;
   outer.add(g);
   const scale = mat(colorHex);
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 9), scale); body.scale.set(1.6, 1, 1); body.position.y = 0.5; body.castShadow = true;
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.17, 0.42, 8), scale); neck.position.set(0.42, 0.72, 0); neck.rotation.z = -0.7; neck.castShadow = true;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 8), scale); head.position.set(0.64, 0.9, 0); head.scale.set(1.3, 0.9, 0.9); head.castShadow = true;
-  const snout = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.26, 7), scale); snout.rotation.z = -Math.PI / 2 * 0.85; snout.position.set(0.86, 0.86, 0);
-  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.8, 7), scale); tail.rotation.z = Math.PI / 2; tail.position.set(-0.7, 0.44, 0); tail.castShadow = true;
+  const body = new THREE.Mesh(sphere(0.34, 12, 9), scale); body.scale.set(1.6, 1, 1); body.position.y = 0.5; body.castShadow = true;
+  const neck = new THREE.Mesh(cyl(0.1, 0.17, 0.42, 8), scale); neck.position.set(0.42, 0.72, 0); neck.rotation.z = -0.7; neck.castShadow = true;
+  const head = new THREE.Mesh(sphere(0.19, 10, 8), scale); head.position.set(0.64, 0.9, 0); head.scale.set(1.3, 0.9, 0.9); head.castShadow = true;
+  const snout = new THREE.Mesh(cone(0.1, 0.26, 7), scale); snout.rotation.z = -Math.PI / 2 * 0.85; snout.position.set(0.86, 0.86, 0);
+  const tail = new THREE.Mesh(cone(0.13, 0.8, 7), scale); tail.rotation.z = Math.PI / 2; tail.position.set(-0.7, 0.44, 0); tail.castShadow = true;
   g.add(body, neck, head, snout, tail);
   // horns, eyes
   for (const s of [-1, 1]) {
-    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.18, 5), mat(0xe8e0cf)); horn.position.set(0.6, 1.04, s * 0.08); horn.rotation.x = s * 0.35; g.add(horn);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 7, 6), mat(0xffcf3a)); eye.position.set(0.7, 0.94, s * 0.09); g.add(eye);
+    const horn = new THREE.Mesh(cone(0.035, 0.18, 5), mat(0xe8e0cf)); horn.position.set(0.6, 1.04, s * 0.08); horn.rotation.x = s * 0.35; g.add(horn);
+    const eye = new THREE.Mesh(sphere(0.032, 7, 6), mat(0xffcf3a)); eye.position.set(0.7, 0.94, s * 0.09); g.add(eye);
   }
   // swept bat wings — a scalloped membrane framed by arm & finger bones, with
   // a claw at the wingtip (exposed so the sim can flap them)
@@ -616,15 +702,18 @@ function makeDragon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mes
     shape.quadraticCurveTo(-0.56, 0.3, -0.52, 0.18);   // scallop in to finger 3
     shape.lineTo(-0.42, 0);
     shape.closePath();
-    const geo = new THREE.ShapeGeometry(shape, 6);
-    geo.rotateX(Math.PI / 2); // lay it flat: shape-Y becomes outward +Z
+    const geo = cachedGeo('dragon-wing', () => {
+      const g2 = new THREE.ShapeGeometry(shape, 6);
+      g2.rotateX(Math.PI / 2); // lay it flat: shape-Y becomes outward +Z
+      return g2;
+    });
     const mem = new THREE.Mesh(geo, membraneMat);
     mem.castShadow = true;
     w.add(mem);
     // bones radiate from the shoulder across the membrane to each scallop point
     const bone = (ex: number, ez: number, r: number): void => {
       const dx = ex - 0.3, len = Math.hypot(dx, ez);
-      const b = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.55, len, 5), scale);
+      const b = new THREE.Mesh(cyl(r, r * 0.55, len, 5), scale);
       b.position.set(0.3 + dx / 2, 0.015, ez / 2);
       b.quaternion.setFromUnitVectors(UP, new THREE.Vector3(dx, 0, ez).normalize());
       w.add(b);
@@ -634,7 +723,7 @@ function makeDragon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mes
     bone(-0.38, 0.54, 0.022);
     bone(-0.52, 0.18, 0.022);
     // wingtip claw
-    const claw = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.16, 5), mat(0xe8e0cf));
+    const claw = new THREE.Mesh(cone(0.035, 0.16, 5), mat(0xe8e0cf));
     claw.position.set(0.38, 0.02, 1.1); claw.rotation.z = -1.2;
     w.add(claw);
     return w;
@@ -648,10 +737,10 @@ function makeDragon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mes
     g.add(wing); wings.push(wing);
   }
   outer.userData.wings = wings; // the sim flaps them via u.mesh.userData.wings
-  for (let i = 0; i < 4; i++) { const spike = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.12, 5), mat(0x4a141f)); spike.position.set(0.3 - i * 0.28, 0.82 - i * 0.03, 0); g.add(spike); }
+  for (let i = 0; i < 4; i++) { const spike = new THREE.Mesh(cone(0.04, 0.12, 5), mat(0x4a141f)); spike.position.set(0.3 - i * 0.28, 0.82 - i * 0.03, 0); g.add(spike); }
   // four clawed legs
   for (const dx of [-0.24, 0.28]) for (const dz of [-0.22, 0.22]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.32, 6), scale); leg.position.set(dx, 0.17, dz); leg.castShadow = true; g.add(leg);
+    const leg = new THREE.Mesh(cyl(0.08, 0.08, 0.32, 6), scale); leg.position.set(dx, 0.17, dz); leg.castShadow = true; g.add(leg);
   }
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; outer.add(item);
   return { group: outer, itemMesh: item };
@@ -665,22 +754,22 @@ function makeWolf(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh 
   outer.add(g);
   const fur = mat(colorHex);
   const dark = mat(0x4a4e54);
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.22, 9, 7), fur);
+  const body = new THREE.Mesh(sphere(0.22, 9, 7), fur);
   body.scale.set(1.9, 0.85, 0.8); body.position.y = 0.3; body.castShadow = true;
-  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), fur); chest.position.set(0.22, 0.32, 0); chest.scale.set(1, 0.95, 0.95);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 9, 7), fur); head.position.set(0.44, 0.4, 0); head.castShadow = true;
-  const muzzle = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.2, 6), fur); muzzle.rotation.z = -Math.PI / 2; muzzle.position.set(0.58, 0.37, 0);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.03, 5, 4), mat(0x1a1a1e)); nose.position.set(0.68, 0.37, 0);
+  const chest = new THREE.Mesh(sphere(0.17, 8, 6), fur); chest.position.set(0.22, 0.32, 0); chest.scale.set(1, 0.95, 0.95);
+  const head = new THREE.Mesh(sphere(0.14, 9, 7), fur); head.position.set(0.44, 0.4, 0); head.castShadow = true;
+  const muzzle = new THREE.Mesh(cone(0.075, 0.2, 6), fur); muzzle.rotation.z = -Math.PI / 2; muzzle.position.set(0.58, 0.37, 0);
+  const nose = new THREE.Mesh(sphere(0.03, 5, 4), mat(0x1a1a1e)); nose.position.set(0.68, 0.37, 0);
   g.add(body, chest, head, muzzle, nose);
   for (const s of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.12, 4), dark); ear.position.set(0.4, 0.53, s * 0.07); g.add(ear);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 5), mat(0xd9a441)); eye.position.set(0.51, 0.43, s * 0.06); g.add(eye);
+    const ear = new THREE.Mesh(cone(0.045, 0.12, 4), dark); ear.position.set(0.4, 0.53, s * 0.07); g.add(ear);
+    const eye = new THREE.Mesh(sphere(0.022, 6, 5), mat(0xd9a441)); eye.position.set(0.51, 0.43, s * 0.06); g.add(eye);
   }
   // slim legs + a bushy down-swept tail
   for (const dx of [-0.24, 0.26]) for (const dz of [-0.1, 0.1]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.03, 0.28, 5), dark); leg.position.set(dx, 0.14, dz); leg.castShadow = true; g.add(leg);
+    const leg = new THREE.Mesh(cyl(0.035, 0.03, 0.28, 5), dark); leg.position.set(dx, 0.14, dz); leg.castShadow = true; g.add(leg);
   }
-  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.32, 6), dark);
+  const tail = new THREE.Mesh(cone(0.06, 0.32, 6), dark);
   tail.position.set(-0.46, 0.28, 0); tail.rotation.z = -1.1; g.add(tail);
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; outer.add(item);
   return { group: outer, itemMesh: item };
@@ -692,22 +781,22 @@ function makeDemon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh
   const g = new THREE.Group();
   const hide = mat(colorHex);
   const ember = stdMat({ color: 0xff5a2a });
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), hide);
+  const body = new THREE.Mesh(sphere(0.26, 10, 8), hide);
   body.scale.set(1, 1.4, 0.85); body.position.y = 0.52; body.castShadow = true;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 9, 7), hide); head.position.y = 0.98; head.castShadow = true;
+  const head = new THREE.Mesh(sphere(0.16, 9, 7), hide); head.position.y = 0.98; head.castShadow = true;
   g.add(body, head);
   // great curved horns, burning eyes and a fanged underjaw
   for (const s of [-1, 1]) {
-    const horn = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.032, 6, 10, Math.PI * 0.8), mat(0xd8cdb4));
+    const horn = new THREE.Mesh(torus(0.12, 0.032, 6, 10, Math.PI * 0.8), mat(0xd8cdb4));
     horn.position.set(s * 0.12, 1.1, 0); horn.rotation.set(0, s * 0.5, s * -0.4); g.add(horn);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 6, 5), ember); eye.position.set(s * 0.06, 1.0, 0.14); g.add(eye);
-    const fang = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.06, 4), mat(0xefe6d0)); fang.position.set(s * 0.05, 0.9, 0.14); g.add(fang);
+    const eye = new THREE.Mesh(sphere(0.032, 6, 5), ember); eye.position.set(s * 0.06, 1.0, 0.14); g.add(eye);
+    const fang = new THREE.Mesh(cone(0.018, 0.06, 4), mat(0xefe6d0)); fang.position.set(s * 0.05, 0.9, 0.14); g.add(fang);
   }
   // clawed arms spread wide, ember orbs cupped in the palms (its magic)
   for (const s of [-1, 1]) {
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.4, 6), hide);
+    const arm = new THREE.Mesh(cyl(0.045, 0.055, 0.4, 6), hide);
     arm.position.set(s * 0.3, 0.62, 0.08); arm.rotation.z = s * 1.0; g.add(arm);
-    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.06, 7, 6), ember); orb.position.set(s * 0.46, 0.5, 0.14); g.add(orb);
+    const orb = new THREE.Mesh(sphere(0.06, 7, 6), ember); orb.position.set(s * 0.46, 0.5, 0.14); g.add(orb);
   }
   // ragged bat wings (flapped by the sim like the dragon's)
   const wings: THREE.Object3D[] = [];
@@ -721,10 +810,10 @@ function makeDemon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh
     shape.quadraticCurveTo(0.4, -0.1, 0.42, -0.28); // scallop
     shape.quadraticCurveTo(0.18, -0.16, 0, -0.12);
     shape.closePath();
-    const mem = new THREE.Mesh(new THREE.ShapeGeometry(shape, 6), membraneMat);
+    const mem = new THREE.Mesh(cachedGeo('demon-wing', () => new THREE.ShapeGeometry(shape, 6)), membraneMat);
     mem.castShadow = true;
     wing.add(mem);
-    const spar = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.014, 0.95, 5), hide);
+    const spar = new THREE.Mesh(cyl(0.02, 0.014, 0.95, 5), hide);
     spar.position.set(0.42, 0.28, 0); spar.rotation.z = 1.1; wing.add(spar);
     wing.position.set(s * 0.14, 0.78, -0.16);
     wing.rotation.y = s * Math.PI / 2 + s * 0.35;   // sweep back from the shoulders
@@ -735,9 +824,9 @@ function makeDemon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh
   }
   g.userData.wings = wings;
   // a whipping spade-tipped tail
-  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.045, 0.5, 5), hide);
+  const tail = new THREE.Mesh(cyl(0.02, 0.045, 0.5, 5), hide);
   tail.position.set(0, 0.3, -0.28); tail.rotation.x = 0.9; g.add(tail);
-  const spade = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.12, 4), hide);
+  const spade = new THREE.Mesh(cone(0.05, 0.12, 4), hide);
   spade.position.set(0, 0.14, -0.5); spade.rotation.x = 2.2; g.add(spade);
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; g.add(item);
   return { group: g, itemMesh: item };
@@ -749,11 +838,11 @@ function makeDemon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh
 /** An arrow in flight: shaft along +Z (nose forward), oriented by the sim. */
 export function makeArrow(): THREE.Group {
   const g = new THREE.Group();
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.42, 5), mat(0x8a6a44));
+  const shaft = new THREE.Mesh(cyl(0.016, 0.016, 0.42, 5), mat(0x8a6a44));
   shaft.rotation.x = Math.PI / 2; g.add(shaft);
-  const head = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.09, 5), mat(0xc2c6cb));
+  const head = new THREE.Mesh(cone(0.03, 0.09, 5), mat(0xc2c6cb));
   head.rotation.x = Math.PI / 2; head.position.z = 0.24; g.add(head);
-  const fletch = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.1, 4), mat(0xefe6d0));
+  const fletch = new THREE.Mesh(cone(0.045, 0.1, 4), mat(0xefe6d0));
   fletch.rotation.x = -Math.PI / 2; fletch.position.z = -0.2; g.add(fletch);
   return g;
 }
@@ -761,8 +850,8 @@ export function makeArrow(): THREE.Group {
 /** A gob of dragon fire in flight — a glowing two-tone blob. */
 export function makeFireball(): THREE.Group {
   const g = new THREE.Group();
-  const core = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd24a }));
-  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6), new THREE.MeshBasicMaterial({ color: 0xe06428, transparent: true, opacity: 0.7 }));
+  const core = new THREE.Mesh(sphere(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd24a }));
+  const shell = new THREE.Mesh(sphere(0.24, 8, 6), new THREE.MeshBasicMaterial({ color: 0xe06428, transparent: true, opacity: 0.7 }));
   g.add(core, shell);
   return g;
 }
@@ -774,9 +863,10 @@ export function makeFlame(): THREE.Group {
   const cols = [0xe06428, 0xf09a3e, 0xffd24a];
   for (let i = 0; i < 5; i++) {
     const m = new THREE.Mesh(
-      new THREE.ConeGeometry(0.1 + rnd() * 0.08, 0.3 + rnd() * 0.3, 5),
+      cone(1, 1, 5),
       new THREE.MeshBasicMaterial({ color: cols[i % 3], transparent: true, opacity: 0.9 }),
     );
+    m.scale.set(0.1 + rnd() * 0.08, 0.3 + rnd() * 0.3, 0.1 + rnd() * 0.08);
     m.position.set((rnd() - 0.5) * 0.7, 0.15, (rnd() - 0.5) * 0.7);
     g.add(m);
   }
@@ -786,9 +876,9 @@ export function makeFlame(): THREE.Group {
 /** The rally flag planted where a barracks sends its freshly trained fighters. */
 export function makeFlag(): THREE.Group {
   const g = new THREE.Group();
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.9, 6), mat(0x5b4433));
+  const pole = new THREE.Mesh(cyl(0.025, 0.03, 0.9, 6), mat(0x5b4433));
   pole.position.y = 0.45; pole.castShadow = true; g.add(pole);
-  const pennant = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.4, 3), mat(0x3f5aa0));
+  const pennant = new THREE.Mesh(cone(0.13, 0.4, 3), mat(0x3f5aa0));
   pennant.rotation.z = -Math.PI / 2; pennant.position.set(0.22, 0.78, 0); g.add(pennant);
   return g;
 }
@@ -814,11 +904,48 @@ export function makeCorpse(colorHex: number): THREE.Mesh {
   return new THREE.Mesh(merged, stdMat({ vertexColors: true }));
 }
 
+/** A fallen unit body. Humanoids use the small readable corpse silhouette;
+ *  beasts and bosses keep their model shape so enemy deaths remain visible. */
+export function makeUnitCorpse(role: string, colorHex: number): THREE.Mesh {
+  if (role !== 'boar' && role !== 'wolf' && role !== 'dragon' && role !== 'demon') return makeCorpse(colorHex);
+  const built = role === 'boar' ? makeBeast(colorHex)
+    : role === 'wolf' ? makeWolf(colorHex)
+      : role === 'dragon' ? makeDragon(colorHex)
+        : makeDemon(colorHex);
+  built.itemMesh.parent?.remove(built.itemMesh);
+  built.group.rotation.x = Math.PI / 2;
+  const parts: THREE.BufferGeometry[] = [];
+  bakeGroupInto(parts, built.group);
+  const merged = mergeGeometries(parts, false)!;
+  parts.forEach(p => p.dispose());
+  return new THREE.Mesh(merged, stdMat({ vertexColors: true }));
+}
+
 const ONE = new THREE.Vector3(1, 1, 1);
 
-/** Clone a base geometry, transform it, and bake a flat vertex colour onto it. */
+/**
+ * Append every mesh under `root` (transformed into root's frame, material
+ * colour baked into vertex colours) to `parts` — the shared step behind
+ * merged corpses, baked unit bodies and chunk-merged scenery. The caller
+ * owns the pushed geometries and must dispose them after merging.
+ */
+export function bakeGroupInto(parts: THREE.BufferGeometry[], root: THREE.Object3D): void {
+  root.updateMatrixWorld(true);
+  root.traverse(o => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const col = (m.material as THREE.MeshLambertMaterial).color;
+    parts.push(paintGeo(m.geometry, col ? col.getHex() : 0xffffff, m.matrixWorld));
+  });
+}
+
+/** Clone a base geometry, transform it, and bake a flat vertex colour onto it.
+ *  Always emits non-indexed geometry: mergeGeometries refuses to mix indexed
+ *  and non-indexed inputs, and polyhedra (rock dodecahedra) are non-indexed. */
 function paintGeo(base: THREE.BufferGeometry, hex: number, m: THREE.Matrix4): THREE.BufferGeometry {
-  const g = base.clone().applyMatrix4(m);
+  let g = base.clone();
+  if (g.index) { const ni = g.toNonIndexed(); g.dispose(); g = ni; }
+  g.applyMatrix4(m);
   const c = new THREE.Color(hex);
   const n = g.attributes.position.count;
   const col = new Float32Array(n * 3);
@@ -845,7 +972,7 @@ export function makeBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
 /** Scaffold shown while a building is under construction. */
 export function makeScaffold(def: BuildingDef): { group: THREE.Group; frame: THREE.Group } {
   const g = new THREE.Group();
-  const pad = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.08, 1.9), mat(0x8a6b42)); pad.position.y = 0.04; g.add(pad);
+  const pad = new THREE.Mesh(box(1.9, 0.08, 1.9), mat(0x8a6b42)); pad.position.y = 0.04; g.add(pad);
   for (const [px, pz] of [[-0.85, -0.85], [0.85, -0.85], [-0.85, 0.85], [0.85, 0.85]]) {
     const post = new THREE.Mesh(geoPost, mat(0xc9a06a)); post.position.set(px, 0.35, pz); post.castShadow = true; g.add(post);
   }
@@ -858,16 +985,16 @@ export function makeScaffold(def: BuildingDef): { group: THREE.Group; frame: THR
 
 // ---------- door / accessories ----------
 function addDoor(g: THREE.Group, ghost: boolean): void {
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.6, 0.09), mkMat(0x4a3626, ghost));
+  const door = new THREE.Mesh(box(0.34, 0.6, 0.09), mkMat(0x4a3626, ghost));
   door.position.set(-0.4, 0.3, 0.86); door.userData.marker = true;
-  const lintel = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.08, 0.12), mkMat(0x6b4a2f, ghost));
+  const lintel = new THREE.Mesh(box(0.44, 0.08, 0.12), mkMat(0x6b4a2f, ghost));
   lintel.position.set(-0.4, 0.64, 0.86); lintel.userData.marker = true;
   g.add(door, lintel);
 }
 function addChimney(g: THREE.Group, ghost: boolean): void {
-  const ch = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.55, 0.22), mkMat(0x7a5a45, ghost));
+  const ch = new THREE.Mesh(box(0.22, 0.55, 0.22), mkMat(0x7a5a45, ghost));
   ch.position.set(0.5, 1.4, -0.3); ch.castShadow = !ghost; ch.userData.marker = true;
-  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.3), mkMat(0x5b4433, ghost));
+  const cap = new THREE.Mesh(box(0.3, 0.08, 0.3), mkMat(0x5b4433, ghost));
   cap.position.set(0.5, 1.68, -0.3); cap.userData.marker = true;
   g.add(ch, cap);
   if (ghost) return;
@@ -875,7 +1002,7 @@ function addChimney(g: THREE.Group, ghost: boolean): void {
   const puffs: THREE.Mesh[] = [];
   const N = 4;
   for (let i = 0; i < N; i++) {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(0.12, 7, 6), stdMat({ color: 0xbfbfbf, transparent: true, opacity: 0 }));
+    const m = new THREE.Mesh(sphere(0.12, 7, 6), stdMat({ color: 0xbfbfbf, transparent: true, opacity: 0 }));
     m.userData.marker = true;
     m.userData.dynamic = true;              // View moves each puff every frame
     m.userData.smokePhase = i / N;          // stagger the puffs up the plume
@@ -889,9 +1016,9 @@ function addLogpile(g: THREE.Group, ghost: boolean): void {
   const ends = mkMat(0xcaa06a, ghost);
   const rows = [[-0.75, 0.55, 0.28], [-0.75, 0.55, 0.5], [-0.75, 0.73, 0.39]];
   for (const [x, , z] of rows) {
-    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.7, 8), logMat);
+    const log = new THREE.Mesh(cyl(0.11, 0.11, 0.7, 8), logMat);
     log.rotation.x = Math.PI / 2; log.position.set(x, 0.14, z as number); log.castShadow = !ghost; log.userData.marker = true;
-    const cap = new THREE.Mesh(new THREE.CircleGeometry(0.11, 8), ends);
+    const cap = new THREE.Mesh(circle(0.11, 8), ends);
     cap.position.set(x, 0.14, (z as number) + 0.36); cap.userData.marker = true;
     g.add(log, cap);
   }
@@ -900,157 +1027,157 @@ function addLogpile(g: THREE.Group, ghost: boolean): void {
 // ---------- distinctive per-trade yard props (placed builds only, never on the ghost) ----------
 function barrel(col: number, r = 0.15, h = 0.32): THREE.Group {
   const b = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 10), mat(col)); body.castShadow = true; b.add(body);
+  const body = new THREE.Mesh(cyl(r, r, h, 10), mat(col)); body.castShadow = true; b.add(body);
   const hoopMat = mat(0x3a2c1f);
-  for (const hy of [h * 0.3, -h * 0.3]) { const hp = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.05, r * 1.05, 0.035, 10), hoopMat); hp.position.y = hy; b.add(hp); }
+  for (const hy of [h * 0.3, -h * 0.3]) { const hp = new THREE.Mesh(cyl(r * 1.05, r * 1.05, 0.035, 10), hoopMat); hp.position.y = hy; b.add(hp); }
   return b;
 }
 
 function hangingSign(g: THREE.Group, boardCol: number): void {
   const wood = mat(0x5b4433);
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.92, 7), wood); post.position.set(0.84, 0.46, 0.86); post.castShadow = true;
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.045, 0.045), wood); arm.position.set(0.66, 0.84, 0.86);
-  const board = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.22, 0.03), mat(boardCol)); board.position.set(0.55, 0.66, 0.86); board.castShadow = true;
+  const post = new THREE.Mesh(cyl(0.035, 0.04, 0.92, 7), wood); post.position.set(0.84, 0.46, 0.86); post.castShadow = true;
+  const arm = new THREE.Mesh(box(0.36, 0.045, 0.045), wood); arm.position.set(0.66, 0.84, 0.86);
+  const board = new THREE.Mesh(box(0.28, 0.22, 0.03), mat(boardCol)); board.position.set(0.55, 0.66, 0.86); board.castShadow = true;
   g.add(post, arm, board);
 }
 
 function woodcutterYard(g: THREE.Group): void {
   addLogpile(g, false);
-  const block = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.24, 10), mat(0x7a5230)); block.position.set(0.66, 0.12, 0.55); block.castShadow = true;
-  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.03, 10), mat(0xcaa06a)); top.position.set(0.66, 0.26, 0.55);
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.34, 6), mat(0x6b4a2f)); handle.position.set(0.6, 0.44, 0.55); handle.rotation.z = 0.7;
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.13, 0.16), mat(0xc2c6cb)); blade.position.set(0.73, 0.57, 0.55); blade.rotation.z = 0.7;
+  const block = new THREE.Mesh(cyl(0.17, 0.19, 0.24, 10), mat(0x7a5230)); block.position.set(0.66, 0.12, 0.55); block.castShadow = true;
+  const top = new THREE.Mesh(cyl(0.17, 0.17, 0.03, 10), mat(0xcaa06a)); top.position.set(0.66, 0.26, 0.55);
+  const handle = new THREE.Mesh(cyl(0.018, 0.018, 0.34, 6), mat(0x6b4a2f)); handle.position.set(0.6, 0.44, 0.55); handle.rotation.z = 0.7;
+  const blade = new THREE.Mesh(box(0.03, 0.13, 0.16), mat(0xc2c6cb)); blade.position.set(0.73, 0.57, 0.55); blade.rotation.z = 0.7;
   g.add(block, top, handle, blade);
 }
 
 function sawmillYard(g: THREE.Group): void {
   const plankMat = mat(0xd2a35c);
-  for (let i = 0; i < 4; i++) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.05, 0.26), plankMat); p.position.set(-0.72, 0.07 + i * 0.06, 0.42); p.rotation.y = 0.08 * (i % 2 ? 1 : -1); p.castShadow = true; g.add(p); }
+  for (let i = 0; i < 4; i++) { const p = new THREE.Mesh(box(0.72, 0.05, 0.26), plankMat); p.position.set(-0.72, 0.07 + i * 0.06, 0.42); p.rotation.y = 0.08 * (i % 2 ? 1 : -1); p.castShadow = true; g.add(p); }
   const buckMat = mat(0x6b4a2f);
-  for (const sx of [-0.9, -0.5]) for (const rz of [0.35, -0.35]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.42, 0.04), buckMat); leg.position.set(sx, 0.2, -0.5); leg.rotation.z = rz; g.add(leg); }
-  const log = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.62, 8), mat(0x8a5a2b)); log.rotation.x = Math.PI / 2; log.position.set(-0.7, 0.42, -0.5); log.castShadow = true; g.add(log);
+  for (const sx of [-0.9, -0.5]) for (const rz of [0.35, -0.35]) { const leg = new THREE.Mesh(box(0.04, 0.42, 0.04), buckMat); leg.position.set(sx, 0.2, -0.5); leg.rotation.z = rz; g.add(leg); }
+  const log = new THREE.Mesh(cyl(0.09, 0.09, 0.62, 8), mat(0x8a5a2b)); log.rotation.x = Math.PI / 2; log.position.set(-0.7, 0.42, -0.5); log.castShadow = true; g.add(log);
 }
 
 function foresterYard(g: THREE.Group): void {
   for (const [x, z] of [[0.72, 0.55], [0.9, 0.24], [0.55, 0.2]]) {
-    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, 0.12, 8), mat(0x8a5230)); pot.position.set(x, 0.06, z); pot.castShadow = true;
-    const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.28, 7), mat(0x4e7a3a)); leaf.position.set(x, 0.28, z); leaf.castShadow = true;
+    const pot = new THREE.Mesh(cyl(0.09, 0.07, 0.12, 8), mat(0x8a5230)); pot.position.set(x, 0.06, z); pot.castShadow = true;
+    const leaf = new THREE.Mesh(cone(0.1, 0.28, 7), mat(0x4e7a3a)); leaf.position.set(x, 0.28, z); leaf.castShadow = true;
     g.add(pot, leaf);
   }
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.52, 6), mat(0x6b4a2f)); shaft.position.set(-0.72, 0.32, 0.5); shaft.rotation.z = 0.4; g.add(shaft);
-  const spade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.15, 0.025), mat(0x9aa0a3)); spade.position.set(-0.87, 0.09, 0.5); spade.rotation.z = 0.4; spade.castShadow = true; g.add(spade);
+  const shaft = new THREE.Mesh(cyl(0.016, 0.016, 0.52, 6), mat(0x6b4a2f)); shaft.position.set(-0.72, 0.32, 0.5); shaft.rotation.z = 0.4; g.add(shaft);
+  const spade = new THREE.Mesh(box(0.12, 0.15, 0.025), mat(0x9aa0a3)); spade.position.set(-0.87, 0.09, 0.5); spade.rotation.z = 0.4; spade.castShadow = true; g.add(spade);
 }
 
 function bakeryYard(g: THREE.Group): void {
-  const table = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.05, 0.34), mat(0x8a6a44)); table.position.set(0.66, 0.34, 0.5); table.castShadow = true; g.add(table);
+  const table = new THREE.Mesh(box(0.52, 0.05, 0.34), mat(0x8a6a44)); table.position.set(0.66, 0.34, 0.5); table.castShadow = true; g.add(table);
   const legMat = mat(0x6b4a2f);
-  for (const [lx, lz] of [[0.46, 0.38], [0.86, 0.38], [0.46, 0.62], [0.86, 0.62]]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.32, 0.04), legMat); leg.position.set(lx, 0.16, lz); g.add(leg); }
-  for (const [lx, lz] of [[0.55, 0.45], [0.72, 0.5], [0.64, 0.56]]) { const loaf = new THREE.Mesh(new THREE.SphereGeometry(0.075, 7, 6), mat(0xc9853e)); loaf.scale.set(1.5, 0.7, 1); loaf.position.set(lx, 0.4, lz); loaf.castShadow = true; g.add(loaf); }
-  const sack = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.24, 7), mat(0xefe6d0)); sack.position.set(-0.72, 0.12, 0.5); sack.castShadow = true; g.add(sack);
+  for (const [lx, lz] of [[0.46, 0.38], [0.86, 0.38], [0.46, 0.62], [0.86, 0.62]]) { const leg = new THREE.Mesh(box(0.04, 0.32, 0.04), legMat); leg.position.set(lx, 0.16, lz); g.add(leg); }
+  for (const [lx, lz] of [[0.55, 0.45], [0.72, 0.5], [0.64, 0.56]]) { const loaf = new THREE.Mesh(sphere(0.075, 7, 6), mat(0xc9853e)); loaf.scale.set(1.5, 0.7, 1); loaf.position.set(lx, 0.4, lz); loaf.castShadow = true; g.add(loaf); }
+  const sack = new THREE.Mesh(cyl(0.12, 0.14, 0.24, 7), mat(0xefe6d0)); sack.position.set(-0.72, 0.12, 0.5); sack.castShadow = true; g.add(sack);
 }
 
 function mintYard(g: THREE.Group): void {
-  for (const [cx, cz, n] of [[0.66, 0.5, 5], [0.5, 0.42, 3], [0.78, 0.56, 4]]) for (let i = 0; i < n; i++) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.02, 10), mat(0xffd24a)); c.position.set(cx, 0.02 + i * 0.022, cz); g.add(c); }
-  const anvil = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.1, 0.14), mat(0x35353c)); anvil.position.set(-0.7, 0.3, 0.5); anvil.castShadow = true; g.add(anvil);
-  const anvilBase = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.26, 8), mat(0x5b4433)); anvilBase.position.set(-0.7, 0.13, 0.5); g.add(anvilBase);
+  for (const [cx, cz, n] of [[0.66, 0.5, 5], [0.5, 0.42, 3], [0.78, 0.56, 4]]) for (let i = 0; i < n; i++) { const c = new THREE.Mesh(cyl(0.07, 0.07, 0.02, 10), mat(0xffd24a)); c.position.set(cx, 0.02 + i * 0.022, cz); g.add(c); }
+  const anvil = new THREE.Mesh(box(0.26, 0.1, 0.14), mat(0x35353c)); anvil.position.set(-0.7, 0.3, 0.5); anvil.castShadow = true; g.add(anvil);
+  const anvilBase = new THREE.Mesh(cyl(0.09, 0.11, 0.26, 8), mat(0x5b4433)); anvilBase.position.set(-0.7, 0.13, 0.5); g.add(anvilBase);
 }
 
 function wineryYard(g: THREE.Group): void {
   const b1 = barrel(0x6b3f26); b1.position.set(0.68, 0.16, 0.52); g.add(b1);
   const b2 = barrel(0x6b3f26); b2.position.set(0.86, 0.16, 0.28); g.add(b2);
   const b3 = barrel(0x6b3f26, 0.13, 0.28); b3.position.set(0.77, 0.46, 0.4); b3.rotation.z = Math.PI / 2; g.add(b3);
-  const crate = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.16, 0.24), mat(0x8a6a44)); crate.position.set(-0.7, 0.1, 0.5); crate.castShadow = true; g.add(crate);
-  for (let i = 0; i < 6; i++) { const gr = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 5), mat(0x7a4b8a)); gr.position.set(-0.8 + (i % 3) * 0.09, 0.2, 0.44 + Math.floor(i / 3) * 0.1); g.add(gr); }
+  const crate = new THREE.Mesh(box(0.3, 0.16, 0.24), mat(0x8a6a44)); crate.position.set(-0.7, 0.1, 0.5); crate.castShadow = true; g.add(crate);
+  for (let i = 0; i < 6; i++) { const gr = new THREE.Mesh(sphere(0.045, 6, 5), mat(0x7a4b8a)); gr.position.set(-0.8 + (i % 3) * 0.09, 0.2, 0.44 + Math.floor(i / 3) * 0.1); g.add(gr); }
 }
 
 function butcherYard(g: THREE.Group): void {
-  const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.62, 6), mat(0x5b4433)); rail.rotation.z = Math.PI / 2; rail.position.set(0.62, 0.82, 0.9); g.add(rail);
-  for (const hx of [0.4, 0.55, 0.7, 0.85]) { const link = new THREE.Mesh(new THREE.CapsuleGeometry(0.032, 0.12, 3, 6), mat(0x9c4a2f)); link.position.set(hx, 0.68, 0.9); link.castShadow = true; g.add(link); }
-  const block = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.24, 10), mat(0x7a5230)); block.position.set(-0.7, 0.12, 0.5); block.castShadow = true; g.add(block);
-  const cleaver = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.16), mat(0xc2c6cb)); cleaver.position.set(-0.7, 0.3, 0.5); cleaver.rotation.z = 0.25; g.add(cleaver);
+  const rail = new THREE.Mesh(cyl(0.018, 0.018, 0.62, 6), mat(0x5b4433)); rail.rotation.z = Math.PI / 2; rail.position.set(0.62, 0.82, 0.9); g.add(rail);
+  for (const hx of [0.4, 0.55, 0.7, 0.85]) { const link = new THREE.Mesh(capsule(0.032, 0.12, 3, 6), mat(0x9c4a2f)); link.position.set(hx, 0.68, 0.9); link.castShadow = true; g.add(link); }
+  const block = new THREE.Mesh(cyl(0.16, 0.18, 0.24, 10), mat(0x7a5230)); block.position.set(-0.7, 0.12, 0.5); block.castShadow = true; g.add(block);
+  const cleaver = new THREE.Mesh(box(0.03, 0.1, 0.16), mat(0xc2c6cb)); cleaver.position.set(-0.7, 0.3, 0.5); cleaver.rotation.z = 0.25; g.add(cleaver);
 }
 
 function tavernYard(g: THREE.Group): void {
   hangingSign(g, 0xb5763a);
   const b1 = barrel(0x7a5230); b1.position.set(-0.72, 0.16, 0.5); g.add(b1);
   const b2 = barrel(0x7a5230, 0.13, 0.26); b2.position.set(-0.7, 0.44, 0.5); b2.rotation.z = Math.PI / 2; g.add(b2);
-  const bench = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.16), mat(0x6b4a2f)); bench.position.set(0.35, 0.18, 1.0); bench.castShadow = true; g.add(bench);
-  for (const bx of [0.18, 0.52]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.18, 0.14), mat(0x5b4433)); leg.position.set(bx, 0.09, 1.0); g.add(leg); }
-  const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 7), mat(0xffd27a)); lantern.position.set(-0.08, 0.72, 0.9); g.add(lantern);
+  const bench = new THREE.Mesh(box(0.5, 0.04, 0.16), mat(0x6b4a2f)); bench.position.set(0.35, 0.18, 1.0); bench.castShadow = true; g.add(bench);
+  for (const bx of [0.18, 0.52]) { const leg = new THREE.Mesh(box(0.04, 0.18, 0.14), mat(0x5b4433)); leg.position.set(bx, 0.09, 1.0); g.add(leg); }
+  const lantern = new THREE.Mesh(sphere(0.06, 8, 7), mat(0xffd27a)); lantern.position.set(-0.08, 0.72, 0.9); g.add(lantern);
 }
 
 function fisheryYard(g: THREE.Group): void {
   const wood = mat(0x6b4a2f);
-  for (const x of [0.5, 0.9]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 0.7, 6), wood); post.position.set(x, 0.35, 0.55); post.castShadow = true; g.add(post); }
-  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.04, 0.04), wood); bar.position.set(0.7, 0.66, 0.55); g.add(bar);
-  const net = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.32, 0.02), stdMat({ color: 0xcfc7ad, transparent: true, opacity: 0.5 })); net.position.set(0.7, 0.46, 0.55); g.add(net);
-  const crate = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, 0.24), mat(0x8a6a44)); crate.position.set(-0.7, 0.09, 0.5); crate.castShadow = true; g.add(crate);
+  for (const x of [0.5, 0.9]) { const post = new THREE.Mesh(cyl(0.03, 0.035, 0.7, 6), wood); post.position.set(x, 0.35, 0.55); post.castShadow = true; g.add(post); }
+  const bar = new THREE.Mesh(box(0.44, 0.04, 0.04), wood); bar.position.set(0.7, 0.66, 0.55); g.add(bar);
+  const net = new THREE.Mesh(box(0.4, 0.32, 0.02), stdMat({ color: 0xcfc7ad, transparent: true, opacity: 0.5 })); net.position.set(0.7, 0.46, 0.55); g.add(net);
+  const crate = new THREE.Mesh(box(0.3, 0.14, 0.24), mat(0x8a6a44)); crate.position.set(-0.7, 0.09, 0.5); crate.castShadow = true; g.add(crate);
   for (const fz of [0.44, 0.56]) { const f = makeFish(); f.scale.setScalar(0.55); f.position.set(-0.7, 0.18, fz); f.rotation.z = 0.3; g.add(f); }
 }
 
 function farmYard(g: THREE.Group): void {
   const hay = new THREE.Group();
-  const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.38, 10), mat(0xd7bd63)); stack.position.y = 0.19; stack.castShadow = true;
-  const top = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.3, 10), mat(0xc9a94e)); top.position.y = 0.52; top.castShadow = true;
+  const stack = new THREE.Mesh(cyl(0.26, 0.32, 0.38, 10), mat(0xd7bd63)); stack.position.y = 0.19; stack.castShadow = true;
+  const top = new THREE.Mesh(cone(0.34, 0.3, 10), mat(0xc9a94e)); top.position.y = 0.52; top.castShadow = true;
   hay.add(stack, top); hay.position.set(0.92, 0, -0.55); g.add(hay);
   const sheafMat = mat(0xdcc25c);
   for (const [sx, sz, lean] of [[0.86, 0.42, 0.18], [0.64, 0.62, -0.22]]) {
-    const sheaf = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.42, 6), sheafMat);
+    const sheaf = new THREE.Mesh(cone(0.13, 0.42, 6), sheafMat);
     sheaf.position.set(sx, 0.2, sz); sheaf.rotation.z = lean; sheaf.castShadow = true; g.add(sheaf);
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.09, 0.05, 6), mat(0xa98d45));
+    const band = new THREE.Mesh(cyl(0.075, 0.09, 0.05, 6), mat(0xa98d45));
     band.position.set(sx, 0.18, sz); band.rotation.z = lean; g.add(band);
   }
   const fenceMat = mat(0x8a6a44);
   for (let i = 0; i < 3; i++) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.06), fenceMat);
+    const post = new THREE.Mesh(box(0.06, 0.34, 0.06), fenceMat);
     post.position.set(-0.92, 0.17, -0.7 + i * 0.55); post.castShadow = true; g.add(post);
   }
-  const rail1 = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.05, 1.24), fenceMat);
+  const rail1 = new THREE.Mesh(box(0.045, 0.05, 1.24), fenceMat);
   rail1.position.set(-0.92, 0.26, -0.15); g.add(rail1);
 }
 
 function vineyardYard(g: THREE.Group): void {
   const postMat = mat(0x6b4a2f);
-  for (const z of [-0.4, 0.1, 0.6]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.38, 0.05), postMat); p.position.set(0.92, 0.19, z); p.castShadow = true; g.add(p); }
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 1.1), postMat); rail.position.set(0.92, 0.36, 0.1); g.add(rail);
-  for (const z of [-0.4, -0.15, 0.1, 0.35, 0.6]) { const gr = new THREE.Mesh(new THREE.SphereGeometry(0.055, 6, 5), mat(0x7a4b8a)); gr.scale.y = 1.3; gr.position.set(0.9, 0.28, z); gr.castShadow = true; g.add(gr); }
+  for (const z of [-0.4, 0.1, 0.6]) { const p = new THREE.Mesh(box(0.05, 0.38, 0.05), postMat); p.position.set(0.92, 0.19, z); p.castShadow = true; g.add(p); }
+  const rail = new THREE.Mesh(box(0.05, 0.04, 1.1), postMat); rail.position.set(0.92, 0.36, 0.1); g.add(rail);
+  for (const z of [-0.4, -0.15, 0.1, 0.35, 0.6]) { const gr = new THREE.Mesh(sphere(0.055, 6, 5), mat(0x7a4b8a)); gr.scale.y = 1.3; gr.position.set(0.9, 0.28, z); gr.castShadow = true; g.add(gr); }
   const b = barrel(0x6b3f26); b.position.set(-0.85, 0.16, 0.5); g.add(b);
 }
 
 function pigfarmYard(g: THREE.Group): void {
-  const mud = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.03, 14), mat(0x6b4a34)); mud.position.set(0.68, 0.02, 0.2); g.add(mud);
+  const mud = new THREE.Mesh(cyl(0.5, 0.5, 0.03, 14), mat(0x6b4a34)); mud.position.set(0.68, 0.02, 0.2); g.add(mud);
   const fenceMat = mat(0x8a6a44);
-  for (const [x, z] of [[0.28, -0.18], [0.68, -0.28], [1.06, -0.08], [1.08, 0.42], [0.75, 0.64], [0.33, 0.55]]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.26, 0.05), fenceMat); p.position.set(x, 0.13, z); p.castShadow = true; g.add(p); }
+  for (const [x, z] of [[0.28, -0.18], [0.68, -0.28], [1.06, -0.08], [1.08, 0.42], [0.75, 0.64], [0.33, 0.55]]) { const p = new THREE.Mesh(box(0.05, 0.26, 0.05), fenceMat); p.position.set(x, 0.13, z); p.castShadow = true; g.add(p); }
   for (const [px, pz] of [[0.58, 0.12], [0.86, 0.32]]) {
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 7), mat(0xe0a0a0)); body.scale.set(1.5, 0.9, 1); body.position.set(px, 0.12, pz); body.castShadow = true;
-    const snout = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), mat(0xd48f8f)); snout.position.set(px + 0.16, 0.12, pz);
+    const body = new THREE.Mesh(sphere(0.12, 8, 7), mat(0xe0a0a0)); body.scale.set(1.5, 0.9, 1); body.position.set(px, 0.12, pz); body.castShadow = true;
+    const snout = new THREE.Mesh(sphere(0.05, 6, 5), mat(0xd48f8f)); snout.position.set(px + 0.16, 0.12, pz);
     g.add(body, snout);
   }
-  const trough = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.12), mat(0x6b4a2f)); trough.position.set(0.42, 0.06, 0.42); g.add(trough);
+  const trough = new THREE.Mesh(box(0.26, 0.08, 0.12), mat(0x6b4a2f)); trough.position.set(0.42, 0.06, 0.42); g.add(trough);
 }
 
 function quarryYard(g: THREE.Group): void {
   const stoneMat = mat(0xb0b4b8);
-  for (const [x, y, z] of [[-0.5, 0.1, 0.55], [-0.26, 0.1, 0.6], [-0.4, 0.28, 0.57]]) { const blk = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.2, 0.24), stoneMat); blk.position.set(x, y, z); blk.rotation.y = rnd(); blk.castShadow = true; g.add(blk); }
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.5, 6), mat(0x6b4a2f)); handle.position.set(0.55, 0.3, 0.6); handle.rotation.z = -0.5; g.add(handle);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.05, 0.05), mat(0x555a5e)); head.position.set(0.63, 0.52, 0.6); head.rotation.z = 0.3; g.add(head);
+  for (const [x, y, z] of [[-0.5, 0.1, 0.55], [-0.26, 0.1, 0.6], [-0.4, 0.28, 0.57]]) { const blk = new THREE.Mesh(box(0.24, 0.2, 0.24), stoneMat); blk.position.set(x, y, z); blk.rotation.y = rnd(); blk.castShadow = true; g.add(blk); }
+  const handle = new THREE.Mesh(cyl(0.018, 0.018, 0.5, 6), mat(0x6b4a2f)); handle.position.set(0.55, 0.3, 0.6); handle.rotation.z = -0.5; g.add(handle);
+  const head = new THREE.Mesh(box(0.28, 0.05, 0.05), mat(0x555a5e)); head.position.set(0.63, 0.52, 0.6); head.rotation.z = 0.3; g.add(head);
 }
 
 function minecart(g: THREE.Group, oreCol?: number): void {
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 0.3), mat(0x5b4433)); body.position.set(0.6, 0.22, 0.55); body.castShadow = true; g.add(body);
-  for (const [wx, wz] of [[0.43, 0.42], [0.77, 0.42], [0.43, 0.68], [0.77, 0.68]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.04, 10), mat(0x2a2420)); w.rotation.x = Math.PI / 2; w.position.set(wx, 0.09, wz); g.add(w); }
-  if (oreCol != null) for (let i = 0; i < 4; i++) { const o = new THREE.Mesh(new THREE.DodecahedronGeometry(0.07, 0), mat(oreCol)); o.position.set(0.5 + rnd() * 0.2, 0.34, 0.45 + rnd() * 0.2); o.rotation.set(rnd(), rnd(), rnd()); g.add(o); }
+  const body = new THREE.Mesh(box(0.4, 0.22, 0.3), mat(0x5b4433)); body.position.set(0.6, 0.22, 0.55); body.castShadow = true; g.add(body);
+  for (const [wx, wz] of [[0.43, 0.42], [0.77, 0.42], [0.43, 0.68], [0.77, 0.68]]) { const w = new THREE.Mesh(cyl(0.07, 0.07, 0.04, 10), mat(0x2a2420)); w.rotation.x = Math.PI / 2; w.position.set(wx, 0.09, wz); g.add(w); }
+  if (oreCol != null) for (let i = 0; i < 4; i++) { const o = new THREE.Mesh(dodeca(0.07), mat(oreCol)); o.position.set(0.5 + rnd() * 0.2, 0.34, 0.45 + rnd() * 0.2); o.rotation.set(rnd(), rnd(), rnd()); g.add(o); }
 }
 
 // ---------- cottage (woodcutter, forester, sawmill, bakery, mint) ----------
 function cottage(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.95, 1.7), mkMat(def.wall, ghost));
+  const base = new THREE.Mesh(box(1.7, 0.95, 1.7), mkMat(def.wall, ghost));
   base.position.y = 0.475; base.castShadow = !ghost; base.receiveShadow = !ghost; g.add(base);
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(1.42, 0.9, 4), mkMat(def.roof, ghost));
+  const roof = new THREE.Mesh(cone(1.42, 0.9, 4), mkMat(def.roof, ghost));
   roof.position.y = 1.4; roof.rotation.y = Math.PI / 4; roof.castShadow = !ghost; g.add(roof);
   // little gable-end window
-  const win = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.05), mkMat(0xf0e6c2, ghost));
+  const win = new THREE.Mesh(box(0.28, 0.28, 0.05), mkMat(0xf0e6c2, ghost));
   win.position.set(0.45, 0.6, 0.86); win.userData.marker = true; g.add(win);
   addDoor(g, ghost);
   // ovens, mints, smokehouses & taverns get a smoking chimney
@@ -1075,18 +1202,18 @@ function cottage(def: BuildingDef, ghost: boolean): THREE.Group {
 function tavern(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   // a long inn hall, wider than a cottage and set back to leave a front yard
-  const base = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.0, 1.2), mkMat(def.wall, ghost));
+  const base = new THREE.Mesh(box(1.8, 1.0, 1.2), mkMat(def.wall, ghost));
   base.position.set(0, 0.5, -0.28); base.castShadow = !ghost; base.receiveShadow = !ghost; g.add(base);
   // dark half-timber framing across the front
   const beam = mkMat(0x5b4433, ghost);
-  for (const x of [-0.6, 0, 0.6]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.0, 0.06), beam); b.position.set(x, 0.5, 0.33); b.userData.marker = true; g.add(b); }
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.07, 0.06), beam); rail.position.set(0, 0.74, 0.33); rail.userData.marker = true; g.add(rail);
+  for (const x of [-0.6, 0, 0.6]) { const b = new THREE.Mesh(box(0.07, 1.0, 0.06), beam); b.position.set(x, 0.5, 0.33); b.userData.marker = true; g.add(b); }
+  const rail = new THREE.Mesh(box(1.8, 0.07, 0.06), beam); rail.position.set(0, 0.74, 0.33); rail.userData.marker = true; g.add(rail);
   // wide hip roof
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(1.55, 0.9, 4), mkMat(def.roof, ghost));
+  const roof = new THREE.Mesh(cone(1.55, 0.9, 4), mkMat(def.roof, ghost));
   roof.position.set(0, 1.44, -0.28); roof.rotation.y = Math.PI / 4; roof.scale.z = 0.82; roof.castShadow = !ghost; g.add(roof);
   // door + two lit windows
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.62, 0.09), mkMat(0x4a3626, ghost)); door.position.set(0, 0.31, 0.33); door.userData.marker = true; g.add(door);
-  for (const x of [-0.62, 0.62]) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.05), mkMat(0xf4d98a, ghost)); w.position.set(x, 0.56, 0.33); w.userData.marker = true; g.add(w); }
+  const door = new THREE.Mesh(box(0.4, 0.62, 0.09), mkMat(0x4a3626, ghost)); door.position.set(0, 0.31, 0.33); door.userData.marker = true; g.add(door);
+  for (const x of [-0.62, 0.62]) { const w = new THREE.Mesh(box(0.3, 0.3, 0.05), mkMat(0xf4d98a, ghost)); w.position.set(x, 0.56, 0.33); w.userData.marker = true; g.add(w); }
   addChimney(g, ghost);
   if (!ghost) tavernTable(g);
   return g;
@@ -1098,39 +1225,39 @@ function tavernTable(g: THREE.Group): void {
   const tx = 1.15;           // out on the extended (+X) side of the inn
   const cz = -0.1;           // roughly level with the hall
   // table runs along Z beside the building
-  const top = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.95), wood); top.position.set(tx, 0.36, cz); top.castShadow = true; g.add(top);
-  for (const dx of [-0.18, 0.18]) for (const dz of [-0.4, 0.4]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.36, 0.06), dark); leg.position.set(tx + dx, 0.18, cz + dz); g.add(leg); }
-  for (const dx of [-0.42, 0.42]) { const bench = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.95), wood); bench.position.set(tx + dx, 0.22, cz); bench.castShadow = true; g.add(bench); }
+  const top = new THREE.Mesh(box(0.5, 0.06, 0.95), wood); top.position.set(tx, 0.36, cz); top.castShadow = true; g.add(top);
+  for (const dx of [-0.18, 0.18]) for (const dz of [-0.4, 0.4]) { const leg = new THREE.Mesh(box(0.06, 0.36, 0.06), dark); leg.position.set(tx + dx, 0.18, cz + dz); g.add(leg); }
+  for (const dx of [-0.42, 0.42]) { const bench = new THREE.Mesh(box(0.16, 0.05, 0.95), wood); bench.position.set(tx + dx, 0.22, cz); bench.castShadow = true; g.add(bench); }
   // mugs & a jug scattered on the table
-  for (const dz of [-0.32, -0.02, 0.3]) { const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 7), mat(0xcaa06a)); mug.position.set(tx + (rnd() - 0.5) * 0.2, 0.44, cz + dz); g.add(mug); }
-  const jug = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.16, 8), mat(0x7a5230)); jug.position.set(tx - 0.08, 0.47, cz + 0.14); g.add(jug);
+  for (const dz of [-0.32, -0.02, 0.3]) { const mug = new THREE.Mesh(cyl(0.045, 0.05, 0.1, 7), mat(0xcaa06a)); mug.position.set(tx + (rnd() - 0.5) * 0.2, 0.44, cz + dz); g.add(mug); }
+  const jug = new THREE.Mesh(cyl(0.06, 0.08, 0.16, 8), mat(0x7a5230)); jug.position.set(tx - 0.08, 0.47, cz + 0.14); g.add(jug);
   // a barrel at the near corner of the extended side
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.34, 10), mat(0x7a5230)); barrel.position.set(tx + 0.05, 0.17, 0.72); barrel.castShadow = true; g.add(barrel);
-  for (const y of [0.06, 0.28]) { const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.015, 5, 10), mat(0x3a2a20)); hoop.rotation.x = Math.PI / 2; hoop.position.set(tx + 0.05, y, 0.72); g.add(hoop); }
+  const barrel = new THREE.Mesh(cyl(0.16, 0.16, 0.34, 10), mat(0x7a5230)); barrel.position.set(tx + 0.05, 0.17, 0.72); barrel.castShadow = true; g.add(barrel);
+  for (const y of [0.06, 0.28]) { const hoop = new THREE.Mesh(torus(0.16, 0.015, 5, 10), mat(0x3a2a20)); hoop.rotation.x = Math.PI / 2; hoop.position.set(tx + 0.05, y, 0.72); g.add(hoop); }
 }
 
 // ---------- windmill (mill) — rotating sails ----------
 function windmill(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
-  const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.85, 1.7, 12), mkMat(def.wall, ghost));
+  const tower = new THREE.Mesh(cyl(0.55, 0.85, 1.7, 12), mkMat(def.wall, ghost));
   tower.position.y = 0.85; tower.castShadow = !ghost; tower.receiveShadow = !ghost; g.add(tower);
-  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.66, 0.55, 12), mkMat(def.roof, ghost));
+  const cap = new THREE.Mesh(cone(0.66, 0.55, 12), mkMat(def.roof, ghost));
   cap.position.y = 1.98; cap.castShadow = !ghost; g.add(cap);
-  const balcony = new THREE.Mesh(new THREE.CylinderGeometry(0.92, 0.92, 0.08, 12), mkMat(0x6b4a2f, ghost));
+  const balcony = new THREE.Mesh(cyl(0.92, 0.92, 0.08, 12), mkMat(0x6b4a2f, ghost));
   balcony.position.y = 0.55; balcony.userData.marker = true; g.add(balcony);
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.55, 0.1), mkMat(0x4a3626, ghost));
+  const door = new THREE.Mesh(box(0.32, 0.55, 0.1), mkMat(0x4a3626, ghost));
   door.position.set(0, 0.28, 0.8); door.userData.marker = true; g.add(door);
 
   // sail cross — a child group so it inherits building rotation, spun around local Z
   const blades = new THREE.Group();
   blades.position.set(0, 1.75, 0.72);
-  const hub = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), mkMat(0x5b4a34, ghost)); hub.userData.marker = true; blades.add(hub);
+  const hub = new THREE.Mesh(sphere(0.1, 8, 6), mkMat(0x5b4a34, ghost)); hub.userData.marker = true; blades.add(hub);
   const sparMat = mkMat(0x6b4a2f, ghost);
   const sailMat = mkMat(ghost ? def.wall : 0xefe6d0, ghost);
   for (let i = 0; i < 4; i++) {
     const arm = new THREE.Group(); arm.rotation.z = i * Math.PI / 2; arm.userData.marker = true;
-    const spar = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.05, 0.06), sparMat); spar.position.y = 0.55; arm.add(spar);
-    const sail = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.82, 0.02), sailMat); sail.position.set(0.18, 0.6, 0); arm.add(sail);
+    const spar = new THREE.Mesh(box(0.06, 1.05, 0.06), sparMat); spar.position.y = 0.55; arm.add(spar);
+    const sail = new THREE.Mesh(box(0.26, 0.82, 0.02), sailMat); sail.position.set(0.18, 0.6, 0); arm.add(sail);
     blades.add(arm);
   }
   blades.userData.marker = true;
@@ -1144,22 +1271,25 @@ function windmill(def: BuildingDef, ghost: boolean): THREE.Group {
 function farmhouse(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   // long low hall — plastered walls over a timber frame
-  const base = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.78, 1.5), mkMat(def.wall, ghost));
+  const base = new THREE.Mesh(box(1.85, 0.78, 1.5), mkMat(def.wall, ghost));
   base.position.y = 0.39; base.castShadow = !ghost; base.receiveShadow = !ghost; g.add(base);
   const beamMat = mkMat(0x6b4a2f, ghost);
   for (const bx of [-0.68, -0.12, 0.35, 0.8]) {
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.78, 0.05), beamMat);
+    const beam = new THREE.Mesh(box(0.07, 0.78, 0.05), beamMat);
     beam.position.set(bx, 0.39, 0.76); beam.userData.marker = true; g.add(beam);
   }
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.08, 0.05), beamMat);
+  const rail = new THREE.Mesh(box(1.85, 0.08, 0.05), beamMat);
   rail.position.set(0, 0.71, 0.76); rail.userData.marker = true; g.add(rail);
   // a small shuttered window between the beams
-  const win = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.26, 0.05), mkMat(0xf0e6c2, ghost));
+  const win = new THREE.Mesh(box(0.3, 0.26, 0.05), mkMat(0xf0e6c2, ghost));
   win.position.set(0.58, 0.42, 0.77); win.userData.marker = true; g.add(win);
   // deep hipped thatch with a generous overhang — sits snug on the walls,
   // no ridge beam (geometry pre-rotated 45° so the mesh can be squashed in z)
-  const thatchGeo = new THREE.ConeGeometry(1.52, 1.05, 4);
-  thatchGeo.rotateY(Math.PI / 4);
+  const thatchGeo = cachedGeo('farm-thatch', () => {
+    const g2 = new THREE.ConeGeometry(1.52, 1.05, 4);
+    g2.rotateY(Math.PI / 4); // pre-rotate so the mesh can be squashed in z
+    return g2;
+  });
   const thatch = new THREE.Mesh(thatchGeo, mkMat(0xcaab5c, ghost));
   thatch.position.y = 1.3; thatch.scale.z = 0.84; thatch.castShadow = !ghost; g.add(thatch);
   addDoor(g, ghost);
@@ -1173,8 +1303,8 @@ function farmhouse(def: BuildingDef, ghost: boolean): THREE.Group {
 }
 
 // ---------- field crops — wheat stalks that rise as the plot ripens ----------
-const geoStalk = new THREE.CylinderGeometry(0.012, 0.02, 0.32, 4);
-const geoEar = new THREE.CylinderGeometry(0.03, 0.018, 0.12, 5);
+const geoStalk = cyl(0.012, 0.02, 0.32, 4);
+const geoEar = cyl(0.03, 0.018, 0.12, 5);
 export type CropKind = 'wheat' | 'grape' | 'pasture';
 /** A tile's worth of crop: 3×3 jittered bundles keyed to the plot's produce.
  *  The View scales the group's y with growth so young plots read as low shoots,
@@ -1187,7 +1317,7 @@ export function makeFieldCrop(kind: CropKind = 'wheat'): THREE.Group {
       const px = (rx - 1) * 0.3 + (rnd() - 0.5) * 0.1;
       const pz = (ry - 1) * 0.3 + (rnd() - 0.5) * 0.1;
       const vine = new THREE.Mesh(geoStalk, vineMat); vine.position.set(px, 0.16, pz); g.add(vine);
-      const bunch = new THREE.Mesh(new THREE.SphereGeometry(0.075, 6, 5), grapeMat); bunch.scale.y = 1.3; bunch.position.set(px, 0.34, pz); g.add(bunch);
+      const bunch = new THREE.Mesh(sphere(0.075, 6, 5), grapeMat); bunch.scale.y = 1.3; bunch.position.set(px, 0.34, pz); g.add(bunch);
     }
     return g;
   }
@@ -1196,7 +1326,7 @@ export function makeFieldCrop(kind: CropKind = 'wheat'): THREE.Group {
     for (let ry = 0; ry < 3; ry++) for (let rx = 0; rx < 3; rx++) {
       const px = (rx - 1) * 0.3 + (rnd() - 0.5) * 0.16;
       const pz = (ry - 1) * 0.3 + (rnd() - 0.5) * 0.16;
-      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.22, 5), rnd() < 0.5 ? grassMat : tuftMat);
+      const blade = new THREE.Mesh(cone(0.06, 0.22, 5), rnd() < 0.5 ? grassMat : tuftMat);
       blade.position.set(px, 0.11, pz); blade.rotation.z = (rnd() - 0.5) * 0.3; g.add(blade);
     }
     return g;
@@ -1219,17 +1349,17 @@ export function makeFieldCrop(kind: CropKind = 'wheat'): THREE.Group {
 export function makePig(big = false): THREE.Group {
   const g = new THREE.Group();
   const pink = mat(0xe0a0a0), snoutMat = mat(0xd48f8f), ink = mat(0x2a2018);
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 7), pink); body.scale.set(1.7, 0.95, 1.05); body.position.y = 0.14; body.castShadow = true; g.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.088, 8, 7), pink); head.position.set(0.2, 0.16, 0); head.castShadow = true; g.add(head);
-  const snout = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.048, 0.05, 8), snoutMat); snout.rotation.z = Math.PI / 2; snout.position.set(0.29, 0.14, 0); g.add(snout);
+  const body = new THREE.Mesh(sphere(0.12, 8, 7), pink); body.scale.set(1.7, 0.95, 1.05); body.position.y = 0.14; body.castShadow = true; g.add(body);
+  const head = new THREE.Mesh(sphere(0.088, 8, 7), pink); head.position.set(0.2, 0.16, 0); head.castShadow = true; g.add(head);
+  const snout = new THREE.Mesh(cyl(0.042, 0.048, 0.05, 8), snoutMat); snout.rotation.z = Math.PI / 2; snout.position.set(0.29, 0.14, 0); g.add(snout);
   for (const ez of [0.045, -0.045]) {
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.05, 4), pink); ear.position.set(0.19, 0.25, ez); g.add(ear);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.014, 5, 4), ink); eye.position.set(0.25, 0.19, ez); g.add(eye);
+    const ear = new THREE.Mesh(cone(0.03, 0.05, 4), pink); ear.position.set(0.19, 0.25, ez); g.add(ear);
+    const eye = new THREE.Mesh(sphere(0.014, 5, 4), ink); eye.position.set(0.25, 0.19, ez); g.add(eye);
   }
   for (const [lx, lz] of [[0.11, 0.07], [0.11, -0.07], [-0.11, 0.07], [-0.11, -0.07]]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.1, 5), pink); leg.position.set(lx, 0.05, lz); g.add(leg);
+    const leg = new THREE.Mesh(cyl(0.022, 0.022, 0.1, 5), pink); leg.position.set(lx, 0.05, lz); g.add(leg);
   }
-  const tail = new THREE.Mesh(new THREE.TorusGeometry(0.028, 0.009, 5, 8, Math.PI * 1.6), snoutMat); tail.position.set(-0.2, 0.17, 0); tail.rotation.y = Math.PI / 2; g.add(tail);
+  const tail = new THREE.Mesh(torus(0.028, 0.009, 5, 8, Math.PI * 1.6), snoutMat); tail.position.set(-0.2, 0.17, 0); tail.rotation.y = Math.PI / 2; g.add(tail);
   g.scale.setScalar(big ? 1.3 : 0.82);
   return g;
 }
@@ -1239,10 +1369,10 @@ const FISH_COLORS = [0xd98c46, 0xc9c2b0, 0xe0a85a, 0x9fb7c4];
 export function makeFish(): THREE.Group {
   const g = new THREE.Group();
   const col = FISH_COLORS[Math.floor(rnd() * FISH_COLORS.length)];
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.12, 7, 6), mat(col)); body.scale.set(1.7, 0.55, 0.85); body.castShadow = false; g.add(body);
-  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.13, 4), mat(col)); tail.rotation.z = -Math.PI / 2; tail.position.set(-0.22, 0, 0); tail.scale.set(1, 1, 0.35); g.add(tail);
-  const fin = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.1, 4), mat(col)); fin.position.set(0.02, 0.08, 0); fin.scale.set(1, 1, 0.4); g.add(fin);
-  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.02, 5, 4), mat(0x2a2018)); eye.position.set(0.16, 0.03, 0.05); g.add(eye);
+  const body = new THREE.Mesh(sphere(0.12, 7, 6), mat(col)); body.scale.set(1.7, 0.55, 0.85); body.castShadow = false; g.add(body);
+  const tail = new THREE.Mesh(cone(0.09, 0.13, 4), mat(col)); tail.rotation.z = -Math.PI / 2; tail.position.set(-0.22, 0, 0); tail.scale.set(1, 1, 0.35); g.add(tail);
+  const fin = new THREE.Mesh(cone(0.05, 0.1, 4), mat(col)); fin.position.set(0.02, 0.08, 0); fin.scale.set(1, 1, 0.4); g.add(fin);
+  const eye = new THREE.Mesh(sphere(0.02, 5, 4), mat(0x2a2018)); eye.position.set(0.16, 0.03, 0.05); g.add(eye);
   g.scale.setScalar(0.7 + rnd() * 0.5);
   return g;
 }
@@ -1250,17 +1380,17 @@ export function makeFish(): THREE.Group {
 // ---------- barn (storehouse) ----------
 function barn(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.05, 1.7), mkMat(def.wall, ghost));
+  const base = new THREE.Mesh(box(2.1, 1.05, 1.7), mkMat(def.wall, ghost));
   base.position.y = 0.525; base.castShadow = !ghost; base.receiveShadow = !ghost; g.add(base);
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(1.72, 0.95, 4), mkMat(def.roof, ghost));
+  const roof = new THREE.Mesh(cone(1.72, 0.95, 4), mkMat(def.roof, ghost));
   roof.position.y = 1.52; roof.rotation.y = Math.PI / 4; roof.castShadow = !ghost; g.add(roof);
   // big double doors with pale trim
-  const doors = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.78, 0.1), mkMat(0x5b3f28, ghost));
+  const doors = new THREE.Mesh(box(0.8, 0.78, 0.1), mkMat(0x5b3f28, ghost));
   doors.position.set(0, 0.39, 1.02); doors.userData.marker = true; g.add(doors);
   const trimMat = mkMat(0xece3cf, ghost);
-  const t1 = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.06, 0.14), trimMat); t1.position.set(0, 0.8, 1.04); t1.userData.marker = true;
-  const t2 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.82, 0.14), trimMat); t2.position.set(0.45, 0.4, 1.04); t2.userData.marker = true;
-  const t3 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.82, 0.14), trimMat); t3.position.set(-0.45, 0.4, 1.04); t3.userData.marker = true;
+  const t1 = new THREE.Mesh(box(0.96, 0.06, 0.14), trimMat); t1.position.set(0, 0.8, 1.04); t1.userData.marker = true;
+  const t2 = new THREE.Mesh(box(0.06, 0.82, 0.14), trimMat); t2.position.set(0.45, 0.4, 1.04); t2.userData.marker = true;
+  const t3 = new THREE.Mesh(box(0.06, 0.82, 0.14), trimMat); t3.position.set(-0.45, 0.4, 1.04); t3.userData.marker = true;
   g.add(t1, t2, t3);
   g.scale.set(1.12, 1.08, 1.12);
   return g;
@@ -1279,32 +1409,32 @@ function castle(def: BuildingDef, ghost: boolean): THREE.Group {
     const n = 4;
     for (let i = 0; i < n; i++) {
       const off = -w / 2 + (i + 0.5) * (w / n);
-      const m = new THREE.Mesh(new THREE.BoxGeometry(alongX ? w / n * 0.55 : 0.14, 0.14, alongX ? 0.14 : w / n * 0.55), trim);
+      const m = new THREE.Mesh(box(alongX ? w / n * 0.55 : 0.14, 0.14, alongX ? 0.14 : w / n * 0.55), trim);
       m.position.set(cx + (alongX ? off : 0), y, cz + (alongX ? 0 : off));
       m.userData.marker = true; g.add(m);
     }
   };
 
   // central keep — a tall square donjon with a battlement crown and a banner
-  const keep = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.5, 1.15), stone);
+  const keep = new THREE.Mesh(box(1.15, 1.5, 1.15), stone);
   keep.position.y = 0.75; keep.castShadow = !ghost; keep.receiveShadow = !ghost; g.add(keep);
-  const keepCap = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.12, 1.3), trim);
+  const keepCap = new THREE.Mesh(box(1.3, 0.12, 1.3), trim);
   keepCap.position.y = 1.56; keepCap.userData.marker = true; g.add(keepCap);
   for (const [cx, cz, ax] of [[0, 0.65, true], [0, -0.65, true], [0.65, 0, false], [-0.65, 0, false]] as [number, number, boolean][])
     crenel(cx, cz, 1.69, 1.3, ax);
-  const keepRoof = new THREE.Mesh(new THREE.ConeGeometry(0.72, 0.62, 4), roofM);
+  const keepRoof = new THREE.Mesh(cone(0.72, 0.62, 4), roofM);
   keepRoof.position.y = 1.93; keepRoof.rotation.y = Math.PI / 4; keepRoof.castShadow = !ghost; g.add(keepRoof);
   // banner on the keep
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 5), woodM);
+  const pole = new THREE.Mesh(cyl(0.02, 0.02, 0.5, 5), woodM);
   pole.position.y = 2.42; pole.userData.marker = true; g.add(pole);
-  const banner = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.3, 3), roofM);
+  const banner = new THREE.Mesh(cone(0.09, 0.3, 3), roofM);
   banner.rotation.z = -Math.PI / 2; banner.position.set(0.16, 2.56, 0); banner.userData.marker = true; g.add(banner);
 
   // curtain walls between the towers, crenellated
   for (const [cx, cz, ax] of [[0, 0.95, true], [0, -0.95, true], [0.95, 0, false], [-0.95, 0, false]] as [number, number, boolean][]) {
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(ax ? 1.7 : 0.2, 0.72, ax ? 0.2 : 1.7), stone);
+    const wall = new THREE.Mesh(box(ax ? 1.7 : 0.2, 0.72, ax ? 0.2 : 1.7), stone);
     wall.position.set(cx, 0.36, cz); wall.castShadow = !ghost; wall.receiveShadow = !ghost; g.add(wall);
-    const walk = new THREE.Mesh(new THREE.BoxGeometry(ax ? 1.7 : 0.26, 0.07, ax ? 0.26 : 1.7), trim);
+    const walk = new THREE.Mesh(box(ax ? 1.7 : 0.26, 0.07, ax ? 0.26 : 1.7), trim);
     walk.position.set(cx, 0.75, cz); walk.userData.marker = true; g.add(walk);
     crenel(cx, cz, 0.86, 1.6, ax);
   }
@@ -1312,26 +1442,26 @@ function castle(def: BuildingDef, ghost: boolean): THREE.Group {
   // round towers on each corner: drum, corbelled crown, conical roof, arrow slit
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
     const tx = sx * 0.95, tz = sz * 0.95;
-    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 1.2, 10), stone);
+    const drum = new THREE.Mesh(cyl(0.3, 0.34, 1.2, 10), stone);
     drum.position.set(tx, 0.6, tz); drum.castShadow = !ghost; drum.receiveShadow = !ghost; g.add(drum);
-    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.32, 0.18, 10), trim);
+    const crown = new THREE.Mesh(cyl(0.38, 0.32, 0.18, 10), trim);
     crown.position.set(tx, 1.28, tz); crown.userData.marker = true; g.add(crown);
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.55, 10), roofM);
+    const cap = new THREE.Mesh(cone(0.4, 0.55, 10), roofM);
     cap.position.set(tx, 1.62, tz); cap.castShadow = !ghost; g.add(cap);
-    const slit = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.26, 0.05), woodM);
+    const slit = new THREE.Mesh(box(0.05, 0.26, 0.05), woodM);
     slit.position.set(tx * 1.24, 0.78, tz * 1.24); slit.userData.marker = true; g.add(slit);
   }
 
   // gatehouse: an arched timber gate through the front wall
-  const gateFrame = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.86, 0.3), trim);
+  const gateFrame = new THREE.Mesh(box(0.66, 0.86, 0.3), trim);
   gateFrame.position.set(0, 0.43, 0.95); gateFrame.castShadow = !ghost; g.add(gateFrame);
-  const gate = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.6, 0.1), woodM);
+  const gate = new THREE.Mesh(box(0.46, 0.6, 0.1), woodM);
   gate.position.set(0, 0.3, 1.08); gate.userData.marker = true; g.add(gate);
-  const arch = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.1, 10, 1, false, -Math.PI / 2, Math.PI), woodM);
+  const arch = new THREE.Mesh(cachedGeo('castle-arch', () => new THREE.CylinderGeometry(0.23, 0.23, 0.1, 10, 1, false, -Math.PI / 2, Math.PI)), woodM);
   arch.rotation.x = Math.PI / 2; arch.position.set(0, 0.6, 1.08); arch.userData.marker = true; g.add(arch);
   // lit keep windows
   for (const s of [-0.3, 0.3]) {
-    const win = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.24, 0.05), mkMat(0xf4d98a, ghost));
+    const win = new THREE.Mesh(box(0.14, 0.24, 0.05), mkMat(0xf4d98a, ghost));
     win.position.set(s, 1.1, 0.59); win.userData.marker = true; g.add(win);
   }
   return g;
@@ -1340,22 +1470,22 @@ function castle(def: BuildingDef, ghost: boolean): THREE.Group {
 // ---------- mine (quarry, gold mine, coal mine) — rocky mound + adit ----------
 function mine(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
-  const mound = new THREE.Mesh(new THREE.DodecahedronGeometry(1.05, 0), mkMat(def.wall, ghost));
+  const mound = new THREE.Mesh(dodeca(1.05), mkMat(def.wall, ghost));
   mound.position.y = 0.35; mound.scale.set(1, 0.72, 1); mound.rotation.y = 0.5; mound.castShadow = !ghost; mound.receiveShadow = !ghost; g.add(mound);
   // dark timber-framed entrance
-  const ent = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.68, 0.5), mkMat(0x241f1b, ghost));
+  const ent = new THREE.Mesh(box(0.58, 0.68, 0.5), mkMat(0x241f1b, ghost));
   ent.position.set(0, 0.34, 0.82); ent.userData.marker = true; g.add(ent);
   const beamMat = mkMat(0x6b4a2f, ghost);
   for (const sx of [-0.33, 0.33]) {
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.78, 0.1), beamMat);
+    const beam = new THREE.Mesh(box(0.1, 0.78, 0.1), beamMat);
     beam.position.set(sx, 0.4, 1.02); beam.userData.marker = true; g.add(beam);
   }
-  const top = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.12, 0.14), beamMat);
+  const top = new THREE.Mesh(box(0.86, 0.12, 0.14), beamMat);
   top.position.set(0, 0.78, 1.02); top.userData.marker = true; g.add(top);
   // ore chunks in the accent colour (skip on ghost)
   if (!ghost && def.accent != null) {
     for (let i = 0; i < 3; i++) {
-      const chunk = new THREE.Mesh(new THREE.DodecahedronGeometry(0.15, 0), mat(def.accent));
+      const chunk = new THREE.Mesh(dodeca(0.15), mat(def.accent));
       chunk.position.set((rnd() - 0.5) * 1.3, 0.15, -0.35 - rnd() * 0.55); chunk.rotation.set(rnd(), rnd(), rnd()); chunk.castShadow = true;
       g.add(chunk);
     }

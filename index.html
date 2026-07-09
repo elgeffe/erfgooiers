@@ -34,6 +34,7 @@
   <div class="q-head">Objective</div>
   <div class="obj-head"><span id="objLabel">Objective</span><b id="objText">—</b></div>
   <div class="obj-bar"><div id="objBar"></div></div>
+  <div id="objMutators"></div>
 </div>
 
 <button id="unitsToggle">Workers</button>
@@ -68,6 +69,10 @@
   <button id="sbKnight" title="Spawn player knights">🛡️ Knights</button>
   <button id="sbBandit" title="Spawn enemy bandits">🗡️ Bandits</button>
   <button id="sbBoar" title="Spawn wild boars">🐗 Boars</button>
+  <button id="sbWolf" title="Spawn wild wolves">🐺 Wolves</button>
+  <button id="sbOrc" title="Spawn enemy orcs">🪓 Orcs</button>
+  <button id="sbTroll" title="Spawn enemy trolls">🪨 Trolls</button>
+  <button id="sbDemon" title="Spawn a magic demon">🔥 Demon</button>
   <button id="sbDragon" title="Spawn the dragon">🐉 Dragon</button>
 </div>
 <div id="minimapWrap"><canvas id="minimap" width="160" height="160"></canvas></div>
@@ -75,6 +80,12 @@
 
 <div id="selbox"></div>
 <div id="toasts"></div>
+<div id="perfhud"></div>
+<div id="errbar">
+  <div class="eb-body"><b>Something broke</b><span id="errText"></span></div>
+  <button id="errReload">Reload level</button>
+  <button id="errDismiss" class="ghost">Dismiss</button>
+</div>
 
 <!-- ---------- main menu ---------- -->
 <div id="menu" class="screen">
@@ -98,8 +109,13 @@
   <div class="card shopcard">
     <h1 class="serif">The Shop</h1>
     <div id="shopGold" class="metaline"></div>
-    <div class="shopsect">Wares — buy any you can afford (effects stack across the run)</div>
+    <div id="shopTally"></div>
+    <div class="shopsect">Wares — every card takes one of your five slots</div>
     <div id="shopSlots" class="shopgrid"></div>
+    <div class="shopsect" id="ownedLabel">Your cards</div>
+    <div id="shopOwned" class="shopgrid owned"></div>
+    <div class="shopsect">The road ahead — choose your next contract</div>
+    <div id="shopContracts" class="shopgrid contracts"></div>
     <div class="btns row">
       <button id="btnReroll" class="ghost">Reroll wares (<span id="rerollCost">0</span>g)</button>
       <button id="btnShopContinue">To the next level →</button>

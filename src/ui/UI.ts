@@ -74,6 +74,12 @@ export class UI {
       const timeEl = el.querySelector('.ptime');
       if (timeEl) timeEl.textContent = this.timeHTML(def);
     });
+    // the road card's stone cost can be rule-bent to zero (corvée roads)
+    const roadCost = document.querySelector<HTMLElement>('.bcard[data-key="road"] .cost');
+    if (roadCost) {
+      const rc = mods.roadCost();
+      roadCost.innerHTML = (rc > 0 ? `<i><span class="dot" style="background:${ITEMS.stone.color}"></span>${rc}</i>` : '<i>free</i>') + ' · drag';
+    }
   }
 
   /** Set the objective card text (driven by main until Phase 1's Objectives). */
@@ -93,6 +99,13 @@ export class UI {
 
   /** Show the run's gold total in the HUD chip. */
   setGold(n: number): void { $('goldText').textContent = String(n); }
+
+  /** Show the level's active curses under the objective (hidden when none). */
+  setMutators(muts: { icon: string; name: string; desc: string }[]): void {
+    const el = $('objMutators');
+    el.style.display = muts.length ? 'flex' : 'none';
+    el.innerHTML = muts.map(m => `<span class="mutchip" title="${m.desc}">${m.icon} ${m.name}</span>`).join('');
+  }
 
   /** Refresh the "next raid" countdown banner, or hide it when no wave is pending. */
   updateWave(info: { in: number; count: number } | null): void {

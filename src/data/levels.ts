@@ -130,11 +130,6 @@ export function levelFor(index: number): LevelDef {
   return LEVELS[Math.min(LEVELS.length, Math.max(1, index)) - 1];
 }
 
-/** Deterministically pick one objective variant for this level from a 0..1 roll. */
-export function pickObjective(level: LevelDef, roll: number): ObjectiveDef {
-  return level.objectives[Math.floor(roll * level.objectives.length) % level.objectives.length];
-}
-
 /**
  * A no-objective free-build map (menu → Sandbox). Big, resource-rich and
  * timer-free so you can raise as much as you like — the eventual test bed for

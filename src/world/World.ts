@@ -32,6 +32,8 @@ export interface WorldParams {
 export class World {
   readonly W: number;
   readonly H: number;
+  /** The map's generation seed (exposed for per-tile cosmetic hashing). */
+  readonly seed: number;
   readonly tiles: Tile[][] = [];
 
   private readonly p: Required<WorldParams>;
@@ -51,6 +53,7 @@ export class World {
     };
     this.W = this.p.w;
     this.H = this.p.h;
+    this.seed = this.p.seed;
     worldRng.reseed(this.p.seed);
     for (let y = 0; y < this.H; y++) {
       this.tiles[y] = [];

@@ -4,7 +4,8 @@ import { uiRng } from '../engine/rng';
 import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
-import { makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, stdMat } from './models';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { bakeGroupInto, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -59,6 +60,15 @@ export class View {
   private readonly millSails: THREE.Object3D[] = [];
   private cloudBound = 40;
 
+  // the sun follows the camera so its shadow map only covers what's visible
+  private sun!: THREE.DirectionalLight;
+
+  // adaptive quality: drop pixelRatio when frames run long, restore when quick
+  private readonly maxPixelRatio = Math.min(devicePixelRatio, 2);
+  private qFrameMs = 16;
+  private qLastT = 0;
+  private qHoldT = 0;
+
   // grazing pigs on each pig-farm's pasture plots (cosmetic, real-time)
   private readonly pigHerds = new Map<Building, Pig[]>();
 
@@ -73,8 +83,8 @@ export class View {
   // ---------- gore layer (cosmetic; bodies linger, then fade) ----------
   private readonly goreGroup = new THREE.Group();
   private readonly goreBodies: { obj: THREE.Mesh; age: number; mat: THREE.Material }[] = [];
-  private readonly MAX_BODIES = 300;
-  private readonly CORPSE_LIFE = 150;   // seconds a body lies before it starts fading (~2.5 min)
+  private readonly MAX_BODIES = 11000;
+  private readonly CORPSE_LIFE = 300;   // seconds a body lies before it starts fading (5 min)
   private readonly CORPSE_FADE = 20;    // seconds to fade out once its time is up
 
   // ---------- unit selection rings (pooled, persist across levels) ----------
@@ -103,20 +113,23 @@ export class View {
     this.setSize();
     addEventListener('resize', () => this.setSize());
 
-    // lighting — warm sun, cool sky fill (persists across levels). The toon
-    // look runs a slightly stronger sun over a lower ambient floor so the cel
-    // bands read, plus a cool fill from the shaded side so shadows stay airy.
+    // Lighting — re-tuned for r155+ physical light units (legacy lights are
+    // gone): a strong warm sun over a cool ambient floor so the cel bands
+    // read, plus soft partial-strength shadows via shadow.intensity — an
+    // r165+ capability that keeps shaded grass colorful instead of muddy.
     const toon = GRAPHICS.toon;
-    this.scene.add(new THREE.AmbientLight(0xffffff, toon ? 0.42 : 0.55));
-    this.scene.add(new THREE.HemisphereLight(0xdaeeff, 0x6f8a52, toon ? 0.55 : 0.5));
-    const sun = new THREE.DirectionalLight(0xfff0d2, toon ? 1.35 : 1.15);
+    this.scene.add(new THREE.AmbientLight(0xffffff, toon ? 0.46 : 0.55));
+    this.scene.add(new THREE.HemisphereLight(0xdaeeff, 0x6f8a52, toon ? 0.56 : 0.5));
+    const sun = new THREE.DirectionalLight(0xfff0d2, toon ? 2.2 : 1.95);
     sun.position.set(-18, 30, 10); sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -34; sun.shadow.camera.right = 34;
-    sun.shadow.camera.top = 34; sun.shadow.camera.bottom = -34; sun.shadow.camera.far = 100;
+    sun.shadow.camera.far = 100;
+    (sun.shadow as THREE.DirectionalLightShadow & { intensity: number }).intensity = 0.72;      // shadows shade, they don't blacken
+    sun.shadow.normalBias = 0.03;     // low-poly merged meshes acne easily
     this.scene.add(sun, sun.target);
+    this.sun = sun;
     if (toon) {
-      const fill = new THREE.DirectionalLight(0x9db8ff, 0.3);
+      const fill = new THREE.DirectionalLight(0x9db8ff, 0.5);
       fill.position.set(20, 18, -14);
       this.scene.add(fill, fill.target);
     }
@@ -157,6 +170,7 @@ export class View {
   /** Attach a freshly generated world and build its ground, doodads and ambiance. */
   loadWorld(world: World): void {
     this.world = world;
+    this.fitShadowToMap();
     this.buildGround();
     this.populateDoodads();
     this.buildAmbiance();
@@ -189,6 +203,9 @@ export class View {
     this.scene.background = null;
     this.scene.fog = null;
     this.roadMeshes.clear();
+    this.chunkMeshes.clear();   // their geometries were disposed with worldGroup
+    this.dirtyChunks.clear();
+    this.chunkCols = 0;
     this.clouds.length = 0;
     this.pigHerds.clear();
     this.fish.length = 0;
@@ -205,9 +222,10 @@ export class View {
   spawnHurt(_x: number, _z: number): void { /* bodies only; no blood pools */ }
 
   /** A persistent corpse where a unit died; it lingers, then fades (see ageGore). */
-  spawnCorpse(x: number, z: number, colorHex: number): void {
-    const body = makeCorpse(colorHex);          // single merged mesh, its own opaque material
-    body.position.set(x, 0, z);
+  spawnCorpse(x: number, z: number, colorHex: number, role = 'serf', scale = 1): void {
+    const body = makeUnitCorpse(role, colorHex); // single merged mesh, its own opaque material
+    body.scale.setScalar(scale);
+    body.position.set(x, 0.04 * scale, z);
     body.rotation.y = rnd() * Math.PI * 2;
     this.goreGroup.add(body);
     this.freeze(body); // lies where it fell until culled
@@ -257,6 +275,16 @@ export class View {
     this.camera.position.copy(this.camTarget).add(this.CAM_OFF);
     this.camera.lookAt(this.camTarget);
     this.camera.updateProjectionMatrix();
+  }
+
+  /** Size the sun's shadow frustum to the loaded map once per level — no
+   *  bigger than the board needs, no per-frame retargeting to get wrong. */
+  private fitShadowToMap(): void {
+    if (!this.sun || !this.world) return;
+    const r = Math.hypot(this.world.W, this.world.H) / 2 + 4;
+    const cam = this.sun.shadow.camera;
+    cam.left = -r; cam.right = r; cam.top = r; cam.bottom = -r;
+    cam.updateProjectionMatrix();
   }
   clampCam(): void {
     const W = this.world ? this.world.W : 48, H = this.world ? this.world.H : 48;
@@ -369,7 +397,11 @@ export class View {
 
   /** Buildings and construction sites — placed once, then static (bar their dynamic-flagged parts). */
   add(o: THREE.Object3D): void { this.worldGroup.add(o); this.freeze(o); }
-  remove(o: THREE.Object3D): void { this.worldGroup.remove(o); }
+  remove(o: THREE.Object3D): void {
+    this.worldGroup.remove(o);
+    // baked unit bodies own their merged geometry — free it now, not at level end
+    o.traverse((c) => { if (c.userData.ownGeometry) (c as THREE.Mesh).geometry.dispose(); });
+  }
 
   createBuildingMesh(def: BuildingDef): THREE.Group { return makeBuilding(def, false); }
   createScaffold(def: BuildingDef) { return makeScaffold(def); }
@@ -388,36 +420,40 @@ export class View {
   createFlame(): THREE.Group { const m = makeFlame(); this.worldGroup.add(m); return m; }
   createFlag(): THREE.Group { const m = makeFlag(); this.worldGroup.add(m); return m; }
 
+  /**
+   * A tree that is still growing gets its own mesh (its root rescales every
+   * tick); a grown tree is folded into its scenery chunk. Game calls
+   * `treeMatured` at the moment growth completes to swap the former into the
+   * latter.
+   */
   addTree(x: number, y: number, tree: Tree): void {
-    const g = makeTree(tree.kind);
-    g.position.set(this.world.wx(x) + (rnd() - 0.5) * 0.3, 0, this.world.wz(y) + (rnd() - 0.5) * 0.3);
+    if (tree.growth >= 1) { tree.meshes = []; this.dirtyTile(x, y); return; }
+    const seed = this.tileSeed(x, y);
+    const g = withSeededScatter(seed, () => makeTree(tree.kind));
+    g.position.set(
+      this.world.wx(x) + (this.hash01(seed, 1) - 0.5) * 0.3, 0,
+      this.world.wz(y) + (this.hash01(seed, 2) - 0.5) * 0.3,
+    );
     const s = tree.s * Math.max(0.15, tree.growth);
     g.scale.set(s, s, s);
     this.worldGroup.add(g);
     this.freeze(g, false); // the root rescales as the tree grows
     tree.meshes = [g];
   }
-  addDeposit(x: number, y: number, dep: Deposit): void {
-    const g = makeDeposit(dep.kind);
-    g.position.set(this.world.wx(x), 0, this.world.wz(y));
-    this.worldGroup.add(g);
-    this.freeze(g);
-    dep.meshes = [g];
+
+  /** A planted tree finished growing: retire its live mesh into the chunk bake. */
+  treeMatured(x: number, y: number, tree: Tree): void {
+    this.removeMeshes(tree.meshes);
+    tree.meshes = [];
+    this.dirtyTile(x, y);
   }
+
   addPickup(x: number, y: number, pickup: Pickup): void {
     const g = makePickup();
     g.position.set(this.world.wx(x), 0.02, this.world.wz(y));
     this.worldGroup.add(g);
     this.freeze(g);
     pickup.meshes = [g];
-  }
-  addDeco(x: number, y: number, deco: Deco): void {
-    const g = makeDeco(deco.kind);
-    const baseY = this.world.tiles[y][x].type === 'water' ? -0.14 : 0;
-    g.position.set(this.world.wx(x) + (rnd() - 0.5) * 0.3, g.position.y + baseY, this.world.wz(y) + (rnd() - 0.5) * 0.3);
-    this.worldGroup.add(g);
-    this.freeze(g);
-    deco.meshes = [g];
   }
   /** Plant the visible crop on a plot; growth drives its height, produce its look. */
   addFieldCrop(x: number, y: number, field: Field): void {
@@ -546,31 +582,111 @@ export class View {
     const W = this.world.W, H = this.world.H;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const t = this.world.tiles[y][x];
-      if (t.tree) this.addTree(x, y, t.tree);
-      if (t.dep) this.addDeposit(x, y, t.dep);
-      if (t.deco) this.addDeco(x, y, t.deco);
-      if (t.pickup) this.addPickup(x, y, t.pickup);
-      if (t.type === 'rock') this.addRock(x, y);
+      if (t.tree) this.addTree(x, y, t.tree);         // grown trees route into chunks
+      if (t.pickup) this.addPickup(x, y, t.pickup);   // pickups keep their gold ink
+      // deposits, decoration and rock are baked straight into the chunks below
     }
+    this.chunkCols = Math.ceil(W / View.CHUNK);
+    for (let i = 0; i < this.chunkCols * Math.ceil(H / View.CHUNK); i++) this.dirtyChunks.add(i);
+    this.flushChunks();
   }
 
-  /** Impassable rock: a mountain peak, or a ruined wall aligned with its line. */
-  private addRock(x: number, y: number): void {
+  // =====================================================================
+  //  Chunk-merged scenery — all static doodads in an 8×8-tile chunk render
+  //  as ONE vertex-colored mesh. 5k+ individual doodad meshes (each drawn
+  //  twice by the OutlineEffect) collapse into a few dozen draw calls; a
+  //  chunk is re-baked only when one of its tiles changes (tree felled,
+  //  deposit exhausted, building placed over decoration).
+  // =====================================================================
+  private static readonly CHUNK = 8;
+  private chunkCols = 0;
+  private chunkMeshes = new Map<number, THREE.Mesh>();
+  private readonly dirtyChunks = new Set<number>();
+  private chunkMat: THREE.Material | null = null;
+
+  /** Deterministic cosmetic seed for a tile — stable across chunk rebuilds. */
+  private tileSeed(x: number, y: number): number {
+    return ((x * 73856093) ^ (y * 19349663) ^ Math.imul(this.world.seed, 83492791)) >>> 0;
+  }
+  private hash01(seed: number, salt: number): number {
+    let h = (seed + Math.imul(salt, 0x9e3779b9)) >>> 0;
+    h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0;
+    h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+
+  /** A tile's static scenery changed — queue its chunk for a re-bake. */
+  dirtyTile(x: number, y: number): void {
+    if (!this.chunkCols) return;
+    this.dirtyChunks.add(Math.floor(y / View.CHUNK) * this.chunkCols + Math.floor(x / View.CHUNK));
+  }
+
+  private flushChunks(): void {
+    for (const idx of this.dirtyChunks) this.rebuildChunk(idx);
+    this.dirtyChunks.clear();
+  }
+
+  private rebuildChunk(idx: number): void {
+    const old = this.chunkMeshes.get(idx);
+    if (old) { this.worldGroup.remove(old); old.geometry.dispose(); this.chunkMeshes.delete(idx); }
+    const cx = (idx % this.chunkCols) * View.CHUNK, cy = Math.floor(idx / this.chunkCols) * View.CHUNK;
+    const parts: THREE.BufferGeometry[] = [];
+    const H = this.world.H, W = this.world.W;
+    for (let y = cy; y < Math.min(H, cy + View.CHUNK); y++)
+      for (let x = cx; x < Math.min(W, cx + View.CHUNK); x++) this.bakeTileInto(parts, x, y);
+    if (!parts.length) return;
+    const merged = mergeGeometries(parts, false)!;
+    parts.forEach(p => p.dispose());
+    if (!this.chunkMat) this.chunkMat = stdMat({ vertexColors: true });
+    const mesh = new THREE.Mesh(merged, this.chunkMat);
+    mesh.castShadow = true;
+    this.worldGroup.add(mesh);
+    this.freeze(mesh);
+    this.chunkMeshes.set(idx, mesh);
+  }
+
+  /** Bake one tile's static doodads (grown tree, deposit, deco, rock). */
+  private bakeTileInto(parts: THREE.BufferGeometry[], x: number, y: number): void {
     const t = this.world.tiles[y][x];
-    let g: THREE.Group;
-    if (t.rock === 'wall') {
-      g = makeRuinWall();
-      // run the wall along its neighbours so a line reads as one old rampart
-      const L = this.world.T(x - 1, y), R = this.world.T(x + 1, y);
-      const alongX = (L && L.rock === 'wall') || (R && R.rock === 'wall');
-      if (!alongX) g.rotation.y = Math.PI / 2;
-    } else {
-      g = makeMountain();
-      g.rotation.y = rnd() * Math.PI * 2;
+    const seed = this.tileSeed(x, y);
+    const wx = this.world.wx(x), wz = this.world.wz(y);
+    if (t.tree && t.tree.growth >= 1 && t.tree.meshes.length === 0) {
+      const tree = t.tree;
+      const g = withSeededScatter(seed, () => makeTree(tree.kind));
+      g.position.set(wx + (this.hash01(seed, 1) - 0.5) * 0.3, 0, wz + (this.hash01(seed, 2) - 0.5) * 0.3);
+      g.scale.setScalar(tree.s);
+      bakeGroupInto(parts, g);
     }
-    g.position.set(this.world.wx(x), 0, this.world.wz(y));
-    this.worldGroup.add(g);
-    this.freeze(g);
+    if (t.dep) {
+      const dep = t.dep;
+      const g = withSeededScatter(seed ^ 0x9e37, () => makeDeposit(dep.kind));
+      g.position.set(wx, 0, wz);
+      bakeGroupInto(parts, g);
+    }
+    if (t.deco) {
+      const deco = t.deco;
+      const g = withSeededScatter(seed ^ 0x85eb, () => makeDeco(deco.kind));
+      const baseY = t.type === 'water' ? -0.14 : 0;
+      g.position.set(wx + (this.hash01(seed, 3) - 0.5) * 0.3, g.position.y + baseY, wz + (this.hash01(seed, 4) - 0.5) * 0.3);
+      bakeGroupInto(parts, g);
+    }
+    if (t.type === 'rock') {
+      const g = withSeededScatter(seed ^ 0xc2b2, () => {
+        if (t.rock === 'wall') {
+          const w = makeRuinWall();
+          // run the wall along its neighbours so a line reads as one old rampart
+          const L = this.world.T(x - 1, y), R = this.world.T(x + 1, y);
+          const alongX = (L && L.rock === 'wall') || (R && R.rock === 'wall');
+          if (!alongX) w.rotation.y = Math.PI / 2;
+          return w;
+        }
+        const m = makeMountain();
+        m.rotation.y = this.hash01(seed, 5) * Math.PI * 2;
+        return m;
+      });
+      g.position.set(wx, 0, wz);
+      bakeGroupInto(parts, g);
+    }
   }
 
   // =====================================================================
@@ -693,8 +809,8 @@ export class View {
         const r = 9 + ring * 7 + rnd() * 7;
         const rad = boardR + GAP + r + ring * 22 + rnd() * 10; // inner edge = rad - r ≥ boardR + GAP
         const h = (2.5 + rnd() * 2.5) * (1 + ring * 0.5);
-        const hill = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 12), hillTones[Math.min(3, ring + (i % 2))]);
-        hill.scale.y = h / r;
+        const hill = new THREE.Mesh(sphere(1, 20, 12), hillTones[Math.min(3, ring + (i % 2))]);
+        hill.scale.set(r, h, r);
         hill.position.set(Math.cos(ang) * rad, -2.1, Math.sin(ang) * rad);
         this.worldGroup.add(hill);
         this.freeze(hill);
@@ -709,12 +825,14 @@ export class View {
       const ang = rnd() * Math.PI * 2;
       const s = 0.9 + rnd() * 1.4;
       const rad = boardR + 5 + rnd() * (GAP - 4); // sits in the gap ring, clear of the board
-      const crown = new THREE.Mesh(new THREE.ConeGeometry(0.75 * s, 2.6 * s, 6), rnd() < 0.5 ? folA : folB);
+      const crown = new THREE.Mesh(cone(0.75, 2.6, 6), rnd() < 0.5 ? folA : folB);
+      crown.scale.setScalar(s);
       crown.position.set(Math.cos(ang) * rad, -2.1 + 1.5 * s, Math.sin(ang) * rad);
       this.worldGroup.add(crown);
       this.freeze(crown);
       if (rnd() < 0.35) {
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1 * s, 0.14 * s, 0.5 * s, 5), trunkM);
+        const trunk = new THREE.Mesh(cyl(0.1, 0.14, 0.5, 5), trunkM);
+        trunk.scale.setScalar(s);
         trunk.position.set(crown.position.x, -2.1 + 0.22 * s, crown.position.z);
         this.worldGroup.add(trunk);
         this.freeze(trunk);
@@ -752,8 +870,8 @@ export class View {
     this.cloudBound = cloudSpan / 2;
     const cloudMat = stdMat({ color: 0xffffff, transparent: true, opacity: 0.85 });
     const mk = (c: THREE.Group, x: number, z: number, s: number, y = 0): void => {
-      const p = new THREE.Mesh(new THREE.SphereGeometry(s, 8, 6), cloudMat);
-      p.position.set(x, y + rnd() * 0.25, z); p.scale.y = 0.6; c.add(p);
+      const p = new THREE.Mesh(sphere(1, 8, 6), cloudMat);
+      p.position.set(x, y + rnd() * 0.25, z); p.scale.set(s, s * 0.6, s); c.add(p);
     };
     // each builder sketches an animal silhouette in the horizontal plane
     const animals: Array<(c: THREE.Group) => void> = [
@@ -771,9 +889,10 @@ export class View {
       } else {
         const n = 3 + Math.floor(rnd() * 3);
         for (let j = 0; j < n; j++) {
-          const puff = new THREE.Mesh(new THREE.SphereGeometry(1 + rnd() * 1.2, 8, 6), cloudMat);
+          const puff = new THREE.Mesh(sphere(1, 8, 6), cloudMat);
           puff.position.set((j - n / 2) * 1.5 + rnd(), rnd() * 0.6, rnd() * 1.4);
-          puff.scale.y = 0.6;
+          const s = 1 + rnd() * 1.2;
+          puff.scale.set(s, s * 0.6, s);
           c.add(puff);
         }
       }
@@ -982,7 +1101,28 @@ export class View {
   }
 
   render(): void {
+    if (this.dirtyChunks.size) this.flushChunks(); // re-bake changed scenery chunks
+    this.adaptQuality();
     if (this.outline) this.outline.render(this.scene, this.camera);
     else this.renderer.render(this.scene, this.camera);
+  }
+
+  /** MSAA + pixelRatio 2 is expensive on 4K laptops: when frames sustain over
+   *  ~20 ms, step the pixel ratio down (never below 1); step back up once
+   *  frames run comfortably fast again. Re-evaluated at most every 2 s. */
+  private adaptQuality(): void {
+    const now = performance.now();
+    if (this.qLastT) this.qFrameMs += (Math.min(100, now - this.qLastT) - this.qFrameMs) * 0.04;
+    this.qLastT = now;
+    if (now < this.qHoldT) return;      // re-evaluate at most every 2 s
+    this.qHoldT = now + 2000;
+    const pr = this.renderer.getPixelRatio();
+    let next = pr;
+    if (this.qFrameMs > 20 && pr > 1) next = Math.max(1, pr - 0.25);
+    else if (this.qFrameMs < 12 && pr < this.maxPixelRatio) next = Math.min(this.maxPixelRatio, pr + 0.25);
+    if (next !== pr) {
+      this.renderer.setPixelRatio(next);
+      this.renderer.setSize(innerWidth, innerHeight); // resize the buffer to the new ratio
+    }
   }
 }
