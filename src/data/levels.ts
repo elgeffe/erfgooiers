@@ -85,7 +85,7 @@ export const LEVELS: LevelDef[] = [
     world: { w: 46, h: 46, treeStands: 8, oreVeins: 5, waterScale: 0.9, meadows: 5, goldPiles: 3 },
     kit: { stock: { timber: 14, stone: 10, bread: 12, coin: 8, weapon: 2 }, serfs: 2, laborers: 2 },
     startArmy: [{ kind: 'soldier', count: 4 }, { kind: 'archer', count: 2 }],
-    enemies: { wild: [{ kind: 'boar', count: 10 }] },
+    enemies: { wild: [{ kind: 'boar', count: 10 }, { kind: 'wolf', count: 5 }] },
     timeTarget: 260, hardTimer: 380, reward: 60 },
 
   { index: 7, name: 'Bandit Country', type: 'Military',
@@ -93,7 +93,9 @@ export const LEVELS: LevelDef[] = [
     world: { w: 48, h: 48, treeStands: 7, oreVeins: 6, waterScale: 1.0, meadows: 4, goldPiles: 4 },
     kit: { stock: { timber: 16, stone: 12, bread: 12, coin: 10, weapon: 3 }, serfs: 2, laborers: 2 },
     startArmy: [{ kind: 'soldier', count: 4 }, { kind: 'archer', count: 3 }],
-    enemies: { camps: [{ count: 2, guards: 4 }], commander: { every: 45, kind: 'bandit', count: 3, from: 'camp' } },
+    enemies: { wild: [{ kind: 'wolf', count: 4 }], camps: [{ count: 2, guards: 4 }],
+      commander: { every: 45, kind: 'bandit', count: 3, from: 'camp' },
+      waves: [{ at: 120, kind: 'orc', count: 4 }] },
     timeTarget: 320, hardTimer: 460, reward: 75 },
 
   { index: 8, name: 'The Fortified Village', type: 'Military',
@@ -101,7 +103,8 @@ export const LEVELS: LevelDef[] = [
     world: { w: 50, h: 50, treeStands: 7, oreVeins: 6, waterScale: 1.05, meadows: 4, goldPiles: 4 },
     kit: { stock: { timber: 18, stone: 14, bread: 14, coin: 14, weapon: 3, armor: 1 }, serfs: 2, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 5 }, { kind: 'archer', count: 4 }],
-    enemies: { keep: { guards: 6 }, towers: 3, commander: { every: 40, kind: 'bandit', count: 4, from: 'camp' } },
+    enemies: { keep: { guards: 6 }, towers: 3, commander: { every: 40, kind: 'orc', count: 4, from: 'camp' },
+      waves: [{ at: 100, kind: 'troll', count: 3 }] },
     timeTarget: 380, hardTimer: 540, reward: 95 },
 
   { index: 9, name: 'The Enemy Keep', type: 'Military',
@@ -109,7 +112,8 @@ export const LEVELS: LevelDef[] = [
     world: { w: 52, h: 52, treeStands: 8, oreVeins: 7, waterScale: 1.1, meadows: 4, goldPiles: 5 },
     kit: { stock: { timber: 20, stone: 16, bread: 16, coin: 18, weapon: 4, armor: 2 }, serfs: 2, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 6 }, { kind: 'archer', count: 5 }],
-    enemies: { keep: { guards: 8 }, towers: 4, commander: { every: 32, kind: 'bandit', count: 5, from: 'camp' } },
+    enemies: { keep: { guards: 8 }, towers: 4, commander: { every: 32, kind: 'orc', count: 5, from: 'camp' },
+      waves: [{ at: 90, kind: 'troll', count: 3 }, { at: 200, kind: 'demon', count: 1 }] },
     timeTarget: 440, hardTimer: 640, reward: 120 },
 
   { index: 10, name: 'Dragon\u2019s Hoard', type: 'Boss',
@@ -117,7 +121,7 @@ export const LEVELS: LevelDef[] = [
     world: { w: 52, h: 52, treeStands: 8, oreVeins: 8, waterScale: 1.1, meadows: 4, goldPiles: 6 },
     kit: { stock: { timber: 20, stone: 16, bread: 18, coin: 24, weapon: 4, armor: 2 }, serfs: 2, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 8 }, { kind: 'archer', count: 6 }],
-    enemies: { boss: 'dragon', waves: [{ at: 60, kind: 'boar', count: 6 }] },
+    enemies: { boss: 'dragon', waves: [{ at: 60, kind: 'boar', count: 6 }, { at: 150, kind: 'orc', count: 5 }, { at: 240, kind: 'troll', count: 2 }] },
     timeTarget: 480, hardTimer: 700, reward: 160 },
 ];
 

@@ -823,7 +823,7 @@ export class Game {
     u.atkTimer = Math.max(0, u.atkTimer - dt);
     if (u.lungeT > 0) u.lungeT = Math.max(0, u.lungeT - dt);
     if (flying) this.animateFlight(u, dt);
-    if (u.role === 'dragon') this.dragonBreath(u, dt);
+    if (def.fire) this.fireVolley(u, dt);
 
     // wild beasts leash: a chase that strays too far from home is abandoned
     if (u.faction === 'wild' && def.leash && u.anchor) {
@@ -991,10 +991,10 @@ export class Game {
     if (isCastle) this.defeat = true;
   }
 
-  /** The dragon's periodic fire-breath: a volley of fire gobs spat at whatever
-   *  it is fighting (or the nearest player building), splashing flame where
-   *  they land. */
-  private dragonBreath(u: Unit, dt: number): void {
+  /** A fire-wielder's periodic volley (dragon breath, demon magic): fire gobs
+   *  spat at whatever it is fighting (or the nearest player building),
+   *  splashing flame where they land. */
+  private fireVolley(u: Unit, dt: number): void {
     u.special -= dt;
     if (u.special > 0) return;
     let tx: number | null = null, tz = 0;
@@ -1386,10 +1386,10 @@ export class Game {
 
   private spawnBoss(kind: UnitKind): void {
     const e = this.randomEdge();
-    const squad = this.spawnSquad(kind, 1, e.x, e.z, 'wild');
+    const squad = this.spawnSquad(kind, 1, e.x, e.z, UNITS[kind].faction);
     const castle = this.store;
     for (const u of squad) { u.raider = true; if (castle) this.orderUnit(u, 'attackMove', castle.x + 1, castle.y + 1); }
-    this.toast('The Dragon of Het Gooi descends!', 'err');
+    this.toast(`The ${UNITS[kind].name} descends upon Het Gooi!`, 'err');
   }
 
   private areaClear(tx: number, ty: number): boolean {

@@ -278,13 +278,17 @@ export function makePickup(): THREE.Group {
 export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group; itemMesh: THREE.Mesh } {
   if (role === 'boar') return makeBeast(colorHex);
   if (role === 'dragon') return makeDragon(colorHex);
+  if (role === 'wolf') return makeWolf(colorHex);
+  if (role === 'demon') return makeDemon(colorHex);
+  // greenskins & trolls get their own hide; everyone else the usual complexion
+  const skinHex = role === 'orc' ? 0x7a9a4a : role === 'troll' ? 0x8fa08a : 0xe8c9a0;
   const g = new THREE.Group();
   const body = new THREE.Mesh(geoBody, umat(colorHex)); body.position.y = 0.21; body.castShadow = true;
-  const head = new THREE.Mesh(geoHead, umat(0xe8c9a0)); head.position.y = 0.55; head.castShadow = true;
+  const head = new THREE.Mesh(geoHead, umat(skinHex)); head.position.y = 0.55; head.castShadow = true;
   g.add(body, head);
 
   // little arms with skin-toned hands, angled out from the body
-  const skin = umat(0xe8c9a0);
+  const skin = umat(skinHex);
   const ink = umat(0x2a2018);
   for (const sx of [-1, 1]) {
     const arm = new THREE.Mesh(geoArm, umat(colorHex));
@@ -421,6 +425,29 @@ function dressUnit(g: THREE.Group, role: string): void {
       add(quiver());
       break;
     }
+    case 'orc': { // horned iron half-helm, shoulder plate, brutish axe
+      add(dome(0x3a3a40, 0.17, 0.66));
+      add(brim(0x2f2f36, 0.185, 0.05, 0.61), false);
+      for (const sx of [-1, 1]) {
+        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.16, 5), mat(0xd8cdb4));
+        horn.position.set(sx * 0.15, 0.74, 0); horn.rotation.z = -sx * 0.7; horn.userData.marker = true; add(horn);
+      }
+      add(plate(0x4a4038));
+      add(axe());
+      break;
+    }
+    case 'troll': { // hulking hide-clad rock-thrower: ragged pelt, bow & quiver
+      const mane = new THREE.Mesh(new THREE.SphereGeometry(0.15, 7, 6), mat(0x4a5244));
+      mane.position.y = 0.68; mane.scale.y = 0.7; mane.userData.marker = true; add(mane);
+      for (const sx of [-1, 1]) { // big jutting ears
+        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.14, 4), mat(0x8fa08a));
+        ear.position.set(sx * 0.16, 0.6, -0.02); ear.rotation.z = sx * 1.25; ear.userData.marker = true; add(ear);
+      }
+      add(plate(0x6a5a44));
+      add(bow());
+      add(quiver());
+      break;
+    }
     case 'bandit': { // dark hood, ragged leather, crude axe
       const hood = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.26, 8), mat(0x3a3138)); hood.position.y = 0.72; add(hood);
       add(brim(0x2f272d, 0.185, 0.05, 0.62), false);
@@ -548,6 +575,92 @@ function makeDragon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mes
   }
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; outer.add(item);
   return { group: outer, itemMesh: item };
+}
+
+/** A lean grey wolf — a prowling quadruped, modelled snout-along +x like the boar. */
+function makeWolf(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
+  const outer = new THREE.Group();
+  const g = new THREE.Group();
+  g.rotation.y = -Math.PI / 2;
+  outer.add(g);
+  const fur = mat(colorHex);
+  const dark = mat(0x4a4e54);
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.22, 9, 7), fur);
+  body.scale.set(1.9, 0.85, 0.8); body.position.y = 0.3; body.castShadow = true;
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), fur); chest.position.set(0.22, 0.32, 0); chest.scale.set(1, 0.95, 0.95);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 9, 7), fur); head.position.set(0.44, 0.4, 0); head.castShadow = true;
+  const muzzle = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.2, 6), fur); muzzle.rotation.z = -Math.PI / 2; muzzle.position.set(0.58, 0.37, 0);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.03, 5, 4), mat(0x1a1a1e)); nose.position.set(0.68, 0.37, 0);
+  g.add(body, chest, head, muzzle, nose);
+  for (const s of [-1, 1]) {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.12, 4), dark); ear.position.set(0.4, 0.53, s * 0.07); g.add(ear);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 5), mat(0xd9a441)); eye.position.set(0.51, 0.43, s * 0.06); g.add(eye);
+  }
+  // slim legs + a bushy down-swept tail
+  for (const dx of [-0.24, 0.26]) for (const dz of [-0.1, 0.1]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.03, 0.28, 5), dark); leg.position.set(dx, 0.14, dz); leg.castShadow = true; g.add(leg);
+  }
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.32, 6), dark);
+  tail.position.set(-0.46, 0.28, 0); tail.rotation.z = -1.1; g.add(tail);
+  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; outer.add(item);
+  return { group: outer, itemMesh: item };
+}
+
+/** The magic demon — a horned, bat-winged fiend wreathed in ember light,
+ *  modelled facing +z (the sim's forward) and hovering via the flying flag. */
+function makeDemon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
+  const g = new THREE.Group();
+  const hide = mat(colorHex);
+  const ember = stdMat({ color: 0xff5a2a });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), hide);
+  body.scale.set(1, 1.4, 0.85); body.position.y = 0.52; body.castShadow = true;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 9, 7), hide); head.position.y = 0.98; head.castShadow = true;
+  g.add(body, head);
+  // great curved horns, burning eyes and a fanged underjaw
+  for (const s of [-1, 1]) {
+    const horn = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.032, 6, 10, Math.PI * 0.8), mat(0xd8cdb4));
+    horn.position.set(s * 0.12, 1.1, 0); horn.rotation.set(0, s * 0.5, s * -0.4); g.add(horn);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 6, 5), ember); eye.position.set(s * 0.06, 1.0, 0.14); g.add(eye);
+    const fang = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.06, 4), mat(0xefe6d0)); fang.position.set(s * 0.05, 0.9, 0.14); g.add(fang);
+  }
+  // clawed arms spread wide, ember orbs cupped in the palms (its magic)
+  for (const s of [-1, 1]) {
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.4, 6), hide);
+    arm.position.set(s * 0.3, 0.62, 0.08); arm.rotation.z = s * 1.0; g.add(arm);
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.06, 7, 6), ember); orb.position.set(s * 0.46, 0.5, 0.14); g.add(orb);
+  }
+  // ragged bat wings (flapped by the sim like the dragon's)
+  const wings: THREE.Object3D[] = [];
+  const membraneMat = stdMat({ color: 0x2a0f1c, side: THREE.DoubleSide });
+  for (const s of [-1, 1]) {
+    const wing = new THREE.Group();
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0.1);
+    shape.quadraticCurveTo(0.5, 0.55, 0.85, 0.5);   // leading edge up & out
+    shape.quadraticCurveTo(0.62, 0.22, 0.7, 0.02);  // scallop
+    shape.quadraticCurveTo(0.4, -0.1, 0.42, -0.28); // scallop
+    shape.quadraticCurveTo(0.18, -0.16, 0, -0.12);
+    shape.closePath();
+    const mem = new THREE.Mesh(new THREE.ShapeGeometry(shape, 6), membraneMat);
+    mem.castShadow = true;
+    wing.add(mem);
+    const spar = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.014, 0.95, 5), hide);
+    spar.position.set(0.42, 0.28, 0); spar.rotation.z = 1.1; wing.add(spar);
+    wing.position.set(s * 0.14, 0.78, -0.16);
+    wing.rotation.y = s * Math.PI / 2 + s * 0.35;   // sweep back from the shoulders
+    wing.scale.x = s;
+    wing.userData.flapBase = s * 0.35; wing.userData.flapSign = s;
+    // the sim drives rotation.x for flap; base pose comes from rotation.y sweep
+    g.add(wing); wings.push(wing);
+  }
+  g.userData.wings = wings;
+  // a whipping spade-tipped tail
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.045, 0.5, 5), hide);
+  tail.position.set(0, 0.3, -0.28); tail.rotation.x = 0.9; g.add(tail);
+  const spade = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.12, 4), hide);
+  spade.position.set(0, 0.14, -0.5); spade.rotation.x = 2.2; g.add(spade);
+  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; g.add(item);
+  return { group: g, itemMesh: item };
 }
 
 // =====================================================================
