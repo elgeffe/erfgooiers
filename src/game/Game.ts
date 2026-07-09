@@ -15,6 +15,7 @@ import type { Objective } from './Objectives';
 
 // Gameplay events use the sim stream (reseeded per level), never worldgen/cosmetic.
 const rnd = () => simRng.next();
+const MAX_UNITS = 11000;
 
 /** The goods and workers a level hands you at the start (before run upgrades). */
 export interface StartKit {
@@ -62,7 +63,7 @@ export class Game {
   /** A unit took a hit at a world point — main wires this to the gore layer. */
   onHurt: (x: number, z: number, faction: Faction) => void = () => {};
   /** A unit died at a world point — main spawns a corpse + blood pool. */
-  onDeath: (x: number, z: number, faction: Faction, colorHex: number) => void = () => {};
+  onDeath: (x: number, z: number, faction: Faction, colorHex: number, role: string, scale: number) => void = () => {};
   /** A combat unit was killed — main updates objectives/tallies. */
   onKill: (u: Unit) => void = () => {};
 
@@ -882,7 +883,7 @@ export class Game {
   private killUnit(u: Unit): void {
     if (u.dead) return;
     u.dead = true;
-    this.onDeath(u.mesh.position.x, u.mesh.position.z, u.faction, u.colorHex);
+    this.onDeath(u.mesh.position.x, u.mesh.position.z, u.faction, u.colorHex, u.role, u.mesh.scale.x || 1);
     this.onKill(u);
     this.objective?.onKill(u.role, u.faction);
     for (const o of this.units) if (o.foe === u) o.foe = null;
@@ -1053,7 +1054,7 @@ export class Game {
   private destroyBuilding(b: Building): void {
     if (b.removed) return;
     const c = this.buildingCenter(b);
-    for (let i = 0; i < 4; i++) this.onDeath(c.x + (rnd() - 0.5) * 1.4, c.z + (rnd() - 0.5) * 1.4, b.faction, b.def.roof);
+    for (let i = 0; i < 4; i++) this.onDeath(c.x + (rnd() - 0.5) * 1.4, c.z + (rnd() - 0.5) * 1.4, b.faction, b.def.roof, 'serf', 1);
     this.objective?.onStructureDestroyed(b.faction);
     for (const o of this.units) if (o.foeB === b) o.foeB = null;
     const isCastle = b === this.store;
@@ -1316,7 +1317,7 @@ export class Game {
     const cy = Math.max(2, Math.min(H - 3, Math.floor(worldZ + H / 2)));
     const out: Unit[] = [];
     const tryTile = (x: number, y: number): void => {
-      if (out.length >= count || this.units.length >= 1600) return; // cap for perf
+      if (out.length >= count || this.units.length >= MAX_UNITS) return; // cap for perf
       const t = this.world.T(x, y);
       if (!t || t.type !== 'grass' || t.b || t.site || t.dep) return;
       out.push(this.spawnFighter(kind, { x, y }, faction));

@@ -5,7 +5,7 @@ import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { bakeGroupInto, cone, cyl, makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter } from './models';
+import { bakeGroupInto, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -83,8 +83,8 @@ export class View {
   // ---------- gore layer (cosmetic; bodies linger, then fade) ----------
   private readonly goreGroup = new THREE.Group();
   private readonly goreBodies: { obj: THREE.Mesh; age: number; mat: THREE.Material }[] = [];
-  private readonly MAX_BODIES = 300;
-  private readonly CORPSE_LIFE = 150;   // seconds a body lies before it starts fading (~2.5 min)
+  private readonly MAX_BODIES = 11000;
+  private readonly CORPSE_LIFE = 300;   // seconds a body lies before it starts fading (5 min)
   private readonly CORPSE_FADE = 20;    // seconds to fade out once its time is up
 
   // ---------- unit selection rings (pooled, persist across levels) ----------
@@ -118,18 +118,18 @@ export class View {
     // read, plus soft partial-strength shadows via shadow.intensity — an
     // r165+ capability that keeps shaded grass colorful instead of muddy.
     const toon = GRAPHICS.toon;
-    this.scene.add(new THREE.AmbientLight(0xffffff, toon ? 0.5 : 0.6));
-    this.scene.add(new THREE.HemisphereLight(0xdaeeff, 0x6f8a52, toon ? 0.6 : 0.55));
-    const sun = new THREE.DirectionalLight(0xfff0d2, toon ? 2.4 : 2.1);
+    this.scene.add(new THREE.AmbientLight(0xffffff, toon ? 0.46 : 0.55));
+    this.scene.add(new THREE.HemisphereLight(0xdaeeff, 0x6f8a52, toon ? 0.56 : 0.5));
+    const sun = new THREE.DirectionalLight(0xfff0d2, toon ? 2.2 : 1.95);
     sun.position.set(-18, 30, 10); sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.far = 100;
-    sun.shadow.intensity = 0.72;      // shadows shade, they don't blacken
+    (sun.shadow as THREE.DirectionalLightShadow & { intensity: number }).intensity = 0.72;      // shadows shade, they don't blacken
     sun.shadow.normalBias = 0.03;     // low-poly merged meshes acne easily
     this.scene.add(sun, sun.target);
     this.sun = sun;
     if (toon) {
-      const fill = new THREE.DirectionalLight(0x9db8ff, 0.55);
+      const fill = new THREE.DirectionalLight(0x9db8ff, 0.5);
       fill.position.set(20, 18, -14);
       this.scene.add(fill, fill.target);
     }
@@ -222,9 +222,10 @@ export class View {
   spawnHurt(_x: number, _z: number): void { /* bodies only; no blood pools */ }
 
   /** A persistent corpse where a unit died; it lingers, then fades (see ageGore). */
-  spawnCorpse(x: number, z: number, colorHex: number): void {
-    const body = makeCorpse(colorHex);          // single merged mesh, its own opaque material
-    body.position.set(x, 0, z);
+  spawnCorpse(x: number, z: number, colorHex: number, role = 'serf', scale = 1): void {
+    const body = makeUnitCorpse(role, colorHex); // single merged mesh, its own opaque material
+    body.scale.setScalar(scale);
+    body.position.set(x, 0.04 * scale, z);
     body.rotation.y = rnd() * Math.PI * 2;
     this.goreGroup.add(body);
     this.freeze(body); // lies where it fell until culled

@@ -13,6 +13,7 @@ import { specsFor } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, hasMetaSpecial } from './data/metaUpgrades';
 import { levelFor, sandboxLevel, type LevelDef } from './data/levels';
+import type { UnitKind } from './data/units';
 import { RUN_LEVELS, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
@@ -72,7 +73,7 @@ function startLevel(): void {
   audio.setDynamic(sandbox);
   game.onGold = amt => { if (run) { run.gold = Math.max(0, run.gold + amt); if (amt > 0) goldEarnedThisRun += amt; ui.setGold(run.gold); } };
   game.onHurt = (x, z) => view.spawnHurt(x, z);
-  game.onDeath = (x, z, _fac, color) => view.spawnCorpse(x, z, color);
+  game.onDeath = (x, z, _fac, color, role, scale) => view.spawnCorpse(x, z, color, role, scale);
   // objective variant: the chosen contract's, else the seed's default pick
   if (sandbox) {
     game.objective = null;
@@ -341,23 +342,47 @@ $('introLogo').innerHTML = logoSVG(40);
 ($('btnSandbox') as HTMLButtonElement).onclick = startSandbox;
 
 // ---------- sandbox spawn toolbar ----------
-function sandboxSpawn(kind: 'soldier' | 'archer' | 'knight' | 'bandit' | 'boar' | 'dragon', count: number): void {
+function sandboxSpawn(kind: UnitKind, count: number): void {
   if (!game) return;
   const c = view.camTarget;
   const squad = game.spawnSquad(kind, count, c.x, c.z);
   if (squad.length) ui.toast(`Spawned ${squad.length} ${kind}${squad.length > 1 ? 's' : ''}`);
+}
+let sandboxSpawnTimer: number | null = null;
+function bindSandboxSpawn(id: string, kind: UnitKind, count: number): void {
+  const btn = $(id) as HTMLButtonElement;
+  const stop = (): void => {
+    if (sandboxSpawnTimer !== null) {
+      clearInterval(sandboxSpawnTimer);
+      sandboxSpawnTimer = null;
+    }
+  };
+  btn.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    stop();
+    sandboxSpawn(kind, count);
+    sandboxSpawnTimer = window.setInterval(() => sandboxSpawn(kind, count), 180);
+  });
+  addEventListener('pointerup', stop);
+  addEventListener('pointercancel', stop);
+  addEventListener('blur', stop);
 }
 ($('sbToggle') as HTMLButtonElement).onclick = () => {
   const bar = $('sandboxbar');
   const collapsed = bar.classList.toggle('collapsed');
   $('sbToggle').textContent = collapsed ? 'Sandbox ▸' : 'Sandbox ▾';
 };
-($('sbSoldier') as HTMLButtonElement).onclick = () => sandboxSpawn('soldier', 12);
-($('sbArcher') as HTMLButtonElement).onclick = () => sandboxSpawn('archer', 8);
-($('sbKnight') as HTMLButtonElement).onclick = () => sandboxSpawn('knight', 6);
-($('sbBandit') as HTMLButtonElement).onclick = () => sandboxSpawn('bandit', 12);
-($('sbBoar') as HTMLButtonElement).onclick = () => sandboxSpawn('boar', 6);
-($('sbDragon') as HTMLButtonElement).onclick = () => sandboxSpawn('dragon', 1);
+bindSandboxSpawn('sbSoldier', 'soldier', 12);
+bindSandboxSpawn('sbArcher', 'archer', 8);
+bindSandboxSpawn('sbKnight', 'knight', 6);
+bindSandboxSpawn('sbBandit', 'bandit', 12);
+bindSandboxSpawn('sbBoar', 'boar', 6);
+bindSandboxSpawn('sbWolf', 'wolf', 8);
+bindSandboxSpawn('sbOrc', 'orc', 8);
+bindSandboxSpawn('sbTroll', 'troll', 3);
+bindSandboxSpawn('sbDemon', 'demon', 1);
+bindSandboxSpawn('sbDragon', 'dragon', 1);
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
 ($('btnHelp') as HTMLButtonElement).onclick = () => $('intro').style.display = 'flex';
 ($('startBtn') as HTMLButtonElement).onclick = () => $('intro').style.display = 'none';

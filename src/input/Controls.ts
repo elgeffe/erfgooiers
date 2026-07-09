@@ -95,12 +95,11 @@ export class Controls {
     if (e.button === 2 || e.button === 1) { this.dragging = true; return; }
     if (e.button !== 0 || !this.game) return;
     const t = this.view.tileAt(e.clientX, e.clientY);
-    if (!t) return;
     const m = this.mode;
-    if (m && m.type === 'road') { this.roadPainting = true; this.game.paintRoad(t.x, t.y); return; }
-    if (m && m.type === 'plot') { this.plotPainting = true; this.game.placePlot(t.x, t.y, m.building); return; }
-    if (m && m.type === 'demolish') { this.demoDragging = true; this.game.demolishAt(t.x, t.y, false); return; }
-    if (m && m.type === 'build') { this.game.tryPlace(m.key, t.x, t.y, this.buildRot); if (!this.keys['shift']) this.setMode(null); return; }
+    if (m && m.type === 'road') { this.roadPainting = true; if (t) this.game.paintRoad(t.x, t.y); return; }
+    if (m && m.type === 'plot') { this.plotPainting = true; if (t) this.game.placePlot(t.x, t.y, m.building); return; }
+    if (m && m.type === 'demolish') { this.demoDragging = true; if (t) this.game.demolishAt(t.x, t.y, false); return; }
+    if (m && m.type === 'build') { if (t) { this.game.tryPlace(m.key, t.x, t.y, this.buildRot); if (!this.keys['shift']) this.setMode(null); } return; }
     // no mode: begin a potential selection box (resolved on pointerup)
     this.boxStart = { x: e.clientX, y: e.clientY };
     this.boxing = false;

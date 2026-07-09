@@ -143,6 +143,17 @@ export const circle = (r: number, seg: number): THREE.CircleGeometry =>
 export const capsule = (r: number, l: number, cs: number, rs: number): THREE.CapsuleGeometry =>
   cachedGeo(`caps,${r},${l},${cs},${rs}`, () => new THREE.CapsuleGeometry(r, l, cs, rs));
 
+function flatGeo(key: string, base: THREE.BufferGeometry): THREE.BufferGeometry {
+  return cachedGeo(`flat,${key}`, () => {
+    const g = base.index ? base.toNonIndexed() : base.clone();
+    g.deleteAttribute('normal');
+    g.computeVertexNormals();
+    return g;
+  });
+}
+const flatCone = (r: number, h: number, seg: number): THREE.BufferGeometry => flatGeo(`cone,${r},${h},${seg}`, cone(r, h, seg));
+const flatSphere = (r: number, ws: number, hs: number): THREE.BufferGeometry => flatGeo(`sph,${r},${ws},${hs}`, sphere(r, ws, hs));
+
 // ---------- shared primitive geometries ----------
 const geoTrunk = cyl(0.07, 0.1, 0.5, 6);
 const geoFol = cone(0.4, 0.95, 7);
@@ -157,8 +168,6 @@ const geoItem = box(0.24, 0.18, 0.24);
 const geoBlade = box(0.03, 0.34, 0.03);
 const geoArm = box(0.055, 0.26, 0.08);
 const geoHand = sphere(0.05, 8, 6);
-const geoEye = sphere(0.028, 8, 6);
-const geoSmile = torus(0.042, 0.01, 6, 12, Math.PI);
 const geoBelt = cyl(0.192, 0.198, 0.055, 12);
 
 const FOL_GREENS = [0x4e7a3a, 0x557f38, 0x476f36, 0x5f8c40, 0x6a9a44];
@@ -408,7 +417,12 @@ export function makePickup(): THREE.Group {
 
 // One shared material for every baked unit body: colors live in the vertices.
 let unitBakedMat: SceneMaterial | null = null;
-function bakedUnitMat(): SceneMaterial {
+let unitBakedNoOutlineMat: SceneMaterial | null = null;
+function bakedUnitMat(outline: boolean): SceneMaterial {
+  if (!outline) {
+    if (!unitBakedNoOutlineMat) unitBakedNoOutlineMat = noOutline(stdMat({ vertexColors: true }));
+    return unitBakedNoOutlineMat;
+  }
   if (!unitBakedMat) unitBakedMat = sharpOutline(stdMat({ vertexColors: true }), UNIT_INK);
   return unitBakedMat;
 }
@@ -420,14 +434,14 @@ function bakedUnitMat(): SceneMaterial {
  * separate — it changes colour and visibility at runtime — and the merged
  * geometry is per-unit, so it's flagged for disposal when the unit dies.
  */
-function bakeUnit(built: { group: THREE.Group; itemMesh: THREE.Mesh }): { group: THREE.Group; itemMesh: THREE.Mesh } {
+function bakeUnit(built: { group: THREE.Group; itemMesh: THREE.Mesh }, outline = true): { group: THREE.Group; itemMesh: THREE.Mesh } {
   const { group, itemMesh } = built;
   itemMesh.parent!.remove(itemMesh);
   const parts: THREE.BufferGeometry[] = [];
   bakeGroupInto(parts, group);
   const merged = mergeGeometries(parts, false)!;
   parts.forEach(p => p.dispose());
-  const body = new THREE.Mesh(merged, bakedUnitMat());
+  const body = new THREE.Mesh(merged, bakedUnitMat(outline));
   body.castShadow = true;
   body.userData.ownGeometry = true; // unique per unit — dispose on removal
   const g = new THREE.Group();
@@ -441,7 +455,7 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
   if (role === 'demon') return makeDemon(colorHex);
   if (role === 'boar') return bakeUnit(makeBeast(colorHex));
   if (role === 'wolf') return bakeUnit(makeWolf(colorHex));
-  return bakeUnit(makeHumanoid(colorHex, role));
+  return bakeUnit(makeHumanoid(colorHex, role), false);
 }
 
 function makeHumanoid(colorHex: number, role: string): { group: THREE.Group; itemMesh: THREE.Mesh } {
@@ -458,7 +472,6 @@ function makeHumanoid(colorHex: number, role: string): { group: THREE.Group; ite
 
   // little arms with skin-toned hands, angled out from the body
   const skin = umat(skinHex);
-  const ink = umat(0x2a2018);
   for (const sx of [-1, 1]) {
     const arm = new THREE.Mesh(geoArm, umat(colorHex));
     arm.position.set(sx * 0.19, 0.26, 0.02); arm.rotation.z = sx * 0.22; arm.castShadow = true;
@@ -466,12 +479,6 @@ function makeHumanoid(colorHex: number, role: string): { group: THREE.Group; ite
     hand.position.set(sx * 0.23, 0.13, 0.03);
     g.add(arm, hand);
   }
-
-  // a cute little face — two eyes and a smile on the front of the head
-  const eyeL = new THREE.Mesh(geoEye, ink); eyeL.position.set(-0.05, 0.57, 0.125);
-  const eyeR = new THREE.Mesh(geoEye, ink); eyeR.position.set(0.05, 0.57, 0.125);
-  const smile = new THREE.Mesh(geoSmile, ink); smile.position.set(0, 0.53, 0.125); smile.rotation.z = Math.PI;
-  g.add(eyeL, eyeR, smile);
 
   dressUnit(g, role);
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
@@ -488,7 +495,8 @@ function dressUnit(g: THREE.Group, role: string): void {
   const add = (m: THREE.Object3D, castsShadow = true) => { m.castShadow = castsShadow; g.add(m); };
   // small helpers
   const brim = (col: number, r: number, h: number, y: number) => new THREE.Mesh(cyl(r, r, h, 12), mat(col)).translateY(y);
-  const dome = (col: number, r: number, y: number) => { const m = new THREE.Mesh(sphere(r, 8, 6), mat(col)); m.position.y = y; m.scale.y = 0.75; return m; };
+  const dome = (col: number, r: number, y: number) => { const m = new THREE.Mesh(flatSphere(r, 8, 6), mat(col)); m.position.y = y; m.scale.y = 0.75; return m; };
+  const hatCone = (col: number, r: number, h: number, seg: number) => new THREE.Mesh(flatCone(r, h, seg), mat(col));
   const apron = (col: number) => { const m = new THREE.Mesh(box(0.3, 0.34, 0.06), mat(col)); m.position.set(0, 0.24, 0.19); m.userData.marker = true; return m; };
   const strap = (x: number) => { const m = new THREE.Mesh(box(0.05, 0.34, 0.04), mat(0x3f5aa0)); m.position.set(x, 0.28, 0.19); m.userData.marker = true; return m; };
   // combat kit — worn chest plate, a helmet, and a weapon held in the right hand
@@ -516,27 +524,23 @@ function dressUnit(g: THREE.Group, role: string): void {
   switch (role) {
     case 'woodcutter': { // red knit beanie
       add(dome(0xb5352f, 0.16, 0.66));
-      add(brim(0xd6493f, 0.165, 0.06, 0.6), false);
       break;
     }
     case 'forester': { // green pointed hood
-      const hat = new THREE.Mesh(cone(0.18, 0.3, 8), mat(0x3f6d3a)); hat.position.y = 0.74; add(hat);
-      add(brim(0x355c31, 0.19, 0.05, 0.62), false);
+      const hat = hatCone(0x3f6d3a, 0.18, 0.3, 8); hat.position.y = 0.74; add(hat);
       break;
     }
-    case 'carpenter': { // brown flat cap + work apron
-      add(brim(0x6b4a2f, 0.17, 0.09, 0.66));
+    case 'carpenter': { // brown work cap + apron
+      add(dome(0x6b4a2f, 0.15, 0.66));
       add(apron(0x8a6a44));
       break;
     }
     case 'stonemason': { // grey dusty cap
       add(dome(0x9aa0a3, 0.16, 0.66));
-      add(brim(0x8a9094, 0.185, 0.04, 0.62), false);
       break;
     }
     case 'farmer': { // wide straw hat
-      add(brim(0xd9bd63, 0.28, 0.03, 0.66), false);
-      add(new THREE.Mesh(cone(0.16, 0.16, 10), mat(0xcaa94e)).translateY(0.72));
+      add(hatCone(0xd9bd63, 0.22, 0.16, 10).translateY(0.72));
       add(strap(-0.09)); add(strap(0.09)); // overalls
       break;
     }
@@ -545,21 +549,18 @@ function dressUnit(g: THREE.Group, role: string): void {
       break;
     }
     case 'baker': { // tall white toque
-      add(brim(0xf4efe6, 0.15, 0.16, 0.72));
-      add(dome(0xfbf7ef, 0.17, 0.82));
+      add(dome(0xfbf7ef, 0.18, 0.75));
       add(apron(0xf0e6d2));
       break;
     }
     case 'miner': case 'collier': { // hard hat + head lamp
       const helmCol = role === 'miner' ? 0xd8af43 : 0x35353c;
       add(dome(helmCol, 0.165, 0.66));
-      add(brim(helmCol, 0.19, 0.04, 0.62), false);
       const lamp = new THREE.Mesh(sphere(0.045, 7, 6), mat(0xfff2a8)); lamp.position.set(0, 0.69, 0.15); add(lamp, false);
       break;
     }
-    case 'minter': { // green cap with a gold band
+    case 'minter': { // green cap
       add(dome(0x2f6f52, 0.16, 0.67));
-      add(brim(0xd4af37, 0.17, 0.05, 0.6), false);
       break;
     }
     case 'laborer': { // brown flat cap (builders)
@@ -568,7 +569,6 @@ function dressUnit(g: THREE.Group, role: string): void {
     }
     case 'soldier': { // steel helmet with a crest, breastplate, sword & shield
       add(dome(0x9298a0, 0.175, 0.66));
-      add(brim(0x82888f, 0.19, 0.04, 0.61), false);
       const crest = new THREE.Mesh(box(0.04, 0.11, 0.22), mat(0xb5352f)); crest.position.set(0, 0.79, 0); crest.userData.marker = true; add(crest);
       add(plate(0x8f97a6));
       add(shield(0x3f5aa0));
@@ -577,8 +577,7 @@ function dressUnit(g: THREE.Group, role: string): void {
     }
     case 'knight': { // full helm with plume, heavy plate, sword & kite shield
       add(dome(0x7d8794, 0.185, 0.64));
-      add(brim(0x6a737e, 0.2, 0.1, 0.6), false);
-      const plume = new THREE.Mesh(cone(0.05, 0.22, 6), mat(0xd9a441)); plume.position.set(0, 0.86, -0.02); plume.userData.marker = true; add(plume);
+      const plume = hatCone(0xd9a441, 0.05, 0.22, 6); plume.position.set(0, 0.86, -0.02); plume.userData.marker = true; add(plume);
       add(plate(0x9aa3b0));
       const pauldronMat = mat(0x7d8794);
       for (const sx of [-1, 1]) { const p = new THREE.Mesh(sphere(0.09, 7, 6), pauldronMat); p.position.set(sx * 0.2, 0.4, 0.02); p.userData.marker = true; add(p); }
@@ -588,7 +587,6 @@ function dressUnit(g: THREE.Group, role: string): void {
     }
     case 'archer': { // leather cap, green tunic accent, bow & quiver
       add(dome(0x5c6b3a, 0.16, 0.66));
-      add(brim(0x4a5730, 0.175, 0.04, 0.61), false);
       add(plate(0x6b7a44));
       add(bow());
       add(quiver());
@@ -596,7 +594,6 @@ function dressUnit(g: THREE.Group, role: string): void {
     }
     case 'orc': { // horned iron half-helm, shoulder plate, brutish axe
       add(dome(0x3a3a40, 0.17, 0.66));
-      add(brim(0x2f2f36, 0.185, 0.05, 0.61), false);
       for (const sx of [-1, 1]) {
         const horn = new THREE.Mesh(cone(0.04, 0.16, 5), mat(0xd8cdb4));
         horn.position.set(sx * 0.15, 0.74, 0); horn.rotation.z = -sx * 0.7; horn.userData.marker = true; add(horn);
@@ -618,22 +615,19 @@ function dressUnit(g: THREE.Group, role: string): void {
       break;
     }
     case 'bandit': { // dark hood, ragged leather, crude axe
-      const hood = new THREE.Mesh(cone(0.18, 0.26, 8), mat(0x3a3138)); hood.position.y = 0.72; add(hood);
-      add(brim(0x2f272d, 0.185, 0.05, 0.62), false);
+      const hood = hatCone(0x3a3138, 0.18, 0.26, 8); hood.position.y = 0.72; add(hood);
       add(plate(0x5a4636));
       add(axe());
       break;
     }
-    default: { // serf — a jaunty maroon fez with a dark tassel
+    case 'villager': { // unposted recruit — simple flat red cap
+      add(brim(0xb5352f, 0.16, 0.07, 0.66));
+      break;
+    }
+    default: { // serf — a jaunty maroon fez
       const fez = new THREE.Mesh(cyl(0.115, 0.145, 0.2, 14), mat(0x9e2b25));
       fez.position.y = 0.77; add(fez);
-      // flat crown disc, a touch darker, caps the truncated cone
       add(brim(0x7f2019, 0.115, 0.02, 0.87), false);
-      // tassel: a short cord flopping off one side to a little tuft
-      const cord = new THREE.Mesh(cyl(0.008, 0.008, 0.16, 5), mat(0x241c14));
-      cord.position.set(0.11, 0.82, 0.03); cord.rotation.z = 0.6; add(cord, false);
-      const tuft = new THREE.Mesh(sphere(0.032, 6, 5), mat(0x241c14));
-      tuft.position.set(0.18, 0.74, 0.03); tuft.scale.y = 1.3; add(tuft, false);
       break;
     }
   }
@@ -905,6 +899,23 @@ export function makeCorpse(colorHex: number): THREE.Mesh {
     paintGeo(geoArm, colorHex, new THREE.Matrix4().compose(new THREE.Vector3(-0.26, 0.05, 0.22), new THREE.Quaternion().setFromEuler(new THREE.Euler(0.2, 0, 1.15)), ONE)),
     paintGeo(geoHand, skin, new THREE.Matrix4().makeTranslation(-0.42, 0.05, 0.3)),
   ];
+  const merged = mergeGeometries(parts, false)!;
+  parts.forEach(p => p.dispose());
+  return new THREE.Mesh(merged, stdMat({ vertexColors: true }));
+}
+
+/** A fallen unit body. Humanoids use the small readable corpse silhouette;
+ *  beasts and bosses keep their model shape so enemy deaths remain visible. */
+export function makeUnitCorpse(role: string, colorHex: number): THREE.Mesh {
+  if (role !== 'boar' && role !== 'wolf' && role !== 'dragon' && role !== 'demon') return makeCorpse(colorHex);
+  const built = role === 'boar' ? makeBeast(colorHex)
+    : role === 'wolf' ? makeWolf(colorHex)
+      : role === 'dragon' ? makeDragon(colorHex)
+        : makeDemon(colorHex);
+  built.itemMesh.parent?.remove(built.itemMesh);
+  built.group.rotation.x = Math.PI / 2;
+  const parts: THREE.BufferGeometry[] = [];
+  bakeGroupInto(parts, built.group);
   const merged = mergeGeometries(parts, false)!;
   parts.forEach(p => p.dispose());
   return new THREE.Mesh(merged, stdMat({ vertexColors: true }));
