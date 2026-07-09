@@ -113,21 +113,23 @@ export class View {
     this.setSize();
     addEventListener('resize', () => this.setSize());
 
-    // lighting — warm sun, cool sky fill (persists across levels). The toon
-    // look runs a slightly stronger sun over a lower ambient floor so the cel
-    // bands read, plus a cool fill from the shaded side so shadows stay airy.
+    // Lighting — re-tuned for r155+ physical light units (legacy lights are
+    // gone): a strong warm sun over a cool ambient floor so the cel bands
+    // read, plus soft partial-strength shadows via shadow.intensity — an
+    // r165+ capability that keeps shaded grass colorful instead of muddy.
     const toon = GRAPHICS.toon;
-    this.scene.add(new THREE.AmbientLight(0xffffff, toon ? 0.42 : 0.55));
-    this.scene.add(new THREE.HemisphereLight(0xdaeeff, 0x6f8a52, toon ? 0.55 : 0.5));
-    const sun = new THREE.DirectionalLight(0xfff0d2, toon ? 1.35 : 1.15);
+    this.scene.add(new THREE.AmbientLight(0xffffff, toon ? 0.5 : 0.6));
+    this.scene.add(new THREE.HemisphereLight(0xdaeeff, 0x6f8a52, toon ? 0.6 : 0.55));
+    const sun = new THREE.DirectionalLight(0xfff0d2, toon ? 2.4 : 2.1);
     sun.position.set(-18, 30, 10); sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.far = 100;
+    sun.shadow.intensity = 0.72;      // shadows shade, they don't blacken
+    sun.shadow.normalBias = 0.03;     // low-poly merged meshes acne easily
     this.scene.add(sun, sun.target);
     this.sun = sun;
-    this.fitShadowCamera(); // extent tracks the camera instead of a fixed ±34 box
     if (toon) {
-      const fill = new THREE.DirectionalLight(0x9db8ff, 0.3);
+      const fill = new THREE.DirectionalLight(0x9db8ff, 0.55);
       fill.position.set(20, 18, -14);
       this.scene.add(fill, fill.target);
     }
@@ -168,6 +170,7 @@ export class View {
   /** Attach a freshly generated world and build its ground, doodads and ambiance. */
   loadWorld(world: World): void {
     this.world = world;
+    this.fitShadowToMap();
     this.buildGround();
     this.populateDoodads();
     this.buildAmbiance();
@@ -271,26 +274,16 @@ export class View {
     this.camera.position.copy(this.camTarget).add(this.CAM_OFF);
     this.camera.lookAt(this.camTarget);
     this.camera.updateProjectionMatrix();
-    this.fitShadowCamera();
   }
 
-  /** Keep the sun's shadow frustum wrapped around the visible area: it follows
-   *  the camera target and shrinks with zoom, so shadow-map texels are spent
-   *  on what's on screen instead of a fixed ±34-tile box. */
-  private fitShadowCamera(): void {
-    if (!this.sun) return;
-    const a = innerWidth / innerHeight;
-    // half-extent of the view on the ground, padded so casters just off-screen
-    // (and the 45° view slant) still land their shadows inside the frustum
-    const r = Math.min(40, this.viewSize * Math.max(a, 1) * 1.35 + 4);
+  /** Size the sun's shadow frustum to the loaded map once per level — no
+   *  bigger than the board needs, no per-frame retargeting to get wrong. */
+  private fitShadowToMap(): void {
+    if (!this.sun || !this.world) return;
+    const r = Math.hypot(this.world.W, this.world.H) / 2 + 4;
     const cam = this.sun.shadow.camera;
-    if (Math.abs(cam.right - r) > 0.5) {
-      cam.left = -r; cam.right = r; cam.top = r; cam.bottom = -r;
-      cam.updateProjectionMatrix();
-    }
-    this.sun.position.set(this.camTarget.x - 18, 30, this.camTarget.z + 10);
-    this.sun.target.position.set(this.camTarget.x, 0, this.camTarget.z);
-    this.sun.target.updateMatrixWorld();
+    cam.left = -r; cam.right = r; cam.top = r; cam.bottom = -r;
+    cam.updateProjectionMatrix();
   }
   clampCam(): void {
     const W = this.world ? this.world.W : 48, H = this.world ? this.world.H : 48;

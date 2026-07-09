@@ -49,6 +49,7 @@ function toonGradient(): THREE.DataTexture {
     for (let i = 0; i < n; i++) data[i] = Math.round(255 * (i + 1) / n);
     gradient = new THREE.DataTexture(data, n, 1, THREE.RedFormat);
     gradient.minFilter = gradient.magFilter = THREE.NearestFilter;
+    gradient.unpackAlignment = 1; // rows of an odd-width R8 texture aren't 4-byte aligned
     gradient.needsUpdate = true;
   }
   return gradient;
