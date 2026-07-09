@@ -59,6 +59,15 @@ export class View {
   private readonly millSails: THREE.Object3D[] = [];
   private cloudBound = 40;
 
+  // the sun follows the camera so its shadow map only covers what's visible
+  private sun!: THREE.DirectionalLight;
+
+  // adaptive quality: drop pixelRatio when frames run long, restore when quick
+  private readonly maxPixelRatio = Math.min(devicePixelRatio, 2);
+  private qFrameMs = 16;
+  private qLastT = 0;
+  private qHoldT = 0;
+
   // grazing pigs on each pig-farm's pasture plots (cosmetic, real-time)
   private readonly pigHerds = new Map<Building, Pig[]>();
 
@@ -112,9 +121,10 @@ export class View {
     const sun = new THREE.DirectionalLight(0xfff0d2, toon ? 1.35 : 1.15);
     sun.position.set(-18, 30, 10); sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -34; sun.shadow.camera.right = 34;
-    sun.shadow.camera.top = 34; sun.shadow.camera.bottom = -34; sun.shadow.camera.far = 100;
+    sun.shadow.camera.far = 100;
     this.scene.add(sun, sun.target);
+    this.sun = sun;
+    this.fitShadowCamera(); // extent tracks the camera instead of a fixed ±34 box
     if (toon) {
       const fill = new THREE.DirectionalLight(0x9db8ff, 0.3);
       fill.position.set(20, 18, -14);
@@ -257,6 +267,26 @@ export class View {
     this.camera.position.copy(this.camTarget).add(this.CAM_OFF);
     this.camera.lookAt(this.camTarget);
     this.camera.updateProjectionMatrix();
+    this.fitShadowCamera();
+  }
+
+  /** Keep the sun's shadow frustum wrapped around the visible area: it follows
+   *  the camera target and shrinks with zoom, so shadow-map texels are spent
+   *  on what's on screen instead of a fixed ±34-tile box. */
+  private fitShadowCamera(): void {
+    if (!this.sun) return;
+    const a = innerWidth / innerHeight;
+    // half-extent of the view on the ground, padded so casters just off-screen
+    // (and the 45° view slant) still land their shadows inside the frustum
+    const r = Math.min(40, this.viewSize * Math.max(a, 1) * 1.35 + 4);
+    const cam = this.sun.shadow.camera;
+    if (Math.abs(cam.right - r) > 0.5) {
+      cam.left = -r; cam.right = r; cam.top = r; cam.bottom = -r;
+      cam.updateProjectionMatrix();
+    }
+    this.sun.position.set(this.camTarget.x - 18, 30, this.camTarget.z + 10);
+    this.sun.target.position.set(this.camTarget.x, 0, this.camTarget.z);
+    this.sun.target.updateMatrixWorld();
   }
   clampCam(): void {
     const W = this.world ? this.world.W : 48, H = this.world ? this.world.H : 48;
@@ -985,7 +1015,27 @@ export class View {
   }
 
   render(): void {
+    this.adaptQuality();
     if (this.outline) this.outline.render(this.scene, this.camera);
     else this.renderer.render(this.scene, this.camera);
+  }
+
+  /** MSAA + pixelRatio 2 is expensive on 4K laptops: when frames sustain over
+   *  ~20 ms, step the pixel ratio down (never below 1); step back up once
+   *  frames run comfortably fast again. Re-evaluated at most every 2 s. */
+  private adaptQuality(): void {
+    const now = performance.now();
+    if (this.qLastT) this.qFrameMs += (Math.min(100, now - this.qLastT) - this.qFrameMs) * 0.04;
+    this.qLastT = now;
+    if (now < this.qHoldT) return;      // re-evaluate at most every 2 s
+    this.qHoldT = now + 2000;
+    const pr = this.renderer.getPixelRatio();
+    let next = pr;
+    if (this.qFrameMs > 20 && pr > 1) next = Math.max(1, pr - 0.25);
+    else if (this.qFrameMs < 12 && pr < this.maxPixelRatio) next = Math.min(this.maxPixelRatio, pr + 0.25);
+    if (next !== pr) {
+      this.renderer.setPixelRatio(next);
+      this.renderer.setSize(innerWidth, innerHeight); // resize the buffer to the new ratio
+    }
   }
 }

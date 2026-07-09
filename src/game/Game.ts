@@ -251,19 +251,22 @@ export class Game {
   private moveUnit(u: Unit, dt: number): boolean {
     if (!u.path || u.pathI >= u.path.length) { u.path = null; return true; }
     const node = u.path[u.pathI];
-    const tgt = new THREE.Vector3(this.world.wx(node.x), 0, this.world.wz(node.y));
+    // plain scalar math — this runs for every moving unit every tick, so no
+    // per-call Vector3 allocations (GC churn at 20 tps with hundreds of units)
+    const tx = this.world.wx(node.x), tz = this.world.wz(node.y);
     const cur = u.mesh.position;
     const curTile = this.world.T(u.tx, u.ty);
     const sp = this.mods.unitSpeed(u) * (curTile && curTile.road ? 1.3 : 1);
-    const d = tgt.clone().sub(cur); d.y = 0;
-    const dist = d.length();
+    const dx = tx - cur.x, dz = tz - cur.z;
+    const dist = Math.hypot(dx, dz);
     const step = sp * dt;
     if (dist <= step) {
-      cur.x = tgt.x; cur.z = tgt.z; u.tx = node.x; u.ty = node.y; u.pathI++;
+      cur.x = tx; cur.z = tz; u.tx = node.x; u.ty = node.y; u.pathI++;
       if (u.pathI >= u.path.length) { u.path = null; return true; }
     } else {
-      d.normalize().multiplyScalar(step); cur.add(d);
-      u.mesh.rotation.y = Math.atan2(d.x, d.z);
+      const k = step / dist;
+      cur.x += dx * k; cur.z += dz * k;
+      u.mesh.rotation.y = Math.atan2(dx, dz);
       u.bob += dt * 10;
       u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.045;
       this.syncTile(u);
