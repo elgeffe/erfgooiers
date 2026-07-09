@@ -5,7 +5,29 @@ import { GRAPHICS } from '../constants';
 import type { BuildingDef, DecoKind } from '../types';
 
 // Mesh scatter is purely cosmetic — it must never touch gameplay/worldgen streams.
-const rnd = () => uiRng.next();
+// It normally draws from uiRng, but chunk-baked doodads swap in a per-tile
+// seeded stream (withSeededScatter) so a rebuilt chunk looks identical.
+let activeRnd: () => number = () => uiRng.next();
+const rnd = () => activeRnd();
+
+/**
+ * Run a builder with a deterministic local RNG in place of the uiRng stream.
+ * Chunk-merged scenery is re-baked whenever a tile changes; seeding the
+ * cosmetic scatter from the tile keeps every *other* doodad in the chunk
+ * pixel-identical across rebuilds (and doesn't consume uiRng, so the rest of
+ * the level's cosmetics stay on their deterministic sequence).
+ */
+export function withSeededScatter<T>(seed: number, fn: () => T): T {
+  let s = seed >>> 0;
+  const prev = activeRnd;
+  activeRnd = () => {                        // mulberry32
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  try { return fn(); } finally { activeRnd = prev; }
+}
 
 /* =====================================================================
    Mesh builders — the "look" of Het Gooi. Every builder returns a THREE
@@ -400,14 +422,8 @@ function bakedUnitMat(): SceneMaterial {
 function bakeUnit(built: { group: THREE.Group; itemMesh: THREE.Mesh }): { group: THREE.Group; itemMesh: THREE.Mesh } {
   const { group, itemMesh } = built;
   itemMesh.parent!.remove(itemMesh);
-  group.updateMatrixWorld(true);
   const parts: THREE.BufferGeometry[] = [];
-  group.traverse(o => {
-    const m = o as THREE.Mesh;
-    if (!m.isMesh) return;
-    const col = (m.material as THREE.MeshLambertMaterial).color;
-    parts.push(paintGeo(m.geometry, col ? col.getHex() : 0xffffff, m.matrixWorld));
-  });
+  bakeGroupInto(parts, group);
   const merged = mergeGeometries(parts, false)!;
   parts.forEach(p => p.dispose());
   const body = new THREE.Mesh(merged, bakedUnitMat());
@@ -895,9 +911,29 @@ export function makeCorpse(colorHex: number): THREE.Mesh {
 
 const ONE = new THREE.Vector3(1, 1, 1);
 
-/** Clone a base geometry, transform it, and bake a flat vertex colour onto it. */
+/**
+ * Append every mesh under `root` (transformed into root's frame, material
+ * colour baked into vertex colours) to `parts` — the shared step behind
+ * merged corpses, baked unit bodies and chunk-merged scenery. The caller
+ * owns the pushed geometries and must dispose them after merging.
+ */
+export function bakeGroupInto(parts: THREE.BufferGeometry[], root: THREE.Object3D): void {
+  root.updateMatrixWorld(true);
+  root.traverse(o => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const col = (m.material as THREE.MeshLambertMaterial).color;
+    parts.push(paintGeo(m.geometry, col ? col.getHex() : 0xffffff, m.matrixWorld));
+  });
+}
+
+/** Clone a base geometry, transform it, and bake a flat vertex colour onto it.
+ *  Always emits non-indexed geometry: mergeGeometries refuses to mix indexed
+ *  and non-indexed inputs, and polyhedra (rock dodecahedra) are non-indexed. */
 function paintGeo(base: THREE.BufferGeometry, hex: number, m: THREE.Matrix4): THREE.BufferGeometry {
-  const g = base.clone().applyMatrix4(m);
+  let g = base.clone();
+  if (g.index) { const ni = g.toNonIndexed(); g.dispose(); g = ni; }
+  g.applyMatrix4(m);
   const c = new THREE.Color(hex);
   const n = g.attributes.position.count;
   const col = new Float32Array(n * 3);

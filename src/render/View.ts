@@ -4,7 +4,8 @@ import { uiRng } from '../engine/rng';
 import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
-import { cone, cyl, makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, sphere, stdMat } from './models';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { bakeGroupInto, cone, cyl, makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -199,6 +200,9 @@ export class View {
     this.scene.background = null;
     this.scene.fog = null;
     this.roadMeshes.clear();
+    this.chunkMeshes.clear();   // their geometries were disposed with worldGroup
+    this.dirtyChunks.clear();
+    this.chunkCols = 0;
     this.clouds.length = 0;
     this.pigHerds.clear();
     this.fish.length = 0;
@@ -422,36 +426,40 @@ export class View {
   createFlame(): THREE.Group { const m = makeFlame(); this.worldGroup.add(m); return m; }
   createFlag(): THREE.Group { const m = makeFlag(); this.worldGroup.add(m); return m; }
 
+  /**
+   * A tree that is still growing gets its own mesh (its root rescales every
+   * tick); a grown tree is folded into its scenery chunk. Game calls
+   * `treeMatured` at the moment growth completes to swap the former into the
+   * latter.
+   */
   addTree(x: number, y: number, tree: Tree): void {
-    const g = makeTree(tree.kind);
-    g.position.set(this.world.wx(x) + (rnd() - 0.5) * 0.3, 0, this.world.wz(y) + (rnd() - 0.5) * 0.3);
+    if (tree.growth >= 1) { tree.meshes = []; this.dirtyTile(x, y); return; }
+    const seed = this.tileSeed(x, y);
+    const g = withSeededScatter(seed, () => makeTree(tree.kind));
+    g.position.set(
+      this.world.wx(x) + (this.hash01(seed, 1) - 0.5) * 0.3, 0,
+      this.world.wz(y) + (this.hash01(seed, 2) - 0.5) * 0.3,
+    );
     const s = tree.s * Math.max(0.15, tree.growth);
     g.scale.set(s, s, s);
     this.worldGroup.add(g);
     this.freeze(g, false); // the root rescales as the tree grows
     tree.meshes = [g];
   }
-  addDeposit(x: number, y: number, dep: Deposit): void {
-    const g = makeDeposit(dep.kind);
-    g.position.set(this.world.wx(x), 0, this.world.wz(y));
-    this.worldGroup.add(g);
-    this.freeze(g);
-    dep.meshes = [g];
+
+  /** A planted tree finished growing: retire its live mesh into the chunk bake. */
+  treeMatured(x: number, y: number, tree: Tree): void {
+    this.removeMeshes(tree.meshes);
+    tree.meshes = [];
+    this.dirtyTile(x, y);
   }
+
   addPickup(x: number, y: number, pickup: Pickup): void {
     const g = makePickup();
     g.position.set(this.world.wx(x), 0.02, this.world.wz(y));
     this.worldGroup.add(g);
     this.freeze(g);
     pickup.meshes = [g];
-  }
-  addDeco(x: number, y: number, deco: Deco): void {
-    const g = makeDeco(deco.kind);
-    const baseY = this.world.tiles[y][x].type === 'water' ? -0.14 : 0;
-    g.position.set(this.world.wx(x) + (rnd() - 0.5) * 0.3, g.position.y + baseY, this.world.wz(y) + (rnd() - 0.5) * 0.3);
-    this.worldGroup.add(g);
-    this.freeze(g);
-    deco.meshes = [g];
   }
   /** Plant the visible crop on a plot; growth drives its height, produce its look. */
   addFieldCrop(x: number, y: number, field: Field): void {
@@ -580,31 +588,111 @@ export class View {
     const W = this.world.W, H = this.world.H;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const t = this.world.tiles[y][x];
-      if (t.tree) this.addTree(x, y, t.tree);
-      if (t.dep) this.addDeposit(x, y, t.dep);
-      if (t.deco) this.addDeco(x, y, t.deco);
-      if (t.pickup) this.addPickup(x, y, t.pickup);
-      if (t.type === 'rock') this.addRock(x, y);
+      if (t.tree) this.addTree(x, y, t.tree);         // grown trees route into chunks
+      if (t.pickup) this.addPickup(x, y, t.pickup);   // pickups keep their gold ink
+      // deposits, decoration and rock are baked straight into the chunks below
     }
+    this.chunkCols = Math.ceil(W / View.CHUNK);
+    for (let i = 0; i < this.chunkCols * Math.ceil(H / View.CHUNK); i++) this.dirtyChunks.add(i);
+    this.flushChunks();
   }
 
-  /** Impassable rock: a mountain peak, or a ruined wall aligned with its line. */
-  private addRock(x: number, y: number): void {
+  // =====================================================================
+  //  Chunk-merged scenery — all static doodads in an 8×8-tile chunk render
+  //  as ONE vertex-colored mesh. 5k+ individual doodad meshes (each drawn
+  //  twice by the OutlineEffect) collapse into a few dozen draw calls; a
+  //  chunk is re-baked only when one of its tiles changes (tree felled,
+  //  deposit exhausted, building placed over decoration).
+  // =====================================================================
+  private static readonly CHUNK = 8;
+  private chunkCols = 0;
+  private chunkMeshes = new Map<number, THREE.Mesh>();
+  private readonly dirtyChunks = new Set<number>();
+  private chunkMat: THREE.Material | null = null;
+
+  /** Deterministic cosmetic seed for a tile — stable across chunk rebuilds. */
+  private tileSeed(x: number, y: number): number {
+    return ((x * 73856093) ^ (y * 19349663) ^ Math.imul(this.world.seed, 83492791)) >>> 0;
+  }
+  private hash01(seed: number, salt: number): number {
+    let h = (seed + Math.imul(salt, 0x9e3779b9)) >>> 0;
+    h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0;
+    h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+
+  /** A tile's static scenery changed — queue its chunk for a re-bake. */
+  dirtyTile(x: number, y: number): void {
+    if (!this.chunkCols) return;
+    this.dirtyChunks.add(Math.floor(y / View.CHUNK) * this.chunkCols + Math.floor(x / View.CHUNK));
+  }
+
+  private flushChunks(): void {
+    for (const idx of this.dirtyChunks) this.rebuildChunk(idx);
+    this.dirtyChunks.clear();
+  }
+
+  private rebuildChunk(idx: number): void {
+    const old = this.chunkMeshes.get(idx);
+    if (old) { this.worldGroup.remove(old); old.geometry.dispose(); this.chunkMeshes.delete(idx); }
+    const cx = (idx % this.chunkCols) * View.CHUNK, cy = Math.floor(idx / this.chunkCols) * View.CHUNK;
+    const parts: THREE.BufferGeometry[] = [];
+    const H = this.world.H, W = this.world.W;
+    for (let y = cy; y < Math.min(H, cy + View.CHUNK); y++)
+      for (let x = cx; x < Math.min(W, cx + View.CHUNK); x++) this.bakeTileInto(parts, x, y);
+    if (!parts.length) return;
+    const merged = mergeGeometries(parts, false)!;
+    parts.forEach(p => p.dispose());
+    if (!this.chunkMat) this.chunkMat = stdMat({ vertexColors: true });
+    const mesh = new THREE.Mesh(merged, this.chunkMat);
+    mesh.castShadow = true;
+    this.worldGroup.add(mesh);
+    this.freeze(mesh);
+    this.chunkMeshes.set(idx, mesh);
+  }
+
+  /** Bake one tile's static doodads (grown tree, deposit, deco, rock). */
+  private bakeTileInto(parts: THREE.BufferGeometry[], x: number, y: number): void {
     const t = this.world.tiles[y][x];
-    let g: THREE.Group;
-    if (t.rock === 'wall') {
-      g = makeRuinWall();
-      // run the wall along its neighbours so a line reads as one old rampart
-      const L = this.world.T(x - 1, y), R = this.world.T(x + 1, y);
-      const alongX = (L && L.rock === 'wall') || (R && R.rock === 'wall');
-      if (!alongX) g.rotation.y = Math.PI / 2;
-    } else {
-      g = makeMountain();
-      g.rotation.y = rnd() * Math.PI * 2;
+    const seed = this.tileSeed(x, y);
+    const wx = this.world.wx(x), wz = this.world.wz(y);
+    if (t.tree && t.tree.growth >= 1 && t.tree.meshes.length === 0) {
+      const tree = t.tree;
+      const g = withSeededScatter(seed, () => makeTree(tree.kind));
+      g.position.set(wx + (this.hash01(seed, 1) - 0.5) * 0.3, 0, wz + (this.hash01(seed, 2) - 0.5) * 0.3);
+      g.scale.setScalar(tree.s);
+      bakeGroupInto(parts, g);
     }
-    g.position.set(this.world.wx(x), 0, this.world.wz(y));
-    this.worldGroup.add(g);
-    this.freeze(g);
+    if (t.dep) {
+      const dep = t.dep;
+      const g = withSeededScatter(seed ^ 0x9e37, () => makeDeposit(dep.kind));
+      g.position.set(wx, 0, wz);
+      bakeGroupInto(parts, g);
+    }
+    if (t.deco) {
+      const deco = t.deco;
+      const g = withSeededScatter(seed ^ 0x85eb, () => makeDeco(deco.kind));
+      const baseY = t.type === 'water' ? -0.14 : 0;
+      g.position.set(wx + (this.hash01(seed, 3) - 0.5) * 0.3, g.position.y + baseY, wz + (this.hash01(seed, 4) - 0.5) * 0.3);
+      bakeGroupInto(parts, g);
+    }
+    if (t.type === 'rock') {
+      const g = withSeededScatter(seed ^ 0xc2b2, () => {
+        if (t.rock === 'wall') {
+          const w = makeRuinWall();
+          // run the wall along its neighbours so a line reads as one old rampart
+          const L = this.world.T(x - 1, y), R = this.world.T(x + 1, y);
+          const alongX = (L && L.rock === 'wall') || (R && R.rock === 'wall');
+          if (!alongX) w.rotation.y = Math.PI / 2;
+          return w;
+        }
+        const m = makeMountain();
+        m.rotation.y = this.hash01(seed, 5) * Math.PI * 2;
+        return m;
+      });
+      g.position.set(wx, 0, wz);
+      bakeGroupInto(parts, g);
+    }
   }
 
   // =====================================================================
@@ -1019,6 +1107,7 @@ export class View {
   }
 
   render(): void {
+    if (this.dirtyChunks.size) this.flushChunks(); // re-bake changed scenery chunks
     this.adaptQuality();
     if (this.outline) this.outline.render(this.scene, this.camera);
     else this.renderer.render(this.scene, this.camera);

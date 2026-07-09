@@ -158,9 +158,12 @@ export class Game {
     this.view.refreshTile(tx, ty); this.view.addFieldCrop(tx, ty, t.field);
   }
 
-  removeTree(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.tree) { this.view.removeMeshes(t.tree.meshes); t.tree = null; } }
-  removeDep(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.dep) { this.view.removeMeshes(t.dep.meshes); t.dep = null; } }
-  removeDeco(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.deco) { this.view.removeMeshes(t.deco.meshes); t.deco = null; } }
+  // Static doodads live in merged scenery chunks; clearing the tile state and
+  // dirtying the chunk re-bakes it without them. Growing trees also carry an
+  // individual mesh, removed via removeMeshes.
+  removeTree(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.tree) { this.view.removeMeshes(t.tree.meshes); t.tree = null; this.view.dirtyTile(x, y); } }
+  removeDep(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.dep) { this.view.removeMeshes(t.dep.meshes); t.dep = null; this.view.dirtyTile(x, y); } }
+  removeDeco(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.deco) { this.view.removeMeshes(t.deco.meshes); t.deco = null; this.view.dirtyTile(x, y); } }
 
   placeSite(key: BuildingKey, tx: number, ty: number, rot = 0): Site {
     const def = DEFS[key];
@@ -590,7 +593,15 @@ export class Game {
     const tiles = this.world.tiles;
     const fg = this.mods.fieldGrowth();
     for (const b of this.buildings) { if (b.def.fields) for (const f of b.fieldsList) { const t = tiles[f.y][f.x]; if (t.field && t.field.growth < 1) { t.field.growth += dt / 22 * fg; if (t.field.growth > 1) t.field.growth = 1; this.view.scaleFieldCrop(t.field); } } }
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const t = tiles[y][x]; if (t.tree && t.tree.growth < 1) { t.tree.growth += dt / 40; if (t.tree.growth > 1) t.tree.growth = 1; const s = t.tree.s * Math.max(0.15, t.tree.growth); (t.tree.meshes[0] as THREE.Object3D).scale.set(s, s, s); } }
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const t = tiles[y][x];
+      if (!t.tree || t.tree.growth >= 1) continue;
+      t.tree.growth += dt / 40;
+      if (t.tree.growth >= 1) { t.tree.growth = 1; this.view.treeMatured(x, y, t.tree); continue; }
+      const s = t.tree.s * Math.max(0.15, t.tree.growth);
+      const m = t.tree.meshes[0] as THREE.Object3D | undefined;
+      if (m) m.scale.set(s, s, s);
+    }
   }
   private fieldRecolor(): void { for (const b of this.buildings) { if (b.def.fields) for (const f of b.fieldsList) this.view.refreshTile(f.x, f.y); } }
 
