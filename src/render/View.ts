@@ -4,7 +4,7 @@ import { uiRng } from '../engine/rng';
 import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
-import { makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makePickup, makePig, makeScaffold, makeTree, makeUnit } from './models';
+import { makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makePickup, makePig, makeScaffold, makeTree, makeUnit, noOutline, stdMat } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();

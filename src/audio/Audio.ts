@@ -10,7 +10,11 @@
    is created lazily on the first unlock() call (wired to the first click).
    ===================================================================== */
 
-type SfxName = 'place' | 'build' | 'coin' | 'chop' | 'harvest' | 'demolish' | 'click' | 'error';
+type SfxName = 'place' | 'build' | 'coin' | 'chop' | 'harvest' | 'demolish' | 'click' | 'error' | 'sword' | 'arrow';
+
+// Combat effects fire from every fighter in a battle, so rate-limit them
+// (per name) or a big melee becomes a wall of white noise.
+const SFX_THROTTLE_MS: Partial<Record<SfxName, number>> = { sword: 90, arrow: 80 };
 
 const MUTE_KEY = 'erfgooiers.muted';
 
@@ -348,8 +352,16 @@ export class AudioEngine {
   }
 
   // ---------- sound effects ----------
+  private lastSfx: Partial<Record<SfxName, number>> = {};
+
   play(name: SfxName): void {
     if (this.muted) return;
+    const gap = SFX_THROTTLE_MS[name];
+    if (gap) {
+      const now = performance.now();
+      if (now - (this.lastSfx[name] ?? -Infinity) < gap) return;
+      this.lastSfx[name] = now;
+    }
     if (!this.ctx) this.build();
     if (this.ctx!.state === 'suspended') void this.ctx!.resume();
     const t = this.ctx!.currentTime;
@@ -362,6 +374,8 @@ export class AudioEngine {
       case 'demolish': return this.efDemolish(t);
       case 'click': return this.efClick(t);
       case 'error': return this.efError(t);
+      case 'sword': return this.efSword(t);
+      case 'arrow': return this.efArrow(t);
     }
   }
 
@@ -429,6 +443,23 @@ export class AudioEngine {
   // click — a tiny soft tick for UI
   private efClick(t: number): void {
     this.tone(hz(84), t, 0.05, 'triangle', 0.18);
+  }
+
+  // sword swing — a metallic clink over a short air swish, pitch jittered so
+  // a melee reads as many blades rather than one repeating sample
+  private efSword(t: number): void {
+    const ring = 2200 + Math.random() * 900;
+    this.burst(t, 0.05, 4200, 'bandpass', 0.3);          // the swish of the swing
+    this.tone(ring, t + 0.02, 0.09, 'triangle', 0.2);    // steel on steel
+    this.tone(ring * 1.5, t + 0.02, 0.05, 'sine', 0.1);  // faint upper partial
+  }
+
+  // arrow loosed — a plucked string twang and the hiss of the shaft in flight
+  private efArrow(t: number): void {
+    const pluck = 180 + Math.random() * 60;
+    this.tone(pluck, t, 0.07, 'triangle', 0.28);         // bowstring
+    this.tone(pluck * 2, t, 0.04, 'sine', 0.12);         // string overtone
+    this.burst(t + 0.02, 0.14, 2600, 'highpass', 0.14);  // fletching whoosh
   }
 
   // error — a gentle low two-tone, never harsh
