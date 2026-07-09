@@ -492,10 +492,54 @@ export class View {
     this.worldGroup.add(ground);
     this.freeze(ground);
     // the slab top must sit below the recessed water tiles (y −0.14) or it
-    // shows through every lake and pond as a dark green sheet
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 2, 2, H + 2), stdMat({ color: 0x4f6b3c }));
+    // shows through every lake and pond as a dark green sheet. It is dressed
+    // in wood-plank grain so the map edge reads like a nice wooden game board.
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 2, 2, H + 2), stdMat({ map: this.makeWoodTexture() }, false));
     slab.position.y = -1.16; this.worldGroup.add(slab);
     this.freeze(slab);
+  }
+
+  /** Procedural wood: warm planks with grain streaks and the odd knot, for the
+   *  board's edge slab. */
+  private makeWoodTexture(): THREE.Texture {
+    const S = 256;
+    const cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const ctx = cv.getContext('2d')!;
+    ctx.fillStyle = '#7a5230'; ctx.fillRect(0, 0, S, S);
+    const rows = 4, rh = S / rows;
+    for (let r = 0; r < rows; r++) {
+      // each plank a slightly different warm brown
+      const tone = 96 + Math.random() * 36;
+      ctx.fillStyle = `rgb(${tone + 26 | 0},${tone * 0.68 | 0},${tone * 0.4 | 0})`;
+      ctx.fillRect(0, r * rh, S, rh - 2);
+      // long grain streaks along the plank
+      for (let i = 0; i < 14; i++) {
+        const gy = r * rh + 3 + Math.random() * (rh - 8);
+        const dark = Math.random() < 0.6;
+        ctx.strokeStyle = dark ? 'rgba(66,42,22,0.35)' : 'rgba(220,178,120,0.25)';
+        ctx.lineWidth = 0.8 + Math.random() * 1.2;
+        ctx.beginPath();
+        ctx.moveTo(0, gy);
+        ctx.bezierCurveTo(S * 0.3, gy + (Math.random() - 0.5) * 5, S * 0.7, gy + (Math.random() - 0.5) * 5, S, gy + (Math.random() - 0.5) * 3);
+        ctx.stroke();
+      }
+      // the odd knot
+      if (Math.random() < 0.6) {
+        const kx = Math.random() * S, ky = r * rh + rh * (0.3 + Math.random() * 0.4);
+        for (let k = 3; k > 0; k--) {
+          ctx.strokeStyle = 'rgba(60,38,20,0.5)'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.ellipse(kx, ky, k * 2.4, k * 1.5, 0.2, 0, Math.PI * 2); ctx.stroke();
+        }
+      }
+      // dark seam between planks
+      ctx.fillStyle = 'rgba(40,26,14,0.8)';
+      ctx.fillRect(0, r * rh + rh - 2, S, 2);
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(6, 1); // long sides tile instead of stretching
+    tex.anisotropy = 8;
+    return tex;
   }
 
   private populateDoodads(): void {
