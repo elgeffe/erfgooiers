@@ -567,7 +567,7 @@ export class Game {
       for (let tries = 0; tries < 8; tries++) {
         const x = cx + Math.round((rnd() - 0.5) * 14), y = cy + Math.round((rnd() - 0.5) * 14);
         const t = this.world.T(x, y);
-        if (!t || t.type === 'water' || t.b || t.site || t.dep) continue;
+        if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
         if (this.sendTo(u, x, y)) { u.wstate = 'stroll'; return; }
       }
       u.timer = 1 + rnd() * 2;                 // nowhere to go — wait, then retry
@@ -823,7 +823,7 @@ export class Game {
     u.atkTimer = Math.max(0, u.atkTimer - dt);
     if (u.lungeT > 0) u.lungeT = Math.max(0, u.lungeT - dt);
     if (flying) this.animateFlight(u, dt);
-    if (u.role === 'dragon') this.dragonBreath(u, dt);
+    if (def.fire) this.fireVolley(u, dt);
 
     // wild beasts leash: a chase that strays too far from home is abandoned
     if (u.faction === 'wild' && def.leash && u.anchor) {
@@ -933,7 +933,7 @@ export class Game {
     for (let tries = 0; tries < 6; tries++) {
       const x = a.x + Math.round((rnd() - 0.5) * 8), y = a.y + Math.round((rnd() - 0.5) * 8);
       const t = this.world.T(x, y);
-      if (!t || t.type === 'water' || t.b || t.site || t.dep) continue;
+      if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
       if (this.sendTo(u, x, y)) return;
     }
   }
@@ -991,10 +991,10 @@ export class Game {
     if (isCastle) this.defeat = true;
   }
 
-  /** The dragon's periodic fire-breath: a volley of fire gobs spat at whatever
-   *  it is fighting (or the nearest player building), splashing flame where
-   *  they land. */
-  private dragonBreath(u: Unit, dt: number): void {
+  /** A fire-wielder's periodic volley (dragon breath, demon magic): fire gobs
+   *  spat at whatever it is fighting (or the nearest player building),
+   *  splashing flame where they land. */
+  private fireVolley(u: Unit, dt: number): void {
     u.special -= dt;
     if (u.special > 0) return;
     let tx: number | null = null, tz = 0;
@@ -1170,7 +1170,7 @@ export class Game {
     const tx = Math.max(0, Math.min(W - 1, Math.round(nxp + W / 2 - 0.5)));
     const ty = Math.max(0, Math.min(H - 1, Math.round(nzp + H / 2 - 0.5)));
     const t = this.world.tiles[ty][tx];
-    if (t.type === 'water' || t.b || t.site) return;
+    if (t.type !== 'grass' || t.b || t.site) return;
     u.mesh.position.x = nxp; u.mesh.position.z = nzp;
     u.tx = tx; u.ty = ty;
   }
@@ -1210,7 +1210,7 @@ export class Game {
     const tryTile = (x: number, y: number): void => {
       if (out.length >= n) return;
       const t = this.world.T(x, y);
-      if (!t || t.type === 'water' || t.b || t.site) return;
+      if (!t || t.type !== 'grass' || t.b || t.site) return;
       out.push({ x, y });
     };
     tryTile(cx, cy);
@@ -1244,7 +1244,7 @@ export class Game {
     const tryTile = (x: number, y: number): void => {
       if (out.length >= count || this.units.length >= 1600) return; // cap for perf
       const t = this.world.T(x, y);
-      if (!t || t.type === 'water' || t.b || t.site || t.dep) return;
+      if (!t || t.type !== 'grass' || t.b || t.site || t.dep) return;
       out.push(this.spawnFighter(kind, { x, y }, faction));
     };
     tryTile(cx, cy);
@@ -1359,7 +1359,7 @@ export class Game {
       const x = 2 + Math.floor(rnd() * (W - 4)), y = 2 + Math.floor(rnd() * (H - 4));
       if (Math.abs(x - cx) < 7 && Math.abs(y - cy) < 7) continue;
       const t = this.world.T(x, y);
-      if (!t || t.type === 'water' || t.b || t.site || t.dep) continue;
+      if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
       this.spawnFighter(kind, { x, y }, 'wild'); placed++;
     }
   }
@@ -1386,16 +1386,16 @@ export class Game {
 
   private spawnBoss(kind: UnitKind): void {
     const e = this.randomEdge();
-    const squad = this.spawnSquad(kind, 1, e.x, e.z, 'wild');
+    const squad = this.spawnSquad(kind, 1, e.x, e.z, UNITS[kind].faction);
     const castle = this.store;
     for (const u of squad) { u.raider = true; if (castle) this.orderUnit(u, 'attackMove', castle.x + 1, castle.y + 1); }
-    this.toast('The Dragon of Het Gooi descends!', 'err');
+    this.toast(`The ${UNITS[kind].name} descends upon Het Gooi!`, 'err');
   }
 
   private areaClear(tx: number, ty: number): boolean {
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) {
       const t = this.world.T(x, y);
-      if (!t || t.type === 'water' || t.b || t.site || t.dep || t.road) return false;
+      if (!t || t.type !== 'grass' || t.b || t.site || t.dep || t.road) return false;
     }
     return true;
   }

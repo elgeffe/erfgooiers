@@ -294,6 +294,11 @@ function sandboxSpawn(kind: 'soldier' | 'archer' | 'knight' | 'bandit' | 'boar' 
   const squad = game.spawnSquad(kind, count, c.x, c.z);
   if (squad.length) ui.toast(`Spawned ${squad.length} ${kind}${squad.length > 1 ? 's' : ''}`);
 }
+($('sbToggle') as HTMLButtonElement).onclick = () => {
+  const bar = $('sandboxbar');
+  const collapsed = bar.classList.toggle('collapsed');
+  $('sbToggle').textContent = collapsed ? 'Sandbox ▸' : 'Sandbox ▾';
+};
 ($('sbSoldier') as HTMLButtonElement).onclick = () => sandboxSpawn('soldier', 12);
 ($('sbArcher') as HTMLButtonElement).onclick = () => sandboxSpawn('archer', 8);
 ($('sbKnight') as HTMLButtonElement).onclick = () => sandboxSpawn('knight', 6);

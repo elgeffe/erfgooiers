@@ -29,7 +29,7 @@ export interface UnitOrder {
 export type DecoKind = 'lavender' | 'flowers' | 'bush' | 'reed' | 'lily';
 
 /** Which mesh builder in render/models.ts renders a building. */
-export type ModelKind = 'cottage' | 'windmill' | 'farm' | 'barn' | 'mine' | 'tavern';
+export type ModelKind = 'cottage' | 'windmill' | 'farm' | 'barn' | 'mine' | 'tavern' | 'castle';
 
 export interface ItemDef { name: string; color: string; hex: number; }
 
@@ -79,9 +79,10 @@ export interface Field { farm: Building; growth: number; meshes: THREE.Object3D[
 export interface Pickup { gold: number; reserved: boolean; meshes: THREE.Object3D[]; }
 
 export interface Tile {
-  type: 'grass' | 'water';
+  type: 'grass' | 'water' | 'rock';
   road: boolean;
   lake: boolean;               // part of the big fish-stocked lake (not a pond)
+  rock?: 'peak' | 'wall';      // rock tiles: impassable mountain or a ruined wall
   b: Building | null;
   site: Site | null;
   tree: Tree | null;

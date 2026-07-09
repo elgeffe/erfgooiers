@@ -2,10 +2,11 @@ import { BASE_SPEED } from '../constants';
 import type { Faction } from '../types';
 
 /** Combat unit archetypes. Economy workers (serf/laborer/specialists) are not here. */
-export type UnitKind = 'soldier' | 'archer' | 'knight' | 'bandit' | 'boar' | 'dragon';
+export type UnitKind = 'soldier' | 'archer' | 'knight' | 'bandit' | 'boar' | 'dragon'
+  | 'wolf' | 'orc' | 'troll' | 'demon';
 
 /** How a combat unit is drawn — humanoid reuses the worker model; beasts differ. */
-export type FighterModel = 'human' | 'beast' | 'dragon';
+export type FighterModel = 'human' | 'beast' | 'dragon' | 'wolf' | 'demon';
 
 export interface UnitDef {
   kind: UnitKind;
@@ -23,8 +24,9 @@ export interface UnitDef {
   arrows?: boolean;     // attacks by loosing arrows instead of striking (archer)
   wander?: boolean;     // ambles around its anchor when idle (beasts, camp guards)
   leash?: number;       // wild only: max chase distance from anchor before giving up
-  charge?: number;      // speed multiplier while chasing a foe (boar rush)
+  charge?: number;      // speed multiplier while chasing a foe (boar rush, wolf pounce)
   flying?: boolean;     // moves in straight lines over any terrain (the dragon)
+  fire?: boolean;       // periodically hurls a fiery volley (dragon breath, demon magic)
 }
 
 export const UNITS: Record<UnitKind, UnitDef> = {
@@ -45,5 +47,20 @@ export const UNITS: Record<UnitKind, UnitDef> = {
     wander: true, leash: 14, charge: 1.5 },
 
   dragon: { kind: 'dragon', name: 'Dragon of Het Gooi', faction: 'wild', color: 0x7a2233, model: 'dragon',
-    hp: 800, dmg: 40, range: 2.5, atkCd: 2.0, speed: BASE_SPEED * 0.8, scale: 2.4, aggro: 14, flying: true },
+    hp: 800, dmg: 40, range: 2.5, atkCd: 2.0, speed: BASE_SPEED * 0.8, scale: 2.4, aggro: 14, flying: true, fire: true },
+
+  wolf: { kind: 'wolf', name: 'Wolf', faction: 'wild', color: 0x777d84, model: 'wolf',
+    hp: 40, dmg: 7, range: 1.0, atkCd: 0.9, speed: BASE_SPEED * 1.25, scale: 0.95, aggro: 8,
+    wander: true, leash: 16, charge: 1.6 },
+
+  orc: { kind: 'orc', name: 'Orc', faction: 'enemy', color: 0x4a5a30, model: 'human',
+    hp: 85, dmg: 11, range: 1.3, atkCd: 1.2, speed: BASE_SPEED * 0.95, scale: 1.1, aggro: 11, wander: true },
+
+  troll: { kind: 'troll', name: 'Troll', faction: 'enemy', color: 0x5d7263, model: 'human',
+    hp: 120, dmg: 9, range: 5.5, atkCd: 1.9, speed: BASE_SPEED * 0.8, scale: 1.3, aggro: 12,
+    arrows: true, wander: true },
+
+  demon: { kind: 'demon', name: 'Demon', faction: 'enemy', color: 0x3a1626, model: 'demon',
+    hp: 500, dmg: 26, range: 2.2, atkCd: 1.6, speed: BASE_SPEED * 0.9, scale: 1.8, aggro: 13,
+    flying: true, fire: true },
 };

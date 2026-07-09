@@ -67,8 +67,12 @@ export class UI {
     document.querySelectorAll<HTMLElement>('.bcard[data-key]').forEach(el => {
       const key = el.dataset.key!;
       if (!(key in DEFS)) return;
+      const def = DEFS[key as keyof typeof DEFS];
       const costEl = el.querySelector('.cost');
-      if (costEl) costEl.innerHTML = this.costHTML(mods.buildingCost(DEFS[key as keyof typeof DEFS]));
+      if (costEl) costEl.innerHTML = this.costHTML(mods.buildingCost(def));
+      // production timers shift with speed upgrades too
+      const timeEl = el.querySelector('.ptime');
+      if (timeEl) timeEl.textContent = this.timeHTML(def);
     });
   }
 
@@ -131,6 +135,17 @@ export class UI {
     for (const k in cost) { if (!(cost as any)[k]) continue; s += `<i><span class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color}"></span>${(cost as any)[k]}</i>`; }
     return s || '<i>free</i>';
   }
+  /** Seconds to produce/gather one item (mods-adjusted once a Game is bound). */
+  private prodTime(def: BuildingDef): number | null {
+    const mods = this.game?.mods;
+    if (def.recipe) return mods ? mods.recipeTime(def) : def.recipe.time;
+    if (def.gather && def.gather.out) return mods ? mods.gatherTime(def) : def.gather.time;
+    return null;
+  }
+  private timeHTML(def: BuildingDef): string {
+    const t = this.prodTime(def);
+    return t == null ? '' : `⏱ ${Math.round(t * 10) / 10}s / item`;
+  }
   private buildMenu(): void {
     const menu = $('buildmenu');
     menu.innerHTML = '';
@@ -147,7 +162,7 @@ export class UI {
       for (const key of cat.keys) {
         const def = DEFS[key];
         const el = document.createElement('div'); el.className = 'bcard'; el.dataset.key = key; el.dataset.cat = cat.id; el.title = def.desc;
-        el.innerHTML = `<div class="icon">${this.iconSVG(def)}</div><div class="nm">${def.name}</div><div class="cost">${this.costHTML(def.cost)}</div>`;
+        el.innerHTML = `<div class="icon">${this.iconSVG(def)}</div><div class="nm">${def.name}</div><div class="cost">${this.costHTML(def.cost)}</div><div class="ptime">${this.timeHTML(def)}</div>`;
         el.onclick = () => { audio.play('click'); this.onMode(el.classList.contains('on') ? null : { type: 'build', key }); };
         row.appendChild(el);
       }

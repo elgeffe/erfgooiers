@@ -4,7 +4,7 @@ import { uiRng } from '../engine/rng';
 import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
-import { makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makePickup, makePig, makeScaffold, makeTree, makeUnit, noOutline, stdMat } from './models';
+import { makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, stdMat } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -447,6 +447,10 @@ export class View {
   private tileBaseColor(tx: number, ty: number): { hex: number; sh: number } {
     const t = this.world.tiles[ty][tx];
     if (t.type === 'water') return { hex: 0x36648f, sh: 0.9 + ((tx * 7 + ty * 13) % 10) / 100 };
+    // rocky ground: grey scree under mountain peaks, dusty earth under ruined walls
+    if (t.type === 'rock') return t.rock === 'wall'
+      ? { hex: 0x9a8a6e, sh: 0.92 + ((tx * 3 + ty * 7) % 8) / 100 }
+      : { hex: 0x83837e, sh: 0.88 + ((tx * 5 + ty * 3) % 12) / 100 };
     if (t.road) return { hex: 0xcbb389, sh: 0.96 + ((tx * 3 + ty * 5) % 8) / 100 };
     if (t.field) {
       const out = t.field.farm.def.gather?.out;
@@ -488,10 +492,54 @@ export class View {
     this.worldGroup.add(ground);
     this.freeze(ground);
     // the slab top must sit below the recessed water tiles (y −0.14) or it
-    // shows through every lake and pond as a dark green sheet
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 2, 2, H + 2), stdMat({ color: 0x4f6b3c }));
+    // shows through every lake and pond as a dark green sheet. It is dressed
+    // in wood-plank grain so the map edge reads like a nice wooden game board.
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 2, 2, H + 2), stdMat({ map: this.makeWoodTexture() }, false));
     slab.position.y = -1.16; this.worldGroup.add(slab);
     this.freeze(slab);
+  }
+
+  /** Procedural wood: warm planks with grain streaks and the odd knot, for the
+   *  board's edge slab. */
+  private makeWoodTexture(): THREE.Texture {
+    const S = 256;
+    const cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const ctx = cv.getContext('2d')!;
+    ctx.fillStyle = '#7a5230'; ctx.fillRect(0, 0, S, S);
+    const rows = 4, rh = S / rows;
+    for (let r = 0; r < rows; r++) {
+      // each plank a slightly different warm brown
+      const tone = 96 + Math.random() * 36;
+      ctx.fillStyle = `rgb(${tone + 26 | 0},${tone * 0.68 | 0},${tone * 0.4 | 0})`;
+      ctx.fillRect(0, r * rh, S, rh - 2);
+      // long grain streaks along the plank
+      for (let i = 0; i < 14; i++) {
+        const gy = r * rh + 3 + Math.random() * (rh - 8);
+        const dark = Math.random() < 0.6;
+        ctx.strokeStyle = dark ? 'rgba(66,42,22,0.35)' : 'rgba(220,178,120,0.25)';
+        ctx.lineWidth = 0.8 + Math.random() * 1.2;
+        ctx.beginPath();
+        ctx.moveTo(0, gy);
+        ctx.bezierCurveTo(S * 0.3, gy + (Math.random() - 0.5) * 5, S * 0.7, gy + (Math.random() - 0.5) * 5, S, gy + (Math.random() - 0.5) * 3);
+        ctx.stroke();
+      }
+      // the odd knot
+      if (Math.random() < 0.6) {
+        const kx = Math.random() * S, ky = r * rh + rh * (0.3 + Math.random() * 0.4);
+        for (let k = 3; k > 0; k--) {
+          ctx.strokeStyle = 'rgba(60,38,20,0.5)'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.ellipse(kx, ky, k * 2.4, k * 1.5, 0.2, 0, Math.PI * 2); ctx.stroke();
+        }
+      }
+      // dark seam between planks
+      ctx.fillStyle = 'rgba(40,26,14,0.8)';
+      ctx.fillRect(0, r * rh + rh - 2, S, 2);
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(6, 1); // long sides tile instead of stretching
+    tex.anisotropy = 8;
+    return tex;
   }
 
   private populateDoodads(): void {
@@ -502,7 +550,27 @@ export class View {
       if (t.dep) this.addDeposit(x, y, t.dep);
       if (t.deco) this.addDeco(x, y, t.deco);
       if (t.pickup) this.addPickup(x, y, t.pickup);
+      if (t.type === 'rock') this.addRock(x, y);
     }
+  }
+
+  /** Impassable rock: a mountain peak, or a ruined wall aligned with its line. */
+  private addRock(x: number, y: number): void {
+    const t = this.world.tiles[y][x];
+    let g: THREE.Group;
+    if (t.rock === 'wall') {
+      g = makeRuinWall();
+      // run the wall along its neighbours so a line reads as one old rampart
+      const L = this.world.T(x - 1, y), R = this.world.T(x + 1, y);
+      const alongX = (L && L.rock === 'wall') || (R && R.rock === 'wall');
+      if (!alongX) g.rotation.y = Math.PI / 2;
+    } else {
+      g = makeMountain();
+      g.rotation.y = rnd() * Math.PI * 2;
+    }
+    g.position.set(this.world.wx(x), 0, this.world.wz(y));
+    this.worldGroup.add(g);
+    this.freeze(g);
   }
 
   // =====================================================================
@@ -895,6 +963,7 @@ export class View {
       const t = this.world.tiles[y][x];
       let c = '#6fae52';
       if (t.type === 'water') c = '#5b93b0';
+      else if (t.type === 'rock') c = t.rock === 'wall' ? '#8f8168' : '#757570';
       else if (t.road) c = '#cbb389';
       else if (t.field) c = '#d3bd56';
       else if (t.tree) c = '#3d5c2e';
