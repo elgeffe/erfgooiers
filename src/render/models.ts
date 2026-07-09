@@ -97,14 +97,17 @@ const geoFol = new THREE.ConeGeometry(0.4, 0.95, 7);
 const geoFol2 = new THREE.ConeGeometry(0.3, 0.7, 7);
 const geoRock = new THREE.DodecahedronGeometry(0.42, 0);
 const geoPost = new THREE.BoxGeometry(0.1, 0.7, 0.1);
-const geoBody = new THREE.CylinderGeometry(0.16, 0.2, 0.42, 7);
-const geoHead = new THREE.SphereGeometry(0.14, 8, 7);
+// unit bodies get generous segment counts — the camera lives close to these
+// little folk, and low-poly rounding is what made them read as blurry
+const geoBody = new THREE.CylinderGeometry(0.16, 0.2, 0.42, 12);
+const geoHead = new THREE.SphereGeometry(0.14, 12, 10);
 const geoItem = new THREE.BoxGeometry(0.24, 0.18, 0.24);
 const geoBlade = new THREE.BoxGeometry(0.03, 0.34, 0.03);
 const geoArm = new THREE.BoxGeometry(0.055, 0.26, 0.08);
-const geoHand = new THREE.SphereGeometry(0.05, 6, 5);
-const geoEye = new THREE.SphereGeometry(0.026, 6, 5);
-const geoSmile = new THREE.TorusGeometry(0.04, 0.009, 6, 10, Math.PI);
+const geoHand = new THREE.SphereGeometry(0.05, 8, 6);
+const geoEye = new THREE.SphereGeometry(0.028, 8, 6);
+const geoSmile = new THREE.TorusGeometry(0.042, 0.01, 6, 12, Math.PI);
+const geoBelt = new THREE.CylinderGeometry(0.192, 0.198, 0.055, 12);
 
 const FOL_GREENS = [0x4e7a3a, 0x557f38, 0x476f36, 0x5f8c40, 0x6a9a44];
 
@@ -356,6 +359,10 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
   const body = new THREE.Mesh(geoBody, umat(colorHex)); body.position.y = 0.21; body.castShadow = true;
   const head = new THREE.Mesh(geoHead, umat(skinHex)); head.position.y = 0.55; head.castShadow = true;
   g.add(body, head);
+  // a dark belt with a little buckle breaks up the tunic and grounds the figure
+  const belt = new THREE.Mesh(geoBelt, umat(0x3a2c1f)); belt.position.y = 0.13;
+  const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.02), umat(0xc9a94e)); buckle.position.set(0, 0.13, 0.195);
+  g.add(belt, buckle);
 
   // little arms with skin-toned hands, angled out from the body
   const skin = umat(skinHex);
