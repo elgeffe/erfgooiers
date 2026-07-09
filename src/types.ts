@@ -3,15 +3,17 @@ import type * as THREE from 'three';
 export type ItemKey =
   | 'trunk' | 'timber' | 'stone' | 'wheat' | 'flour'
   | 'bread' | 'goldore' | 'coal' | 'coin'
-  | 'grape' | 'wine' | 'meat' | 'sausage' | 'fish';
+  | 'grape' | 'wine' | 'meat' | 'sausage' | 'fish'
+  | 'iron' | 'weapon' | 'armor';
 
 export type BuildingKey =
   | 'storehouse' | 'guildhall' | 'woodcutter' | 'forester' | 'sawmill' | 'quarry'
   | 'farm' | 'mill' | 'bakery' | 'goldmine' | 'coalmine' | 'mint'
   | 'vineyard' | 'winery' | 'pigfarm' | 'butcher' | 'tavern' | 'fishery'
-  | 'barracks' | 'banditcamp' | 'watchtower' | 'enemycastle';
+  | 'barracks' | 'ironmine' | 'smithy' | 'armory' | 'watchtower'
+  | 'banditcamp' | 'enemywatchtower' | 'enemycastle';
 
-export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'field' | 'fish';
+export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'iron' | 'field' | 'fish';
 
 /** Which side a unit or building belongs to. Economy workers are always 'player'. */
 export type Faction = 'player' | 'enemy' | 'wild';
@@ -36,8 +38,13 @@ export interface RecipeDef { inp: Partial<Record<ItemKey, number>>; out: ItemKey
 /** A tavern feeds nearby workers any of several foods; capacity caps how many it serves. */
 export interface TavernDef { foods: ItemKey[]; capacity: number; time: number; }
 
-/** A barracks trains military units for a resource cost over time. */
-export interface MilitaryDef { trains: string[]; time: number; cost: Partial<Record<ItemKey, number>>; }
+/** One trainable unit at a barracks/guild hall: its own cost & training time. */
+export interface TrainDef { kind: string; cost: Partial<Record<ItemKey, number>>; time: number; }
+/** A barracks/guild hall trains units, each with its own cost and time. */
+export interface MilitaryDef { units: TrainDef[]; }
+
+/** A tower building looses arrows at hostile fighters in range on its own. */
+export interface TowerDef { range: number; dmg: number; rate: number; }
 
 export interface BuildingDef {
   name: string;
@@ -58,12 +65,14 @@ export interface BuildingDef {
   hp?: number;                 // max structure HP (combat); defaults to 100
   military?: MilitaryDef;      // barracks: trainable military units
   trainer?: MilitaryDef;       // guild hall: trainable civilian workers
+  tower?: TowerDef;            // watchtowers/keeps: automatic arrow fire
 }
 
 export interface Coord { x: number; y: number; }
 
 export interface Tree { growth: number; reserved: boolean; meshes: THREE.Object3D[]; s: number; kind: number; }
-export interface Deposit { kind: 'stone' | 'gold' | 'coal'; amt: number; meshes: THREE.Object3D[]; }
+export type DepositKind = 'stone' | 'gold' | 'coal' | 'iron';
+export interface Deposit { kind: DepositKind; amt: number; meshes: THREE.Object3D[]; }
 export interface Deco { kind: DecoKind; meshes: THREE.Object3D[]; }
 export interface Field { farm: Building; growth: number; meshes: THREE.Object3D[]; }
 /** A gold pile on the map; serfs (later the hero) walk over and collect it. */
@@ -103,6 +112,8 @@ export interface Building {
   stock?: Record<string, number>;
   fedUnits?: Unit[];           // taverns: who was served last cycle (for the inspector)
   trainQ?: string[];           // barracks: queued unit kinds being trained
+  rally?: Coord;               // barracks: where freshly trained fighters march to
+  rallyMesh?: THREE.Object3D;  // the flag marking the rally point
   removed?: boolean;
   isSite?: false;
 }
@@ -160,7 +171,9 @@ export interface Unit {
   foe: Unit | null;     // current combat target (unit)
   foeB: Building | null; // current combat target (building)
   order: UnitOrder | null;
-  special: number;      // boss ability cooldown (dragon stomp)
+  special: number;      // boss ability cooldown (dragon fire breath)
+  anchor: Coord | null; // wild beasts & camp guards roam around (and leash to) this
+  lungeT: number;       // melee swing animation timer (little hop toward the foe)
   hpBar: THREE.Object3D | null;
 }
 

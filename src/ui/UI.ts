@@ -1,5 +1,7 @@
 import { DEFS, MENU_CATEGORIES } from '../data/buildings';
 import { ITEMS, RES_SHOWN } from '../data/items';
+import { UPGRADE_BY_ID } from '../data/upgrades';
+import { META_BY_ID } from '../data/metaUpgrades';
 import { ROAD_STONE_COST } from '../constants';
 import { installFavicon, logoSVG } from './logo';
 import { audio } from '../audio/Audio';
@@ -31,6 +33,9 @@ export class UI {
   private unitsOpen = false;
   private unitTab = 'all';
   private lastTabsHTML = '';
+  private perksOpen = false;
+  private perkUpgrades: string[] = [];
+  private perkUnlocks: string[] = [];
 
   constructor() {
     $('logo').innerHTML = logoSVG(30);
@@ -39,6 +44,7 @@ export class UI {
     this.buildMenu();
     this.wireSpeed();
     this.wireUnitPanel();
+    this.wirePerkPanel();
     this.wireInspector();
   }
 
@@ -46,6 +52,8 @@ export class UI {
   setGame(game: Game): void {
     this.game = game;
     this.showInspector(null);
+    this.updateWave(null);
+    this.setPerksOpen(false);
     this.setSpeed(1);
     this.refreshResbar();
     this.refreshBuildCosts();
@@ -81,6 +89,15 @@ export class UI {
 
   /** Show the run's gold total in the HUD chip. */
   setGold(n: number): void { $('goldText').textContent = String(n); }
+
+  /** Refresh the "next raid" countdown banner, or hide it when no wave is pending. */
+  updateWave(info: { in: number; count: number } | null): void {
+    const el = $('wavebar') as HTMLElement;
+    if (!info) { el.style.display = 'none'; return; }
+    el.style.display = 'flex';
+    $('waveText').textContent = `Next raid in ${fmtTime(info.in)} · ${info.count} raiders`;
+    el.classList.toggle('imminent', info.in <= 10);
+  }
 
   /** Toggle sandbox HUD: no objective card, no timer, no debug-win button. */
   setSandbox(on: boolean): void {
@@ -217,6 +234,20 @@ export class UI {
     // A selected unit has no building `def` — show its live stats instead.
     if (o.role !== undefined && !o.def) {
       $('inspName').textContent = o.roleName;
+      // fighters show combat stats; workers show hunger & task
+      if (o.dmg > 0) {
+        $('inspSub').textContent = o.faction === 'player' ? 'Fighter — right-click to order, drag to box-select' : 'Hostile';
+        const hp = Math.max(0, Math.round(o.hp)), ratio = Math.max(0, o.hp / o.maxHp);
+        const hcol2 = ratio > 0.5 ? 'var(--good)' : ratio > 0.25 ? 'var(--accent)' : 'var(--bad)';
+        let fb = '<div class="sect">Status</div><div class="invrow">' + o.status + '</div>';
+        fb += `<div class="sect">Health</div><div class="invrow">HP<b>${hp} / ${o.maxHp}</b></div>`;
+        fb += `<div class="bar"><div style="width:${Math.round(ratio * 100)}%;background:${hcol2}"></div></div>`;
+        fb += `<div class="sect">Combat</div><div class="invrow">Damage<b>${Math.round(o.dmg * 10) / 10}</b></div>`;
+        fb += `<div class="invrow">${o.range > 1.6 ? 'Range' : 'Reach'}<b>${Math.round(o.range * 10) / 10} tiles</b></div>`;
+        fb += `<div class="invrow">Attack every<b>${o.atkCd}s</b></div>`;
+        $('inspBody').innerHTML = fb;
+        return;
+      }
       $('inspSub').textContent = o.home ? 'Works at the ' + o.home.name : 'Free worker';
       const h = Math.round(o.hunger);
       const cond = o.hunger >= 66 ? 'Well fed · +12% speed' : o.hunger <= 25 ? 'Hungry · −25% speed' : 'Content';
@@ -266,13 +297,21 @@ export class UI {
           : '<div class="hnote">Plot limit reached.</div>';
       }
       if (o.worker) body += `<div class="sect">Worker</div><div class="invrow"><div class="dot" style="background:#${o.def.wcolor.toString(16).padStart(6, '0')};border-radius:50%"></div>${o.worker.roleName}<b style="font-weight:400;color:var(--ink-dim);font-size:11px">${o.worker.status}</b></div>`;
+      if (o.def.tower) {
+        const tw = o.def.tower;
+        body += '<div class="sect">Tower</div>';
+        body += `<div class="invrow">Arrow damage<b>${tw.dmg}</b></div><div class="invrow">Range<b>${tw.range} tiles</b></div><div class="invrow">Fires every<b>${tw.rate}s</b></div>`;
+      }
       if (o.def.military || o.def.trainer) {
         const mil = o.def.military || o.def.trainer;
-        const costStr = Object.entries(mil.cost).map(([k, n]) => `${n} ${ITEMS[k as keyof typeof ITEMS].name.toLowerCase()}`).join(' + ') || 'free';
-        body += `<div class="sect">Train (${costStr} each)</div>`;
+        body += '<div class="sect">Train</div>';
         if (!o.active) body += '<div class="hnote">Building still being raised…</div>';
         else {
-          for (const kind of mil.trains) body += `<button class="inspbtn" data-train="${kind}">+ ${kind[0].toUpperCase() + kind.slice(1)}</button>`;
+          for (const t of mil.units) {
+            const cost = Object.entries(t.cost).map(([k, n]) => `<span class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color};margin:0 3px 0 6px"></span>${n}`).join('') || ' free';
+            body += `<button class="inspbtn" data-train="${t.kind}">+ ${t.kind[0].toUpperCase() + t.kind.slice(1)}${cost}</button>`;
+          }
+          if (o.def.military) body += '<div class="hnote">Right-click the map with this building selected to set a rally flag.</div>';
           const q = o.trainQ || [];
           body += `<div class="sect">Training queue (${q.length})${q.length ? ' — click to cancel' : ''}</div>`;
           if (q.length) {
@@ -293,7 +332,7 @@ export class UI {
   // ---------- worker panel ----------
   private wireUnitPanel(): void {
     const toggle = $('unitsToggle'), panel = $('unitpanel');
-    toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : 'block'; this.renderUnits(); };
+    toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; if (this.unitsOpen && this.perksOpen) this.setPerksOpen(false); panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : 'block'; this.renderUnits(); };
     document.addEventListener('keydown', e => { if (e.key === 'u') toggle.click(); });
     const h3 = $('unitTitle');
     h3.style.cursor = 'pointer'; h3.title = 'Click to collapse';
@@ -309,7 +348,7 @@ export class UI {
     if (role === 'serf') return 'serf';
     if (role === 'villager') return 'villager';
     if (role === 'laborer') return 'laborer';
-    if (role === 'soldier' || role === 'archer') return 'military';
+    if (role === 'soldier' || role === 'archer' || role === 'knight') return 'military';
     return 'specialist';
   }
 
@@ -343,6 +382,51 @@ export class UI {
       s += `<div class="urow"><div class="dot" style="background:#${u.colorHex.toString(16).padStart(6, '0')}"></div><div class="info"><div class="rn">${u.roleName}</div><div class="st">${u.status}</div></div><div class="hbar" title="Hunger — feed workers at a Tavern to keep them fast"><div style="width:${Math.round(u.hunger)}%;background:${hcol}"></div></div></div>`;
     }
     $('unitlist').innerHTML = s || '<div class="urow" style="color:var(--ink-dim);justify-content:center">none of this kind</div>';
+  }
+
+  // ---------- heritage / power-up panel ----------
+  private wirePerkPanel(): void {
+    $('btnPerks').addEventListener('click', () => this.setPerksOpen(!this.perksOpen));
+    $('closePerks').addEventListener('click', () => this.setPerksOpen(false));
+  }
+
+  private setPerksOpen(open: boolean): void {
+    this.perksOpen = open;
+    ($('perkpanel') as HTMLElement).style.display = open ? 'block' : 'none';
+    // the perk panel shares the left column with the worker panel — close that one
+    if (open && this.unitsOpen) $('unitTitle').click();
+    if (open) this.renderPerks();
+  }
+
+  /** Hand the panel this run's owned shop power-ups and permanent Heritage unlocks. */
+  setPerks(upgrades: string[], unlocks: string[]): void {
+    this.perkUpgrades = upgrades;
+    this.perkUnlocks = unlocks;
+    $('btnPerks').textContent = `🃏 Cards · ${upgrades.length + unlocks.length}`;
+    if (this.perksOpen) this.renderPerks();
+  }
+
+  private perkRow(icon: string, name: string, desc: string): string {
+    return `<div class="perkrow"><div class="pk-icon">${icon}</div><div class="pk-body"><div class="pk-name">${name}</div><div class="pk-desc">${desc}</div></div></div>`;
+  }
+
+  private renderPerks(): void {
+    let s = '';
+    if (this.perkUnlocks.length) {
+      s += '<div class="sect">Heritage — permanent</div>';
+      for (const id of this.perkUnlocks) { const d = META_BY_ID[id]; if (d) s += this.perkRow(d.icon, d.name, d.desc); }
+    }
+    // shop upgrades stack, so fold duplicates into an ×N count
+    const counts: Record<string, number> = {};
+    for (const id of this.perkUpgrades) counts[id] = (counts[id] || 0) + 1;
+    const ids = Object.keys(counts);
+    s += '<div class="sect">Power-ups this run</div>';
+    if (ids.length) {
+      for (const id of ids) { const d = UPGRADE_BY_ID[id]; if (d) s += this.perkRow(d.icon, d.name + (counts[id] > 1 ? ` ×${counts[id]}` : ''), d.desc); }
+    } else {
+      s += '<div class="invrow" style="color:var(--ink-dim)">No shop power-ups yet — buy some between levels.</div>';
+    }
+    $('perklist').innerHTML = s;
   }
 
   // ---------- toasts ----------

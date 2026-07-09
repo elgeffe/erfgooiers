@@ -245,16 +245,16 @@ function lily(): THREE.Group {
   return g;
 }
 
-export function makeDeposit(kind: 'stone' | 'gold' | 'coal'): THREE.Group {
+export function makeDeposit(kind: 'stone' | 'gold' | 'coal' | 'iron'): THREE.Group {
   const g = new THREE.Group();
-  const col = kind === 'stone' ? 0x9aa0a3 : kind === 'gold' ? 0xc9a94e : 0x3a3a42;
+  const col = kind === 'stone' ? 0x9aa0a3 : kind === 'gold' ? 0xc9a94e : kind === 'iron' ? 0x8a6a58 : 0x3a3a42;
   const m = new THREE.Mesh(geoRock, mat(col));
   m.position.set(0, 0.16, 0); m.scale.y = 0.62; m.rotation.y = rnd() * 3; m.castShadow = true;
   const m2 = new THREE.Mesh(geoRock, mat(col));
   m2.position.set(0.28, 0.09, -0.2); m2.scale.set(0.5, 0.35, 0.5); m2.rotation.y = rnd() * 3; m2.castShadow = true;
   // a glint of the valuable stuff
   if (kind !== 'stone') {
-    const glint = new THREE.Mesh(new THREE.DodecahedronGeometry(0.12, 0), mat(kind === 'gold' ? 0xffd24a : 0x24242a));
+    const glint = new THREE.Mesh(new THREE.DodecahedronGeometry(0.12, 0), mat(kind === 'gold' ? 0xffd24a : kind === 'iron' ? 0xb0653a : 0x24242a));
     glint.position.set(-0.18, 0.2, 0.12); g.add(glint);
   }
   g.add(m, m2);
@@ -402,6 +402,17 @@ function dressUnit(g: THREE.Group, role: string): void {
       add(sword());
       break;
     }
+    case 'knight': { // full helm with plume, heavy plate, sword & kite shield
+      add(dome(0x7d8794, 0.185, 0.64));
+      add(brim(0x6a737e, 0.2, 0.1, 0.6), false);
+      const plume = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.22, 6), mat(0xd9a441)); plume.position.set(0, 0.86, -0.02); plume.userData.marker = true; add(plume);
+      add(plate(0x9aa3b0));
+      const pauldronMat = mat(0x7d8794);
+      for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.SphereGeometry(0.09, 7, 6), pauldronMat); p.position.set(sx * 0.2, 0.4, 0.02); p.userData.marker = true; add(p); }
+      add(shield(0x8f2f3a));
+      add(sword());
+      break;
+    }
     case 'archer': { // leather cap, green tunic accent, bow & quiver
       add(dome(0x5c6b3a, 0.16, 0.66));
       add(brim(0x4a5730, 0.175, 0.04, 0.61), false);
@@ -474,11 +485,15 @@ function makeDragon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mes
     const horn = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.18, 5), mat(0xe8e0cf)); horn.position.set(0.6, 1.04, s * 0.08); horn.rotation.x = s * 0.35; g.add(horn);
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 7, 6), mat(0xffcf3a)); eye.position.set(0.7, 0.94, s * 0.09); g.add(eye);
   }
-  // leathery wings + a spined back
+  // leathery wings + a spined back (wings exposed so the sim can flap them)
+  const wings: THREE.Object3D[] = [];
   for (const s of [-1, 1]) {
     const wing = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6, 0, Math.PI), membrane);
-    wing.scale.set(1, 0.06, 0.75); wing.position.set(-0.05, 0.78, s * 0.32); wing.rotation.set(s * 0.5, 0, 0.25); g.add(wing);
+    wing.scale.set(1, 0.06, 0.75); wing.position.set(-0.05, 0.78, s * 0.32); wing.rotation.set(s * 0.5, 0, 0.25);
+    wing.userData.flapBase = s * 0.5; wing.userData.flapSign = s;
+    g.add(wing); wings.push(wing);
   }
+  g.userData.wings = wings;
   for (let i = 0; i < 4; i++) { const spike = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.12, 5), mat(0x4a141f)); spike.position.set(0.3 - i * 0.28, 0.82 - i * 0.03, 0); g.add(spike); }
   // four clawed legs
   for (const dx of [-0.24, 0.28]) for (const dz of [-0.22, 0.22]) {
@@ -486,6 +501,56 @@ function makeDragon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mes
   }
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; g.add(item);
   return { group: g, itemMesh: item };
+}
+
+// =====================================================================
+//  Combat effects — arrows, flame bursts and the rally flag
+// =====================================================================
+/** An arrow in flight: shaft along +Z (nose forward), oriented by the sim. */
+export function makeArrow(): THREE.Group {
+  const g = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.42, 5), mat(0x8a6a44));
+  shaft.rotation.x = Math.PI / 2; g.add(shaft);
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.09, 5), mat(0xc2c6cb));
+  head.rotation.x = Math.PI / 2; head.position.z = 0.24; g.add(head);
+  const fletch = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.1, 4), mat(0xefe6d0));
+  fletch.rotation.x = -Math.PI / 2; fletch.position.z = -0.2; g.add(fletch);
+  return g;
+}
+
+/** A gob of dragon fire in flight — a glowing two-tone blob. */
+export function makeFireball(): THREE.Group {
+  const g = new THREE.Group();
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd24a }));
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6), new THREE.MeshBasicMaterial({ color: 0xe06428, transparent: true, opacity: 0.7 }));
+  g.add(core, shell);
+  return g;
+}
+
+/** A burst of flame licking up where dragon fire lands; the sim fades & culls it.
+ *  Own materials per instance so fading one flame doesn't dim the others. */
+export function makeFlame(): THREE.Group {
+  const g = new THREE.Group();
+  const cols = [0xe06428, 0xf09a3e, 0xffd24a];
+  for (let i = 0; i < 5; i++) {
+    const m = new THREE.Mesh(
+      new THREE.ConeGeometry(0.1 + rnd() * 0.08, 0.3 + rnd() * 0.3, 5),
+      new THREE.MeshBasicMaterial({ color: cols[i % 3], transparent: true, opacity: 0.9 }),
+    );
+    m.position.set((rnd() - 0.5) * 0.7, 0.15, (rnd() - 0.5) * 0.7);
+    g.add(m);
+  }
+  return g;
+}
+
+/** The rally flag planted where a barracks sends its freshly trained fighters. */
+export function makeFlag(): THREE.Group {
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.9, 6), mat(0x5b4433));
+  pole.position.y = 0.45; pole.castShadow = true; g.add(pole);
+  const pennant = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.4, 3), mat(0x3f5aa0));
+  pennant.rotation.z = -Math.PI / 2; pennant.position.set(0.22, 0.78, 0); g.add(pennant);
+  return g;
 }
 
 // =====================================================================

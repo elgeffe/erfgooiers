@@ -89,7 +89,7 @@ once, and rebuilds each level via `startLevel()` / `disposeLevel()`.
    it under a tab in `MENU_CATEGORIES` (the bottom build menu groups buildings by goal;
    roads & demolish are always shown). Buildings are either:
    - **gatherers** (`gather: { node, out, time, range }`) — a specialist walks to a map
-     node (`tree`/`stone`/`gold`/`coal`/`field`) and returns a good. `fields: true` gives
+     node (`tree`/`stone`/`gold`/`coal`/`iron`/`field`) and returns a good. `fields: true` gives
      the building farm-style crop plots and the `field` node.
    - **producers** (`recipe: { inp, out, time }`) — consume input goods (serfs deliver
      them) and emit an output good.
@@ -109,13 +109,19 @@ Edit the `LEVELS` table in [src/data/levels.ts](src/data/levels.ts). Each level 
   clears them). So `waterScale` is the main lever for "less buildable space"; raise it on
   later levels to tighten the map. The central build zone is always kept clear.
 
-## Current state (Phase 1)
+## Current state
 
-Economy-only roguelite skeleton is complete: 10 data-driven levels with an **escalating
-production arc** (coins → consumer goods: bread, wine, sausage → compound multi-product
-objectives), gold + a shop with upgrades/draft/reroll, hard-timer fail → run summary
-awarding Heritage. Later phases add the hero, combat/military levels, meta-progression and
-juice — see [ROADMAP.md](ROADMAP.md). No hero or combat exists yet.
+Phase 1's economy roguelite is complete (10 data-driven levels, escalating production
+arc, gold + shop, hard-timer fail → Heritage), and the combat layer is in: levels 5–10
+are Defend/Hunt/Military/Boss levels. Combat lives in `Game.ts` (fighter behaviors,
+projectiles, separation, towers, training) with unit archetypes in
+[src/data/units.ts](src/data/units.ts). The military economy runs iron → weaponsmith/
+armorer → barracks (soldier/archer/knight, per-unit costs), plus a buildable watchtower.
+Player control: box-select, right-click orders with formation spread, control groups
+(Shift+1–5 / 1–5), barracks rally flags. Pathfinding is 8-directional A* with
+line-of-sight smoothing ([src/engine/pathfinding.ts](src/engine/pathfinding.ts)); units
+soft-collide so they never stack. The hero and deeper meta-progression are still to
+come — see [ROADMAP.md](ROADMAP.md).
 
 ## Guardrails checklist (before you commit)
 

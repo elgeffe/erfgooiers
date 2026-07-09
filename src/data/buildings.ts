@@ -6,7 +6,11 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
 
   guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & laborers)', model: 'cottage',
     cost: { timber: 4, stone: 3 }, roof: 0x4a6a7a, wall: 0xcaa46e, accent: 0xffd24a, hp: 250,
-    trainer: { trains: ['villager', 'serf', 'laborer'], time: 5, cost: { bread: 1 } } },
+    trainer: { units: [
+      { kind: 'villager', cost: { bread: 1 }, time: 5 },
+      { kind: 'serf', cost: { bread: 1 }, time: 5 },
+      { kind: 'laborer', cost: { bread: 1 }, time: 5 },
+    ] } },
 
   woodcutter: { name: "Woodcutter's Hut", desc: 'Chops nearby trees → trunks', model: 'cottage',
     cost: { timber: 2, stone: 1 }, roof: 0x6b4a2f, wall: 0xa07850,
@@ -72,18 +76,40 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: { timber: 3, stone: 1 }, roof: 0x3f6f7a, wall: 0xbfae8e, accent: 0x7fb0c4,
     gather: { node: 'fish', out: 'fish', time: 4, range: 6 }, worker: 'Fisher', wcolor: 0x4f93a8 },
 
-  barracks: { name: 'Barracks', desc: 'Trains soldiers & archers (costs coin & timber)', model: 'barn',
+  ironmine: { name: 'Iron Mine', desc: 'Mines iron deposits — the raw metal for weapons & armor', model: 'mine',
+    cost: { timber: 2, stone: 1 }, roof: 0x8a4a30, wall: 0x8f8a80, accent: 0xa86a4a,
+    gather: { node: 'iron', out: 'iron', time: 5, range: 9 }, worker: 'Ironminer', wcolor: 0xa86a4a },
+
+  smithy: { name: 'Weaponsmith', desc: 'Iron + coal → weapons for training soldiers & knights', model: 'cottage',
+    cost: { timber: 3, stone: 3 }, roof: 0x4a4a52, wall: 0x9c8a6a, accent: 0xd8dde2,
+    recipe: { inp: { iron: 1, coal: 1 }, out: 'weapon', time: 7 }, worker: 'Smith', wcolor: 0x5a5f66 },
+
+  armory: { name: 'Armorer', desc: 'Iron + coal → armor for training knights', model: 'cottage',
+    cost: { timber: 3, stone: 3 }, roof: 0x5a6470, wall: 0x9c8a6a, accent: 0x7d8794,
+    recipe: { inp: { iron: 1, coal: 1 }, out: 'armor', time: 8 }, worker: 'Armorer', wcolor: 0x7d8794 },
+
+  barracks: { name: 'Barracks', desc: 'Trains soldiers, archers & knights — weapons come from the smithy', model: 'barn',
     cost: { timber: 4, stone: 3 }, roof: 0x5a4a6a, wall: 0xb0a48c, accent: 0x8a5a2b, hp: 200,
-    military: { trains: ['soldier', 'archer'], time: 6, cost: { timber: 1, coin: 1 } } },
+    military: { units: [
+      { kind: 'soldier', cost: { weapon: 1, coin: 1 }, time: 6 },
+      { kind: 'archer', cost: { timber: 1, coin: 1 }, time: 6 },
+      { kind: 'knight', cost: { weapon: 1, armor: 1, coin: 2 }, time: 9 },
+    ] } },
+
+  watchtower: { name: 'Watchtower', desc: 'Looses arrows at raiders in range — build it along their path', model: 'mine',
+    cost: { timber: 2, stone: 5 }, roof: 0x6a7076, wall: 0x9aa0a3, accent: 0x3f5aa0, hp: 320,
+    tower: { range: 7, dmg: 9, rate: 1.4 } },
 
   banditcamp: { name: 'Bandit Camp', desc: 'A den of raiders', model: 'barn',
     cost: {}, roof: 0x4a2e20, wall: 0x6b4a34, accent: 0x3a2a20, hp: 180 },
 
-  watchtower: { name: 'Watchtower', desc: 'A fortified enemy archer tower', model: 'mine',
-    cost: {}, roof: 0x4a5056, wall: 0x777d82, accent: 0x9c3b3b, hp: 260 },
+  enemywatchtower: { name: 'Watchtower', desc: 'A fortified enemy archer tower', model: 'mine',
+    cost: {}, roof: 0x4a5056, wall: 0x777d82, accent: 0x9c3b3b, hp: 260,
+    tower: { range: 6.5, dmg: 9, rate: 1.6 } },
 
   enemycastle: { name: 'Enemy Keep', desc: 'The enemy stronghold', model: 'barn',
-    cost: {}, roof: 0x3a2a3a, wall: 0x8a8078, accent: 0x5a1a26, hp: 900 },
+    cost: {}, roof: 0x3a2a3a, wall: 0x8a8078, accent: 0x5a1a26, hp: 900,
+    tower: { range: 7, dmg: 11, rate: 2.2 } },
 };
 
 /** Build-menu tabs, grouping buildings by the goal / production chain they serve. */
@@ -93,5 +119,5 @@ export const MENU_CATEGORIES: BuildCategory[] = [
   { id: 'materials', name: 'Materials', keys: ['guildhall', 'woodcutter', 'sawmill', 'forester', 'quarry'] },
   { id: 'food', name: 'Food', keys: ['farm', 'mill', 'bakery', 'pigfarm', 'butcher', 'vineyard', 'winery', 'fishery', 'tavern'] },
   { id: 'coin', name: 'Coin', keys: ['goldmine', 'coalmine', 'mint'] },
-  { id: 'military', name: 'Military', keys: ['barracks'] },
+  { id: 'military', name: 'Military', keys: ['barracks', 'ironmine', 'smithy', 'armory', 'watchtower'] },
 ];

@@ -67,6 +67,38 @@ export const UPGRADES: UpgradeDef[] = [
 
   { id: 'stout-stores', name: 'Stout Stores', desc: 'Start with +3 timber & +3 stone', icon: '📦', pool: 'economy', basePrice: 18,
     apply: [{ stat: 'startTimber', add: 3 }, { stat: 'startStone', add: 3 }] },
+
+  // ---- military pool (offered once combat levels are in reach) ----
+  { id: 'forged-blades', name: 'Forged Blades', desc: 'Your fighters deal 15% more damage', icon: '⚔️', pool: 'military', basePrice: 26,
+    apply: [
+      { stat: 'combat:damage', mult: 1.15, filter: 'soldier' },
+      { stat: 'combat:damage', mult: 1.15, filter: 'archer' },
+      { stat: 'combat:damage', mult: 1.15, filter: 'knight' },
+    ] },
+
+  { id: 'oak-shields', name: 'Oak Shields', desc: 'Your fighters have 20% more health', icon: '🛡️', pool: 'military', basePrice: 26,
+    apply: [
+      { stat: 'combat:hp', mult: 1.2, filter: 'soldier' },
+      { stat: 'combat:hp', mult: 1.2, filter: 'archer' },
+      { stat: 'combat:hp', mult: 1.2, filter: 'knight' },
+    ] },
+
+  { id: 'drill-yard', name: 'Drill Yard', desc: 'Fighters train 25% faster', icon: '🥁', pool: 'military', basePrice: 20,
+    apply: [
+      { stat: 'trainTime', mult: 0.75, filter: 'soldier' },
+      { stat: 'trainTime', mult: 0.75, filter: 'archer' },
+      { stat: 'trainTime', mult: 0.75, filter: 'knight' },
+    ] },
+
+  { id: 'fletchers-eye', name: "Fletcher's Eye", desc: 'Archers shoot 15% further', icon: '🏹', pool: 'military', basePrice: 22,
+    apply: [{ stat: 'combat:range', mult: 1.15, filter: 'archer' }] },
+
+  { id: 'forced-march', name: 'Forced March', desc: 'Your fighters move 15% faster', icon: '🎺', pool: 'military', basePrice: 20,
+    apply: [
+      { stat: 'combat:speed', mult: 1.15, filter: 'soldier' },
+      { stat: 'combat:speed', mult: 1.15, filter: 'archer' },
+      { stat: 'combat:speed', mult: 1.15, filter: 'knight' },
+    ] },
 ];
 
 export const UPGRADE_BY_ID: Record<string, UpgradeDef> = Object.fromEntries(UPGRADES.map(u => [u.id, u]));

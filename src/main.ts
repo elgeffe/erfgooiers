@@ -80,6 +80,7 @@ function startLevel(): void {
   }
   game.init(level.kit);
   ui.setGame(game);
+  ui.setPerks(run.upgrades, meta.unlocks);
   controls.setGame(game);
   game.setEnemies(sandbox ? null : (level.enemies ?? null));
   if (!sandbox && level.startArmy) {
@@ -99,6 +100,8 @@ function startLevel(): void {
 
   simAcc = 0;
   phase = 'playing';
+  // dev-only handle for poking the live sim from the console
+  if ((import.meta as any).env?.DEV) (window as any).game = game;
   showScreen(null);
   if (!sandbox) Save.saveRun(run); // persist at the level's start so a reload resumes here
 }
@@ -285,7 +288,7 @@ $('introLogo').innerHTML = logoSVG(40);
 ($('btnSandbox') as HTMLButtonElement).onclick = startSandbox;
 
 // ---------- sandbox spawn toolbar ----------
-function sandboxSpawn(kind: 'soldier' | 'archer' | 'bandit' | 'boar' | 'dragon', count: number): void {
+function sandboxSpawn(kind: 'soldier' | 'archer' | 'knight' | 'bandit' | 'boar' | 'dragon', count: number): void {
   if (!game) return;
   const c = view.camTarget;
   const squad = game.spawnSquad(kind, count, c.x, c.z);
@@ -293,6 +296,7 @@ function sandboxSpawn(kind: 'soldier' | 'archer' | 'bandit' | 'boar' | 'dragon',
 }
 ($('sbSoldier') as HTMLButtonElement).onclick = () => sandboxSpawn('soldier', 12);
 ($('sbArcher') as HTMLButtonElement).onclick = () => sandboxSpawn('archer', 8);
+($('sbKnight') as HTMLButtonElement).onclick = () => sandboxSpawn('knight', 6);
 ($('sbBandit') as HTMLButtonElement).onclick = () => sandboxSpawn('bandit', 12);
 ($('sbBoar') as HTMLButtonElement).onclick = () => sandboxSpawn('boar', 6);
 ($('sbDragon') as HTMLButtonElement).onclick = () => sandboxSpawn('dragon', 1);
@@ -349,7 +353,7 @@ function frame(now: number): void {
 
     const st = game.objective.evaluate(game);
     const remaining = currentLevel.hardTimer - game.elapsed;
-    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateObjective(st.label, st.ratio, remaining); }
+    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateObjective(st.label, st.ratio, remaining); ui.updateWave(game.nextWave()); }
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
 
     // resolve the level last: win, castle lost, or timeout tears the level down
