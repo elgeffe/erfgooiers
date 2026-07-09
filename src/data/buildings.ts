@@ -1,8 +1,8 @@
 import type { BuildingDef, BuildingKey } from '../types';
 
 export const DEFS: Record<BuildingKey, BuildingDef> = {
-  storehouse: { name: 'Storehouse', desc: 'Stores every good', model: 'barn',
-    cost: {}, roof: 0x9a3b2e, wall: 0xcaa46e, store: true, hp: 500 },
+  storehouse: { name: 'Storehouse', desc: 'Stores every good', model: 'castle',
+    cost: {}, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 500 },
 
   guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & laborers)', model: 'cottage',
     cost: { timber: 4, stone: 3 }, roof: 0x4a6a7a, wall: 0xcaa46e, accent: 0xffd24a, hp: 250,
@@ -107,7 +107,7 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: {}, roof: 0x4a5056, wall: 0x777d82, accent: 0x9c3b3b, hp: 260,
     tower: { range: 6.5, dmg: 9, rate: 1.6 } },
 
-  enemycastle: { name: 'Enemy Keep', desc: 'The enemy stronghold', model: 'barn',
+  enemycastle: { name: 'Enemy Keep', desc: 'The enemy stronghold', model: 'castle',
     cost: {}, roof: 0x3a2a3a, wall: 0x8a8078, accent: 0x5a1a26, hp: 900,
     tower: { range: 7, dmg: 11, rate: 2.2 } },
 };

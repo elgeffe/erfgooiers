@@ -29,7 +29,7 @@ export interface UnitOrder {
 export type DecoKind = 'lavender' | 'flowers' | 'bush' | 'reed' | 'lily';
 
 /** Which mesh builder in render/models.ts renders a building. */
-export type ModelKind = 'cottage' | 'windmill' | 'farm' | 'barn' | 'mine' | 'tavern';
+export type ModelKind = 'cottage' | 'windmill' | 'farm' | 'barn' | 'mine' | 'tavern' | 'castle';
 
 export interface ItemDef { name: string; color: string; hex: number; }
 

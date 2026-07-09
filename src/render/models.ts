@@ -606,6 +606,7 @@ export function makeBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
     case 'barn': return barn(def, ghost);
     case 'mine': return mine(def, ghost);
     case 'tavern': return tavern(def, ghost);
+    case 'castle': return castle(def, ghost);
     default: return cottage(def, ghost);
   }
 }
@@ -1031,6 +1032,77 @@ function barn(def: BuildingDef, ghost: boolean): THREE.Group {
   const t3 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.82, 0.14), trimMat); t3.position.set(-0.45, 0.4, 1.04); t3.userData.marker = true;
   g.add(t1, t2, t3);
   g.scale.set(1.12, 1.08, 1.12);
+  return g;
+}
+
+// ---------- castle (storehouse, enemy keep) — a real keep with corner towers ----------
+function castle(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const stone = mkMat(def.wall, ghost);
+  const trim = mkMat(0x8d887c, ghost);
+  const roofM = mkMat(def.roof, ghost);
+  const woodM = mkMat(0x4a3626, ghost);
+
+  // battlemented crown: alternating merlons around a square top
+  const crenel = (cx: number, cz: number, y: number, w: number, alongX: boolean): void => {
+    const n = 4;
+    for (let i = 0; i < n; i++) {
+      const off = -w / 2 + (i + 0.5) * (w / n);
+      const m = new THREE.Mesh(new THREE.BoxGeometry(alongX ? w / n * 0.55 : 0.14, 0.14, alongX ? 0.14 : w / n * 0.55), trim);
+      m.position.set(cx + (alongX ? off : 0), y, cz + (alongX ? 0 : off));
+      m.userData.marker = true; g.add(m);
+    }
+  };
+
+  // central keep — a tall square donjon with a battlement crown and a banner
+  const keep = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.5, 1.15), stone);
+  keep.position.y = 0.75; keep.castShadow = !ghost; keep.receiveShadow = !ghost; g.add(keep);
+  const keepCap = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.12, 1.3), trim);
+  keepCap.position.y = 1.56; keepCap.userData.marker = true; g.add(keepCap);
+  for (const [cx, cz, ax] of [[0, 0.65, true], [0, -0.65, true], [0.65, 0, false], [-0.65, 0, false]] as [number, number, boolean][])
+    crenel(cx, cz, 1.69, 1.3, ax);
+  const keepRoof = new THREE.Mesh(new THREE.ConeGeometry(0.72, 0.62, 4), roofM);
+  keepRoof.position.y = 1.93; keepRoof.rotation.y = Math.PI / 4; keepRoof.castShadow = !ghost; g.add(keepRoof);
+  // banner on the keep
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 5), woodM);
+  pole.position.y = 2.42; pole.userData.marker = true; g.add(pole);
+  const banner = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.3, 3), roofM);
+  banner.rotation.z = -Math.PI / 2; banner.position.set(0.16, 2.56, 0); banner.userData.marker = true; g.add(banner);
+
+  // curtain walls between the towers, crenellated
+  for (const [cx, cz, ax] of [[0, 0.95, true], [0, -0.95, true], [0.95, 0, false], [-0.95, 0, false]] as [number, number, boolean][]) {
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(ax ? 1.7 : 0.2, 0.72, ax ? 0.2 : 1.7), stone);
+    wall.position.set(cx, 0.36, cz); wall.castShadow = !ghost; wall.receiveShadow = !ghost; g.add(wall);
+    const walk = new THREE.Mesh(new THREE.BoxGeometry(ax ? 1.7 : 0.26, 0.07, ax ? 0.26 : 1.7), trim);
+    walk.position.set(cx, 0.75, cz); walk.userData.marker = true; g.add(walk);
+    crenel(cx, cz, 0.86, 1.6, ax);
+  }
+
+  // round towers on each corner: drum, corbelled crown, conical roof, arrow slit
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const tx = sx * 0.95, tz = sz * 0.95;
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 1.2, 10), stone);
+    drum.position.set(tx, 0.6, tz); drum.castShadow = !ghost; drum.receiveShadow = !ghost; g.add(drum);
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.32, 0.18, 10), trim);
+    crown.position.set(tx, 1.28, tz); crown.userData.marker = true; g.add(crown);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.55, 10), roofM);
+    cap.position.set(tx, 1.62, tz); cap.castShadow = !ghost; g.add(cap);
+    const slit = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.26, 0.05), woodM);
+    slit.position.set(tx * 1.24, 0.78, tz * 1.24); slit.userData.marker = true; g.add(slit);
+  }
+
+  // gatehouse: an arched timber gate through the front wall
+  const gateFrame = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.86, 0.3), trim);
+  gateFrame.position.set(0, 0.43, 0.95); gateFrame.castShadow = !ghost; g.add(gateFrame);
+  const gate = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.6, 0.1), woodM);
+  gate.position.set(0, 0.3, 1.08); gate.userData.marker = true; g.add(gate);
+  const arch = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.1, 10, 1, false, -Math.PI / 2, Math.PI), woodM);
+  arch.rotation.x = Math.PI / 2; arch.position.set(0, 0.6, 1.08); arch.userData.marker = true; g.add(arch);
+  // lit keep windows
+  for (const s of [-0.3, 0.3]) {
+    const win = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.24, 0.05), mkMat(0xf4d98a, ghost));
+    win.position.set(s, 1.1, 0.59); win.userData.marker = true; g.add(win);
+  }
   return g;
 }
 
