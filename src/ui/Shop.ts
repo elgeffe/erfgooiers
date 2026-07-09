@@ -1,5 +1,8 @@
 import { Rng, levelSeed } from '../engine/rng';
 import { MAX_CARDS, RARITY_WEIGHT, UPGRADES, UPGRADE_BY_ID, upgradePrice, type UpgradeDef } from '../data/upgrades';
+import { MUTATOR_BY_ID, type Contract } from '../data/mutators';
+import { levelFor } from '../data/levels';
+import { Objective } from '../game/Objectives';
 import type { RunState } from '../game/RunState';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -23,19 +26,23 @@ export class Shop {
   private rerolls = 0;
   private freeReroll = false;      // Heritage unlock: first reroll each visit is free
   private usedFreeReroll = false;
+  private contracts: Contract[] = [];
+  private chosen: Contract | null = null;
 
-  constructor(private readonly onContinue: () => void) {
-    ($('btnShopContinue') as HTMLButtonElement).onclick = () => this.onContinue();
+  constructor(private readonly onContinue: (contract: Contract) => void) {
+    ($('btnShopContinue') as HTMLButtonElement).onclick = () => { if (this.chosen) this.onContinue(this.chosen); };
     ($('btnReroll') as HTMLButtonElement).onclick = () => this.reroll();
   }
 
-  /** Show the shop for the run's just-cleared level. */
-  open(run: RunState, freeReroll = false): void {
+  /** Show the shop for the run's just-cleared level, offering next-level contracts. */
+  open(run: RunState, contracts: Contract[], freeReroll = false): void {
     this.run = run;
     this.rng = new Rng(levelSeed(run.runSeed, run.levelIndex) ^ 0x5f356495);
     this.rerolls = 0;
     this.freeReroll = freeReroll;
     this.usedFreeReroll = false;
+    this.contracts = contracts;
+    this.chosen = contracts.length === 1 ? contracts[0] : null;
     this.slots = this.sample(3);
     this.render();
   }
@@ -134,5 +141,33 @@ export class Shop {
       owned.appendChild(this.card(def, `sell +${sellPrice(def, this.run.levelIndex)}g`, 'sellable', () => this.sell(i)));
     });
     if (!this.run.upgrades.length) owned.innerHTML = '<div class="sc-desc">No cards yet — every card you buy fills one of your five slots.</div>';
+
+    this.renderContracts();
+  }
+
+  /** The road ahead: pick how to take on the next level. */
+  private renderContracts(): void {
+    const nextIndex = this.run.levelIndex + 1;
+    const level = levelFor(nextIndex);
+    const grid = $('shopContracts'); grid.innerHTML = '';
+    for (const c of this.contracts) {
+      const el = document.createElement('div');
+      el.className = `scard contract con-${c.kind}` + (this.chosen === c ? ' picked' : '');
+      const brief = new Objective(level.objectives[c.objectiveIdx % level.objectives.length]).brief();
+      const curses = c.mutators.map(id => {
+        const m = MUTATOR_BY_ID[id];
+        return m ? `<span class="mutchip" title="${m.desc}">${m.icon} ${m.name}</span>` : '';
+      }).join('') || '<span class="mutchip calm">No curses</span>';
+      el.innerHTML =
+        `<div class="sc-body"><div class="sc-name">${c.kind === 'elite' ? '⚔️ ' : ''}${c.name}</div>` +
+        `<div class="sc-desc">Level ${nextIndex} · ${level.name}<br>${brief}</div>` +
+        `<div class="conchips">${curses}</div>` +
+        `<div class="sc-price">${c.reward}g on clear</div></div>`;
+      el.onclick = () => { this.chosen = c; this.render(); };
+      grid.appendChild(el);
+    }
+    const btn = $('btnShopContinue') as HTMLButtonElement;
+    btn.classList.toggle('disabled', !this.chosen);
+    btn.textContent = this.chosen ? `Take the ${this.chosen.name} →` : 'Choose a contract above';
   }
 }

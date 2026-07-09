@@ -81,8 +81,8 @@ export function eligibleMutators(levelIndex: number): MutatorDef[] {
 
 /**
  * Deterministically roll a level's curse from the run seed: none on the
- * opening levels, more likely as the run deepens. The contract picker offers
- * alternatives on top of this baseline.
+ * opening levels, more likely as the run deepens. Used for a run's first
+ * level; between levels the contract picker offers the choice instead.
  */
 export function rollMutators(runSeed: number, levelIndex: number): string[] {
   const pool = eligibleMutators(levelIndex);
@@ -91,4 +91,53 @@ export function rollMutators(runSeed: number, levelIndex: number): string[] {
   const chance = levelIndex >= 5 ? 70 : 45;
   if ((h >>> 4) % 100 >= chance) return [];
   return [pool[(h >>> 12) % pool.length].id];
+}
+
+// =====================================================================
+//  Contracts — the run map. After each clear the shop offers a choice of
+//  ways to take on the next level: safe, cursed (one curse, more gold) or
+//  elite (two curses, much more gold). Deterministic per (run, level), so
+//  a reload lands on the same offer. The objective variant differs per
+//  contract too, so the choice shapes what you'll build, not just risk.
+// =====================================================================
+export interface Contract {
+  kind: 'safe' | 'cursed' | 'elite';
+  name: string;
+  mutators: string[];
+  rewardMult: number;
+  /** Which of the level's objective variants this contract uses. */
+  objectiveIdx: number;
+  /** Base gold on clear, for display (before speed bonus / gold cards). */
+  reward: number;
+}
+
+/** The deterministic base objective-variant index for a level (shared with startLevel). */
+export function baseObjectiveIdx(runSeed: number, levelIndex: number, nObjectives: number): number {
+  return Math.floor((((levelSeed(runSeed, levelIndex) >>> 8) % 9973) / 9973) * nObjectives) % nObjectives;
+}
+
+export function contractsFor(runSeed: number, levelIndex: number, nObjectives: number, baseReward: number): Contract[] {
+  const h = (levelSeed(runSeed, levelIndex) ^ 0x71c92e11) >>> 0;
+  const baseObj = baseObjectiveIdx(runSeed, levelIndex, nObjectives);
+  const out: Contract[] = [
+    { kind: 'safe', name: 'Quiet Roads', mutators: [], rewardMult: 1, objectiveIdx: baseObj, reward: baseReward },
+  ];
+  const pool = eligibleMutators(levelIndex);
+  if (pool.length) {
+    const m1 = pool[h % pool.length];
+    out.push({
+      kind: 'cursed', name: 'Cursed Contract', mutators: [m1.id], rewardMult: m1.rewardMult,
+      objectiveIdx: (baseObj + 1) % nObjectives, reward: Math.round(baseReward * m1.rewardMult),
+    });
+    const rest = pool.filter(m => m !== m1);
+    if (levelIndex >= 4 && rest.length) {
+      const m2 = rest[(h >>> 7) % rest.length];
+      const mult = m1.rewardMult * m2.rewardMult * 1.25; // elite premium on top
+      out.push({
+        kind: 'elite', name: 'Elite Contract', mutators: [m1.id, m2.id], rewardMult: mult,
+        objectiveIdx: baseObj, reward: Math.round(baseReward * mult),
+      });
+    }
+  }
+  return out;
 }

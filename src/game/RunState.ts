@@ -14,6 +14,7 @@ export interface RunState {
   upgrades: string[];           // owned card ids (max MAX_CARDS; applied via Modifiers)
   mutators: string[];           // the current level's active curse ids
   rewardMult: number;           // the chosen contract's gold multiplier (curses + elite)
+  objectiveIdx: number | null;  // contract-chosen objective variant (null = seed default)
   hero: string | null;          // chosen hero id (Phase 2)
   equipment: (string | null)[]; // weapon / boots / trinket (Phase 2)
 }
@@ -26,7 +27,7 @@ export interface MetaState {
 }
 
 export function newRun(seed: number): RunState {
-  return { runSeed: seed >>> 0, levelIndex: 1, gold: 0, upgrades: [], mutators: [], rewardMult: 1, hero: null, equipment: [null, null, null] };
+  return { runSeed: seed >>> 0, levelIndex: 1, gold: 0, upgrades: [], mutators: [], rewardMult: 1, objectiveIdx: null, hero: null, equipment: [null, null, null] };
 }
 
 export function newMeta(): MetaState {

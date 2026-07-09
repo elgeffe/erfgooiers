@@ -10,9 +10,9 @@ import { simRng, uiRng } from './engine/rng';
 import { Modifiers } from './game/Modifiers';
 import { Objective } from './game/Objectives';
 import { specsFor } from './data/upgrades';
-import { MUTATOR_BY_ID, mutatorRewardMult, mutatorSpecsFor, rollMutators } from './data/mutators';
+import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, hasMetaSpecial } from './data/metaUpgrades';
-import { levelFor, pickObjective, sandboxLevel, type LevelDef } from './data/levels';
+import { levelFor, sandboxLevel, type LevelDef } from './data/levels';
 import { RUN_LEVELS, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
@@ -73,12 +73,12 @@ function startLevel(): void {
   game.onGold = amt => { if (run) { run.gold = Math.max(0, run.gold + amt); if (amt > 0) goldEarnedThisRun += amt; ui.setGold(run.gold); } };
   game.onHurt = (x, z) => view.spawnHurt(x, z);
   game.onDeath = (x, z, _fac, color) => view.spawnCorpse(x, z, color);
-  // pick this level's objective variant deterministically (skipped in sandbox)
+  // objective variant: the chosen contract's, else the seed's default pick
   if (sandbox) {
     game.objective = null;
   } else {
-    const objDef = pickObjective(level, ((seed >>> 8) % 9973) / 9973);
-    game.objective = new Objective(objDef);
+    const idx = run.objectiveIdx ?? baseObjectiveIdx(run.runSeed, run.levelIndex, level.objectives.length);
+    game.objective = new Objective(level.objectives[idx % level.objectives.length]);
   }
   game.init(level.kit);
   ui.setGame(game);
@@ -186,7 +186,14 @@ function onLevelClear(): void {
   const last = run.levelIndex >= RUN_LEVELS;
   disposeLevel();
   if (last) { phase = 'summary'; renderSummary(true); showScreen('summary'); Save.clearRun(); run = null; }
-  else { phase = 'shop'; shop.open(run, hasMetaSpecial(meta.unlocks, 'freeReroll')); showScreen('shop'); Save.saveRun(run); }
+  else {
+    const next = run.levelIndex + 1;
+    const contracts = contractsFor(run.runSeed, next, levelFor(next).objectives.length, levelFor(next).reward);
+    phase = 'shop';
+    shop.open(run, contracts, hasMetaSpecial(meta.unlocks, 'freeReroll'));
+    showScreen('shop');
+    Save.saveRun(run);
+  }
 }
 
 /** The hard timer expired — the run is over. */
@@ -204,10 +211,12 @@ function debugWin(): void {
   if (phase === 'playing') onLevelClear();
 }
 
-function shopContinue(): void {
+function shopContinue(contract: Contract): void {
   if (!run) { goMenu(); return; }
   run.levelIndex++;
-  stampContract(run);
+  run.mutators = contract.mutators;
+  run.rewardMult = contract.rewardMult;
+  run.objectiveIdx = contract.objectiveIdx;
   startLevel();
 }
 
