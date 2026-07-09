@@ -42,6 +42,6 @@ export function levelSeed(runSeed: number, levelIndex: number): number {
   // xmur3-style mix so adjacent levels land on wildly different maps
   let h = (runSeed ^ 0x9e3779b9) >>> 0;
   h = Math.imul(h ^ (levelIndex + 1), 0x85ebca6b) >>> 0;
-  h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35) >>> 0; h ^= h >>> 16;
+  h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35) >>> 0; h = (h ^ (h >>> 16)) >>> 0;
   return (h % 2147483646) + 1;
 }
