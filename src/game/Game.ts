@@ -773,15 +773,48 @@ export class Game {
     return Math.hypot(dx, dz);
   }
 
+  // ---------------------------------------------------------------------
+  //  Coarse spatial hash (8×8-tile cells), rebuilt once per tick and shared
+  //  by every proximity query: target acquisition, tower fire, fire volleys
+  //  and projectile impacts. Queries pad by one cell so units that moved
+  //  since the tick started are still found. O(n) build instead of the old
+  //  O(n²) every-fighter-scans-every-unit — matters near the 1,600-unit cap.
+  // ---------------------------------------------------------------------
+  private hashCols = 0;
+  private readonly unitHash = new Map<number, Unit[]>();
+
+  private buildUnitHash(): void {
+    this.unitHash.clear();
+    this.hashCols = (this.world.W >> 3) + 2;
+    for (const u of this.units) {
+      if (u.dead) continue;
+      const k = (u.ty >> 3) * this.hashCols + (u.tx >> 3);
+      let c = this.unitHash.get(k);
+      if (!c) { c = []; this.unitHash.set(k, c); }
+      c.push(u);
+    }
+  }
+
+  /** Visit live units whose tick-start tile is within ~r tiles of (tx, ty). */
+  private forUnitsNear(tx: number, ty: number, r: number, fn: (o: Unit) => void): void {
+    const c0 = Math.max(0, tx - r) >> 3, c1 = Math.max(0, tx + r) >> 3;
+    const r0 = Math.max(0, ty - r) >> 3, r1 = Math.max(0, ty + r) >> 3;
+    for (let cy = r0; cy <= r1; cy++) for (let cx = c0; cx <= c1; cx++) {
+      const cell = this.unitHash.get(cy * this.hashCols + cx);
+      if (!cell) continue;
+      for (const o of cell) fn(o);
+    }
+  }
+
   /** Nearest hostile fighter within the given aggro radius, or null. */
   private acquireTarget(u: Unit, aggro: number): Unit | null {
     let best: Unit | null = null, bd = aggro * aggro;
-    for (const o of this.units) {
-      if (o.dead || o === u) continue;
-      if (!this.hostile(u.faction, o.faction)) continue;
+    this.forUnitsNear(u.tx, u.ty, Math.ceil(aggro) + 1, o => {
+      if (o.dead || o === u) return;
+      if (!this.hostile(u.faction, o.faction)) return;
       const dx = o.tx - u.tx, dy = o.ty - u.ty, d2 = dx * dx + dy * dy;
       if (d2 < bd) { bd = d2; best = o; }
-    }
+    });
     return best;
   }
 
@@ -1078,13 +1111,16 @@ export class Game {
   }
 
   private impact(p: { ex: number; ez: number; from: Faction; shooter: Unit | null; target: Unit | null; dmg: number; kind: 'arrow' | 'fire' }): void {
+    const W = this.world.W, H = this.world.H;
+    const itx = Math.max(0, Math.min(W - 1, Math.round(p.ex + W / 2 - 0.5)));
+    const ity = Math.max(0, Math.min(H - 1, Math.round(p.ez + H / 2 - 0.5)));
     if (p.kind === 'fire') {
       // splash: scorch hostile units & buildings around the landing point
-      for (const o of this.units) {
-        if (o.dead || !this.hostile(p.from, o.faction)) continue;
+      this.forUnitsNear(itx, ity, 4, o => {
+        if (o.dead || !this.hostile(p.from, o.faction)) return;
         const dx = o.mesh.position.x - p.ex, dz = o.mesh.position.z - p.ez;
         if (dx * dx + dz * dz <= 1.3 * 1.3) this.hurtUnit(p.shooter, o, p.dmg);
-      }
+      });
       for (const b of this.buildings) {
         if (b.removed || !this.hostile(p.from, b.faction)) continue;
         const c = this.buildingCenter(b);
@@ -1102,12 +1138,12 @@ export class Game {
       return;
     }
     let best: Unit | null = null, bd = 0.6 * 0.6;
-    for (const o of this.units) {
-      if (o.dead || !this.hostile(p.from, o.faction)) continue;
+    this.forUnitsNear(itx, ity, 3, o => {
+      if (o.dead || !this.hostile(p.from, o.faction)) return;
       const dx = o.mesh.position.x - p.ex, dz = o.mesh.position.z - p.ez, d2 = dx * dx + dz * dz;
       if (d2 < bd) { bd = d2; best = o; }
-    }
-    if (best) this.hurtUnit(p.shooter, best, p.dmg);
+    });
+    if (best) this.hurtUnit(p.shooter, best as Unit, p.dmg);
   }
 
   /** Flames flare where dragon fire lands, then gutter out. */
@@ -1320,11 +1356,11 @@ export class Game {
       if (b.prog < tw.rate) continue;
       const c = this.buildingCenter(b);
       let best: Unit | null = null, bd = tw.range * tw.range;
-      for (const u of this.units) {
-        if (u.dead || !this.hostile(b.faction, u.faction) || u.dmg <= 0) continue;
+      this.forUnitsNear(b.x, b.y, Math.ceil(tw.range) + 2, u => {
+        if (u.dead || !this.hostile(b.faction, u.faction) || u.dmg <= 0) return;
         const dx = u.mesh.position.x - c.x, dz = u.mesh.position.z - c.z, d2 = dx * dx + dz * dz;
         if (d2 < bd) { bd = d2; best = u; }
-      }
+      });
       if (!best) continue; // stay drawn until something wanders into range
       b.prog = 0;
       this.fireArrow(null, b.faction, c.x, 2.1, c.z, best, tw.dmg);
@@ -1429,6 +1465,7 @@ export class Game {
   // =====================================================================
   update(sdt: number): void {
     this.elapsed += sdt;
+    this.buildUnitHash(); // shared by all proximity queries this tick
     this.dispatchT += sdt;
     if (this.dispatchT > 0.45) { this.dispatchT = 0; this.dispatch(); }
     for (const u of this.units) {
