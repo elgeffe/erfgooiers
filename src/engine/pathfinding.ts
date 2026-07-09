@@ -52,7 +52,7 @@ export function findPath(world: World, sx: number, sy: number, ex: number, ey: n
       // no corner cutting: a diagonal step needs both orthogonal shoulders clear
       if (dx !== 0 && dy !== 0 && (!world.passable(cur.x + dx, cur.y) || !world.passable(cur.x, cur.y + dy))) continue;
       const t = tiles[ny][nx];
-      if (t.type === 'water') continue;
+      if (t.type !== 'grass') continue; // water & rock both block
       const cost = (t.road ? TILE_COST_ROAD : TILE_COST_GRASS) * mult;
       const ng = gS.get(ck)! + cost, nk = key(nx, ny);
       if (gS.has(nk) && gS.get(nk)! <= ng) continue;

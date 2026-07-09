@@ -16,6 +16,8 @@ export interface WorldParams {
   waterScale?: number;   // 0 = dry, 1 = default lake+ponds, >1 = wetter
   meadows?: number;      // lavender patches
   goldPiles?: number;    // scattered gold pickups the hero/serfs collect
+  mountains?: number;    // impassable rocky ridges (natural boundaries / biomes)
+  ruins?: number;        // broken old wall lines — impassable but with gaps
 }
 
 /**
@@ -44,6 +46,8 @@ export class World {
       waterScale: params.waterScale ?? 1,
       meadows: params.meadows ?? 3,
       goldPiles: params.goldPiles ?? 0,
+      mountains: params.mountains ?? 0,
+      ruins: params.ruins ?? 0,
     };
     this.W = this.p.w;
     this.H = this.p.h;
@@ -70,7 +74,7 @@ export class World {
   passable(x: number, y: number): boolean {
     const t = this.T(x, y);
     if (!t) return false;
-    if (t.type === 'water') return false;
+    if (t.type !== 'grass') return false; // water & rock both block
     if (t.b || t.site) return false;
     return true;
   }
@@ -124,6 +128,40 @@ export class World {
       do { cx = 4 + Math.floor(rnd() * (W - 8)); cy = 4 + Math.floor(rnd() * (H - 8)); }
       while (nearCentre(cx, cy, r) && guard++ < 40);
       if (!nearCentre(cx, cy, r)) water(cx, cy, r);
+    }
+
+    // ---- natural boundaries: rocky ridges & broken old walls (both impassable) ----
+    // Ridges wander as short chains of blobs, walls as straight-ish lines with
+    // gaps — carving the map into passes and biomes without sealing the centre.
+    const rockTile = (x: number, y: number, kind: 'peak' | 'wall'): void => {
+      const t = this.T(x, y);
+      if (!t || t.type !== 'grass' || nearCentre(x, y, 2)) return;
+      t.type = 'rock'; t.rock = kind;
+    };
+    for (let i = 0; i < this.p.mountains; i++) {
+      let mx = 4 + rnd() * (W - 8), my = 4 + rnd() * (H - 8);
+      let dir = rnd() * Math.PI * 2;
+      const links = 3 + Math.floor(rnd() * 3);
+      for (let j = 0; j < links; j++) {
+        const r = 1 + Math.floor(rnd() * 2);
+        const cx = Math.round(mx), cy = Math.round(my);
+        for (let y = Math.max(0, cy - r); y <= Math.min(H - 1, cy + r); y++)
+          for (let x = Math.max(0, cx - r); x <= Math.min(W - 1, cx + r); x++)
+            if (Math.hypot(x - cx, y - cy) <= r * (0.75 + rnd() * 0.3)) rockTile(x, y, 'peak');
+        dir += (rnd() - 0.5) * 0.8;
+        mx += Math.cos(dir) * (r + 1.6);
+        my += Math.sin(dir) * (r + 1.6);
+      }
+    }
+    for (let i = 0; i < this.p.ruins; i++) {
+      let wx = 5 + rnd() * (W - 10), wy = 5 + rnd() * (H - 10);
+      const dir = Math.floor(rnd() * 4) * Math.PI / 2 + (rnd() - 0.5) * 0.3;
+      const len = 6 + Math.floor(rnd() * 7);
+      for (let j = 0; j < len; j++) {
+        // crumbled gaps let units (and armies) slip through the old line
+        if (rnd() > 0.25) rockTile(Math.round(wx), Math.round(wy), 'wall');
+        wx += Math.cos(dir); wy += Math.sin(dir);
+      }
     }
 
     const deposits = (cx: number, cy: number, r: number, kind: DepositKind, n: number): number => {

@@ -74,7 +74,7 @@ export const LEVELS: LevelDef[] = [
 
   { index: 5, name: 'Raiders at the Gate', type: 'Defend',
     objectives: [{ kind: 'survive', waves: 2 }],
-    world: { w: 44, h: 44, treeStands: 6, oreVeins: 5, waterScale: 1.0, meadows: 4, goldPiles: 3 },
+    world: { w: 44, h: 44, treeStands: 6, oreVeins: 5, waterScale: 1.0, meadows: 4, goldPiles: 3, ruins: 2 },
     kit: { stock: { timber: 16, stone: 12, bread: 10, coin: 6, weapon: 2 }, serfs: 6, laborers: 2 },
     startArmy: [{ kind: 'soldier', count: 3 }],
     enemies: { waves: [{ at: 35, kind: 'bandit', count: 5 }, { at: 105, kind: 'bandit', count: 8 }] },
@@ -82,7 +82,7 @@ export const LEVELS: LevelDef[] = [
 
   { index: 6, name: 'The Boar Hunt', type: 'Hunt',
     objectives: [{ kind: 'slay', unit: 'boar', n: 8 }],
-    world: { w: 46, h: 46, treeStands: 8, oreVeins: 5, waterScale: 0.9, meadows: 5, goldPiles: 3 },
+    world: { w: 46, h: 46, treeStands: 8, oreVeins: 5, waterScale: 0.9, meadows: 5, goldPiles: 3, mountains: 2 },
     kit: { stock: { timber: 14, stone: 10, bread: 12, coin: 8, weapon: 2 }, serfs: 2, laborers: 2 },
     startArmy: [{ kind: 'soldier', count: 4 }, { kind: 'archer', count: 2 }],
     enemies: { wild: [{ kind: 'boar', count: 10 }, { kind: 'wolf', count: 5 }] },
@@ -90,7 +90,7 @@ export const LEVELS: LevelDef[] = [
 
   { index: 7, name: 'Bandit Country', type: 'Military',
     objectives: [{ kind: 'destroy', n: 2 }],
-    world: { w: 48, h: 48, treeStands: 7, oreVeins: 6, waterScale: 1.0, meadows: 4, goldPiles: 4 },
+    world: { w: 48, h: 48, treeStands: 7, oreVeins: 6, waterScale: 1.0, meadows: 4, goldPiles: 4, mountains: 1, ruins: 2 },
     kit: { stock: { timber: 16, stone: 12, bread: 12, coin: 10, weapon: 3 }, serfs: 2, laborers: 2 },
     startArmy: [{ kind: 'soldier', count: 4 }, { kind: 'archer', count: 3 }],
     enemies: { wild: [{ kind: 'wolf', count: 4 }], camps: [{ count: 2, guards: 4 }],
@@ -100,7 +100,7 @@ export const LEVELS: LevelDef[] = [
 
   { index: 8, name: 'The Fortified Village', type: 'Military',
     objectives: [{ kind: 'destroy', n: 4 }],
-    world: { w: 50, h: 50, treeStands: 7, oreVeins: 6, waterScale: 1.05, meadows: 4, goldPiles: 4 },
+    world: { w: 50, h: 50, treeStands: 7, oreVeins: 6, waterScale: 1.05, meadows: 4, goldPiles: 4, ruins: 3 },
     kit: { stock: { timber: 18, stone: 14, bread: 14, coin: 14, weapon: 3, armor: 1 }, serfs: 2, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 5 }, { kind: 'archer', count: 4 }],
     enemies: { keep: { guards: 6 }, towers: 3, commander: { every: 40, kind: 'orc', count: 4, from: 'camp' },
@@ -109,7 +109,7 @@ export const LEVELS: LevelDef[] = [
 
   { index: 9, name: 'The Enemy Keep', type: 'Military',
     objectives: [{ kind: 'destroy', n: 5 }],
-    world: { w: 52, h: 52, treeStands: 8, oreVeins: 7, waterScale: 1.1, meadows: 4, goldPiles: 5 },
+    world: { w: 52, h: 52, treeStands: 8, oreVeins: 7, waterScale: 1.1, meadows: 4, goldPiles: 5, mountains: 3, ruins: 1 },
     kit: { stock: { timber: 20, stone: 16, bread: 16, coin: 18, weapon: 4, armor: 2 }, serfs: 2, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 6 }, { kind: 'archer', count: 5 }],
     enemies: { keep: { guards: 8 }, towers: 4, commander: { every: 32, kind: 'orc', count: 5, from: 'camp' },
@@ -118,7 +118,7 @@ export const LEVELS: LevelDef[] = [
 
   { index: 10, name: 'Dragon\u2019s Hoard', type: 'Boss',
     objectives: [{ kind: 'slay', unit: 'dragon', n: 1 }],
-    world: { w: 52, h: 52, treeStands: 8, oreVeins: 8, waterScale: 1.1, meadows: 4, goldPiles: 6 },
+    world: { w: 52, h: 52, treeStands: 8, oreVeins: 8, waterScale: 1.1, meadows: 4, goldPiles: 6, mountains: 4 },
     kit: { stock: { timber: 20, stone: 16, bread: 18, coin: 24, weapon: 4, armor: 2 }, serfs: 2, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 8 }, { kind: 'archer', count: 6 }],
     enemies: { boss: 'dragon', waves: [{ at: 60, kind: 'boar', count: 6 }, { at: 150, kind: 'orc', count: 5 }, { at: 240, kind: 'troll', count: 2 }] },

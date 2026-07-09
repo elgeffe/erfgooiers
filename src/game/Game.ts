@@ -567,7 +567,7 @@ export class Game {
       for (let tries = 0; tries < 8; tries++) {
         const x = cx + Math.round((rnd() - 0.5) * 14), y = cy + Math.round((rnd() - 0.5) * 14);
         const t = this.world.T(x, y);
-        if (!t || t.type === 'water' || t.b || t.site || t.dep) continue;
+        if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
         if (this.sendTo(u, x, y)) { u.wstate = 'stroll'; return; }
       }
       u.timer = 1 + rnd() * 2;                 // nowhere to go — wait, then retry
@@ -933,7 +933,7 @@ export class Game {
     for (let tries = 0; tries < 6; tries++) {
       const x = a.x + Math.round((rnd() - 0.5) * 8), y = a.y + Math.round((rnd() - 0.5) * 8);
       const t = this.world.T(x, y);
-      if (!t || t.type === 'water' || t.b || t.site || t.dep) continue;
+      if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
       if (this.sendTo(u, x, y)) return;
     }
   }
@@ -1170,7 +1170,7 @@ export class Game {
     const tx = Math.max(0, Math.min(W - 1, Math.round(nxp + W / 2 - 0.5)));
     const ty = Math.max(0, Math.min(H - 1, Math.round(nzp + H / 2 - 0.5)));
     const t = this.world.tiles[ty][tx];
-    if (t.type === 'water' || t.b || t.site) return;
+    if (t.type !== 'grass' || t.b || t.site) return;
     u.mesh.position.x = nxp; u.mesh.position.z = nzp;
     u.tx = tx; u.ty = ty;
   }
@@ -1210,7 +1210,7 @@ export class Game {
     const tryTile = (x: number, y: number): void => {
       if (out.length >= n) return;
       const t = this.world.T(x, y);
-      if (!t || t.type === 'water' || t.b || t.site) return;
+      if (!t || t.type !== 'grass' || t.b || t.site) return;
       out.push({ x, y });
     };
     tryTile(cx, cy);
@@ -1244,7 +1244,7 @@ export class Game {
     const tryTile = (x: number, y: number): void => {
       if (out.length >= count || this.units.length >= 1600) return; // cap for perf
       const t = this.world.T(x, y);
-      if (!t || t.type === 'water' || t.b || t.site || t.dep) return;
+      if (!t || t.type !== 'grass' || t.b || t.site || t.dep) return;
       out.push(this.spawnFighter(kind, { x, y }, faction));
     };
     tryTile(cx, cy);
@@ -1359,7 +1359,7 @@ export class Game {
       const x = 2 + Math.floor(rnd() * (W - 4)), y = 2 + Math.floor(rnd() * (H - 4));
       if (Math.abs(x - cx) < 7 && Math.abs(y - cy) < 7) continue;
       const t = this.world.T(x, y);
-      if (!t || t.type === 'water' || t.b || t.site || t.dep) continue;
+      if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
       this.spawnFighter(kind, { x, y }, 'wild'); placed++;
     }
   }
@@ -1395,7 +1395,7 @@ export class Game {
   private areaClear(tx: number, ty: number): boolean {
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) {
       const t = this.world.T(x, y);
-      if (!t || t.type === 'water' || t.b || t.site || t.dep || t.road) return false;
+      if (!t || t.type !== 'grass' || t.b || t.site || t.dep || t.road) return false;
     }
     return true;
   }

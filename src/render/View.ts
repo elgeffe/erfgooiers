@@ -4,7 +4,7 @@ import { uiRng } from '../engine/rng';
 import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
-import { makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makePickup, makePig, makeScaffold, makeTree, makeUnit, noOutline, stdMat } from './models';
+import { makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, stdMat } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -447,6 +447,10 @@ export class View {
   private tileBaseColor(tx: number, ty: number): { hex: number; sh: number } {
     const t = this.world.tiles[ty][tx];
     if (t.type === 'water') return { hex: 0x36648f, sh: 0.9 + ((tx * 7 + ty * 13) % 10) / 100 };
+    // rocky ground: grey scree under mountain peaks, dusty earth under ruined walls
+    if (t.type === 'rock') return t.rock === 'wall'
+      ? { hex: 0x9a8a6e, sh: 0.92 + ((tx * 3 + ty * 7) % 8) / 100 }
+      : { hex: 0x83837e, sh: 0.88 + ((tx * 5 + ty * 3) % 12) / 100 };
     if (t.road) return { hex: 0xcbb389, sh: 0.96 + ((tx * 3 + ty * 5) % 8) / 100 };
     if (t.field) {
       const out = t.field.farm.def.gather?.out;
@@ -502,7 +506,27 @@ export class View {
       if (t.dep) this.addDeposit(x, y, t.dep);
       if (t.deco) this.addDeco(x, y, t.deco);
       if (t.pickup) this.addPickup(x, y, t.pickup);
+      if (t.type === 'rock') this.addRock(x, y);
     }
+  }
+
+  /** Impassable rock: a mountain peak, or a ruined wall aligned with its line. */
+  private addRock(x: number, y: number): void {
+    const t = this.world.tiles[y][x];
+    let g: THREE.Group;
+    if (t.rock === 'wall') {
+      g = makeRuinWall();
+      // run the wall along its neighbours so a line reads as one old rampart
+      const L = this.world.T(x - 1, y), R = this.world.T(x + 1, y);
+      const alongX = (L && L.rock === 'wall') || (R && R.rock === 'wall');
+      if (!alongX) g.rotation.y = Math.PI / 2;
+    } else {
+      g = makeMountain();
+      g.rotation.y = rnd() * Math.PI * 2;
+    }
+    g.position.set(this.world.wx(x), 0, this.world.wz(y));
+    this.worldGroup.add(g);
+    this.freeze(g);
   }
 
   // =====================================================================
@@ -895,6 +919,7 @@ export class View {
       const t = this.world.tiles[y][x];
       let c = '#6fae52';
       if (t.type === 'water') c = '#5b93b0';
+      else if (t.type === 'rock') c = t.rock === 'wall' ? '#8f8168' : '#757570';
       else if (t.road) c = '#cbb389';
       else if (t.field) c = '#d3bd56';
       else if (t.tree) c = '#3d5c2e';

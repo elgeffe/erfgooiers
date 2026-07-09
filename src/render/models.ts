@@ -261,6 +261,62 @@ export function makeDeposit(kind: 'stone' | 'gold' | 'coal' | 'iron'): THREE.Gro
   return g;
 }
 
+// =====================================================================
+//  Natural boundaries — impassable mountain peaks & ruined wall lines
+// =====================================================================
+/** One tile's worth of mountain: a craggy main peak with lesser spurs. */
+export function makeMountain(): THREE.Group {
+  const g = new THREE.Group();
+  const rockM = mat(0x7d7d78);
+  const darkM = mat(0x64645f);
+  const h = 1.1 + rnd() * 0.9;
+  const peak = new THREE.Mesh(new THREE.ConeGeometry(0.58 + rnd() * 0.12, h, 6), rockM);
+  peak.position.set((rnd() - 0.5) * 0.2, h / 2, (rnd() - 0.5) * 0.2);
+  peak.rotation.y = rnd() * Math.PI; peak.castShadow = true; g.add(peak);
+  // a snowy cap crowns the tallest peaks
+  if (h > 1.6) {
+    const snow = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.34, 6), mat(0xf2f3f0));
+    snow.position.set(peak.position.x, h - 0.16, peak.position.z); snow.rotation.y = peak.rotation.y; g.add(snow);
+  }
+  for (let i = 0; i < 2; i++) {
+    const sh = 0.4 + rnd() * 0.5;
+    const spur = new THREE.Mesh(new THREE.ConeGeometry(0.3 + rnd() * 0.1, sh, 5), i ? darkM : rockM);
+    const a = rnd() * Math.PI * 2;
+    spur.position.set(Math.cos(a) * 0.32, sh / 2, Math.sin(a) * 0.32);
+    spur.rotation.y = rnd() * Math.PI; spur.castShadow = true; g.add(spur);
+  }
+  const scree = new THREE.Mesh(geoRock, darkM);
+  scree.position.set((rnd() - 0.5) * 0.6, 0.08, (rnd() - 0.5) * 0.6);
+  scree.scale.setScalar(0.35 + rnd() * 0.2); scree.rotation.y = rnd() * 3; g.add(scree);
+  return g;
+}
+
+/** One tile of a broken old wall: a crumbling rampart with tumbled blocks.
+ *  Runs along local X; the View turns it to follow the wall line. */
+export function makeRuinWall(): THREE.Group {
+  const g = new THREE.Group();
+  const stoneM = mat(0x9a958a);
+  const oldM = mat(0x847f74);
+  // the standing courses, stepped down where the wall has crumbled
+  let x = -0.5;
+  while (x < 0.48) {
+    const w = 0.22 + rnd() * 0.2;
+    const h = 0.35 + rnd() * 0.55;
+    const blk = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.34), rnd() < 0.4 ? oldM : stoneM);
+    blk.position.set(x + w / 2, h / 2, (rnd() - 0.5) * 0.06);
+    blk.rotation.y = (rnd() - 0.5) * 0.1; blk.castShadow = true; g.add(blk);
+    x += w + 0.02;
+  }
+  // tumbled blocks at the foot of the wall
+  for (let i = 0; i < 2 + Math.floor(rnd() * 2); i++) {
+    const s = 0.1 + rnd() * 0.08;
+    const b = new THREE.Mesh(new THREE.BoxGeometry(s * 1.4, s, s), oldM);
+    b.position.set((rnd() - 0.5) * 0.8, s / 2, (rnd() < 0.5 ? -1 : 1) * (0.26 + rnd() * 0.14));
+    b.rotation.y = rnd(); b.castShadow = true; g.add(b);
+  }
+  return g;
+}
+
 /** A little heap of gold coins the hero/serfs pick up off the map. */
 export function makePickup(): THREE.Group {
   const g = new THREE.Group();
