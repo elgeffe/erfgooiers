@@ -487,9 +487,12 @@ function makeBeast(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 9, 7), hide); head.position.set(0.4, 0.3, 0); head.scale.set(1.05, 0.9, 0.9); head.castShadow = true;
   const snout = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.16, 8), mat(0x4a3226)); snout.rotation.z = Math.PI / 2; snout.position.set(0.58, 0.27, 0);
   g.add(body, hump, head, snout);
-  // tusks, ears, eyes
+  // tusks, ears, eyes — the tusks jut proudly up-and-forward from the jaw
   for (const s of [-1, 1]) {
-    const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.11, 5), mat(0xeee6cf)); tusk.position.set(0.56, 0.23, s * 0.07); tusk.rotation.set(0, 0, 0.7); g.add(tusk);
+    const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.2, 6), mat(0xf4ecd8));
+    tusk.position.set(0.58, 0.22, s * 0.1); tusk.rotation.set(s * 0.35, 0, -0.85); tusk.castShadow = true; g.add(tusk);
+    const tuskTip = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.09, 6), mat(0xfaf5e8));
+    tuskTip.position.set(0.68, 0.31, s * 0.13); tuskTip.rotation.set(s * 0.35, 0, -0.45); g.add(tuskTip);
     const ear = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.11, 5), hide); ear.position.set(0.31, 0.46, s * 0.11); g.add(ear);
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.024, 6, 5), mat(0x1a120c)); eye.position.set(0.47, 0.34, s * 0.08); g.add(eye);
   }
