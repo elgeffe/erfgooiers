@@ -56,8 +56,8 @@ export const LEVELS: LevelDef[] = [
 
   { index: 3, name: 'The Vintner\u2019s Gamble', type: 'Economy',
     objectives: [
-      { kind: 'produce', item: 'wine', n: 8 },
-      { kind: 'produce', item: 'bread', n: 10 },
+      // both chains at once: run the bakery AND the winery side by side
+      { kind: 'produceMulti', reqs: [{ item: 'bread', n: 8 }, { item: 'wine', n: 6 }] },
     ],
     world: { w: 40, h: 40, treeStands: 6, oreVeins: 5, waterScale: 0.7, meadows: 3, goldPiles: 3 },
     kit: { stock: { timber: 10, stone: 10, bread: 8 }, serfs: 2, laborers: 1 },
@@ -65,7 +65,8 @@ export const LEVELS: LevelDef[] = [
 
   { index: 4, name: 'The Coin Run', type: 'Economy',
     objectives: [
-      { kind: 'produce', item: 'coin', n: 20 },
+      { kind: 'produceMulti', reqs: [{ item: 'coin', n: 14 }, { item: 'bread', n: 8 }] },
+      { kind: 'produceMulti', reqs: [{ item: 'coin', n: 12 }, { item: 'wine', n: 6 }] },
     ],
     world: { w: 42, h: 42, treeStands: 6, oreVeins: 7, waterScale: 0.85, meadows: 3, goldPiles: 6 },
     kit: { stock: { timber: 12, stone: 10, bread: 8 }, serfs: 2, laborers: 2 },
