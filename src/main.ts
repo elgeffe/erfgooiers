@@ -335,6 +335,31 @@ renderSound();
   else document.exitFullscreen?.();
 };
 
+// ---------- perf HUD (F3) — draw calls, frame & sim cost, live counts ----------
+const perfEl = $('perfhud');
+let perfOn = false;
+let perfT = 0;
+let frameMs = 0;   // exponential moving average of full-frame time
+let simMs = 0;     // EMA of the sim-update portion of a frame
+addEventListener('keydown', e => {
+  if (e.key !== 'F3') return;
+  e.preventDefault();
+  perfOn = !perfOn;
+  perfEl.style.display = perfOn ? 'block' : 'none';
+});
+function renderPerfHud(): void {
+  const info = view.renderer.info;
+  let meshes = 0;
+  view.scene.traverse(o => { if ((o as any).isMesh) meshes++; });
+  perfEl.textContent =
+    `frame  ${frameMs.toFixed(1)} ms  (${frameMs > 0 ? Math.round(1000 / frameMs) : 0} fps)\n` +
+    `sim    ${simMs.toFixed(2)} ms/frame\n` +
+    `calls  ${info.render.calls}   tris ${info.render.triangles.toLocaleString()}\n` +
+    `meshes ${meshes}   units ${game ? game.units.length : 0}\n` +
+    `geoms  ${info.memory.geometries}   textures ${info.memory.textures}\n` +
+    `px     ${view.renderer.getPixelRatio().toFixed(2)}`;
+}
+
 // ---------- main loop (fixed-timestep sim, real-time render) ----------
 const TICK = 1 / 20;          // 20 sim steps/second — determinism & replay ready
 const MAX_STEPS = 6;          // clamp catch-up so a slow frame can't spiral
@@ -345,6 +370,7 @@ let uiT = 0, mmT = 0;
 function frame(now: number): void {
   requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  frameMs += (dt * 1000 - frameMs) * 0.05;
 
   controls.update(dt);                       // keyboard camera panning
   if (game) view.animate(dt, game.buildings); // sails & clouds (real-time, ignores pause)
@@ -353,7 +379,9 @@ function frame(now: number): void {
   if (phase === 'playing' && game && currentLevel && game.objective) {
     simAcc += dt * game.simSpeed;
     let steps = 0;
+    const t0 = performance.now();
     while (simAcc >= TICK && steps < MAX_STEPS) { game.update(TICK); simAcc -= TICK; steps++; }
+    simMs += (performance.now() - t0 - simMs) * 0.05;
     if (simAcc > TICK) simAcc = 0;            // drop the backlog rather than fast-forward
 
     const st = game.objective.evaluate(game);
@@ -369,13 +397,16 @@ function frame(now: number): void {
     // sandbox: tick the sim with no objective/timer to resolve against
     simAcc += dt * game.simSpeed;
     let steps = 0;
+    const t0 = performance.now();
     while (simAcc >= TICK && steps < MAX_STEPS) { game.update(TICK); simAcc -= TICK; steps++; }
+    simMs += (performance.now() - t0 - simMs) * 0.05;
     if (simAcc > TICK) simAcc = 0;
     uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); }
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
   }
 
   view.render();
+  if (perfOn) { perfT += dt; if (perfT > 0.25) { perfT = 0; renderPerfHud(); } }
 }
 
 goMenu();
