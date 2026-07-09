@@ -4,7 +4,7 @@ import { uiRng } from '../engine/rng';
 import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
-import { makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, stdMat } from './models';
+import { cone, cyl, makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, sphere, stdMat } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -693,8 +693,8 @@ export class View {
         const r = 9 + ring * 7 + rnd() * 7;
         const rad = boardR + GAP + r + ring * 22 + rnd() * 10; // inner edge = rad - r ≥ boardR + GAP
         const h = (2.5 + rnd() * 2.5) * (1 + ring * 0.5);
-        const hill = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 12), hillTones[Math.min(3, ring + (i % 2))]);
-        hill.scale.y = h / r;
+        const hill = new THREE.Mesh(sphere(1, 20, 12), hillTones[Math.min(3, ring + (i % 2))]);
+        hill.scale.set(r, h, r);
         hill.position.set(Math.cos(ang) * rad, -2.1, Math.sin(ang) * rad);
         this.worldGroup.add(hill);
         this.freeze(hill);
@@ -709,12 +709,14 @@ export class View {
       const ang = rnd() * Math.PI * 2;
       const s = 0.9 + rnd() * 1.4;
       const rad = boardR + 5 + rnd() * (GAP - 4); // sits in the gap ring, clear of the board
-      const crown = new THREE.Mesh(new THREE.ConeGeometry(0.75 * s, 2.6 * s, 6), rnd() < 0.5 ? folA : folB);
+      const crown = new THREE.Mesh(cone(0.75, 2.6, 6), rnd() < 0.5 ? folA : folB);
+      crown.scale.setScalar(s);
       crown.position.set(Math.cos(ang) * rad, -2.1 + 1.5 * s, Math.sin(ang) * rad);
       this.worldGroup.add(crown);
       this.freeze(crown);
       if (rnd() < 0.35) {
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1 * s, 0.14 * s, 0.5 * s, 5), trunkM);
+        const trunk = new THREE.Mesh(cyl(0.1, 0.14, 0.5, 5), trunkM);
+        trunk.scale.setScalar(s);
         trunk.position.set(crown.position.x, -2.1 + 0.22 * s, crown.position.z);
         this.worldGroup.add(trunk);
         this.freeze(trunk);
@@ -752,8 +754,8 @@ export class View {
     this.cloudBound = cloudSpan / 2;
     const cloudMat = stdMat({ color: 0xffffff, transparent: true, opacity: 0.85 });
     const mk = (c: THREE.Group, x: number, z: number, s: number, y = 0): void => {
-      const p = new THREE.Mesh(new THREE.SphereGeometry(s, 8, 6), cloudMat);
-      p.position.set(x, y + rnd() * 0.25, z); p.scale.y = 0.6; c.add(p);
+      const p = new THREE.Mesh(sphere(1, 8, 6), cloudMat);
+      p.position.set(x, y + rnd() * 0.25, z); p.scale.set(s, s * 0.6, s); c.add(p);
     };
     // each builder sketches an animal silhouette in the horizontal plane
     const animals: Array<(c: THREE.Group) => void> = [
@@ -771,9 +773,10 @@ export class View {
       } else {
         const n = 3 + Math.floor(rnd() * 3);
         for (let j = 0; j < n; j++) {
-          const puff = new THREE.Mesh(new THREE.SphereGeometry(1 + rnd() * 1.2, 8, 6), cloudMat);
+          const puff = new THREE.Mesh(sphere(1, 8, 6), cloudMat);
           puff.position.set((j - n / 2) * 1.5 + rnd(), rnd() * 0.6, rnd() * 1.4);
-          puff.scale.y = 0.6;
+          const s = 1 + rnd() * 1.2;
+          puff.scale.set(s, s * 0.6, s);
           c.add(puff);
         }
       }
