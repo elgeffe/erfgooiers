@@ -35,7 +35,7 @@ export class Shop {
   }
 
   /** Show the shop for the run's just-cleared level, offering next-level contracts. */
-  open(run: RunState, contracts: Contract[], freeReroll = false): void {
+  open(run: RunState, contracts: Contract[], freeReroll = false, tally: { label: string; gold: number }[] = []): void {
     this.run = run;
     this.rng = new Rng(levelSeed(run.runSeed, run.levelIndex) ^ 0x5f356495);
     this.rerolls = 0;
@@ -44,7 +44,20 @@ export class Shop {
     this.contracts = contracts;
     this.chosen = contracts.length === 1 ? contracts[0] : null;
     this.slots = this.sample(3);
+    this.renderTally(tally);
     this.render();
+  }
+
+  /** The reckoning: an itemized tally of the cleared level's gold. */
+  private renderTally(rows: { label: string; gold: number }[]): void {
+    const el = $('shopTally');
+    if (!rows.length) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    const total = rows.reduce((s, r) => s + r.gold, 0);
+    el.innerHTML =
+      '<div class="shopsect">The reckoning</div>' +
+      rows.map(r => `<div class="tallyrow"><span>${r.label}</span><b>+${r.gold}g</b></div>`).join('') +
+      `<div class="tallyrow total"><span>Level total</span><b>+${Math.max(1, total)}g</b></div>`;
   }
 
   /** Economy wares always; military wares join once combat levels are next (5+).

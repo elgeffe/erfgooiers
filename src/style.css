@@ -203,6 +203,12 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 .shopgrid.owned .scard{padding:7px 10px;}
 .scard.sellable .sc-price{color:var(--good);}
 .scard.sellable:hover{border-color:var(--bad);}
+/* the reckoning — end-of-level tally */
+#shopTally{display:none;margin:2px 0 4px;}
+.tallyrow{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--ink-dim);padding:2px 8px;}
+.tallyrow b{color:var(--accent);font-variant-numeric:tabular-nums;}
+.tallyrow.total{border-top:1px solid rgba(217,164,65,.3);margin-top:3px;padding-top:5px;color:var(--ink);font-weight:600;}
+.tallyrow.total b{color:#ffe08a;}
 /* contracts — the road ahead */
 .scard.contract{flex-direction:column;align-items:stretch;text-align:left;}
 .scard.contract .sc-desc{margin:4px 0 6px;}

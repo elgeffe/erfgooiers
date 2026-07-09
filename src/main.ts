@@ -167,12 +167,40 @@ function continueRun(): void {
   startLevel();
 }
 
+/** One row of the end-of-level reckoning. */
+export interface TallyRow { label: string; gold: number; }
+
+/** The legible score: every gold source on clear, itemized for the shop screen. */
+function computeTally(): { rows: TallyRow[]; total: number } {
+  const level = currentLevel!, g = game!, r = run!;
+  const rows: TallyRow[] = [];
+  rows.push({
+    label: r.rewardMult > 1 ? `Contract fulfilled — cursed ×${Math.round(r.rewardMult * 100) / 100}` : 'Contract fulfilled',
+    gold: Math.round(level.reward * r.rewardMult),
+  });
+  if (g.elapsed <= level.timeTarget) {
+    rows.push({ label: `Speed bonus — done in ${Math.round(g.elapsed)}s`, gold: Math.round(level.reward * 0.5) });
+  }
+  const surplus = Math.floor(g.stockTotal() / 8);
+  if (surplus > 0) rows.push({ label: 'Surplus goods in the storehouse', gold: surplus });
+  const fed = g.wellFedWorkers();
+  const fedGold = Math.floor(fed / 2);
+  if (fedGold > 0) rows.push({ label: `${fed} well-fed workers`, gold: fedGold });
+  let total = rows.reduce((s, row) => s + row.gold, 0);
+  const mult = g.mods.goldMult();
+  if (mult !== 1) {
+    const boosted = Math.round(total * mult);
+    rows.push({ label: `Gold gain ×${Math.round(mult * 100) / 100}`, gold: boosted - total });
+    total = boosted;
+  }
+  return { rows, total: Math.max(1, total) };
+}
+
 /** Award gold/Heritage for a cleared level, then advance to shop or victory. */
 function onLevelClear(): void {
   if (phase !== 'playing' || !run || !currentLevel || !game) return;
-  const speedy = game.elapsed <= currentLevel.timeTarget;
-  const base = currentLevel.reward + (speedy ? Math.round(currentLevel.reward * 0.5) : 0);
-  const reward = Math.max(1, Math.round(base * game.mods.goldMult() * run.rewardMult));
+  const tally = computeTally();
+  const reward = tally.total;
   run.gold += reward;
   goldEarnedThisRun += reward;
   clearedThisRun++;
@@ -181,7 +209,7 @@ function onLevelClear(): void {
   meta.heritage += 3 + run.levelIndex; // banked now, sink arrives in Phase 4
   Save.saveMeta(meta);
   audio.play('coin');
-  ui.toast(`Level cleared! +${reward} gold${speedy ? ' — speed bonus!' : ''}`);
+  ui.toast(`Level cleared! +${reward} gold`);
 
   const last = run.levelIndex >= RUN_LEVELS;
   disposeLevel();
@@ -190,7 +218,7 @@ function onLevelClear(): void {
     const next = run.levelIndex + 1;
     const contracts = contractsFor(run.runSeed, next, levelFor(next).objectives.length, levelFor(next).reward);
     phase = 'shop';
-    shop.open(run, contracts, hasMetaSpecial(meta.unlocks, 'freeReroll'));
+    shop.open(run, contracts, hasMetaSpecial(meta.unlocks, 'freeReroll'), tally.rows);
     showScreen('shop');
     Save.saveRun(run);
   }

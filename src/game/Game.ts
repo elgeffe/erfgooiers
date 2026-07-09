@@ -615,6 +615,21 @@ export class Game {
   // =====================================================================
   //  Queries & placement
   // =====================================================================
+  /** Total goods sitting in the storehouse (the end-of-level surplus tally). */
+  stockTotal(): number {
+    let n = 0;
+    const s = this.store?.stock;
+    if (s) for (const k in s) n += s[k];
+    return n;
+  }
+
+  /** Player workers (non-fighters) currently well fed — the tavern tally. */
+  wellFedWorkers(): number {
+    let n = 0;
+    for (const u of this.units) if (!u.dead && u.faction === 'player' && u.dmg === 0 && u.hunger >= 66) n++;
+    return n;
+  }
+
   countItem(item: string): number {
     let n = this.store.stock![item] || 0;
     for (const b of this.buildings) { if (!b.def.store) n += (b.inp[item] || 0) + (b.out[item] || 0); }
