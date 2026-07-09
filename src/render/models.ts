@@ -317,17 +317,31 @@ export function makeRuinWall(): THREE.Group {
   return g;
 }
 
-/** A little heap of gold coins the hero/serfs pick up off the map. */
+/** A little heap of gold coins the hero/serfs pick up off the map.
+ *  Faces and rims wear different golds so every coin has a defined edge. */
 export function makePickup(): THREE.Group {
   const g = new THREE.Group();
-  const gold = goldSharp();
-  const coin = new THREE.CylinderGeometry(0.13, 0.13, 0.035, 12);
-  const spots = [[0, 0.02, 0, 0], [0.1, 0.02, 0.06, 0.5], [-0.08, 0.02, 0.09, 1.1], [0.03, 0.055, 0.02, 0.3], [-0.04, 0.055, -0.05, 0.8], [0.02, 0.09, 0.03, 0.2]];
-  for (const [x, y, z, rot] of spots) {
-    const c = new THREE.Mesh(coin, gold);
-    c.position.set(x, y, z); c.rotation.y = rot; c.rotation.x = (rnd() - 0.5) * 0.2; c.castShadow = true;
+  const face = goldSharp();
+  const rim = sharpOutline(stdMat({ color: 0xc9962e }), GOLD_INK);
+  const coinGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.055, 16);
+  const mats = [rim, face, face]; // cylinder material slots: side, top cap, bottom cap
+  const coin = (x: number, y: number, z: number, rot: number, tiltX = 0, tiltZ = 0): void => {
+    const c = new THREE.Mesh(coinGeo, mats);
+    c.position.set(x, y, z); c.rotation.set(tiltX, rot, tiltZ); c.castShadow = true;
     g.add(c);
-  }
+  };
+  // a tidy pyramid: four on the ground, two stacked, one crowning it
+  coin(0, 0.028, 0, 0);
+  coin(0.2, 0.028, 0.1, 0.5, 0, 0.08);
+  coin(-0.16, 0.028, 0.14, 1.1, 0.07, 0);
+  coin(-0.05, 0.028, -0.2, 1.7, -0.06, 0.05);
+  coin(0.08, 0.086, 0.05, 0.3);
+  coin(-0.09, 0.086, -0.03, 0.9, 0.05, -0.04);
+  coin(0, 0.142, 0.01, 0.2);
+  // one coin leaning on its edge against the pile — unmistakably money
+  const lean = new THREE.Mesh(coinGeo, mats);
+  lean.position.set(0.24, 0.13, -0.14); lean.rotation.set(Math.PI / 2 - 0.35, 0.4, 0); lean.castShadow = true;
+  g.add(lean);
   return g;
 }
 
