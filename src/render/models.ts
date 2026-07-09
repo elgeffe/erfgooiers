@@ -482,7 +482,6 @@ function makeDragon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mes
   g.rotation.y = -Math.PI / 2;
   outer.add(g);
   const scale = mat(colorHex);
-  const membrane = mat(0x5a1a26);
   const body = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 9), scale); body.scale.set(1.6, 1, 1); body.position.y = 0.5; body.castShadow = true;
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.17, 0.42, 8), scale); neck.position.set(0.42, 0.72, 0); neck.rotation.z = -0.7; neck.castShadow = true;
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 8), scale); head.position.set(0.64, 0.9, 0); head.scale.set(1.3, 0.9, 0.9); head.castShadow = true;
@@ -494,11 +493,50 @@ function makeDragon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mes
     const horn = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.18, 5), mat(0xe8e0cf)); horn.position.set(0.6, 1.04, s * 0.08); horn.rotation.x = s * 0.35; g.add(horn);
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 7, 6), mat(0xffcf3a)); eye.position.set(0.7, 0.94, s * 0.09); g.add(eye);
   }
-  // leathery wings + a spined back (wings exposed so the sim can flap them)
+  // swept bat wings — a scalloped membrane framed by arm & finger bones, with
+  // a claw at the wingtip (exposed so the sim can flap them)
   const wings: THREE.Object3D[] = [];
+  const membraneMat = stdMat({ color: 0x5a1a26, side: THREE.DoubleSide });
+  const UP = new THREE.Vector3(0, 1, 0);
+  const mkWing = (): THREE.Group => {
+    const w = new THREE.Group();
+    // silhouette in the flat: +X toward the head, +Y outward from the body
+    const shape = new THREE.Shape();
+    shape.moveTo(0.3, 0);                              // shoulder
+    shape.quadraticCurveTo(0.46, 0.5, 0.3, 1.08);      // leading edge out to the tip
+    shape.quadraticCurveTo(0.1, 0.86, -0.06, 0.8);     // scallop in to finger 1
+    shape.quadraticCurveTo(-0.28, 0.64, -0.38, 0.54);  // scallop in to finger 2
+    shape.quadraticCurveTo(-0.56, 0.3, -0.52, 0.18);   // scallop in to finger 3
+    shape.lineTo(-0.42, 0);
+    shape.closePath();
+    const geo = new THREE.ShapeGeometry(shape, 6);
+    geo.rotateX(Math.PI / 2); // lay it flat: shape-Y becomes outward +Z
+    const mem = new THREE.Mesh(geo, membraneMat);
+    mem.castShadow = true;
+    w.add(mem);
+    // bones radiate from the shoulder across the membrane to each scallop point
+    const bone = (ex: number, ez: number, r: number): void => {
+      const dx = ex - 0.3, len = Math.hypot(dx, ez);
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.55, len, 5), scale);
+      b.position.set(0.3 + dx / 2, 0.015, ez / 2);
+      b.quaternion.setFromUnitVectors(UP, new THREE.Vector3(dx, 0, ez).normalize());
+      w.add(b);
+    };
+    bone(0.3, 1.08, 0.035);   // arm + leading finger, out to the wingtip
+    bone(-0.06, 0.8, 0.022);
+    bone(-0.38, 0.54, 0.022);
+    bone(-0.52, 0.18, 0.022);
+    // wingtip claw
+    const claw = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.16, 5), mat(0xe8e0cf));
+    claw.position.set(0.38, 0.02, 1.1); claw.rotation.z = -1.2;
+    w.add(claw);
+    return w;
+  };
   for (const s of [-1, 1]) {
-    const wing = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6, 0, Math.PI), membrane);
-    wing.scale.set(1, 0.06, 0.75); wing.position.set(-0.05, 0.78, s * 0.32); wing.rotation.set(s * 0.5, 0, 0.25);
+    const wing = mkWing();
+    wing.position.set(-0.02, 0.84, s * 0.16);
+    wing.scale.set(1.15, 1, s * 1.15);       // mirror one side, span a touch wider
+    wing.rotation.x = s * 0.5;
     wing.userData.flapBase = s * 0.5; wing.userData.flapSign = s;
     g.add(wing); wings.push(wing);
   }
