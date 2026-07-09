@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { uiRng } from '../engine/rng';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
-import { makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFish, makePickup, makePig, makeScaffold, makeTree, makeUnit } from './models';
+import { makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makePickup, makePig, makeScaffold, makeTree, makeUnit } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -299,7 +299,7 @@ export class View {
       i++;
     };
     for (const u of units) {
-      if (u.dead || (u.dmg <= 0 && u.faction === 'player') || u.hp >= u.maxHp) continue;
+      if (u.dead || u.hp >= u.maxHp || !u.mesh.visible) continue;
       const p = u.mesh.position, s = u.mesh.scale.y || 1;
       use(p.x, p.y + 0.95 * s + 0.2, p.z, u.hp / u.maxHp);
     }
@@ -313,11 +313,15 @@ export class View {
   }
 
   private makeHpBar(): { group: THREE.Group; fill: THREE.Mesh } {
-    const g = new THREE.Group(); g.renderOrder = 999;
+    // Both planes must live in the transparent pass with explicit renderOrder:
+    // an opaque fill would be drawn first and the translucent background would
+    // then paint over it, leaving every bar looking empty.
+    const g = new THREE.Group();
     const bg = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.11), new THREE.MeshBasicMaterial({ color: 0x140f0a, depthTest: false, transparent: true, opacity: 0.85 }));
-    const fill = new THREE.Mesh(new THREE.PlaneGeometry(0.68, 0.075), new THREE.MeshBasicMaterial({ color: 0x46c256, depthTest: false }));
+    const fill = new THREE.Mesh(new THREE.PlaneGeometry(0.68, 0.075), new THREE.MeshBasicMaterial({ color: 0x46c256, depthTest: false, transparent: true }));
     (bg.material as THREE.Material).depthWrite = false; (fill.material as THREE.Material).depthWrite = false;
-    fill.position.z = 0.001;
+    bg.renderOrder = 998; fill.renderOrder = 999;
+    fill.position.z = 0.01;
     g.add(bg, fill);
     return { group: g, fill };
   }
@@ -337,6 +341,12 @@ export class View {
     this.worldGroup.add(u.group);
     return u;
   }
+
+  /** Combat effect meshes, owned & positioned by the sim (removed via `remove`). */
+  createArrow(): THREE.Group { const m = makeArrow(); this.worldGroup.add(m); return m; }
+  createFireball(): THREE.Group { const m = makeFireball(); this.worldGroup.add(m); return m; }
+  createFlame(): THREE.Group { const m = makeFlame(); this.worldGroup.add(m); return m; }
+  createFlag(): THREE.Group { const m = makeFlag(); this.worldGroup.add(m); return m; }
 
   addTree(x: number, y: number, tree: Tree): void {
     const g = makeTree(tree.kind);
@@ -833,7 +843,7 @@ export class View {
       else if (t.road) c = '#cbb389';
       else if (t.field) c = '#d3bd56';
       else if (t.tree) c = '#3d5c2e';
-      else if (t.dep) c = t.dep.kind === 'stone' ? '#9aa0a3' : t.dep.kind === 'gold' ? '#c9a94e' : '#3d3d44';
+      else if (t.dep) c = t.dep.kind === 'stone' ? '#9aa0a3' : t.dep.kind === 'gold' ? '#c9a94e' : t.dep.kind === 'iron' ? '#a86a4a' : '#3d3d44';
       if (t.pickup) c = '#ffd24a';
       if (t.b) c = '#7a4a2e';
       if (t.site) c = '#d9a441';

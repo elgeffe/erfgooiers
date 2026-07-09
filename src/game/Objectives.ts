@@ -24,6 +24,7 @@ const ITEM_LABEL: Record<string, string> = {
   trunk: 'Trunk', timber: 'Timber', stone: 'Stone', wheat: 'Wheat', flour: 'Flour',
   bread: 'Bread', goldore: 'Gold ore', coal: 'Coal', coin: 'Coin',
   grape: 'Grapes', wine: 'Wine', meat: 'Meat', sausage: 'Sausage',
+  fish: 'Fish', iron: 'Iron', weapon: 'Weapons', armor: 'Armor',
 };
 
 export interface ObjectiveStatus { done: boolean; label: string; ratio: number; }

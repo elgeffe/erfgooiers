@@ -100,6 +100,8 @@ function startLevel(): void {
 
   simAcc = 0;
   phase = 'playing';
+  // dev-only handle for poking the live sim from the console
+  if ((import.meta as any).env?.DEV) (window as any).game = game;
   showScreen(null);
   if (!sandbox) Save.saveRun(run); // persist at the level's start so a reload resumes here
 }
@@ -286,7 +288,7 @@ $('introLogo').innerHTML = logoSVG(40);
 ($('btnSandbox') as HTMLButtonElement).onclick = startSandbox;
 
 // ---------- sandbox spawn toolbar ----------
-function sandboxSpawn(kind: 'soldier' | 'archer' | 'bandit' | 'boar' | 'dragon', count: number): void {
+function sandboxSpawn(kind: 'soldier' | 'archer' | 'knight' | 'bandit' | 'boar' | 'dragon', count: number): void {
   if (!game) return;
   const c = view.camTarget;
   const squad = game.spawnSquad(kind, count, c.x, c.z);
@@ -294,6 +296,7 @@ function sandboxSpawn(kind: 'soldier' | 'archer' | 'bandit' | 'boar' | 'dragon',
 }
 ($('sbSoldier') as HTMLButtonElement).onclick = () => sandboxSpawn('soldier', 12);
 ($('sbArcher') as HTMLButtonElement).onclick = () => sandboxSpawn('archer', 8);
+($('sbKnight') as HTMLButtonElement).onclick = () => sandboxSpawn('knight', 6);
 ($('sbBandit') as HTMLButtonElement).onclick = () => sandboxSpawn('bandit', 12);
 ($('sbBoar') as HTMLButtonElement).onclick = () => sandboxSpawn('boar', 6);
 ($('sbDragon') as HTMLButtonElement).onclick = () => sandboxSpawn('dragon', 1);
