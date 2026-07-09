@@ -1,6 +1,6 @@
 import { W as DEFAULT_W, H as DEFAULT_H } from '../constants';
 import { worldRng } from '../engine/rng';
-import type { DecoKind, Tile } from '../types';
+import type { DecoKind, DepositKind, Tile } from '../types';
 
 // Worldgen pulls exclusively from this stream (reseeded per level) so a level's
 // map is fully determined by its seed, independent of sim/cosmetic call order.
@@ -126,7 +126,7 @@ export class World {
       if (!nearCentre(cx, cy, r)) water(cx, cy, r);
     }
 
-    const deposits = (cx: number, cy: number, r: number, kind: 'stone' | 'gold' | 'coal', n: number): number => {
+    const deposits = (cx: number, cy: number, r: number, kind: DepositKind, n: number): number => {
       let placed = 0, guard = 0;
       while (placed < n && guard++ < 200) {
         const { x, y } = this.near(cx, cy, r);
@@ -136,8 +136,8 @@ export class World {
       return placed;
     };
     // ore veins — random clusters, weighted toward stone
-    const kindPool: Array<'stone' | 'gold' | 'coal'> = ['stone', 'stone', 'gold', 'coal'];
-    const oreCount: Record<'stone' | 'gold' | 'coal', number> = { stone: 0, gold: 0, coal: 0 };
+    const kindPool: DepositKind[] = ['stone', 'stone', 'gold', 'coal', 'iron'];
+    const oreCount: Record<DepositKind, number> = { stone: 0, gold: 0, coal: 0, iron: 0 };
     for (let i = 0; i < this.p.oreVeins; i++) {
       const kind = kindPool[i % kindPool.length];
       const cx = 5 + Math.floor(rnd() * (W - 10)), cy = 5 + Math.floor(rnd() * (H - 10));
@@ -147,7 +147,7 @@ export class World {
     // veins) can otherwise drop a vein into the lake and leave a whole resource
     // (e.g. gold, breaking the mint chain) absent from the map.
     const MIN_ORE = 6;
-    for (const kind of ['stone', 'gold', 'coal'] as const) {
+    for (const kind of ['stone', 'gold', 'coal', 'iron'] as const) {
       let guard = 0;
       while (oreCount[kind] < MIN_ORE && guard++ < 120) {
         const cx = 4 + Math.floor(rnd() * (W - 8)), cy = 4 + Math.floor(rnd() * (H - 8));

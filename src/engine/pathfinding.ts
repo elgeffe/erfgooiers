@@ -2,11 +2,19 @@ import { TILE_COST_ROAD, TILE_COST_GRASS } from '../constants';
 import type { World } from '../world/World';
 import type { Coord } from '../types';
 
-// A* over the tile grid. Open ground costs TILE_COST_GRASS per step while
-// roads cost TILE_COST_ROAD, so units take a paved detour whenever it isn't
-// wildly longer than the beeline. The heuristic is weighted by the road cost
-// (the cheapest possible step) to stay admissible.
-// The goal tile is always considered enterable even if occupied (door tiles).
+// A* over the tile grid, 8-directional. Open ground costs TILE_COST_GRASS per
+// step while roads cost TILE_COST_ROAD, so units take a paved detour whenever
+// it isn't wildly longer than the beeline. Diagonal steps cost ×√2 and may not
+// cut corners (both orthogonal neighbours must be passable). The octile
+// heuristic is weighted by the road cost (the cheapest possible step) to stay
+// admissible. The goal tile is always considered enterable even if occupied
+// (door tiles). The raw path is then string-pulled (`smooth`) so units walk
+// natural straight lines across open ground instead of grid staircases.
+const DIRS: [number, number, number][] = [
+  [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
+  [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2],
+];
+
 export function findPath(world: World, sx: number, sy: number, ex: number, ey: number): Coord[] | null {
   if (sx === ex && sy === ey) return [];
   const W = world.W, H = world.H;
@@ -15,12 +23,15 @@ export function findPath(world: World, sx: number, sy: number, ex: number, ey: n
   const gS = new Map<number, number>();
   const came = new Map<number, number>();
   const key = (x: number, y: number) => y * W + x;
-  const h = (x: number, y: number) => (Math.abs(x - ex) + Math.abs(y - ey)) * TILE_COST_ROAD;
+  const h = (x: number, y: number) => {
+    const dx = Math.abs(x - ex), dy = Math.abs(y - ey);
+    return (Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy)) * TILE_COST_ROAD;
+  };
   open.push({ x: sx, y: sy, f: h(sx, sy) });
   gS.set(key(sx, sy), 0);
   const closed = new Set<number>();
   let guard = 0;
-  while (open.length && guard++ < 4000) {
+  while (open.length && guard++ < 5000) {
     let bi = 0;
     for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i;
     const cur = open.splice(bi, 1)[0];
@@ -32,15 +43,17 @@ export function findPath(world: World, sx: number, sy: number, ex: number, ey: n
       let k = ck;
       while (came.has(k)) { path.push({ x: k % W, y: Math.floor(k / W) }); k = came.get(k)!; }
       path.reverse();
-      return path;
+      return smooth(world, sx, sy, path);
     }
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    for (const [dx, dy, mult] of DIRS) {
       const nx = cur.x + dx, ny = cur.y + dy;
-      if (!(nx === ex && ny === ey) && !world.passable(nx, ny)) continue;
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      if (!(nx === ex && ny === ey) && !world.passable(nx, ny)) continue;
+      // no corner cutting: a diagonal step needs both orthogonal shoulders clear
+      if (dx !== 0 && dy !== 0 && (!world.passable(cur.x + dx, cur.y) || !world.passable(cur.x, cur.y + dy))) continue;
       const t = tiles[ny][nx];
       if (t.type === 'water') continue;
-      const cost = t.road ? TILE_COST_ROAD : TILE_COST_GRASS;
+      const cost = (t.road ? TILE_COST_ROAD : TILE_COST_GRASS) * mult;
       const ng = gS.get(ck)! + cost, nk = key(nx, ny);
       if (gS.has(nk) && gS.get(nk)! <= ng) continue;
       gS.set(nk, ng);
@@ -49,4 +62,44 @@ export function findPath(world: World, sx: number, sy: number, ex: number, ey: n
     }
   }
   return null;
+}
+
+/**
+ * String-pull the raw A* path: greedily connect each waypoint to the farthest
+ * later node it can see in a straight line, dropping the grid zigzag between.
+ * Road nodes are never skipped over — a paved detour the A* paid for stays a
+ * paved detour, so units keep their road speed bonus.
+ */
+function smooth(world: World, sx: number, sy: number, path: Coord[]): Coord[] {
+  if (path.length <= 1) return path;
+  const out: Coord[] = [];
+  let ax = sx, ay = sy, i = 0;
+  while (i < path.length) {
+    let far = i;
+    for (let j = i + 1; j < path.length; j++) {
+      // don't cut across intermediate road nodes (keep the detour) and stop
+      // extending once the straight line is blocked
+      if (world.tiles[path[j - 1].y][path[j - 1].x].road) break;
+      if (!lineClear(world, ax, ay, path[j].x, path[j].y)) break;
+      far = j;
+    }
+    out.push(path[far]);
+    ax = path[far].x; ay = path[far].y;
+    i = far + 1;
+  }
+  return out;
+}
+
+/** Can a unit walk the straight segment between two tile centres? The end tile
+ *  itself is exempt (door tiles are occupied but enterable). */
+function lineClear(world: World, x0: number, y0: number, x1: number, y1: number): boolean {
+  const dx = x1 - x0, dy = y1 - y0;
+  const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 4);
+  for (let s = 1; s < steps; s++) {
+    const t = s / steps;
+    const tx = Math.round(x0 + dx * t), ty = Math.round(y0 + dy * t);
+    if (tx === x1 && ty === y1) continue;
+    if (!world.passable(tx, ty)) return false;
+  }
+  return true;
 }

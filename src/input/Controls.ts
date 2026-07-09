@@ -27,8 +27,9 @@ export class Controls {
   private plotPainting = false;
   private demoDragging = false;
 
-  // army selection (left-drag box; right-click orders)
+  // army selection (left-drag box; right-click orders; 1–5 recall control groups)
   private selUnits: Unit[] = [];
+  private readonly ctrlGroups: Record<string, Unit[]> = {};
   private boxStart: { x: number; y: number } | null = null;
   private boxing = false;
   private readonly selbox = document.getElementById('selbox') as HTMLElement | null;
@@ -44,10 +45,11 @@ export class Controls {
     addEventListener('keyup', e => { this.keys[e.key.toLowerCase()] = false; });
   }
 
-  /** Bind to a level's Game; clears any active build mode. */
+  /** Bind to a level's Game; clears any active build mode and stale squads. */
   setGame(game: Game): void {
     this.game = game;
     this.selUnits = [];
+    for (const k in this.ctrlGroups) delete this.ctrlGroups[k];
     this.setMode(null);
   }
 
@@ -85,6 +87,11 @@ export class Controls {
     if (e.button === 2 && this.mode) { this.setMode(null); return; }
     // right-click with an army selected = issue an order (no camera pan)
     if (e.button === 2 && this.game && this.selUnits.length) { this.orderSelection(e); return; }
+    // right-click with a barracks selected = plant its rally flag
+    if (e.button === 2 && this.game && this.game.selected && this.game.selected.def?.military) {
+      const rt = this.view.tileAt(e.clientX, e.clientY);
+      if (rt) { this.game.setRally(this.game.selected, rt.x, rt.y); return; }
+    }
     if (e.button === 2 || e.button === 1) { this.dragging = true; return; }
     if (e.button !== 0 || !this.game) return;
     const t = this.view.tileAt(e.clientX, e.clientY);
@@ -161,16 +168,17 @@ export class Controls {
     if (picked.length) this.ui.toast(`${picked.length} selected`);
   }
 
-  /** Right-click order for the current selection: attack a hostile, else attack-move. */
+  /** Right-click order for the current selection: attack a hostile, else
+   *  attack-move in formation (each unit gets its own nearby tile). */
   private orderSelection(e: PointerEvent): void {
     if (!this.game) return;
     const gp = this.view.groundPoint(e.clientX, e.clientY);
     const foe = this.game.pickUnit(gp.x, gp.z);
     const t = this.view.tileAt(e.clientX, e.clientY);
     if (foe && foe.faction !== 'player') {
-      for (const u of this.selUnits) this.game.orderUnit(u, 'attack', foe.tx, foe.ty, foe);
+      this.game.orderGroup(this.selUnits, 'attack', foe.tx, foe.ty, foe);
     } else if (t) {
-      for (const u of this.selUnits) this.game.orderUnit(u, 'attackMove', t.x, t.y);
+      this.game.orderGroup(this.selUnits, 'attackMove', t.x, t.y);
     }
   }
 
@@ -193,7 +201,26 @@ export class Controls {
       if (this.ghostTile) this.refreshGhost(this.ghostTile.x, this.ghostTile.y);
     }
     if (e.key === ' ') { e.preventDefault(); this.ui.togglePause(); }
+    // control groups: Shift+1..5 assigns the current selection, 1..5 recalls it
+    const dg = /^Digit([1-5])$/.exec(e.code);
+    if (dg && this.game) {
+      const slot = dg[1];
+      if (e.shiftKey) {
+        if (this.selUnits.length) { this.ctrlGroups[slot] = [...this.selUnits]; this.ui.toast(`Squad ${slot} assigned (${this.selUnits.length} fighters)`); }
+      } else {
+        const g = (this.ctrlGroups[slot] || []).filter(u => !u.dead && this.game!.units.indexOf(u) >= 0);
+        this.ctrlGroups[slot] = g;
+        if (g.length) {
+          this.selUnits = [...g];
+          // pressing the same squad key again centres the camera on it
+          const p = g[0].mesh.position;
+          if (this.lastGroupKey === slot) this.view.centerOn(p.x, p.z);
+          this.lastGroupKey = slot;
+        }
+      }
+    } else this.lastGroupKey = null;
   }
+  private lastGroupKey: string | null = null;
 
   /** Per-frame keyboard camera panning (called from the game loop). */
   update(dt: number): void {

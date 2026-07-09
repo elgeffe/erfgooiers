@@ -34,7 +34,10 @@ export class Shop {
     this.render();
   }
 
-  private pool(): UpgradeDef[] { return UPGRADES.filter(u => u.pool === 'economy'); }
+  /** Economy wares always; military wares join once combat levels are next (5+). */
+  private pool(): UpgradeDef[] {
+    return UPGRADES.filter(u => u.pool === 'economy' || (u.pool === 'military' && this.run.levelIndex >= 4));
+  }
 
   /** Sample n distinct upgrades from the pool using the deterministic stream. */
   private sample(n: number): UpgradeDef[] {

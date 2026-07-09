@@ -93,7 +93,7 @@ export class Game {
     }
     this.store = this.placeBuilding('storehouse', cx, cy, true);
     // base kit stock, then run-upgrade start bonuses on top
-    this.store.stock = { timber: 0, stone: 0, bread: 0, trunk: 0, wheat: 0, flour: 0, goldore: 0, coal: 0, coin: 0, grape: 0, wine: 0, meat: 0, sausage: 0, fish: 0, ...kit.stock };
+    this.store.stock = { timber: 0, stone: 0, bread: 0, trunk: 0, wheat: 0, flour: 0, goldore: 0, coal: 0, coin: 0, grape: 0, wine: 0, meat: 0, sausage: 0, fish: 0, iron: 0, weapon: 0, armor: 0, ...kit.stock };
     const bonus = this.mods.startStock();
     for (const k in bonus) this.store.stock[k] = (this.store.stock[k] || 0) + (bonus as Record<string, number>)[k];
     const d = doorTile(this.store);
@@ -203,7 +203,7 @@ export class Game {
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
       home: null, wstate: 'idle', timer: 0, target: null, hunger: 70 + rnd() * 30, bob: 0, status: 'Idle',
       faction: 'player', spd: BASE_SPEED, hp: 20, maxHp: 20, dmg: 0, range: 0, atkCd: 1, atkTimer: 0,
-      dead: false, raider: false, foe: null, foeB: null, order: null, special: 0, hpBar: null,
+      dead: false, raider: false, foe: null, foeB: null, order: null, special: 0, anchor: null, lungeT: 0, hpBar: null,
     };
     this.units.push(u);
     return u;
@@ -223,6 +223,7 @@ export class Game {
     u.atkCd = def.atkCd;
     u.hunger = 100; // fighters don't idle for hunger
     u.status = def.name;
+    u.anchor = { x: tile.x, y: tile.y }; // beasts & guards roam around home
     u.mesh.scale.setScalar(def.scale);
     return u;
   }
@@ -239,8 +240,16 @@ export class Game {
     u.path = p; u.pathI = 0; return true;
   }
 
+  /** Tile under a unit's current world position (paths are smoothed, so tx/ty
+   *  must track the mesh continuously rather than only at node arrivals). */
+  private syncTile(u: Unit): void {
+    const W = this.world.W, H = this.world.H;
+    u.tx = Math.max(0, Math.min(W - 1, Math.round(u.mesh.position.x + W / 2 - 0.5)));
+    u.ty = Math.max(0, Math.min(H - 1, Math.round(u.mesh.position.z + H / 2 - 0.5)));
+  }
+
   private moveUnit(u: Unit, dt: number): boolean {
-    if (!u.path || u.pathI >= u.path.length) return true;
+    if (!u.path || u.pathI >= u.path.length) { u.path = null; return true; }
     const node = u.path[u.pathI];
     const tgt = new THREE.Vector3(this.world.wx(node.x), 0, this.world.wz(node.y));
     const cur = u.mesh.position;
@@ -257,8 +266,30 @@ export class Game {
       u.mesh.rotation.y = Math.atan2(d.x, d.z);
       u.bob += dt * 10;
       u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.045;
+      this.syncTile(u);
     }
     return false;
+  }
+
+  /** Direct steering for flying units (the dragon): no tiles, no paths — just
+   *  glide toward the point, banking to face travel, wings flapping. */
+  private moveFlying(u: Unit, dt: number, wx: number, wz: number): boolean {
+    const cur = u.mesh.position;
+    const dx = wx - cur.x, dz = wz - cur.z;
+    const dist = Math.hypot(dx, dz);
+    const step = this.mods.unitSpeed(u) * dt;
+    if (dist > 0.01) u.mesh.rotation.y = Math.atan2(dx, dz);
+    if (dist <= step) { cur.x = wx; cur.z = wz; } else { cur.x += dx / dist * step; cur.z += dz / dist * step; }
+    this.syncTile(u);
+    return dist <= step;
+  }
+
+  /** Hover bob + wing flap for a flying unit, run every tick whatever it does. */
+  private animateFlight(u: Unit, dt: number): void {
+    u.bob += dt * 5;
+    u.mesh.position.y = 0.45 + Math.sin(u.bob * 0.8) * 0.12;
+    const wings = u.mesh.userData.wings as THREE.Object3D[] | undefined;
+    if (wings) for (const w of wings) w.rotation.x = (w.userData.flapBase as number) + (w.userData.flapSign as number) * Math.sin(u.bob) * 0.4;
   }
 
   // =====================================================================
@@ -432,6 +463,7 @@ export class Game {
       else if (g.node === 'stone') ok = !!(t.dep && t.dep.kind === 'stone' && t.dep.amt > 0);
       else if (g.node === 'gold') ok = !!(t.dep && t.dep.kind === 'gold' && t.dep.amt > 0);
       else if (g.node === 'coal') ok = !!(t.dep && t.dep.kind === 'coal' && t.dep.amt > 0);
+      else if (g.node === 'iron') ok = !!(t.dep && t.dep.kind === 'iron' && t.dep.amt > 0);
       if (ok) { const d = Math.hypot(x - cx, y - cy); if (d < bd) { bd = d; best = { x, y }; } }
     }
     return best;
@@ -611,6 +643,7 @@ export class Game {
     if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.toast('No stone deposits in range — build near the grey rocks', 'err'); return; }
     if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.toast('No gold deposits in range', 'err'); return; }
     if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.toast('No coal deposits in range', 'err'); return; }
+    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.toast('No iron deposits in range — build near the rusty rocks', 'err'); return; }
     if (key === 'fishery' && !this.lakeInRange(tx, ty, def.gather!.range)) { this.toast('No fishing water in range — build on the lake shore', 'err'); return; }
     if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.toast('Warning: few trees nearby', 'err');
     const cost = this.mods.buildingCost(def);
@@ -668,6 +701,7 @@ export class Game {
     if (b.worker) { const w = b.worker; this.view.remove(w.mesh); this.units.splice(this.units.indexOf(w), 1); if (this.selected === w) this.select(null); }
     for (const f of b.fieldsList) { const t = this.world.tiles[f.y][f.x]; if (t.field) { this.view.removeMeshes(t.field.meshes); t.field = null; this.view.refreshTile(f.x, f.y); } }
     for (let y = b.y; y < b.y + 2; y++) for (let x = b.x; x < b.x + 2; x++) this.world.tiles[y][x].b = null;
+    if (b.rallyMesh) this.view.remove(b.rallyMesh);
     this.view.remove(b.mesh);
     this.buildings.splice(this.buildings.indexOf(b), 1);
     if (this.selected === b) this.select(null);
@@ -736,10 +770,9 @@ export class Game {
     return Math.hypot(dx, dz);
   }
 
-  /** Nearest hostile fighter within the aggro radius, or null. */
-  private acquireTarget(u: Unit): Unit | null {
-    const AGGRO = 13;
-    let best: Unit | null = null, bd = AGGRO * AGGRO;
+  /** Nearest hostile fighter within the given aggro radius, or null. */
+  private acquireTarget(u: Unit, aggro: number): Unit | null {
+    let best: Unit | null = null, bd = aggro * aggro;
     for (const o of this.units) {
       if (o.dead || o === u) continue;
       if (!this.hostile(u.faction, o.faction)) continue;
@@ -754,12 +787,18 @@ export class Game {
     if (dx || dz) u.mesh.rotation.y = Math.atan2(dx, dz);
   }
 
-  private attack(attacker: Unit, foe: Unit): void {
-    foe.hp -= attacker.dmg;
-    this.onHurt(foe.mesh.position.x, foe.mesh.position.z, foe.faction);
+  /** Apply damage to a unit: hurt feedback, retaliation, death. */
+  private hurtUnit(source: Unit | null, victim: Unit, dmg: number): void {
+    victim.hp -= dmg;
+    this.onHurt(victim.mesh.position.x, victim.mesh.position.z, victim.faction);
     // retaliation: an idle victim turns on its attacker
-    if (!foe.foe && this.hostile(foe.faction, attacker.faction)) foe.foe = attacker;
-    if (foe.hp <= 0) this.killUnit(foe);
+    if (source && !source.dead && !victim.foe && this.hostile(victim.faction, source.faction)) victim.foe = source;
+    if (victim.hp <= 0) this.killUnit(victim);
+  }
+
+  private attack(attacker: Unit, foe: Unit): void {
+    attacker.lungeT = 0.22; // little hop into the swing
+    this.hurtUnit(attacker, foe, attacker.dmg);
   }
 
   private killUnit(u: Unit): void {
@@ -772,33 +811,62 @@ export class Game {
   }
 
   private combatUpdate(u: Unit, dt: number): void {
+    const def = UNITS[u.role as UnitKind];
+    const flying = !!def.flying;
     u.atkTimer = Math.max(0, u.atkTimer - dt);
-    if (u.role === 'dragon') this.dragonSpecial(u, dt);
+    if (u.lungeT > 0) u.lungeT = Math.max(0, u.lungeT - dt);
+    if (flying) this.animateFlight(u, dt);
+    if (u.role === 'dragon') this.dragonBreath(u, dt);
+
+    // wild beasts leash: a chase that strays too far from home is abandoned
+    if (u.faction === 'wild' && def.leash && u.anchor) {
+      const da = Math.hypot(u.tx - u.anchor.x, u.ty - u.anchor.y);
+      if (u.wstate === 'leash') {
+        if (da < 3) { u.wstate = 'idle'; }
+        else {
+          if (!u.path) this.sendTo(u, u.anchor.x, u.anchor.y);
+          this.moveUnit(u, dt);
+          u.status = 'Heading home';
+          return;
+        }
+      } else if (da > def.leash) { u.wstate = 'leash'; u.foe = null; u.path = null; return; }
+    }
 
     let foe = u.foe;
     if (foe && foe.dead) foe = null;
     if (u.order && u.order.type === 'attack' && u.order.foe && !u.order.foe.dead) foe = u.order.foe;
     // pure 'move' orders don't auto-seek (lets you march past enemies); everything else does
     const canSeek = !u.order || u.order.type !== 'move';
-    if (!foe && canSeek) foe = this.acquireTarget(u);
+    if (!foe && canSeek) foe = this.acquireTarget(u, def.aggro);
     u.foe = foe;
 
     if (foe) {
+      // big foes are easier to reach — extend melee reach by their bulk
+      const reach = u.range + 0.1 + Math.max(0, ((foe.mesh.scale.x || 1) - 1)) * 0.4;
       const d = this.unitDist(u, foe);
-      if (d <= u.range + 0.1) {
+      if (d <= reach) {
         u.path = null;
         this.faceUnit(u, foe);
-        u.mesh.position.y = 0;
-        if (u.atkTimer <= 0) { u.atkTimer = u.atkCd; this.attack(u, foe); }
+        this.groundPose(u, flying);
+        if (u.atkTimer <= 0) {
+          u.atkTimer = u.atkCd;
+          if (def.arrows) this.fireArrow(u, u.faction, u.mesh.position.x, 0.6, u.mesh.position.z, foe, u.dmg);
+          else this.attack(u, foe);
+        }
+      } else if (flying) {
+        this.moveFlying(u, dt, foe.mesh.position.x, foe.mesh.position.z);
       } else {
-        // chase — throttle A* so hundreds of pursuers don't re-path every tick
+        // chase — throttle A* so hundreds of pursuers don't re-path every tick;
+        // charging beasts (boars) put on a burst of speed
         if (!u.path) { u.timer -= dt; if (u.timer <= 0) { this.sendTo(u, foe.tx, foe.ty); u.timer = 0.4 + rnd() * 0.35; } }
-        this.moveUnit(u, dt);
+        this.moveUnit(u, def.charge ? dt * def.charge : dt);
+        u.status = 'Fighting';
       }
       return;
     }
 
-    // no unit foe: go for a hostile building (castle for raiders, camps for the player army)
+    // no unit foe: go for a hostile building (the castle for raiders & the dragon,
+    // camps for the player army)
     let bt = u.foeB;
     if (bt && bt.removed) bt = null;
     if (!bt && canSeek) bt = this.buildingTargetFor(u);
@@ -810,24 +878,56 @@ export class Game {
       if (d <= u.range + 1.15) {
         u.path = null;
         u.mesh.rotation.y = Math.atan2(dx, dz);
-        u.mesh.position.y = 0;
-        if (u.atkTimer <= 0) { u.atkTimer = u.atkCd; this.attackBuilding(u, bt); }
+        this.groundPose(u, flying);
+        if (u.atkTimer <= 0) { u.atkTimer = u.atkCd; u.lungeT = 0.22; this.attackBuilding(u, bt); }
+      } else if (flying) {
+        this.moveFlying(u, dt, c.x, c.z);
       } else {
-        if (!u.path) { u.timer -= dt; if (u.timer <= 0) { const dr = doorTile(bt); this.sendTo(u, dr.x, dr.y); u.timer = 0.5 + rnd() * 0.4; } }
+        // besiege: head for a free tile around the walls, not everyone to the door
+        if (!u.path) { u.timer -= dt; if (u.timer <= 0) { const s = this.siegeTile(u, bt); this.sendTo(u, s.x, s.y); u.timer = 0.5 + rnd() * 0.4; } }
         this.moveUnit(u, dt);
       }
       return;
     }
 
-    // no foe: follow a move/attack-move order, else idle in place
+    // no foe: follow a move/attack-move order, wander near home, or hold
     if (u.order && (u.order.type === 'move' || u.order.type === 'attackMove')) {
+      if (flying) {
+        if (this.moveFlying(u, dt, this.world.wx(u.order.x), this.world.wz(u.order.y))) u.order = null;
+        return;
+      }
       if (!u.path) {
         if (u.tx === u.order.x && u.ty === u.order.y) { u.order = null; }
         else if (!this.sendTo(u, u.order.x, u.order.y)) { u.order = null; }
       }
-      if (u.path) this.moveUnit(u, dt); else u.mesh.position.y = 0;
+      if (u.path) this.moveUnit(u, dt); else this.groundPose(u, flying);
+    } else if (def.wander) {
+      this.wander(u, dt);
     } else {
-      u.mesh.position.y = 0;
+      this.groundPose(u, flying);
+    }
+  }
+
+  /** Resting pose between swings: melee units hop into each attack, fliers hover. */
+  private groundPose(u: Unit, flying: boolean): void {
+    if (flying) return; // animateFlight owns the y of a flier
+    u.mesh.position.y = u.lungeT > 0 ? Math.sin((1 - u.lungeT / 0.22) * Math.PI) * 0.12 : 0;
+  }
+
+  /** Idle beasts & camp guards amble around their anchor, pausing to root & graze. */
+  private wander(u: Unit, dt: number): void {
+    if (u.path) { this.moveUnit(u, dt); u.status = 'Roaming'; return; }
+    u.mesh.position.y = 0;
+    u.status = 'Grazing';
+    u.timer -= dt;
+    if (u.timer > 0) return;
+    u.timer = 1.5 + rnd() * 4;
+    const a = u.anchor ?? { x: u.tx, y: u.ty };
+    for (let tries = 0; tries < 6; tries++) {
+      const x = a.x + Math.round((rnd() - 0.5) * 8), y = a.y + Math.round((rnd() - 0.5) * 8);
+      const t = this.world.T(x, y);
+      if (!t || t.type === 'water' || t.b || t.site || t.dep) continue;
+      if (this.sendTo(u, x, y)) return;
     }
   }
 
@@ -835,11 +935,11 @@ export class Game {
     return { x: this.world.wx(b.x) + 0.5, z: this.world.wz(b.y) + 0.5 };
   }
 
-  /** The building a fighter should march on: raiders storm the nearest player building,
-   *  the player army razes the nearest enemy stronghold in reach. */
+  /** The building a fighter should march on: raiders (and the dragon) storm the
+   *  nearest player building, the player army razes the nearest enemy stronghold
+   *  in reach. Non-raiding beasts and camp guards leave walls alone. */
   private buildingTargetFor(u: Unit): Building | null {
-    if (u.faction === 'wild') return null; // beasts fight units, not walls
-    if (u.faction !== 'player' && !u.raider) return null; // camp guards hold their ground
+    if (u.faction !== 'player' && !u.raider) return null;
     const RANGE = u.faction === 'player' ? 18 : 1e9; // raiders always march on the castle
     let best: Building | null = null, bd = RANGE * RANGE;
     for (const b of this.buildings) {
@@ -849,6 +949,20 @@ export class Game {
       if (d2 < bd) { bd = d2; best = b; }
     }
     return best;
+  }
+
+  /** A free tile on the ring around a building's 2×2 footprint, salted per unit
+   *  so a squad surrounds the walls instead of stacking at the door. */
+  private siegeTile(u: Unit, b: Building): Coord {
+    let best: Coord | null = null, bd = 1e9;
+    for (let y = b.y - 1; y <= b.y + 2; y++) for (let x = b.x - 1; x <= b.x + 2; x++) {
+      if (x >= b.x && x <= b.x + 1 && y >= b.y && y <= b.y + 1) continue;
+      if (!this.world.passable(x, y)) continue;
+      const salt = ((x * 31 + y * 17 + u.tx * 7 + u.ty * 3) % 5) * 0.8;
+      const dd = Math.hypot(x - u.tx, y - u.ty) + salt;
+      if (dd < bd) { bd = dd; best = { x, y } }
+    }
+    return best ?? doorTile(b);
   }
 
   private attackBuilding(u: Unit, b: Building): void {
@@ -869,26 +983,187 @@ export class Game {
     if (isCastle) this.defeat = true;
   }
 
-  /** The dragon's periodic fire-breath: an area stomp that scorches nearby
-   *  player units and any building it stands over. */
-  private dragonSpecial(u: Unit, dt: number): void {
+  /** The dragon's periodic fire-breath: a volley of fire gobs spat at whatever
+   *  it is fighting (or the nearest player building), splashing flame where
+   *  they land. */
+  private dragonBreath(u: Unit, dt: number): void {
     u.special -= dt;
     if (u.special > 0) return;
-    const R = 3.6;
-    let hit = false;
+    let tx: number | null = null, tz = 0;
+    const foe = u.foe && !u.foe.dead ? u.foe : this.acquireTarget(u, 8);
+    if (foe) { tx = foe.mesh.position.x; tz = foe.mesh.position.z; }
+    else {
+      const bt = u.foeB && !u.foeB.removed ? u.foeB : null;
+      if (bt) { const c = this.buildingCenter(bt); const d = Math.hypot(c.x - u.mesh.position.x, c.z - u.mesh.position.z); if (d < 9) { tx = c.x; tz = c.z; } }
+    }
+    if (tx === null) { u.special = 1; return; } // nothing worth torching — check again soon
+    const mx = u.mesh.position.x, mz = u.mesh.position.z;
+    const my = 1.6 * (u.mesh.scale.y || 1);
+    for (let i = 0; i < 5; i++) {
+      const ang = rnd() * Math.PI * 2, rr = rnd() * 1.3;
+      this.fireFlame(u, u.faction, mx, my, mz, tx + Math.cos(ang) * rr, tz + Math.sin(ang) * rr, 12);
+    }
+    this.sfx('error');
+    u.special = 5;
+  }
+
+  // =====================================================================
+  //  Projectiles — arrows arc from archers & towers, fire gobs from the dragon
+  // =====================================================================
+  private readonly projectiles: {
+    mesh: THREE.Object3D;
+    sx: number; sy: number; sz: number;
+    ex: number; ey: number; ez: number;
+    t: number; dur: number; arc: number;
+    from: Faction; shooter: Unit | null; target: Unit | null;
+    dmg: number; kind: 'arrow' | 'fire';
+  }[] = [];
+  private readonly flames: { mesh: THREE.Object3D; life: number; max: number }[] = [];
+
+  /** Loose an arrow at a unit; damage lands when the arrow does. */
+  private fireArrow(shooter: Unit | null, from: Faction, x: number, y: number, z: number, target: Unit, dmg: number): void {
+    const tx = target.mesh.position.x, tz = target.mesh.position.z;
+    const dist = Math.hypot(tx - x, tz - z);
+    const mesh = this.view.createArrow();
+    mesh.position.set(x, y, z);
+    this.projectiles.push({
+      mesh, sx: x, sy: y, sz: z, ex: tx, ey: 0.35, ez: tz,
+      t: 0, dur: Math.max(0.16, dist / 11), arc: Math.min(1.3, 0.15 + dist * 0.08),
+      from, shooter, target, dmg, kind: 'arrow',
+    });
+  }
+
+  /** Spit a gob of dragon fire at a ground point; it splashes where it lands. */
+  private fireFlame(shooter: Unit | null, from: Faction, x: number, y: number, z: number, ex: number, ez: number, dmg: number): void {
+    const dist = Math.hypot(ex - x, ez - z);
+    const mesh = this.view.createFireball();
+    mesh.position.set(x, y, z);
+    this.projectiles.push({
+      mesh, sx: x, sy: y, sz: z, ex, ey: 0.1, ez,
+      t: 0, dur: Math.max(0.25, dist / 8), arc: 0.5,
+      from, shooter, target: null, dmg, kind: 'fire',
+    });
+  }
+
+  private updateProjectiles(sdt: number): void {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      // arrows home gently onto their moving target so shots connect
+      if (p.target && !p.target.dead) { p.ex = p.target.mesh.position.x; p.ez = p.target.mesh.position.z; }
+      p.t += sdt;
+      const k = Math.min(1, p.t / p.dur);
+      const x = p.sx + (p.ex - p.sx) * k;
+      const z = p.sz + (p.ez - p.sz) * k;
+      const y = p.sy + (p.ey - p.sy) * k + Math.sin(k * Math.PI) * p.arc;
+      const dx = x - p.mesh.position.x, dy = y - p.mesh.position.y, dz = z - p.mesh.position.z;
+      if (dx || dz) { p.mesh.rotation.y = Math.atan2(dx, dz); p.mesh.rotation.x = -Math.atan2(dy, Math.hypot(dx, dz)); }
+      p.mesh.position.set(x, y, z);
+      if (k < 1) continue;
+      this.view.remove(p.mesh);
+      this.projectiles.splice(i, 1);
+      this.impact(p);
+    }
+  }
+
+  private impact(p: { ex: number; ez: number; from: Faction; shooter: Unit | null; target: Unit | null; dmg: number; kind: 'arrow' | 'fire' }): void {
+    if (p.kind === 'fire') {
+      // splash: scorch hostile units & buildings around the landing point
+      for (const o of this.units) {
+        if (o.dead || !this.hostile(p.from, o.faction)) continue;
+        const dx = o.mesh.position.x - p.ex, dz = o.mesh.position.z - p.ez;
+        if (dx * dx + dz * dz <= 1.3 * 1.3) this.hurtUnit(p.shooter, o, p.dmg);
+      }
+      for (const b of this.buildings) {
+        if (b.removed || !this.hostile(p.from, b.faction)) continue;
+        const c = this.buildingCenter(b);
+        const dx = c.x - p.ex, dz = c.z - p.ez;
+        if (dx * dx + dz * dz <= 1.7 * 1.7) { b.hp -= p.dmg; this.onHurt(c.x, c.z, b.faction); if (b.hp <= 0) this.destroyBuilding(b); }
+      }
+      const mesh = this.view.createFlame();
+      mesh.position.set(p.ex, 0, p.ez);
+      this.flames.push({ mesh, life: 1.1, max: 1.1 });
+      return;
+    }
+    // arrow: hit the tracked target if it's still close, else whoever is standing there
+    if (p.target && !p.target.dead && Math.hypot(p.target.mesh.position.x - p.ex, p.target.mesh.position.z - p.ez) < 0.7) {
+      this.hurtUnit(p.shooter, p.target, p.dmg);
+      return;
+    }
+    let best: Unit | null = null, bd = 0.6 * 0.6;
     for (const o of this.units) {
-      if (o.dead || o.faction !== 'player') continue;
-      const dx = o.mesh.position.x - u.mesh.position.x, dz = o.mesh.position.z - u.mesh.position.z;
-      if (dx * dx + dz * dz <= R * R) { o.hp -= 26; this.onHurt(o.mesh.position.x, o.mesh.position.z, o.faction); hit = true; if (o.hp <= 0) this.killUnit(o); }
+      if (o.dead || !this.hostile(p.from, o.faction)) continue;
+      const dx = o.mesh.position.x - p.ex, dz = o.mesh.position.z - p.ez, d2 = dx * dx + dz * dz;
+      if (d2 < bd) { bd = d2; best = o; }
     }
-    for (const b of this.buildings) {
-      if (b.removed || b.faction !== 'player') continue;
-      const c = this.buildingCenter(b);
-      const dx = c.x - u.mesh.position.x, dz = c.z - u.mesh.position.z;
-      if (dx * dx + dz * dz <= (R + 1.2) * (R + 1.2)) this.attackBuilding(u, b);
+    if (best) this.hurtUnit(p.shooter, best, p.dmg);
+  }
+
+  /** Flames flare where dragon fire lands, then gutter out. */
+  private updateFlames(sdt: number): void {
+    for (let i = this.flames.length - 1; i >= 0; i--) {
+      const f = this.flames[i];
+      f.life -= sdt;
+      if (f.life <= 0) { this.view.remove(f.mesh); this.flames.splice(i, 1); continue; }
+      const k = f.life / f.max;
+      f.mesh.scale.setScalar(0.6 + 0.7 * Math.sin(Math.min(1, (1 - k) * 3) * Math.PI * 0.5));
+      f.mesh.traverse((o: any) => { if (o.material && o.material.transparent) o.material.opacity = 0.9 * k; });
     }
-    if (hit) this.sfx('error');
-    u.special = 4.5;
+  }
+
+  // =====================================================================
+  //  Separation — units softly shoulder each other aside, never stacking
+  // =====================================================================
+  private separate(dt: number): void {
+    const W = this.world.W;
+    const cells = new Map<number, Unit[]>();
+    const list: Unit[] = [];
+    for (const u of this.units) {
+      if (u.dead || !u.mesh.visible) continue;
+      list.push(u);
+      const k = u.ty * W + u.tx;
+      let c = cells.get(k);
+      if (!c) { c = []; cells.set(k, c); }
+      c.push(u);
+    }
+    const push = Math.min(1, dt * 6);
+    for (const u of list) {
+      // stationary workers hold their spot; fliers are above the crowd
+      if (u.wstate === 'gather' || u.wstate === 'build') continue;
+      if ((UNITS as Partial<Record<string, { flying?: boolean }>>)[u.role]?.flying) continue;
+      const ru = 0.3 * (u.mesh.scale.x || 1);
+      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+        const c = cells.get((u.ty + oy) * W + (u.tx + ox));
+        if (!c) continue;
+        for (const o of c) {
+          if (o === u) continue;
+          const dx = o.mesh.position.x - u.mesh.position.x, dz = o.mesh.position.z - u.mesh.position.z;
+          const r = ru + 0.3 * (o.mesh.scale.x || 1);
+          const d2 = dx * dx + dz * dz;
+          if (d2 >= r * r) continue;
+          let nx: number, nz: number;
+          const d = Math.sqrt(d2);
+          if (d < 1e-4) { // dead-on overlap: split along a deterministic axis
+            const ax = ((u.tx + o.ty) % 2) * 2 - 1, az = ((u.ty + o.tx) % 2) * 2 - 1;
+            const l = Math.hypot(ax, az); nx = ax / l; nz = az / l;
+          } else { nx = dx / d; nz = dz / d; }
+          // each of the pair sees the other and steps back its own half
+          const overlap = (r - d) * 0.5 * push;
+          this.nudge(u, -nx * overlap, -nz * overlap);
+        }
+      }
+    }
+  }
+
+  /** Shift a unit if the destination isn't water or inside a building/site. */
+  private nudge(u: Unit, dx: number, dz: number): void {
+    const W = this.world.W, H = this.world.H;
+    const nxp = u.mesh.position.x + dx, nzp = u.mesh.position.z + dz;
+    const tx = Math.max(0, Math.min(W - 1, Math.round(nxp + W / 2 - 0.5)));
+    const ty = Math.max(0, Math.min(H - 1, Math.round(nzp + H / 2 - 0.5)));
+    const t = this.world.tiles[ty][tx];
+    if (t.type === 'water' || t.b || t.site) return;
+    u.mesh.position.x = nxp; u.mesh.position.z = nzp;
+    u.tx = tx; u.ty = ty;
   }
 
   /** Toggle a construction site's priority (materials & builders go there first). */
@@ -902,7 +1177,53 @@ export class Game {
   orderUnit(u: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null): void {
     u.order = { type, x, y, foe };
     u.foe = type === 'attack' ? foe : null;
+    u.foeB = null;
     u.path = null;
+  }
+
+  /** Order a whole selection: attacks converge on the foe, moves fan out into a
+   *  loose formation so the squad doesn't pile onto a single tile. */
+  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null): void {
+    if (type === 'attack' && foe) {
+      for (const u of units) this.orderUnit(u, 'attack', foe.tx, foe.ty, foe);
+      return;
+    }
+    const spots = this.formationSpots(x, y, units.length);
+    for (let i = 0; i < units.length; i++) {
+      const s = spots[Math.min(i, spots.length - 1)];
+      this.orderUnit(units[i], type, s.x, s.y);
+    }
+  }
+
+  /** Up to n distinct free tiles spiralling out from a point (formation targets). */
+  private formationSpots(cx: number, cy: number, n: number): Coord[] {
+    const out: Coord[] = [];
+    const tryTile = (x: number, y: number): void => {
+      if (out.length >= n) return;
+      const t = this.world.T(x, y);
+      if (!t || t.type === 'water' || t.b || t.site) return;
+      out.push({ x, y });
+    };
+    tryTile(cx, cy);
+    for (let r = 1; r < 10 && out.length < n; r++)
+      for (let dx = -r; dx <= r && out.length < n; dx++)
+        for (let dy = -r; dy <= r && out.length < n; dy++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // ring perimeter only
+          tryTile(cx + dx, cy + dy);
+        }
+    if (!out.length) out.push({ x: cx, y: cy });
+    return out;
+  }
+
+  /** Plant (or move) a military building's rally flag — freshly trained fighters
+   *  march there on their own. */
+  setRally(b: Building, x: number, y: number): void {
+    if (!b.def.military || b.removed) return;
+    b.rally = { x, y };
+    if (!b.rallyMesh) b.rallyMesh = this.view.createFlag();
+    b.rallyMesh.position.set(this.world.wx(x), 0, this.world.wz(y));
+    this.toast('Rally point set — trained fighters will muster there');
+    this.sfx('click');
   }
 
   /** Scatter `count` fighters of a kind around a world point (sandbox/level spawner). */
@@ -976,24 +1297,25 @@ export class Game {
     // the enemy commander sends fresh squads on a timer
     const cmd = this.enemy.commander;
     if (cmd) { this.commanderT += sdt; if (this.commanderT >= cmd.every) { this.commanderT = 0; this.spawnRaid(cmd.kind, cmd.count, cmd.from ?? 'camp'); } }
-    // watchtowers loose arrows at the nearest player fighter
-    this.towerFire(sdt);
   }
 
+  /** Every tower (any faction) looses arrows at the nearest hostile fighter in range. */
   private towerFire(sdt: number): void {
     for (const b of this.buildings) {
-      if (b.removed || b.faction === 'player' || b.key !== 'watchtower') continue;
+      const tw = b.def.tower;
+      if (!tw || b.removed || !b.active) continue;
       b.prog += sdt;
-      if (b.prog < 1.6) continue;
-      b.prog = 0;
+      if (b.prog < tw.rate) continue;
       const c = this.buildingCenter(b);
-      let best: Unit | null = null, bd = 6 * 6;
+      let best: Unit | null = null, bd = tw.range * tw.range;
       for (const u of this.units) {
-        if (u.dead || u.faction !== 'player' || u.dmg <= 0) continue;
+        if (u.dead || !this.hostile(b.faction, u.faction) || u.dmg <= 0) continue;
         const dx = u.mesh.position.x - c.x, dz = u.mesh.position.z - c.z, d2 = dx * dx + dz * dz;
         if (d2 < bd) { bd = d2; best = u; }
       }
-      if (best) { best.hp -= 12; this.onHurt(best.mesh.position.x, best.mesh.position.z, best.faction); if (best.hp <= 0) this.killUnit(best); }
+      if (!best) continue; // stay drawn until something wanders into range
+      b.prog = 0;
+      this.fireArrow(null, b.faction, c.x, 2.1, c.z, best, tw.dmg);
     }
   }
 
@@ -1048,7 +1370,7 @@ export class Game {
     for (let r = 3; r < 8; r++) {
       for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r], [r, r], [-r, -r]]) {
         const x = b.x + dx, y = b.y + dy;
-        if (this.areaClear(x, y)) { const t = this.placeBuilding('watchtower', x, y, true, 0, 'enemy'); t.active = true; return; }
+        if (this.areaClear(x, y)) { const t = this.placeBuilding('enemywatchtower', x, y, true, 0, 'enemy'); t.active = true; return; }
       }
     }
   }
@@ -1106,24 +1428,29 @@ export class Game {
       else if (u.role === 'villager' && !u.home) this.villagerStroll(u, sdt);
       else this.workerUpdate(u, sdt);
     }
+    this.separate(sdt);
+    this.updateProjectiles(sdt);
+    this.updateFlames(sdt);
     this.sweepDead();
     this.growthUpdate(sdt);
     this.serveTaverns(sdt);
     this.trainQueues(sdt);
     this.staffBuildings();
     this.combatDirector(sdt);
+    this.towerFire(sdt); // towers watch on every level, with or without a director
     this.fieldT += sdt;
     if (this.fieldT > 0.5) { this.fieldT = 0; this.fieldRecolor(); }
   }
 
-  /** Queue a unit at a barracks/guild hall, paying its cost from the store. */
+  /** Queue a unit at a barracks/guild hall, paying its own cost from the store. */
   trainUnit(b: Building, kind: string): boolean {
     const spec = b.def.military ?? b.def.trainer;
-    if (!spec || !b.active || !spec.trains.includes(kind)) return false;
+    const t = spec?.units.find(s => s.kind === kind);
+    if (!t || !b.active) return false;
     const store = this.store;
     if (!store || !store.stock) return false;
-    for (const k in spec.cost) if ((store.stock[k] || 0) < (spec.cost as any)[k]) { this.toast('Not enough resources to train a ' + kind, 'err'); this.sfx('error'); return false; }
-    for (const k in spec.cost) store.stock[k] -= (spec.cost as any)[k];
+    for (const k in t.cost) if ((store.stock[k] || 0) < (t.cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name.toLowerCase() + ' to train a ' + kind, 'err'); this.sfx('error'); return false; }
+    for (const k in t.cost) store.stock[k] -= (t.cost as any)[k];
     (b.trainQ ||= []).push(kind);
     this.sfx('click');
     return true;
@@ -1133,9 +1460,10 @@ export class Game {
   cancelTrain(b: Building, index: number): void {
     if (!b.trainQ || index < 0 || index >= b.trainQ.length) return;
     const spec = b.def.military ?? b.def.trainer;
+    const t = spec?.units.find(s => s.kind === b.trainQ![index]);
     b.trainQ.splice(index, 1);
     if (index === 0) b.prog = 0;           // scrap progress on the in-flight unit
-    if (spec && this.store?.stock) for (const k in spec.cost) this.store.stock[k] = (this.store.stock[k] || 0) + (spec.cost as any)[k];
+    if (t && this.store?.stock) for (const k in t.cost) this.store.stock[k] = (this.store.stock[k] || 0) + (t.cost as any)[k];
     this.sfx('click');
   }
 
@@ -1152,13 +1480,17 @@ export class Game {
       const spec = b.def.military ?? b.def.trainer;
       if (!spec || !b.active) continue;
       if (!b.trainQ || !b.trainQ.length) { b.prog = 0; continue; }
-      b.prog += sdt / spec.time;
+      const head = spec.units.find(s => s.kind === b.trainQ![0]);
+      const time = (head?.time ?? 6) * this.mods.trainTime(b.trainQ[0]);
+      b.prog += sdt / time;
       if (b.prog >= 1) {
         b.prog = 0;
         const kind = b.trainQ.shift()!;
         const d = doorTile(b);
-        if ((UNITS as any)[kind]) this.spawnFighter(kind as UnitKind, { x: d.x, y: d.y }, 'player');
-        else this.spawnCivilian(kind, { x: d.x, y: d.y });
+        if ((UNITS as any)[kind]) {
+          const u = this.spawnFighter(kind as UnitKind, { x: d.x, y: d.y }, 'player');
+          if (b.rally) this.orderUnit(u, 'attackMove', b.rally.x, b.rally.y); // muster at the flag
+        } else this.spawnCivilian(kind, { x: d.x, y: d.y });
         this.sfx('build');
       }
     }

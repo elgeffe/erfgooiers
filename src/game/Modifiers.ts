@@ -67,6 +67,9 @@ export class Modifiers {
   /** Multiplier on a building's max HP (castle-toughness upgrades, enemy mutators). */
   buildingHpMult(faction: string): number { return this.accMult('buildingHp', faction); }
 
+  /** Multiplier on barracks/guild-hall training time for a unit kind. */
+  trainTime(kind: string): number { return this.accMult('trainTime', kind); }
+
   /** Multiplier on the player's castle HP (Heritage 'Stout Castle'). */
   castleHpMult(): number { return this.accMult('castleHp'); }
 
