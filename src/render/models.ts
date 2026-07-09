@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { uiRng } from '../engine/rng';
+import { GRAPHICS } from '../constants';
 import type { BuildingDef, DecoKind } from '../types';
 
 // Mesh scatter is purely cosmetic — it must never touch gameplay/worldgen streams.
@@ -14,14 +15,80 @@ const rnd = () => uiRng.next();
    group.userData.spin so the View can turn them each frame.
    ===================================================================== */
 
-const matCache: Record<number, THREE.MeshLambertMaterial> = {};
-function mat(hex: number): THREE.MeshLambertMaterial {
-  if (!matCache[hex]) matCache[hex] = new THREE.MeshLambertMaterial({ color: hex });
+export type SceneMaterial = THREE.MeshToonMaterial | THREE.MeshLambertMaterial;
+
+// One shared gradient map quantizes toon lighting into flat cel bands.
+// r152's toon shader samples only the red channel, hence RedFormat.
+let gradient: THREE.DataTexture | null = null;
+function toonGradient(): THREE.DataTexture {
+  if (!gradient) {
+    const n = Math.max(2, GRAPHICS.toonBands);
+    const data = new Uint8Array(n);
+    for (let i = 0; i < n; i++) data[i] = Math.round(255 * (i + 1) / n);
+    gradient = new THREE.DataTexture(data, n, 1, THREE.RedFormat);
+    gradient.minFilter = gradient.magFilter = THREE.NearestFilter;
+    gradient.needsUpdate = true;
+  }
+  return gradient;
+}
+
+/** Exclude a material from the OutlineEffect ink pass (UI overlays, ghosts, transparents). */
+export function noOutline<T extends THREE.Material>(m: T): T {
+  m.userData.outlineParameters = { visible: false };
+  return m;
+}
+
+/** Give a material a crisper, thicker ink edge than the scene default so the
+ *  object it clothes reads sharply against the busy scenery. Thickness is in
+ *  the same screen-space (NDC) units as GRAPHICS.outlineThickness. */
+export function sharpOutline<T extends THREE.Material>(m: T, thickness: number): T {
+  m.userData.outlineParameters = {
+    thickness,
+    color: new THREE.Color(GRAPHICS.outlineColor).toArray(),
+    alpha: Math.min(1, GRAPHICS.outlineAlpha + 0.15),
+  };
+  return m;
+}
+
+// Crisper ink for the things the eye tracks most: the little folk and the
+// gold they scurry after. Scaled off the scene default so one tweak in
+// constants.ts carries through here too.
+const UNIT_INK = GRAPHICS.outlineThickness * 1.7;
+const GOLD_INK = GRAPHICS.outlineThickness * 2.0;
+
+/** Every lit scene material funnels through here so the whole look flips
+ *  between cel-shaded toon and flat Lambert on GRAPHICS.toon. Transparent
+ *  materials never get ink outlines — expanded backfaces read wrong on them. */
+export function stdMat(params: THREE.MeshLambertMaterialParameters, outline = true): SceneMaterial {
+  const m = GRAPHICS.toon
+    ? new THREE.MeshToonMaterial({ ...params, gradientMap: toonGradient() })
+    : new THREE.MeshLambertMaterial(params);
+  if (!outline || params.transparent) noOutline(m);
+  return m;
+}
+
+const matCache: Record<number, SceneMaterial> = {};
+function mat(hex: number): SceneMaterial {
+  if (!matCache[hex]) matCache[hex] = stdMat({ color: hex });
   return matCache[hex];
 }
 // Solid material when placed, translucent when previewing (ghost).
-function mkMat(hex: number, ghost: boolean): THREE.MeshLambertMaterial {
-  return ghost ? new THREE.MeshLambertMaterial({ color: hex, transparent: true, opacity: 0.55 }) : mat(hex);
+function mkMat(hex: number, ghost: boolean): SceneMaterial {
+  return ghost ? stdMat({ color: hex, transparent: true, opacity: 0.55 }) : mat(hex);
+}
+
+// A parallel cache for unit materials, kept separate from `matCache` so the
+// sharper unit ink never bleeds onto scenery props that reuse the same colour.
+const unitMatCache: Record<number, SceneMaterial> = {};
+function umat(hex: number): SceneMaterial {
+  if (!unitMatCache[hex]) unitMatCache[hex] = sharpOutline(stdMat({ color: hex }), UNIT_INK);
+  return unitMatCache[hex];
+}
+// Shared sharp-edged gold for the coin heaps scattered on the map.
+let goldMat: SceneMaterial | null = null;
+function goldSharp(): SceneMaterial {
+  if (!goldMat) goldMat = sharpOutline(stdMat({ color: 0xffd24a }), GOLD_INK);
+  return goldMat;
 }
 
 // ---------- shared primitive geometries ----------
@@ -197,7 +264,7 @@ export function makeDeposit(kind: 'stone' | 'gold' | 'coal' | 'iron'): THREE.Gro
 /** A little heap of gold coins the hero/serfs pick up off the map. */
 export function makePickup(): THREE.Group {
   const g = new THREE.Group();
-  const gold = mat(0xffd24a);
+  const gold = goldSharp();
   const coin = new THREE.CylinderGeometry(0.13, 0.13, 0.035, 12);
   const spots = [[0, 0.02, 0, 0], [0.1, 0.02, 0.06, 0.5], [-0.08, 0.02, 0.09, 1.1], [0.03, 0.055, 0.02, 0.3], [-0.04, 0.055, -0.05, 0.8], [0.02, 0.09, 0.03, 0.2]];
   for (const [x, y, z, rot] of spots) {
@@ -212,15 +279,15 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
   if (role === 'boar') return makeBeast(colorHex);
   if (role === 'dragon') return makeDragon(colorHex);
   const g = new THREE.Group();
-  const body = new THREE.Mesh(geoBody, mat(colorHex)); body.position.y = 0.21; body.castShadow = true;
-  const head = new THREE.Mesh(geoHead, mat(0xe8c9a0)); head.position.y = 0.55; head.castShadow = true;
+  const body = new THREE.Mesh(geoBody, umat(colorHex)); body.position.y = 0.21; body.castShadow = true;
+  const head = new THREE.Mesh(geoHead, umat(0xe8c9a0)); head.position.y = 0.55; head.castShadow = true;
   g.add(body, head);
 
   // little arms with skin-toned hands, angled out from the body
-  const skin = mat(0xe8c9a0);
-  const ink = mat(0x2a2018);
+  const skin = umat(0xe8c9a0);
+  const ink = umat(0x2a2018);
   for (const sx of [-1, 1]) {
-    const arm = new THREE.Mesh(geoArm, mat(colorHex));
+    const arm = new THREE.Mesh(geoArm, umat(colorHex));
     arm.position.set(sx * 0.19, 0.26, 0.02); arm.rotation.z = sx * 0.22; arm.castShadow = true;
     const hand = new THREE.Mesh(geoHand, skin);
     hand.position.set(sx * 0.23, 0.13, 0.03);
@@ -234,7 +301,7 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
   g.add(eyeL, eyeR, smile);
 
   dressUnit(g, role);
-  const item = new THREE.Mesh(geoItem, new THREE.MeshLambertMaterial({ color: 0xffffff }));
+  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
   item.position.y = 0.82; item.visible = false;
   g.add(item);
   return { group: g, itemMesh: item };
@@ -243,6 +310,8 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
 // Give each role its own little hat + outfit accent so trades read at a glance.
 // Head sits at y≈0.55 (r 0.14); hats perch around y≈0.66–0.9.
 function dressUnit(g: THREE.Group, role: string): void {
+  // Hats, aprons and weapons share the units' crisper ink, not the scenery cache.
+  const mat = umat;
   const add = (m: THREE.Object3D, castsShadow = true) => { m.castShadow = castsShadow; g.add(m); };
   // small helpers
   const brim = (col: number, r: number, h: number, y: number) => new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 12), mat(col)).translateY(y);
@@ -359,8 +428,16 @@ function dressUnit(g: THREE.Group, role: string): void {
       add(axe());
       break;
     }
-    default: { // serf — simple tan cap
-      add(dome(0xcdbb8f, 0.155, 0.65));
+    default: { // serf — a jaunty maroon fez with a dark tassel
+      const fez = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.145, 0.2, 14), mat(0x9e2b25));
+      fez.position.y = 0.77; add(fez);
+      // flat crown disc, a touch darker, caps the truncated cone
+      add(brim(0x7f2019, 0.115, 0.02, 0.87), false);
+      // tassel: a short cord flopping off one side to a little tuft
+      const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.16, 5), mat(0x241c14));
+      cord.position.set(0.11, 0.82, 0.03); cord.rotation.z = 0.6; add(cord, false);
+      const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.032, 6, 5), mat(0x241c14));
+      tuft.position.set(0.18, 0.74, 0.03); tuft.scale.y = 1.3; add(tuft, false);
       break;
     }
   }
@@ -389,7 +466,7 @@ function makeBeast(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.22, 6), mat(0x3a2a20)); leg.position.set(dx, 0.11, dz); leg.castShadow = true; g.add(leg);
   }
   const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.16, 5), hide); tail.position.set(-0.42, 0.34, 0); tail.rotation.z = 0.8; g.add(tail);
-  const item = new THREE.Mesh(geoItem, new THREE.MeshLambertMaterial({ color: 0xffffff })); item.visible = false; g.add(item);
+  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; g.add(item);
   return { group: g, itemMesh: item };
 }
 
@@ -422,7 +499,7 @@ function makeDragon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mes
   for (const dx of [-0.24, 0.28]) for (const dz of [-0.22, 0.22]) {
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.32, 6), scale); leg.position.set(dx, 0.17, dz); leg.castShadow = true; g.add(leg);
   }
-  const item = new THREE.Mesh(geoItem, new THREE.MeshLambertMaterial({ color: 0xffffff })); item.visible = false; g.add(item);
+  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; g.add(item);
   return { group: g, itemMesh: item };
 }
 
@@ -494,7 +571,7 @@ export function makeCorpse(colorHex: number): THREE.Mesh {
   ];
   const merged = mergeGeometries(parts, false)!;
   parts.forEach(p => p.dispose());
-  return new THREE.Mesh(merged, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  return new THREE.Mesh(merged, stdMat({ vertexColors: true }));
 }
 
 const ONE = new THREE.Vector3(1, 1, 1);
@@ -533,6 +610,7 @@ export function makeScaffold(def: BuildingDef): { group: THREE.Group; frame: THR
   }
   const frame = makeBuilding(def, true);
   frame.visible = false;
+  frame.userData.dynamic = true; // Game scales it up with build progress
   g.add(frame);
   return { group: g, frame };
 }
@@ -556,8 +634,9 @@ function addChimney(g: THREE.Group, ghost: boolean): void {
   const puffs: THREE.Mesh[] = [];
   const N = 4;
   for (let i = 0; i < N; i++) {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(0.12, 7, 6), new THREE.MeshLambertMaterial({ color: 0xbfbfbf, transparent: true, opacity: 0 }));
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.12, 7, 6), stdMat({ color: 0xbfbfbf, transparent: true, opacity: 0 }));
     m.userData.marker = true;
+    m.userData.dynamic = true;              // View moves each puff every frame
     m.userData.smokePhase = i / N;          // stagger the puffs up the plume
     m.position.set(0.5, 1.75, -0.3);
     g.add(m); puffs.push(m);
@@ -663,7 +742,7 @@ function fisheryYard(g: THREE.Group): void {
   const wood = mat(0x6b4a2f);
   for (const x of [0.5, 0.9]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 0.7, 6), wood); post.position.set(x, 0.35, 0.55); post.castShadow = true; g.add(post); }
   const bar = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.04, 0.04), wood); bar.position.set(0.7, 0.66, 0.55); g.add(bar);
-  const net = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.32, 0.02), new THREE.MeshLambertMaterial({ color: 0xcfc7ad, transparent: true, opacity: 0.5 })); net.position.set(0.7, 0.46, 0.55); g.add(net);
+  const net = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.32, 0.02), stdMat({ color: 0xcfc7ad, transparent: true, opacity: 0.5 })); net.position.set(0.7, 0.46, 0.55); g.add(net);
   const crate = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, 0.24), mat(0x8a6a44)); crate.position.set(-0.7, 0.09, 0.5); crate.castShadow = true; g.add(crate);
   for (const fz of [0.44, 0.56]) { const f = makeFish(); f.scale.setScalar(0.55); f.position.set(-0.7, 0.18, fz); f.rotation.z = 0.3; g.add(f); }
 }
@@ -814,6 +893,7 @@ function windmill(def: BuildingDef, ghost: boolean): THREE.Group {
     blades.add(arm);
   }
   blades.userData.marker = true;
+  blades.userData.dynamic = true; // spun every frame — must keep auto matrix updates
   g.add(blades);
   g.userData.spin = blades; // View turns this each frame
   return g;

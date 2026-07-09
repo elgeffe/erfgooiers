@@ -1,5 +1,7 @@
 import * as THREE from 'three';
+import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { uiRng } from '../engine/rng';
+import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { makeArrow, makeBuilding, makeCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makePickup, makePig, makeScaffold, makeTree, makeUnit } from './models';
@@ -24,6 +26,7 @@ interface SwimFish { mesh: THREE.Group; x: number; z: number; tx: number; tz: nu
  */
 export class View {
   readonly renderer: THREE.WebGLRenderer;
+  private readonly outline: OutlineEffect | null;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 400);
   readonly camTarget = new THREE.Vector3(0, 0, 2);
@@ -45,12 +48,12 @@ export class View {
   // green markers over building/site entrance tiles, shown while painting roads
   private readonly entranceMarkers: THREE.Mesh[] = [];
   private readonly entranceGeo = new THREE.PlaneGeometry(0.9, 0.9);
-  private readonly entranceMat = new THREE.MeshBasicMaterial({ color: 0x46c256, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+  private readonly entranceMat = noOutline(new THREE.MeshBasicMaterial({ color: 0x46c256, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
 
   // cobbled road overlay meshes, keyed by "x,y"
   private readonly roadMeshes = new Map<string, THREE.Mesh>();
   private readonly roadGeo = new THREE.PlaneGeometry(1.0, 1.0);
-  private readonly roadMats: THREE.MeshLambertMaterial[] = [];
+  private readonly roadMats: THREE.Material[] = [];
 
   // ambient scenery that turns in real time (distant windmill sails)
   private readonly millSails: THREE.Object3D[] = [];
@@ -77,40 +80,57 @@ export class View {
   // ---------- unit selection rings (pooled, persist across levels) ----------
   private readonly selRings: THREE.Mesh[] = [];
   private readonly selRingGeo = new THREE.RingGeometry(0.32, 0.44, 18);
-  private readonly selRingMat = new THREE.MeshBasicMaterial({ color: 0x46c256, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+  private readonly selRingMat = noOutline(new THREE.MeshBasicMaterial({ color: 0x46c256, transparent: true, opacity: 0.85, side: THREE.DoubleSide }));
 
   // ---------- HP bars (pooled, billboarded, persist across levels) ----------
   private readonly hpBarGroup = new THREE.Group();
   private readonly hpBars: { group: THREE.Group; fill: THREE.Mesh }[] = [];
 
   constructor(canvas: HTMLCanvasElement, minimap: HTMLCanvasElement) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // crisp hard-edged shadows suit the cel look and cost less than PCFSoft
+    this.renderer.shadowMap.type = GRAPHICS.toon ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+
+    // ink edges: OutlineEffect re-renders outlined meshes as expanded backfaces
+    this.outline = GRAPHICS.outlines ? new OutlineEffect(this.renderer, {
+      defaultThickness: GRAPHICS.outlineThickness,
+      defaultColor: new THREE.Color(GRAPHICS.outlineColor).toArray(),
+      defaultAlpha: GRAPHICS.outlineAlpha,
+    }) : null;
 
     this.setSize();
     addEventListener('resize', () => this.setSize());
 
-    // lighting — warm sun, cool sky fill (persists across levels)
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    this.scene.add(new THREE.HemisphereLight(0xdaeeff, 0x6f8a52, 0.5));
-    const sun = new THREE.DirectionalLight(0xfff0d2, 1.15);
+    // lighting — warm sun, cool sky fill (persists across levels). The toon
+    // look runs a slightly stronger sun over a lower ambient floor so the cel
+    // bands read, plus a cool fill from the shaded side so shadows stay airy.
+    const toon = GRAPHICS.toon;
+    this.scene.add(new THREE.AmbientLight(0xffffff, toon ? 0.42 : 0.55));
+    this.scene.add(new THREE.HemisphereLight(0xdaeeff, 0x6f8a52, toon ? 0.55 : 0.5));
+    const sun = new THREE.DirectionalLight(0xfff0d2, toon ? 1.35 : 1.15);
     sun.position.set(-18, 30, 10); sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.left = -34; sun.shadow.camera.right = 34;
     sun.shadow.camera.top = 34; sun.shadow.camera.bottom = -34; sun.shadow.camera.far = 100;
     this.scene.add(sun, sun.target);
+    if (toon) {
+      const fill = new THREE.DirectionalLight(0x9db8ff, 0.3);
+      fill.position.set(20, 18, -14);
+      this.scene.add(fill, fill.target);
+    }
 
-    // a few cobble variants so long roads don't tile visibly (shared, persist)
-    for (let i = 0; i < 4; i++) this.roadMats.push(new THREE.MeshLambertMaterial({ map: this.makeRoadTexture() }));
+    // a few cobble variants so long roads don't tile visibly (shared, persist);
+    // flat on the ground, so skip their outline pass — it would be invisible
+    for (let i = 0; i < 4; i++) this.roadMats.push(stdMat({ map: this.makeRoadTexture() }, false));
 
     this.scene.add(this.worldGroup);
 
     // road-tile cursor
     this.roadCursor = new THREE.Mesh(
       new THREE.PlaneGeometry(0.96, 0.96),
-      new THREE.MeshBasicMaterial({ color: 0xb9a179, transparent: true, opacity: 0.75, side: THREE.DoubleSide }),
+      noOutline(new THREE.MeshBasicMaterial({ color: 0xb9a179, transparent: true, opacity: 0.75, side: THREE.DoubleSide })),
     );
     this.roadCursor.rotation.x = -Math.PI / 2; this.roadCursor.position.y = 0.03; this.roadCursor.visible = false;
     this.scene.add(this.roadCursor);
@@ -190,6 +210,7 @@ export class View {
     body.position.set(x, 0, z);
     body.rotation.y = rnd() * Math.PI * 2;
     this.goreGroup.add(body);
+    this.freeze(body); // lies where it fell until culled
     this.goreBodies.push({ obj: body, age: 0, mat: body.material as THREE.Material });
     if (this.goreBodies.length > this.MAX_BODIES) this.cullBody(this.goreBodies.shift()!);
   }
@@ -203,7 +224,10 @@ export class View {
       const k = 1 - (c.age - this.CORPSE_LIFE) / this.CORPSE_FADE;
       if (k <= 0) { this.cullBody(c); this.goreBodies.splice(i, 1); continue; }
       const m = c.mat as THREE.Material & { opacity: number };
-      if (!m.transparent) { m.transparent = true; m.needsUpdate = true; }  // only now joins the transparent pass
+      if (!m.transparent) {
+        m.transparent = true; m.needsUpdate = true;  // only now joins the transparent pass
+        m.userData.outlineParameters = { visible: false }; // ink must not outlive the fading body
+      }
       m.opacity = k;
     }
   }
@@ -329,7 +353,22 @@ export class View {
   // =====================================================================
   //  Scene helpers
   // =====================================================================
-  add(o: THREE.Object3D): void { this.worldGroup.add(o); }
+  /**
+   * Freeze a static object's local matrices (matrixAutoUpdate off, one final
+   * updateMatrix) so hundreds of placed doodads/buildings cost no per-frame
+   * matrix math. Subtrees that do animate (windmill sails, smoke puffs,
+   * scaffold frames) carry userData.dynamic and keep auto updates; their
+   * children are still frozen since they never move relative to the parent.
+   * Pass includeRoot=false when the root itself is animated (growing trees,
+   * ripening crops, walking units) but its children are rigid.
+   */
+  private freeze(root: THREE.Object3D, includeRoot = true): void {
+    if (includeRoot && !root.userData.dynamic) { root.updateMatrix(); root.matrixAutoUpdate = false; }
+    for (const c of root.children) this.freeze(c);
+  }
+
+  /** Buildings and construction sites — placed once, then static (bar their dynamic-flagged parts). */
+  add(o: THREE.Object3D): void { this.worldGroup.add(o); this.freeze(o); }
   remove(o: THREE.Object3D): void { this.worldGroup.remove(o); }
 
   createBuildingMesh(def: BuildingDef): THREE.Group { return makeBuilding(def, false); }
@@ -339,6 +378,7 @@ export class View {
     const u = makeUnit(colorHex, role);
     u.group.position.set(this.world.wx(tileX), 0, this.world.wz(tileY));
     this.worldGroup.add(u.group);
+    this.freeze(u.group, false); // the unit walks; its body parts are rigid
     return u;
   }
 
@@ -354,18 +394,21 @@ export class View {
     const s = tree.s * Math.max(0.15, tree.growth);
     g.scale.set(s, s, s);
     this.worldGroup.add(g);
+    this.freeze(g, false); // the root rescales as the tree grows
     tree.meshes = [g];
   }
   addDeposit(x: number, y: number, dep: Deposit): void {
     const g = makeDeposit(dep.kind);
     g.position.set(this.world.wx(x), 0, this.world.wz(y));
     this.worldGroup.add(g);
+    this.freeze(g);
     dep.meshes = [g];
   }
   addPickup(x: number, y: number, pickup: Pickup): void {
     const g = makePickup();
     g.position.set(this.world.wx(x), 0.02, this.world.wz(y));
     this.worldGroup.add(g);
+    this.freeze(g);
     pickup.meshes = [g];
   }
   addDeco(x: number, y: number, deco: Deco): void {
@@ -373,6 +416,7 @@ export class View {
     const baseY = this.world.tiles[y][x].type === 'water' ? -0.14 : 0;
     g.position.set(this.world.wx(x) + (rnd() - 0.5) * 0.3, g.position.y + baseY, this.world.wz(y) + (rnd() - 0.5) * 0.3);
     this.worldGroup.add(g);
+    this.freeze(g);
     deco.meshes = [g];
   }
   /** Plant the visible crop on a plot; growth drives its height, produce its look. */
@@ -382,6 +426,7 @@ export class View {
     const g = makeFieldCrop(kind);
     g.position.set(this.world.wx(x), 0, this.world.wz(y));
     this.worldGroup.add(g);
+    this.freeze(g, false); // the root's y-scale tracks crop growth
     field.meshes = [g];
     this.scaleFieldCrop(field);
   }
@@ -438,13 +483,15 @@ export class View {
       for (let i = 0; i < 6; i++) p[b + i * 3 + 1] = yv;
       this.refreshTile(x, y);
     }
-    const ground = new THREE.Mesh(this.groundGeo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    const ground = new THREE.Mesh(this.groundGeo, stdMat({ vertexColors: true }, false));
     ground.receiveShadow = true;
     this.worldGroup.add(ground);
+    this.freeze(ground);
     // the slab top must sit below the recessed water tiles (y −0.14) or it
     // shows through every lake and pond as a dark green sheet
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 2, 2, H + 2), new THREE.MeshLambertMaterial({ color: 0x4f6b3c }));
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 2, 2, H + 2), stdMat({ color: 0x4f6b3c }));
     slab.position.y = -1.16; this.worldGroup.add(slab);
+    this.freeze(slab);
   }
 
   private populateDoodads(): void {
@@ -530,6 +577,7 @@ export class View {
     m.position.set(this.world.wx(x), 0.02, this.world.wz(y));
     m.receiveShadow = true;
     this.worldGroup.add(m);
+    this.freeze(m);
     this.roadMeshes.set(key, m);
   }
   removeRoad(x: number, y: number): void {
@@ -557,9 +605,10 @@ export class View {
     this.scene.fog = new THREE.Fog(0xddecee, 62, 150);
 
     // a broad meadow plain reaching out to the horizon beneath the map plinth
-    const plain = new THREE.Mesh(new THREE.CircleGeometry(240, 48), new THREE.MeshLambertMaterial({ color: 0x7fae66 }));
+    const plain = new THREE.Mesh(new THREE.CircleGeometry(240, 48), stdMat({ color: 0x7fae66 }, false));
     plain.rotation.x = -Math.PI / 2; plain.position.y = -2.1;
     this.worldGroup.add(plain);
+    this.freeze(plain);
 
     // The board reaches its corners at `boardR`; keep every background element
     // beyond boardR + GAP so scenery never sits on top of the play area. Each
@@ -568,7 +617,7 @@ export class View {
     const GAP = 12;
 
     // low rolling hill domes in three hazier and hazier rings
-    const hillTones = [0x8cbc70, 0x7aa96a, 0x6f9d74, 0x678f79].map(c => new THREE.MeshLambertMaterial({ color: c }));
+    const hillTones = [0x8cbc70, 0x7aa96a, 0x6f9d74, 0x678f79].map(c => stdMat({ color: c }));
     for (let ring = 0; ring < 3; ring++) {
       const count = 12 + ring * 5;
       for (let i = 0; i < count; i++) {
@@ -580,13 +629,14 @@ export class View {
         hill.scale.y = h / r;
         hill.position.set(Math.cos(ang) * rad, -2.1, Math.sin(ang) * rad);
         this.worldGroup.add(hill);
+        this.freeze(hill);
       }
     }
 
     // a hazy treeline out in the meadow ring, between the plinth and the hills
-    const folA = new THREE.MeshLambertMaterial({ color: 0x4a7350 });
-    const folB = new THREE.MeshLambertMaterial({ color: 0x3f6a5e });
-    const trunkM = new THREE.MeshLambertMaterial({ color: 0x5b4433 });
+    const folA = stdMat({ color: 0x4a7350 });
+    const folB = stdMat({ color: 0x3f6a5e });
+    const trunkM = stdMat({ color: 0x5b4433 });
     for (let i = 0; i < 90; i++) {
       const ang = rnd() * Math.PI * 2;
       const s = 0.9 + rnd() * 1.4;
@@ -594,10 +644,12 @@ export class View {
       const crown = new THREE.Mesh(new THREE.ConeGeometry(0.75 * s, 2.6 * s, 6), rnd() < 0.5 ? folA : folB);
       crown.position.set(Math.cos(ang) * rad, -2.1 + 1.5 * s, Math.sin(ang) * rad);
       this.worldGroup.add(crown);
+      this.freeze(crown);
       if (rnd() < 0.35) {
         const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1 * s, 0.14 * s, 0.5 * s, 5), trunkM);
         trunk.position.set(crown.position.x, -2.1 + 0.22 * s, crown.position.z);
         this.worldGroup.add(trunk);
+        this.freeze(trunk);
       }
     }
 
@@ -605,13 +657,14 @@ export class View {
     const millAng = rnd() * Math.PI * 2;
     const millRad = boardR + 38;
     const mill = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.7, 5.2, 8), new THREE.MeshLambertMaterial({ color: 0x6b5540 }));
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.7, 5.2, 8), stdMat({ color: 0x6b5540 }));
     body.position.y = 2.6; mill.add(body);
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(1.35, 1.3, 8), new THREE.MeshLambertMaterial({ color: 0x54402f }));
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(1.35, 1.3, 8), stdMat({ color: 0x54402f }));
     cap.position.y = 5.85; mill.add(cap);
     const sails = new THREE.Group();
+    sails.userData.dynamic = true; // turns every frame
     sails.position.set(0, 5.4, 1.5);
-    const sailMat = new THREE.MeshLambertMaterial({ color: 0xefe6d0 });
+    const sailMat = stdMat({ color: 0xefe6d0 });
     for (let i = 0; i < 4; i++) {
       const blade = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.6, 0.08), sailMat);
       blade.position.y = 1.5;
@@ -622,13 +675,14 @@ export class View {
     mill.position.set(Math.cos(millAng) * millRad, -2.1, Math.sin(millAng) * millRad);
     mill.lookAt(0, -2.1, 0);
     this.worldGroup.add(mill);
+    this.freeze(mill);
     this.millSails.push(sails);
 
     // soft clouds drifting high above, spread wide around the board. Most are
     // plain puffballs, but a sparse few take (rough) animal shapes for fun.
     const cloudSpan = boardR * 2 + 30;
     this.cloudBound = cloudSpan / 2;
-    const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+    const cloudMat = stdMat({ color: 0xffffff, transparent: true, opacity: 0.85 });
     const mk = (c: THREE.Group, x: number, z: number, s: number, y = 0): void => {
       const p = new THREE.Mesh(new THREE.SphereGeometry(s, 8, 6), cloudMat);
       p.position.set(x, y + rnd() * 0.25, z); p.scale.y = 0.6; c.add(p);
@@ -659,6 +713,7 @@ export class View {
       c.rotation.y = rnd() * Math.PI * 2;   // face a random way so critters vary
       c.position.set((rnd() - 0.5) * cloudSpan, 14 + rnd() * 6, (rnd() - 0.5) * cloudSpan);
       this.worldGroup.add(c);
+      this.freeze(c, false); // the group drifts; its puffs never move within it
       this.clouds.push(c);
     }
   }
@@ -693,7 +748,7 @@ export class View {
     const n = Math.min(18, Math.max(4, Math.round(lake.length / 12)));
     for (let i = 0; i < n; i++) {
       const c = lake[Math.floor(uiRng.next() * lake.length)];
-      const mesh = makeFish(); this.worldGroup.add(mesh);
+      const mesh = makeFish(); this.worldGroup.add(mesh); this.freeze(mesh, false);
       const x = this.world.wx(c.x) + (uiRng.next() - 0.5) * 0.6, z = this.world.wz(c.y) + (uiRng.next() - 0.5) * 0.6;
       mesh.position.set(x, 0.05, z);
       this.fish.push({ mesh, x, z, tx: x, tz: z, wait: uiRng.next() * 2, speed: 0.25 + uiRng.next() * 0.25 });
@@ -732,7 +787,7 @@ export class View {
       const want = Math.max(2, Math.min(6, b.fieldsList.length + 1));
       while (herd.length < want) {
         const big = herd.length % 2 === 0;
-        const mesh = makePig(big); this.worldGroup.add(mesh);
+        const mesh = makePig(big); this.worldGroup.add(mesh); this.freeze(mesh, false);
         const p = this.pigTarget(b);
         herd.push({ mesh, x: p.x, z: p.z, tx: p.x, tz: p.z, wait: uiRng.next() * 3, big });
         mesh.position.set(p.x, 0, p.z);
@@ -784,7 +839,7 @@ export class View {
     if (this.ghostKey !== key) {
       this.scene.remove(this.ghost);
       this.ghost = makeBuilding(def, true);
-      const mk = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), new THREE.MeshBasicMaterial({ color: 0xd9a441, transparent: true, opacity: 0.7, side: THREE.DoubleSide }));
+      const mk = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), noOutline(new THREE.MeshBasicMaterial({ color: 0xd9a441, transparent: true, opacity: 0.7, side: THREE.DoubleSide })));
       mk.rotation.x = -Math.PI / 2; mk.position.set(-0.5, 0.04, 1.5); mk.userData.marker = true;
       this.ghost.add(mk);
       this.scene.add(this.ghost); this.ghostKey = key;
@@ -857,5 +912,8 @@ export class View {
     mmx.strokeRect((this.camTarget.x + W / 2 - this.viewSize * a * 0.72) * MMS, (this.camTarget.z + H / 2 - this.viewSize * 0.95) * MMS, this.viewSize * a * 1.44 * MMS, this.viewSize * 1.9 * MMS);
   }
 
-  render(): void { this.renderer.render(this.scene, this.camera); }
+  render(): void {
+    if (this.outline) this.outline.render(this.scene, this.camera);
+    else this.renderer.render(this.scene, this.camera);
+  }
 }

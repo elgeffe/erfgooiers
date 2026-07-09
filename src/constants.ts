@@ -9,3 +9,13 @@ export const BUILD_TIME = 8;        // seconds of laborer work to raise a buildi
 export const BASE_SPEED = 2.3;      // tiles/second a unit walks (x1.3 on roads)
 export const ROAD_STONE_COST = 1;   // stone consumed from the storehouse per road tile
 export const PLOT_RANGE = 6;        // how far (tiles) a plot may sit from its farm/vineyard/pig farm
+
+// Rendering look & performance — see docs/graphics-upgrade-plan.md.
+export const GRAPHICS = {
+  toon: true,               // cel-shaded MeshToonMaterial everywhere; off = the old flat Lambert look
+  toonBands: 3,             // how many flat light bands the toon shading quantizes into
+  outlines: true,           // ink edges around meshes via OutlineEffect
+  outlineThickness: 0.0022, // screen-space edge width (NDC; constant at any zoom with the ortho camera)
+  outlineColor: 0x241c14,   // warm ink — softer than pure black
+  outlineAlpha: 0.85,
+};
