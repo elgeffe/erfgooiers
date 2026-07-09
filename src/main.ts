@@ -335,6 +335,22 @@ renderSound();
   else document.exitFullscreen?.();
 };
 
+// ---------- runtime error banner ----------
+// A runtime exception must never silently freeze the game: surface it and
+// offer a reload — the run save resumes at the current level's start.
+let lastErrAt = 0;
+function showError(msg: string): void {
+  const now = Date.now();
+  if (now - lastErrAt < 4000) return;   // a render-loop error repeats every frame
+  lastErrAt = now;
+  $('errText').textContent = msg;
+  $('errbar').style.display = 'flex';
+}
+addEventListener('error', e => showError(e.message || 'Unknown error'));
+addEventListener('unhandledrejection', e => showError(String((e as PromiseRejectionEvent).reason ?? 'Unhandled rejection')));
+($('errReload') as HTMLButtonElement).onclick = () => location.reload();
+($('errDismiss') as HTMLButtonElement).onclick = () => { $('errbar').style.display = 'none'; };
+
 // ---------- perf HUD (F3) — draw calls, frame & sim cost, live counts ----------
 const perfEl = $('perfhud');
 let perfOn = false;
