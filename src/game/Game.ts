@@ -798,7 +798,14 @@ export class Game {
 
   private attack(attacker: Unit, foe: Unit): void {
     attacker.lungeT = 0.22; // little hop into the swing
+    if (this.swingsSteel(attacker)) this.sfx('sword');
     this.hurtUnit(attacker, foe, attacker.dmg);
+  }
+
+  /** Melee humans (soldiers, knights, bandits) clash steel; beasts stay mute. */
+  private swingsSteel(u: Unit): boolean {
+    const def = UNITS[u.role as UnitKind];
+    return !!def && def.model === 'human' && !def.arrows;
   }
 
   private killUnit(u: Unit): void {
@@ -966,6 +973,7 @@ export class Game {
   }
 
   private attackBuilding(u: Unit, b: Building): void {
+    if (this.swingsSteel(u)) this.sfx('sword');
     b.hp -= u.dmg;
     this.onHurt(this.buildingCenter(b).x, this.buildingCenter(b).z, b.faction);
     if (b.hp <= 0) this.destroyBuilding(b);
@@ -1026,6 +1034,7 @@ export class Game {
     const dist = Math.hypot(tx - x, tz - z);
     const mesh = this.view.createArrow();
     mesh.position.set(x, y, z);
+    this.sfx('arrow');
     this.projectiles.push({
       mesh, sx: x, sy: y, sz: z, ex: tx, ey: 0.35, ez: tz,
       t: 0, dur: Math.max(0.16, dist / 11), arc: Math.min(1.3, 0.15 + dist * 0.08),

@@ -447,7 +447,12 @@ function dressUnit(g: THREE.Group, role: string): void {
 //  Beasts — a bristly wild boar and the dragon of Het Gooi
 // =====================================================================
 function makeBeast(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
+  // The body is modelled snout-along +x; the sim expects +z forward (like the
+  // human units), so the parts live in an inner group turned a quarter left.
+  const outer = new THREE.Group();
   const g = new THREE.Group();
+  g.rotation.y = -Math.PI / 2;
+  outer.add(g);
   const hide = mat(colorHex);
   const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), hide);
   body.scale.set(1.5, 0.95, 0.95); body.position.y = 0.3; body.castShadow = true;
@@ -466,12 +471,16 @@ function makeBeast(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.22, 6), mat(0x3a2a20)); leg.position.set(dx, 0.11, dz); leg.castShadow = true; g.add(leg);
   }
   const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.16, 5), hide); tail.position.set(-0.42, 0.34, 0); tail.rotation.z = 0.8; g.add(tail);
-  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; g.add(item);
-  return { group: g, itemMesh: item };
+  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; outer.add(item);
+  return { group: outer, itemMesh: item };
 }
 
 function makeDragon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
+  // Modelled head-along +x like the boar; turned to the sim's +z-forward frame.
+  const outer = new THREE.Group();
   const g = new THREE.Group();
+  g.rotation.y = -Math.PI / 2;
+  outer.add(g);
   const scale = mat(colorHex);
   const membrane = mat(0x5a1a26);
   const body = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 9), scale); body.scale.set(1.6, 1, 1); body.position.y = 0.5; body.castShadow = true;
@@ -493,14 +502,14 @@ function makeDragon(colorHex: number): { group: THREE.Group; itemMesh: THREE.Mes
     wing.userData.flapBase = s * 0.5; wing.userData.flapSign = s;
     g.add(wing); wings.push(wing);
   }
-  g.userData.wings = wings;
+  outer.userData.wings = wings; // the sim flaps them via u.mesh.userData.wings
   for (let i = 0; i < 4; i++) { const spike = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.12, 5), mat(0x4a141f)); spike.position.set(0.3 - i * 0.28, 0.82 - i * 0.03, 0); g.add(spike); }
   // four clawed legs
   for (const dx of [-0.24, 0.28]) for (const dz of [-0.22, 0.22]) {
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.32, 6), scale); leg.position.set(dx, 0.17, dz); leg.castShadow = true; g.add(leg);
   }
-  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; g.add(item);
-  return { group: g, itemMesh: item };
+  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff })); item.visible = false; outer.add(item);
+  return { group: outer, itemMesh: item };
 }
 
 // =====================================================================
