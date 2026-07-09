@@ -61,6 +61,34 @@ describe('Modifiers', () => {
     expect(m.startStock()).toEqual({ bread: 4, timber: 6 });
   });
 
+  it('freeInputs strips a recipe of its inputs (communal ovens)', () => {
+    const m = new Modifiers([{ stat: 'freeInputs', filter: 'bread' }, { stat: 'recipeTime', mult: 2, filter: 'bread' }]);
+    expect(m.recipeInputs(bakery)).toEqual({});
+    expect(m.recipeTime(bakery)).toBeCloseTo(10);
+    const smithy = { ...bakery, recipe: { inp: { iron: 1 }, out: 'weapon', time: 7 } } as BuildingDef;
+    expect(m.recipeInputs(smithy)).toEqual({ iron: 1 }); // other recipes untouched
+  });
+
+  it('roadCost clamps at zero (corvée roads)', () => {
+    const m = new Modifiers([{ stat: 'roadCost', add: -99 }, { stat: 'offRoadSpeed', mult: 0.75 }]);
+    expect(m.roadCost()).toBe(0);
+    expect(m.offRoadMult()).toBeCloseTo(0.75);
+  });
+
+  it('craftPerRoad scales with the live road count, capped at +60%', () => {
+    const m = new Modifiers([{ stat: 'craftPerRoad', add: 0.02 }]);
+    m.ctx.roadTiles = 10;
+    expect(m.recipeTime(bakery)).toBeCloseTo(5 / 1.2);
+    m.ctx.roadTiles = 100;                    // cap kicks in
+    expect(m.recipeTime(bakery)).toBeCloseTo(5 / 1.6);
+  });
+
+  it('objectiveWeight boosts credit for the filtered item only', () => {
+    const m = new Modifiers([{ stat: 'objectiveWeight', add: 1, filter: 'wine' }]);
+    expect(m.objectiveWeight('wine')).toBe(2);
+    expect(m.objectiveWeight('bread')).toBe(1);
+  });
+
   it('an empty modifier set is the identity', () => {
     const m = new Modifiers();
     expect(m.buildTime()).toBe(BUILD_TIME);

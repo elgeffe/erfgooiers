@@ -259,7 +259,9 @@ export class Game {
     const tx = this.world.wx(node.x), tz = this.world.wz(node.y);
     const cur = u.mesh.position;
     const curTile = this.world.T(u.tx, u.ty);
-    const sp = this.mods.unitSpeed(u) * (curTile && curTile.road ? 1.3 : 1);
+    // corvée roads' downside only drags the player's own folk off-road
+    const offRoad = u.faction === 'player' ? this.mods.offRoadMult() : 1;
+    const sp = this.mods.unitSpeed(u) * (curTile && curTile.road ? 1.3 : offRoad);
     const dx = tx - cur.x, dz = tz - cur.z;
     const dist = Math.hypot(dx, dz);
     const step = sp * dt;
@@ -316,7 +318,7 @@ export class Game {
     }
     for (const b of this.buildings) {
       if (!b.active || !b.def.recipe) continue;
-      for (const it in b.def.recipe.inp) {
+      for (const it in this.mods.recipeInputs(b.def)) {
         const have = (b.inp[it] || 0) + (b.incoming[it] || 0);
         if (have < carryCap) demands.push({ pri: 1, to: b, item: it });
       }
@@ -494,13 +496,14 @@ export class Game {
         u.status = 'Working';
         u.bob += dt * 10; u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.05;
         b.prog += dt / this.mods.recipeTime(def);
-        if (b.prog >= 1) { b.prog = 0; b.working = false; b.out[def.recipe.out] = (b.out[def.recipe.out] || 0) + 1; this.objective?.onProduce(def.recipe.out); }
+        if (b.prog >= 1) { b.prog = 0; b.working = false; b.out[def.recipe.out] = (b.out[def.recipe.out] || 0) + 1; this.objective?.onProduce(def.recipe.out, this.mods.objectiveWeight(def.recipe.out)); }
       } else {
         u.status = 'Waiting for materials';
         if (this.outTotal(b) < this.mods.outCap()) {
+          const inp = this.mods.recipeInputs(def);
           let can = true;
-          for (const k in def.recipe.inp) if ((b.inp[k] || 0) < (def.recipe.inp as any)[k]) can = false;
-          if (can) { for (const k in def.recipe.inp) b.inp[k] -= (def.recipe.inp as any)[k]; b.working = true; b.prog = 0; }
+          for (const k in inp) if ((b.inp[k] || 0) < (inp as any)[k]) can = false;
+          if (can) { for (const k in inp) b.inp[k] -= (inp as any)[k]; b.working = true; b.prog = 0; }
         } else u.status = 'Output full';
       }
       return;
@@ -534,7 +537,11 @@ export class Game {
       u.timer -= dt;
       if (u.timer <= 0) {
         const n = u.target, t = this.world.tiles[n.y][n.x];
-        if (def.gather!.node === 'tree') { if (t.tree) this.removeTree(n.x, n.y); this.setCarrying(u, 'trunk'); this.sfx('chop'); }
+        if (def.gather!.node === 'tree') {
+          // coppice craft: take the trunk but leave the tree standing
+          if (t.tree) { if (this.mods.preserveTrees()) t.tree.reserved = false; else this.removeTree(n.x, n.y); }
+          this.setCarrying(u, 'trunk'); this.sfx('chop');
+        }
         else if (def.gather!.node === 'field') { if (t.field) { t.field.growth = 0; this.view.refreshTile(n.x, n.y); this.view.scaleFieldCrop(t.field); } this.setCarrying(u, def.gather!.out ?? 'wheat'); this.sfx('harvest'); }
         else if (def.gather!.node === 'plant') {
           if (!t.tree && !t.b && !t.site && !t.road && !t.field && !t.dep) { if (t.deco) this.removeDeco(n.x, n.y); t.tree = { growth: 0.12, reserved: false, meshes: [], s: 0.85 + rnd() * 0.4, kind: Math.floor(rnd() * 4) }; this.view.addTree(n.x, n.y, t.tree); }
@@ -548,7 +555,7 @@ export class Game {
       u.mesh.visible = true;
       const d = doorTile(b);
       if (u.tx === d.x && u.ty === d.y && !u.path) {
-        if (u.carrying) { b.out[u.carrying] = (b.out[u.carrying] || 0) + 1; this.objective?.onProduce(u.carrying); this.setCarrying(u, null); }
+        if (u.carrying) { b.out[u.carrying] = (b.out[u.carrying] || 0) + 1; this.objective?.onProduce(u.carrying, this.mods.objectiveWeight(u.carrying)); this.setCarrying(u, null); }
         u.wstate = 'home';
       } else if (!u.path) { if (!this.sendTo(u, d.x, d.y)) { u.wstate = 'home'; this.setCarrying(u, null); } }
       if (u.path) this.moveUnit(u, dt);
@@ -670,20 +677,22 @@ export class Game {
   paintRoad(tx: number, ty: number): void {
     const t = this.world.T(tx, ty);
     if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep) return;
-    if ((this.store.stock?.['stone'] || 0) < ROAD_STONE_COST) {
+    const cost = this.mods.roadCost();
+    if ((this.store.stock?.['stone'] || 0) < cost) {
       const now = Date.now();
       if (now - this.roadWarnT > 1500) { this.roadWarnT = now; this.toast('Out of stone — quarry more to build roads', 'err'); this.sfx('error'); }
       return;
     }
-    this.store.stock!['stone'] -= ROAD_STONE_COST;
+    this.store.stock!['stone'] -= cost;
     if (t.tree) this.removeTree(tx, ty);
     if (t.deco) this.removeDeco(tx, ty);
-    t.road = true; this.view.refreshTile(tx, ty); this.view.addRoad(tx, ty);
+    t.road = true; this.mods.ctx.roadTiles++;
+    this.view.refreshTile(tx, ty); this.view.addRoad(tx, ty);
   }
 
   demolishAt(tx: number, ty: number, dragOnly: boolean): void {
     const t = this.world.T(tx, ty); if (!t) return;
-    if (t.road) { t.road = false; this.store.stock!['stone'] = (this.store.stock!['stone'] || 0) + ROAD_STONE_COST; this.view.refreshTile(tx, ty); this.view.removeRoad(tx, ty); return; }
+    if (t.road) { t.road = false; this.mods.ctx.roadTiles = Math.max(0, this.mods.ctx.roadTiles - 1); this.store.stock!['stone'] = (this.store.stock!['stone'] || 0) + this.mods.roadCost(); this.view.refreshTile(tx, ty); this.view.removeRoad(tx, ty); return; }
     if (t.field) {
       const list = t.field.farm.fieldsList, i = list.findIndex(f => f.x === tx && f.y === ty);
       if (i >= 0) list.splice(i, 1);
@@ -1599,6 +1608,9 @@ export class Game {
         fed.push(u);
       }
       b.fedUnits = fed;
+      // tavern tithe: the taproom pays out per meal served
+      const tithe = this.mods.goldPerMeal();
+      if (tithe > 0 && fed.length) { this.onGold(tithe * fed.length); this.sfx('coin'); }
     }
   }
 }

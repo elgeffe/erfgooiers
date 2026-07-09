@@ -39,9 +39,10 @@ export class Objective {
 
   constructor(readonly def: ObjectiveDef) {}
 
-  /** Fired by Game whenever a good is produced (recipe or gather). */
-  onProduce(item: string): void {
-    this.produced[item] = (this.produced[item] || 0) + 1;
+  /** Fired by Game whenever a good is produced (recipe or gather). `n` lets
+   *  rule-bender cards weight an item's objective credit (e.g. wine ×2). */
+  onProduce(item: string, n = 1): void {
+    this.produced[item] = (this.produced[item] || 0) + n;
   }
 
   /** Fired by Game whenever a gold pile is collected. */

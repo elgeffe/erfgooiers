@@ -74,6 +74,12 @@ export class UI {
       const timeEl = el.querySelector('.ptime');
       if (timeEl) timeEl.textContent = this.timeHTML(def);
     });
+    // the road card's stone cost can be rule-bent to zero (corvée roads)
+    const roadCost = document.querySelector<HTMLElement>('.bcard[data-key="road"] .cost');
+    if (roadCost) {
+      const rc = mods.roadCost();
+      roadCost.innerHTML = (rc > 0 ? `<i><span class="dot" style="background:${ITEMS.stone.color}"></span>${rc}</i>` : '<i>free</i>') + ' · drag';
+    }
   }
 
   /** Set the objective card text (driven by main until Phase 1's Objectives). */

@@ -192,3 +192,12 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 .scard .sc-price{font-size:12px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;}
 .scard .sc-price.owned{color:var(--good);}
 .scard .sc-price.cant{color:var(--bad);}
+/* rarity tiers & the owned/sell row */
+.scard.rar-uncommon{border-color:rgba(95,140,190,.55);}
+.scard.rar-rare{border-color:rgba(170,110,220,.65);box-shadow:0 0 10px rgba(170,110,220,.18);}
+.rtag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;vertical-align:2px;background:rgba(255,255,255,.1);color:var(--ink-dim);}
+.rtag-uncommon{background:rgba(95,140,190,.25);color:#a9c8e8;}
+.rtag-rare{background:rgba(170,110,220,.25);color:#d3b0f0;}
+.shopgrid.owned .scard{padding:7px 10px;}
+.scard.sellable .sc-price{color:var(--good);}
+.scard.sellable:hover{border-color:var(--bad);}

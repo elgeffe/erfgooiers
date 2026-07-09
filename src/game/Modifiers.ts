@@ -1,4 +1,4 @@
-import { BASE_SPEED, BUILD_TIME, CARRY_CAP, OUT_CAP } from '../constants';
+import { BASE_SPEED, BUILD_TIME, CARRY_CAP, OUT_CAP, ROAD_STONE_COST } from '../constants';
 import type { BuildingDef, ItemKey, Unit } from '../types';
 
 /**
@@ -12,6 +12,15 @@ import type { BuildingDef, ItemKey, Unit } from '../types';
  *   carryCap    outCap                  fieldGrowth
  *   goldGain    cost:<item> (add only)  startBread / startTimber / startStone
  *   extraSerf   extraLaborer  (add only)
+ *
+ * Rule-bending stats (the shop's rare cards):
+ *   freeInputs      (filter: recipe output) — the recipe consumes nothing
+ *   roadCost        (add) — stone per road tile, clamped at zero
+ *   offRoadSpeed    (mult) — player walk speed off roads
+ *   goldPerMeal     (add) — gold paid per meal a tavern serves
+ *   craftPerRoad    (add) — craft-speed bonus per paved road tile (cap +60%)
+ *   objectiveWeight (add, filter: item) — extra objective credit per unit made
+ *   preserveTrees   (add) — woodcutters harvest without felling
  */
 export interface ModifierSpec {
   stat: string;
@@ -34,6 +43,9 @@ export function hungerFactor(hunger: number): number {
  * in Game (ROADMAP §10).
  */
 export class Modifiers {
+  /** Live sim context consumed by dynamic modifiers (Game keeps it current). */
+  readonly ctx = { roadTiles: 0 };
+
   constructor(private readonly specs: ModifierSpec[] = []) {}
 
   private accMult(stat: string, ctx?: string): number {
@@ -89,8 +101,33 @@ export class Modifiers {
 
   /** Seconds to craft one recipe output. */
   recipeTime(def: BuildingDef): number {
-    return def.recipe!.time * this.accMult('recipeTime', def.recipe!.out);
+    let t = def.recipe!.time * this.accMult('recipeTime', def.recipe!.out);
+    const perRoad = this.accAdd('craftPerRoad');
+    if (perRoad) t /= 1 + Math.min(0.6, this.ctx.roadTiles * perRoad);
+    return t;
   }
+
+  /** A recipe's inputs after rule-benders (e.g. bakeries that need no flour). */
+  recipeInputs(def: BuildingDef): Partial<Record<ItemKey, number>> {
+    const out = def.recipe!.out;
+    if (this.specs.some(s => s.stat === 'freeInputs' && s.filter === out)) return {};
+    return def.recipe!.inp;
+  }
+
+  /** Stone consumed (and refunded) per road tile. */
+  roadCost(): number { return Math.max(0, ROAD_STONE_COST + this.accAdd('roadCost')); }
+
+  /** Walk-speed multiplier for player units off roads (corvée roads' downside). */
+  offRoadMult(): number { return this.accMult('offRoadSpeed'); }
+
+  /** Gold paid out per meal a tavern serves (0 = the usual nothing). */
+  goldPerMeal(): number { return this.accAdd('goldPerMeal'); }
+
+  /** How much objective credit one produced unit of an item is worth. */
+  objectiveWeight(item: string): number { return 1 + this.accAdd('objectiveWeight', item); }
+
+  /** Woodcutters take the trunk without felling the tree. */
+  preserveTrees(): boolean { return this.accAdd('preserveTrees') > 0; }
 
   /** Field growth-rate multiplier (>1 = faster). */
   fieldGrowth(): number { return this.accMult('fieldGrowth'); }
