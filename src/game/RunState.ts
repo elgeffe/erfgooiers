@@ -11,7 +11,9 @@ export interface RunState {
   runSeed: number;              // fixes every level's map: levelSeed(runSeed, i)
   levelIndex: number;           // 1-based current level (1..RUN_LEVELS)
   gold: number;                 // shop currency, lost on run end
-  upgrades: string[];           // bought upgrade ids (applied via Modifiers in Phase 1)
+  upgrades: string[];           // owned card ids (max MAX_CARDS; applied via Modifiers)
+  mutators: string[];           // the current level's active curse ids
+  rewardMult: number;           // the chosen contract's gold multiplier (curses + elite)
   hero: string | null;          // chosen hero id (Phase 2)
   equipment: (string | null)[]; // weapon / boots / trinket (Phase 2)
 }
@@ -24,7 +26,7 @@ export interface MetaState {
 }
 
 export function newRun(seed: number): RunState {
-  return { runSeed: seed >>> 0, levelIndex: 1, gold: 0, upgrades: [], hero: null, equipment: [null, null, null] };
+  return { runSeed: seed >>> 0, levelIndex: 1, gold: 0, upgrades: [], mutators: [], rewardMult: 1, hero: null, equipment: [null, null, null] };
 }
 
 export function newMeta(): MetaState {

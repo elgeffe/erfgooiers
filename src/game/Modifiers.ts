@@ -129,6 +129,12 @@ export class Modifiers {
   /** Woodcutters take the trunk without felling the tree. */
   preserveTrees(): boolean { return this.accAdd('preserveTrees') > 0; }
 
+  /** Gold the Taxman collects per minute (mutator). */
+  taxPerMin(): number { return this.accAdd('taxPerMin'); }
+
+  /** Multiplier on how fast workers get hungry (mutator). */
+  hungerRate(): number { return this.accMult('hungerRate'); }
+
   /** Field growth-rate multiplier (>1 = faster). */
   fieldGrowth(): number { return this.accMult('fieldGrowth'); }
 

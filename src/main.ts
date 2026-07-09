@@ -10,6 +10,7 @@ import { simRng, uiRng } from './engine/rng';
 import { Modifiers } from './game/Modifiers';
 import { Objective } from './game/Objectives';
 import { specsFor } from './data/upgrades';
+import { MUTATOR_BY_ID, mutatorRewardMult, mutatorSpecsFor, rollMutators } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, hasMetaSpecial } from './data/metaUpgrades';
 import { levelFor, pickObjective, sandboxLevel, type LevelDef } from './data/levels';
 import { RUN_LEVELS, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
@@ -61,14 +62,15 @@ function startLevel(): void {
 
   const world = new World({ seed, ...level.world });
   view.loadWorld(world);
-  const mods = new Modifiers([...specsFor(run.upgrades), ...metaSpecsFor(meta.unlocks)]);
+  const mutators = sandbox ? [] : run.mutators;
+  const mods = new Modifiers([...specsFor(run.upgrades), ...metaSpecsFor(meta.unlocks), ...mutatorSpecsFor(mutators)]);
   game = new Game(world, view, mods);
   game.toast = (m, c) => ui.toast(m, c);
   game.onSelect = o => ui.showInspector(o);
   game.sfx = name => audio.play(name as any);
   audio.setLevel(level.index);
   audio.setDynamic(sandbox);
-  game.onGold = amt => { if (run) { run.gold += amt; goldEarnedThisRun += amt; ui.setGold(run.gold); } };
+  game.onGold = amt => { if (run) { run.gold = Math.max(0, run.gold + amt); if (amt > 0) goldEarnedThisRun += amt; ui.setGold(run.gold); } };
   game.onHurt = (x, z) => view.spawnHurt(x, z);
   game.onDeath = (x, z, _fac, color) => view.spawnCorpse(x, z, color);
   // pick this level's objective variant deterministically (skipped in sandbox)
@@ -83,6 +85,12 @@ function startLevel(): void {
   ui.setPerks(run.upgrades, meta.unlocks);
   controls.setGame(game);
   game.setEnemies(sandbox ? null : (level.enemies ?? null));
+  // mutator payloads beyond stat curses: extra wild packs on the map
+  for (const id of mutators) {
+    const def = MUTATOR_BY_ID[id];
+    if (def?.spawnWild) for (const w of def.spawnWild) game.spawnMutatorWild(w.kind, w.count);
+  }
+  ui.setMutators(mutators.map(id => MUTATOR_BY_ID[id]).filter(d => !!d));
   if (!sandbox && level.startArmy) {
     const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
     for (const a of level.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
@@ -122,10 +130,17 @@ function goMenu(): void {
   showScreen('menu');
 }
 
+/** Stamp the (deterministic) baseline curse + reward for the run's current level. */
+function stampContract(r: RunState): void {
+  r.mutators = rollMutators(r.runSeed, r.levelIndex);
+  r.rewardMult = mutatorRewardMult(r.mutators);
+}
+
 function newRunFromMenu(): void {
   sandbox = false;
   run = newRun(1 + Math.floor(Math.random() * 2147483645));
   if (hasMetaSpecial(meta.unlocks, 'startGold')) run.gold = 25;
+  stampContract(run);
   meta.stats.runs++;
   Save.saveMeta(meta);
   clearedThisRun = 0;
@@ -157,7 +172,7 @@ function onLevelClear(): void {
   if (phase !== 'playing' || !run || !currentLevel || !game) return;
   const speedy = game.elapsed <= currentLevel.timeTarget;
   const base = currentLevel.reward + (speedy ? Math.round(currentLevel.reward * 0.5) : 0);
-  const reward = Math.max(1, Math.round(base * game.mods.goldMult()));
+  const reward = Math.max(1, Math.round(base * game.mods.goldMult() * run.rewardMult));
   run.gold += reward;
   goldEarnedThisRun += reward;
   clearedThisRun++;
@@ -192,6 +207,7 @@ function debugWin(): void {
 function shopContinue(): void {
   if (!run) { goMenu(); return; }
   run.levelIndex++;
+  stampContract(run);
   startLevel();
 }
 

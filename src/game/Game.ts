@@ -1409,6 +1409,9 @@ export class Game {
     return { x: this.world.wx(tx), z: this.world.wz(ty) };
   }
 
+  /** Extra wild presence from a level mutator (e.g. Wolf Country's packs). */
+  spawnMutatorWild(kind: UnitKind, count: number): void { this.spawnWild(kind, count); }
+
   /** Scatter wild beasts across the map, clear of the central build zone. */
   private spawnWild(kind: UnitKind, count: number): void {
     const W = this.world.W, H = this.world.H, cx = W / 2, cy = H / 2;
@@ -1483,14 +1486,23 @@ export class Game {
   // =====================================================================
   //  Simulation tick (already scaled by sim speed)
   // =====================================================================
+  private taxT = 0;
+
   update(sdt: number): void {
     this.elapsed += sdt;
     this.buildUnitHash(); // shared by all proximity queries this tick
     this.dispatchT += sdt;
     if (this.dispatchT > 0.45) { this.dispatchT = 0; this.dispatch(); }
+    // the Taxman mutator collects on the minute
+    const tax = this.mods.taxPerMin();
+    if (tax > 0) {
+      this.taxT += sdt;
+      if (this.taxT >= 60) { this.taxT -= 60; this.onGold(-tax); this.toast(`The Taxman collects ${tax} gold`, 'err'); }
+    }
+    const hungerRate = this.mods.hungerRate();
     for (const u of this.units) {
       if (u.dead) continue;
-      u.hunger = Math.max(0, u.hunger - sdt * 100 / 600);
+      u.hunger = Math.max(0, u.hunger - sdt * 100 / 600 * hungerRate);
       if (this.isFighter(u)) this.combatUpdate(u, sdt);
       else if (u.role === 'serf') this.serfUpdate(u, sdt);
       else if (u.role === 'laborer') this.laborerUpdate(u, sdt);

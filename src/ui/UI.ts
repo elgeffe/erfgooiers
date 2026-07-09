@@ -100,6 +100,13 @@ export class UI {
   /** Show the run's gold total in the HUD chip. */
   setGold(n: number): void { $('goldText').textContent = String(n); }
 
+  /** Show the level's active curses under the objective (hidden when none). */
+  setMutators(muts: { icon: string; name: string; desc: string }[]): void {
+    const el = $('objMutators');
+    el.style.display = muts.length ? 'flex' : 'none';
+    el.innerHTML = muts.map(m => `<span class="mutchip" title="${m.desc}">${m.icon} ${m.name}</span>`).join('');
+  }
+
   /** Refresh the "next raid" countdown banner, or hide it when no wave is pending. */
   updateWave(info: { in: number; count: number } | null): void {
     const el = $('wavebar') as HTMLElement;
