@@ -6,8 +6,9 @@ import { ROAD_STONE_COST } from '../constants';
 import { installFavicon, logoSVG } from './logo';
 import { audio } from '../audio/Audio';
 import { unitLabel } from '../game/util';
+import { buildingIconSVG, itemIconSVG } from './icons';
 import type { Game } from '../game/Game';
-import type { BuildingDef, Mode } from '../types';
+import type { BuildingDef, ItemKey, Mode } from '../types';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -41,6 +42,7 @@ export class UI {
 
   constructor() {
     $('logo').innerHTML = logoSVG(30);
+    ($('goldChip').querySelector('.coin') as HTMLElement).innerHTML = itemIconSVG('coin', 15);
     installFavicon();
     this.buildResbar();
     this.buildMenu();
@@ -80,7 +82,7 @@ export class UI {
     const roadCost = document.querySelector<HTMLElement>('.bcard[data-key="road"] .cost');
     if (roadCost) {
       const rc = mods.roadCost();
-      roadCost.innerHTML = (rc > 0 ? `<i><span class="dot" style="background:${ITEMS.stone.color}"></span>${rc}</i>` : '<i>free</i>') + ' · drag';
+      roadCost.innerHTML = (rc > 0 ? `<i>${itemIconSVG('stone', 11)}${rc}</i>` : '<i>free</i>') + ' · drag';
     }
   }
 
@@ -131,7 +133,7 @@ export class UI {
     const bar = $('resbar');
     for (const k of RES_SHOWN) {
       const el = document.createElement('div'); el.className = 'res';
-      el.innerHTML = `<div class="dot" style="background:${ITEMS[k].color}"></div><b>0</b><span>${ITEMS[k].name}</span>`;
+      el.innerHTML = `${itemIconSVG(k, 15)}<b>0</b><span>${ITEMS[k].name}</span>`;
       bar.appendChild(el);
       this.resEls[k] = el.querySelector('b')!;
       this.resRowEls[k] = el;
@@ -149,13 +151,9 @@ export class UI {
   }
 
   // ---------- build menu ----------
-  private iconSVG(def: BuildingDef): string {
-    const r = '#' + def.roof.toString(16).padStart(6, '0'), w = '#' + def.wall.toString(16).padStart(6, '0');
-    return `<svg width="30" height="26" viewBox="0 0 30 26"><rect x="6" y="12" width="18" height="12" rx="1" fill="${w}"/><path d="M3 13 L15 3 L27 13 Z" fill="${r}"/></svg>`;
-  }
   private costHTML(cost: BuildingDef['cost']): string {
     let s = '';
-    for (const k in cost) { if (!(cost as any)[k]) continue; s += `<i><span class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color}"></span>${(cost as any)[k]}</i>`; }
+    for (const k in cost) { if (!(cost as any)[k]) continue; s += `<i>${itemIconSVG(k as ItemKey, 10)}${(cost as any)[k]}</i>`; }
     return s || '<i>free</i>';
   }
   /** Seconds to produce/gather one item (mods-adjusted once a Game is bound). */
@@ -185,7 +183,7 @@ export class UI {
       for (const key of cat.keys) {
         const def = DEFS[key];
         const el = document.createElement('div'); el.className = 'bcard'; el.dataset.key = key; el.dataset.cat = cat.id; el.title = def.desc + ' · press R (or the ⟳ button) to rotate while placing';
-        el.innerHTML = `<div class="icon">${this.iconSVG(def)}</div><div class="nm">${def.name}</div><div class="cost">${this.costHTML(def.cost)}</div><div class="ptime">${this.timeHTML(def)}</div>`;
+        el.innerHTML = `<div class="icon">${buildingIconSVG(key, def)}</div><div class="nm">${def.name}</div><div class="cost">${this.costHTML(def.cost)}</div><div class="ptime">${this.timeHTML(def)}</div>`;
         el.onclick = () => { audio.play('click'); this.onMode(el.classList.contains('on') ? null : { type: 'build', key }); };
         row.appendChild(el);
       }
@@ -197,7 +195,7 @@ export class UI {
 
     const sep = document.createElement('div'); sep.className = 'bsep'; row.appendChild(sep);
     const road = document.createElement('div'); road.className = 'bcard'; road.dataset.key = 'road'; road.title = `Costs ${ROAD_STONE_COST} stone per tile · workers route along roads and walk 30% faster on them · demolishing a road refunds the stone`;
-    road.innerHTML = `<div class="icon"><svg width="30" height="26" viewBox="0 0 30 26"><path d="M4 24 C10 14 20 12 26 2" stroke="#b9a179" stroke-width="6" fill="none" stroke-linecap="round"/></svg></div><div class="nm">Road</div><div class="cost"><i><span class="dot" style="background:${ITEMS.stone.color}"></span>${ROAD_STONE_COST}</i> · drag</div><div class="ptime"></div>`;
+    road.innerHTML = `<div class="icon"><svg width="38" height="32" viewBox="0 0 38 32"><path d="M4 30C10 18 25 16 34 2" stroke="#5e4a35" stroke-width="10" fill="none" stroke-linecap="round"/><path d="M4 30C10 18 25 16 34 2" stroke="#c6ae83" stroke-width="7" fill="none" stroke-linecap="round" stroke-dasharray="3 2"/></svg></div><div class="nm">Road</div><div class="cost"><i>${itemIconSVG('stone', 10)}${ROAD_STONE_COST}</i> · drag</div><div class="ptime"></div>`;
     road.onclick = () => { audio.play('click'); this.onMode(road.classList.contains('on') ? null : { type: 'road' }); };
     row.appendChild(road);
     const dl = document.createElement('div'); dl.className = 'bcard'; dl.dataset.key = 'demolish'; dl.title = `Remove roads, sites and buildings \u00b7 demolishing a road refunds ${ROAD_STONE_COST} stone`;
@@ -264,7 +262,7 @@ export class UI {
   }
   private invRowsHTML(obj: Record<string, number>): string {
     let s = '';
-    for (const k in obj) { if (!obj[k]) continue; s += `<div class="invrow"><div class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color}"></div>${ITEMS[k as keyof typeof ITEMS].name}<b>${obj[k]}</b></div>`; }
+    for (const k in obj) { if (!obj[k]) continue; s += `<div class="invrow">${itemIconSVG(k as ItemKey, 14)}${ITEMS[k as keyof typeof ITEMS].name}<b>${obj[k]}</b></div>`; }
     return s || '<div class="invrow" style="color:var(--ink-dim)">empty</div>';
   }
   private renderInspector(): void {
@@ -293,7 +291,7 @@ export class UI {
       let ub = '<div class="sect">Status</div><div class="invrow">' + o.status + '</div>';
       ub += `<div class="sect">Condition</div><div class="invrow">${cond}<b>${h}%</b></div>`;
       ub += `<div class="bar"><div style="width:${h}%;background:${hcol}"></div></div>`;
-      if (o.carrying) ub += '<div class="sect">Carrying</div>' + `<div class="invrow"><div class="dot" style="background:${ITEMS[o.carrying as keyof typeof ITEMS].color}"></div>${ITEMS[o.carrying as keyof typeof ITEMS].name}<b>1</b></div>`;
+      if (o.carrying) ub += '<div class="sect">Carrying</div>' + `<div class="invrow">${itemIconSVG(o.carrying as ItemKey, 14)}${ITEMS[o.carrying as keyof typeof ITEMS].name}<b>1</b></div>`;
       $('inspBody').innerHTML = ub;
       return;
     }
@@ -302,7 +300,7 @@ export class UI {
     let body = '';
     if (o.isSite) {
       body += '<div class="sect">Materials needed</div>';
-      for (const k in o.needs) body += `<div class="invrow"><div class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color}"></div>${ITEMS[k as keyof typeof ITEMS].name}<b>${o.delivered[k] || 0} / ${o.needs[k]}</b></div>`;
+      for (const k in o.needs) body += `<div class="invrow">${itemIconSVG(k as ItemKey, 14)}${ITEMS[k as keyof typeof ITEMS].name}<b>${o.delivered[k] || 0} / ${o.needs[k]}</b></div>`;
       if (o.ready) body += `<div class="sect">Construction</div><div class="bar"><div style="width:${Math.round(o.progress * 100)}%"></div></div>`;
       else body += '<div class="hnote">Waiting for serfs to deliver materials…</div>';
       body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize construction'}</button>`;
@@ -346,7 +344,7 @@ export class UI {
         if (!o.active) body += '<div class="hnote">Building still being raised…</div>';
         else {
           for (const t of mil.units) {
-            const cost = Object.entries(t.cost).map(([k, n]) => `<span class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color};margin:0 3px 0 6px"></span>${n}`).join('') || ' free';
+            const cost = Object.entries(t.cost).map(([k, n]) => `${itemIconSVG(k as ItemKey, 12)}${n}`).join('') || ' free';
             body += `<button class="inspbtn" data-train="${t.kind}" ${t.desc ? `title="${t.desc}"` : ''}>+ ${unitLabel(t.kind)}${cost} · ${t.time}s</button>`;
             if (t.desc) body += `<div class="tinfo">${t.desc}</div>`;
           }
