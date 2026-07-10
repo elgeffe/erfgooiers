@@ -177,10 +177,11 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 .screen .btns.row{flex-direction:row;gap:8px;}
 .screen .btns.row button{flex:1;}
 /* ---------- shop ---------- */
-.shopcard{width:640px;max-width:94vw;text-align:left;}
+/* wide screens get a wide shop/hero picker; small screens adapt down and scroll */
+.shopcard{width:min(1080px,94vw);text-align:left;max-height:92vh;overflow-y:auto;}
 .shopcard h1{justify-content:flex-start;}
 .shopsect{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);margin:14px 0 7px;}
-.shopgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;}
+.shopgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;}
 /* shop wares: three portrait cards, side by side */
 #shopSlots{grid-template-columns:repeat(3,1fr);gap:10px;}
 #shopSlots .scard{flex-direction:column;align-items:center;text-align:center;gap:8px;padding:16px 12px;}
