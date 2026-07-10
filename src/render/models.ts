@@ -1436,7 +1436,9 @@ function gableRoof(g: THREE.Group, width: number, depth: number, y: number, colo
   const roofM = mkMat(color, ghost);
   for (const side of [-1, 1]) {
     const panel = new THREE.Mesh(box(width * 0.62, 0.1, depth), roofM);
-    panel.position.set(side * width * 0.22, y, 0); panel.rotation.z = side * steep;
+    // tilt the INNER edge up so the two panels meet at a ridge — the positive
+    // sign raised the outer edges instead, leaving every roof an upside-down V
+    panel.position.set(side * width * 0.22, y, 0); panel.rotation.z = -side * steep;
     panel.castShadow = !ghost; g.add(panel);
   }
 }
