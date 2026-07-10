@@ -172,7 +172,7 @@ export class World {
       while (placed < n && guard++ < 200) {
         const { x, y } = this.near(cx, cy, r);
         const t = this.T(x, y);
-        if (t && t.type === 'grass' && !t.dep) { t.dep = { kind, amt: 6 + Math.floor(rnd() * 9), meshes: [] }; placed++; }
+        if (t && t.type === 'grass' && !t.dep) { t.dep = { kind, amt: 10 + Math.floor(rnd() * 11), meshes: [] }; placed++; }
       }
       return placed;
     };
