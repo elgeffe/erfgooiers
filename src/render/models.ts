@@ -170,14 +170,20 @@ const geoArm = box(0.055, 0.26, 0.08);
 const geoHand = sphere(0.05, 8, 6);
 const geoBelt = cyl(0.192, 0.198, 0.055, 12);
 
-const FOL_GREENS = [0x4e7a3a, 0x557f38, 0x476f36, 0x5f8c40, 0x6a9a44];
+// The active biome drives foliage colours, snowlines and flora variants for
+// every mesh built after loadWorld sets it (chunk re-bakes included).
+import { BIOMES, type BiomeDef } from '../data/biomes';
+let activeBiome: BiomeDef = BIOMES.gooi;
+export function setActiveBiome(b: BiomeDef): void { activeBiome = b; }
+const FOL_GREENS = (): number[] => activeBiome.palette.folGreens;
 
 // =====================================================================
 //  Doodads — trees come in a few species/heights for a mixed woodland
 // =====================================================================
 export function makeTree(kind = 0): THREE.Group {
   const g = new THREE.Group();
-  const green = FOL_GREENS[Math.floor(rnd() * FOL_GREENS.length)];
+  const greens = FOL_GREENS();
+  const green = greens[Math.floor(rnd() * greens.length)];
   switch (kind % 4) {
     case 0: { // classic layered conifer
       const trunk = new THREE.Mesh(geoTrunk, mat(0x7a5a3a)); trunk.position.y = 0.25; trunk.castShadow = true;
@@ -261,7 +267,8 @@ function wildflowers(): THREE.Group {
 
 function bush(): THREE.Group {
   const g = new THREE.Group();
-  const green = mat(FOL_GREENS[Math.floor(rnd() * FOL_GREENS.length)]);
+  const greens = FOL_GREENS();
+  const green = mat(greens[Math.floor(rnd() * greens.length)]);
   for (const [ox, oy, oz, r] of [[0, 0.16, 0, 0.26], [0.22, 0.13, 0.08, 0.2], [-0.16, 0.12, -0.14, 0.18]] as number[][]) {
     const p = new THREE.Mesh(sphere(r, 7, 6), green); p.position.set(ox, oy, oz); p.scale.y = 0.85; p.castShadow = true; g.add(p);
   }
@@ -340,8 +347,8 @@ export function makeMountain(): THREE.Group {
   peak.scale.set(0.58 + rnd() * 0.12, h, 0.58 + rnd() * 0.12);
   peak.position.set((rnd() - 0.5) * 0.2, h / 2, (rnd() - 0.5) * 0.2);
   peak.rotation.y = rnd() * Math.PI; peak.castShadow = true; g.add(peak);
-  // a snowy cap crowns the tallest peaks
-  if (h > 1.6) {
+  // a snowy cap crowns the tallest peaks (in the Alps, every peak)
+  if (h > 1.6 || activeBiome.gen.snowline) {
     const snow = new THREE.Mesh(cone(0.2, 0.34, 6), mat(0xf2f3f0));
     snow.position.set(peak.position.x, h - 0.16, peak.position.z); snow.rotation.y = peak.rotation.y; g.add(snow);
   }

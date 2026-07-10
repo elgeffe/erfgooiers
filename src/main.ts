@@ -72,8 +72,9 @@ function startLevel(): void {
   game.toast = (m, c) => ui.toast(m, c);
   game.onSelect = o => ui.showInspector(o);
   game.sfx = name => audio.play(name as any);
+  audio.setBiome(sandbox ? sandboxCfg.biome : 'gooi'); // before setLevel: a biome signature owns the score
   audio.setLevel(level.index);
-  audio.setDynamic(sandbox);
+  audio.setDynamic(sandbox && sandboxCfg.biome === 'gooi');
   game.onGold = amt => { if (run) { run.gold = Math.max(0, run.gold + amt); if (amt > 0) goldEarnedThisRun += amt; ui.setGold(run.gold); } };
   game.onHurt = (x, z) => view.spawnHurt(x, z);
   game.onDeath = (x, z, _fac, color, role, scale) => view.spawnCorpse(x, z, color, role, scale);
@@ -143,6 +144,7 @@ function disposeLevel(): void {
 function goMenu(): void {
   phase = 'menu';
   sandbox = false;
+  audio.setBiome('gooi'); // release any biome signature before the menu mood
   audio.setLevel(0);
   audio.setDynamic(false);
   renderMenu();
@@ -220,7 +222,7 @@ let sandboxCfg: SandboxConfig = { ...DEFAULT_SANDBOX };
  *  Stubs render greyed out — biomes that exist on the roadmap, not yet in code. */
 const SBX_GROUPS: { key: keyof SandboxConfig; label: string; opts: [string, string][]; stubs?: [string, string][] }[] = [
   { key: 'size', label: 'Map size', opts: [['small', 'Small · 48'], ['medium', 'Medium · 64'], ['large', 'Large · 84'], ['huge', 'Huge · 100']] },
-  { key: 'biome', label: 'Biome', opts: [['gooi', 'Het Gooi']], stubs: [['winter', 'Winter'], ['duinen', 'Coastal Dunes'], ['polder', 'Polder']] },
+  { key: 'biome', label: 'Biome', opts: [['gooi', 'Het Gooi'], ['ardennes', 'The Ardennes'], ['blackforest', 'The Black Forest'], ['alps', 'The Alps']], stubs: [['winter', 'Winter'], ['polder', 'Polder']] },
   { key: 'water', label: 'Water', opts: [['dry', 'Dry'], ['normal', 'Normal'], ['wet', 'Wetlands']] },
   { key: 'mapRes', label: 'Map resources', opts: [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']] },
   { key: 'startRes', label: 'Starting stock', opts: [['modest', 'Modest'], ['plentiful', 'Plentiful'], ['cornucopia', 'Cornucopia']] },

@@ -5,7 +5,7 @@ import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, BuildingKey, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeHero, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter, CRITTER_KINDS, type CritterKind } from './models';
+import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeHero, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, setActiveBiome, sphere, stdMat, withSeededScatter, type CritterKind } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -182,6 +182,7 @@ export class View {
   /** Attach a freshly generated world and build its ground, doodads and ambiance. */
   loadWorld(world: World): void {
     this.world = world;
+    setActiveBiome(world.biome);   // foliage palette, snowlines, flora variants
     this.fitShadowToMap();
     this.buildGround();
     this.populateDoodads();
@@ -538,20 +539,21 @@ this.skyBirds.length = 0;
   }
   private tileBaseColor(tx: number, ty: number): { hex: number; sh: number } {
     const t = this.world.tiles[ty][tx];
-    if (t.type === 'water') return { hex: 0x36648f, sh: 0.9 + ((tx * 7 + ty * 13) % 10) / 100 };
+    const pal = this.world.biome.palette;
+    if (t.type === 'water') return { hex: pal.water, sh: 0.9 + ((tx * 7 + ty * 13) % 10) / 100 };
     // rocky ground: grey scree under mountain peaks, dusty earth under ruined walls
     if (t.type === 'rock') return t.rock === 'wall'
       ? { hex: 0x9a8a6e, sh: 0.92 + ((tx * 3 + ty * 7) % 8) / 100 }
-      : { hex: 0x83837e, sh: 0.88 + ((tx * 5 + ty * 3) % 12) / 100 };
+      : { hex: pal.scree, sh: 0.88 + ((tx * 5 + ty * 3) % 12) / 100 };
     if (t.road) return { hex: 0xcbb389, sh: 0.96 + ((tx * 3 + ty * 5) % 8) / 100 };
     if (t.field) {
       const out = t.field.farm.def.gather?.out;
       const ripe = out === 'grape' ? 0x5e7d3a : out === 'meat' ? 0x6fae52 : 0xe0c24e;
       return { hex: this.lerpHex(0x8a6b42, ripe, Math.min(1, t.field.growth)), sh: 1 };
     }
-    // lush meadow — two greens dithered by position
+    // lush meadow — the biome's two greens dithered by position
     const g2 = ((tx * 5 + ty * 11) % 7) / 7;
-    return { hex: this.lerpHex(0x6fae52, 0x89c266, g2), sh: t.cshade };
+    return { hex: this.lerpHex(pal.grassA, pal.grassB, g2), sh: t.cshade };
   }
   private setTileColor(tx: number, ty: number, hex: number, shade: number): void {
     this._c.setHex(hex).multiplyScalar(shade);
@@ -832,15 +834,17 @@ this.skyBirds.length = 0;
   // =====================================================================
   private buildAmbiance(): void {
     const W = this.world.W, H = this.world.H;
+    const biome = this.world.biome;
+    const pal = biome.palette;
     // Painted sky: richer vertical colour, warm sun haze and a few extremely
     // faint high-altitude streaks. This is a screen backdrop, not a cloud count.
     const sky = document.createElement('canvas'); sky.width = 512; sky.height = 512;
     const sctx = sky.getContext('2d')!;
     const grad = sctx.createLinearGradient(0, 0, 0, 512);
-    grad.addColorStop(0, '#4e9bd0');
-    grad.addColorStop(0.42, '#82bddd');
-    grad.addColorStop(0.72, '#bddbea');
-    grad.addColorStop(1, '#f0e9d3');
+    grad.addColorStop(0, pal.sky[0]);
+    grad.addColorStop(0.42, pal.sky[1]);
+    grad.addColorStop(0.72, pal.sky[2]);
+    grad.addColorStop(1, pal.sky[3]);
     sctx.fillStyle = grad; sctx.fillRect(0, 0, 512, 512);
     const sun = sctx.createRadialGradient(405, 120, 3, 405, 120, 155);
     sun.addColorStop(0, 'rgba(255,247,206,.72)');
@@ -857,10 +861,10 @@ this.skyBirds.length = 0;
     this.skyTex = new THREE.CanvasTexture(sky);
     this.skyTex.colorSpace = THREE.SRGBColorSpace;
     this.scene.background = this.skyTex;
-    this.scene.fog = new THREE.Fog(0xd4e4df, 70, 165);
+    this.scene.fog = new THREE.Fog(pal.fog, 70, 165);
 
     // a broad meadow plain reaching out to the horizon beneath the map plinth
-    const plain = new THREE.Mesh(new THREE.CircleGeometry(240, 96), stdMat({ color: 0x7da866 }, false));
+    const plain = new THREE.Mesh(new THREE.CircleGeometry(240, 96), stdMat({ color: pal.plain }, false));
     plain.rotation.x = -Math.PI / 2; plain.position.y = -2.1;
     this.worldGroup.add(plain);
     this.freeze(plain);
@@ -873,7 +877,7 @@ this.skyBirds.length = 0;
 
     // Patchwork countryside beyond the playable board: irregular field strips,
     // dark hedges and glints of distant water break up the old flat green disc.
-    const fieldMats = [0x91ae61, 0xb3ad62, 0x779d59, 0xc0a86a, 0x88a968].map(c => stdMat({ color: c }, false));
+    const fieldMats = pal.fieldTones.map(c => stdMat({ color: c }, false));
     const hedgeMat = stdMat({ color: 0x456842 }, false);
     for (let i = 0; i < 26; i++) {
       const ang = rnd() * Math.PI * 2, rad = boardR + GAP + 7 + rnd() * 34;
@@ -895,7 +899,7 @@ this.skyBirds.length = 0;
     }
 
     // low rolling hill domes in three hazier and hazier rings
-    const hillTones = [0x91b879, 0x7da86f, 0x709a73, 0x668c7b].map(c => stdMat({ color: c }));
+    const hillTones = pal.hillTones.map(c => stdMat({ color: c }));
     for (let ring = 0; ring < 3; ring++) {
       const count = 12 + ring * 5;
       for (let i = 0; i < count; i++) {
@@ -933,8 +937,9 @@ this.skyBirds.length = 0;
       }
     }
 
-// A tiny horizon village adds human scale: warm roofs, a church spire and
-    // a pale lane, all well outside the playable edge.
+    // A tiny horizon village adds human scale: warm roofs, a church spire and
+    // a pale lane, all well outside the playable edge. Wilder biomes skip it.
+    if (biome.ambiance.village) {
     const villageAng = rnd() * Math.PI * 2, villageRad = boardR + 31;
     const village = new THREE.Group();
     const lane = new THREE.Mesh(box(8.5, 0.025, 0.7), stdMat({ color: 0xc9b58c }, false)); lane.position.y = 0.02; village.add(lane);
@@ -948,10 +953,12 @@ this.skyBirds.length = 0;
     const spire = new THREE.Mesh(cone(0.58, 1.45, 6), stdMat({ color: 0x55666a })); spire.position.set(0.2, 2.27, -0.8); village.add(spire);
     village.position.set(Math.cos(villageAng) * villageRad, -2.08, Math.sin(villageAng) * villageRad); village.lookAt(0, -2.08, 0);
     this.worldGroup.add(village); this.freeze(village);
+    }
 
     // one far-off windmill turning on the plain — a little postcard of Het
     // Gooi. Pinned to the map's north (up-screen from the iso camera, world
     // (-1,-1)) so it's actually in view instead of hiding behind the camera.
+    if (biome.ambiance.windmill) {
     const millAng = -Math.PI * 3 / 4 + (rnd() - 0.5) * 0.5;
     const millRad = boardR + 38;
     const mill = new THREE.Group();
@@ -975,6 +982,7 @@ this.skyBirds.length = 0;
     this.worldGroup.add(mill);
     this.freeze(mill);
     this.millSails.push(sails);
+    }
 
     // Two or three detailed cloud banks drift high above the board. Layered
     // blue-grey undersides and bright crowns give them volume without turning
@@ -1111,7 +1119,7 @@ this.updateSkyBirds(dt);
 
     spawn('cat', this.critterGrassSpot());
     if (rnd() < 0.3) spawn('cat', this.critterGrassSpot());
-    const pool = [...CRITTER_KINDS];
+    const pool = [...this.world.biome.critters];
     const extra = 1 + (rnd() < 0.45 ? 1 : 0);
     for (let i = 0; i < extra && pool.length; i++) {
       const kind = pool.splice(Math.floor(rnd() * pool.length), 1)[0];

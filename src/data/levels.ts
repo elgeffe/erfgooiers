@@ -2,6 +2,7 @@ import type { WorldParams } from '../world/World';
 import type { StartKit } from '../game/Game';
 import type { ObjectiveDef } from '../game/Objectives';
 import type { UnitKind } from './units';
+import type { BiomeKey } from './biomes';
 
 /** One scheduled raid. Either `at` (sim seconds) or `whenArmy` (fires `delay`
  *  seconds after the player's fighter count first reaches it — the raid waits
@@ -163,7 +164,7 @@ export function levelFor(index: number): LevelDef {
 // =====================================================================
 export interface SandboxConfig {
   size: 'small' | 'medium' | 'large' | 'huge';
-  biome: 'gooi';                                   // stubs on the setup screen hint at more
+  biome: BiomeKey;
   water: 'dry' | 'normal' | 'wet';
   mapRes: 'sparse' | 'normal' | 'rich';
   startRes: 'modest' | 'plentiful' | 'cornucopia';
@@ -213,6 +214,7 @@ export function sandboxLevel(cfg: SandboxConfig = DEFAULT_SANDBOX): LevelDef {
     objectives: [{ kind: 'produce', item: 'coin', n: 1 }], // never evaluated (main disables it)
     world: {
       w: size, h: size,
+      biome: cfg.biome,
       treeStands: Math.round(10 * scale * den),
       oreVeins: Math.round(11 * scale * den),
       waterScale: SBX_WATER[cfg.water],

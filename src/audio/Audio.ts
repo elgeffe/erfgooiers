@@ -100,6 +100,57 @@ const MOOD_URGENT: Mood = {
 
 const MOODS: Mood[] = [MOOD_MAJOR, MOOD_WISTFUL, MOOD_MINOR, MOOD_URGENT];
 
+// =====================================================================
+//  Biome moods — each landscape has its own musical signature. When a
+//  biome mood is active it overrides the level-tier moods entirely.
+// =====================================================================
+// The Ardennes — a wandering D-dorian folk lilt: rolling hills, a light
+// walking drum, a hint of open air. Music for a road that keeps climbing.
+const MOOD_ARDENNES: Mood = {
+  bpm: 68, pad: 1.05, fb: 0.22, shimmer: 0.3, air: 0.04, drone: 0, drum: 2,
+  prog: [
+    { bass: 38, chord: [62, 65, 69] }, // Dm
+    { bass: 41, chord: [60, 65, 69] }, // F
+    { bass: 48, chord: [64, 67, 72] }, // C
+    { bass: 43, chord: [62, 67, 71] }, // G
+  ],
+  variants: [
+    [{ bass: 38, chord: [62, 65, 69] }, { bass: 41, chord: [60, 65, 69] }, { bass: 48, chord: [64, 67, 72] }, { bass: 43, chord: [62, 67, 71] }],
+    [{ bass: 38, chord: [62, 65, 69] }, { bass: 48, chord: [64, 67, 72] }, { bass: 43, chord: [62, 67, 71] }, { bass: 41, chord: [60, 65, 69] }],
+  ],
+};
+
+// The Black Forest — a hushed E-minor murk: very slow, a deep drone and a
+// heavy breath of air under barely-lit chords. The trees are listening.
+const MOOD_BLACKFOREST: Mood = {
+  bpm: 52, pad: 0.95, fb: 0.38, shimmer: 0.2, air: 0.09, drone: 0.14, drum: 0,
+  prog: [
+    { bass: 40, chord: [59, 64, 67] }, // Em
+    { bass: 45, chord: [60, 64, 69] }, // Am
+    { bass: 48, chord: [60, 64, 67] }, // C
+    { bass: 47, chord: [59, 63, 66] }, // B — the raised leading tone glints in the dark
+  ],
+};
+
+// The Alps — wide, thin-aired A major: slow chords voiced high and open, a
+// strong shimmer like light off snow and a long low drone like a distant
+// alphorn. No drum this high up.
+const MOOD_ALPS: Mood = {
+  bpm: 48, pad: 1.1, fb: 0.3, shimmer: 0.7, air: 0.12, drone: 0.1, drum: 0,
+  prog: [
+    { bass: 45, chord: [61, 64, 69] }, // A
+    { bass: 40, chord: [59, 64, 68] }, // E
+    { bass: 42, chord: [61, 66, 69] }, // F#m
+    { bass: 38, chord: [62, 66, 69] }, // D
+  ],
+};
+
+const BIOME_MOODS: Record<string, Mood> = {
+  ardennes: MOOD_ARDENNES,
+  blackforest: MOOD_BLACKFOREST,
+  alps: MOOD_ALPS,
+};
+
 /** Map a 1-based level within a run to a mood tier. */
 function moodForLevel(level: number): Mood {
   if (level <= 3) return MOOD_MAJOR;
@@ -130,6 +181,7 @@ export class AudioEngine {
 
   private mood: Mood = MOOD_MAJOR;        // mood the current bar is playing in
   private pendingMood: Mood = MOOD_MAJOR; // mood to switch to at the next bar
+  private biomeMood: Mood | null = null;  // biome signature overriding level moods
   private activeProg = MOOD_MAJOR.prog;   // the chosen progression for this play
   private dynamic = false;                // sandbox: drift through the moods over time
 
@@ -145,9 +197,23 @@ export class AudioEngine {
    * omit) to return to the bright menu mood.
    */
   setLevel(level = 0): void {
+    if (this.biomeMood) return; // a biome signature owns the score while active
     this.pendingMood = level > 0 ? moodForLevel(level) : MOOD_MAJOR;
     // If nothing is playing yet, adopt it straight away.
     if (!this.timer) { this.mood = this.pendingMood; this.activeProg = pickProg(this.mood); }
+  }
+
+  /**
+   * Give the score a landscape: biomes with their own musical signature
+   * (Ardennes folk lilt, Black Forest hush, Alpine air) override the level
+   * moods entirely; 'gooi' (or unknown) returns control to the level tiers.
+   */
+  setBiome(biome: string): void {
+    this.biomeMood = BIOME_MOODS[biome] ?? null;
+    if (this.biomeMood) {
+      this.pendingMood = this.biomeMood;
+      if (!this.timer) { this.mood = this.pendingMood; this.activeProg = pickProg(this.mood); }
+    }
   }
 
   /**
@@ -227,8 +293,9 @@ export class AudioEngine {
     // Bars are long and overlapping, so schedule one whole bar a little ahead
     // of the audio clock and let its sustained voices ring across the next.
     while (this.nextNote < ctx.currentTime + 0.4) {
-      // Sandbox: every 4 bars drift to the next mood tier, cycling endlessly.
-      if (this.dynamic && this.step % 4 === 0) {
+      // Sandbox: every 4 bars drift to the next mood tier, cycling endlessly
+      // (unless a biome signature owns the score).
+      if (this.dynamic && !this.biomeMood && this.step % 4 === 0) {
         this.pendingMood = MOODS[((this.step / 4) | 0) % MOODS.length];
       }
       // Adopt any queued mood change at the bar boundary so shifts glide in.
