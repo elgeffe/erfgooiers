@@ -45,13 +45,13 @@ export const LEVELS: LevelDef[] = [
       { kind: 'produce', item: 'timber', n: 12 },
     ],
     world: { w: 38, h: 38, treeStands: 6, oreVeins: 5, waterScale: 0.6, meadows: 3, goldPiles: 2 },
-    kit: { stock: { timber: 10, stone: 10, bread: 6 }, serfs: 2, laborers: 1 },
+    kit: { stock: { timber: 10, stone: 10, bread: 6, coin: 4 }, serfs: 2, laborers: 1 },
     timeTarget: 240, hardTimer: 340, reward: 30 },
   
   { index: 2, name: 'First Coin', type: 'Economy',
     objectives: [{ kind: 'produce', item: 'coin', n: 3 }],
     world: { w: 36, h: 36, treeStands: 5, oreVeins: 6, waterScale: 0.5, meadows: 2, goldPiles: 2 },
-    kit: { stock: { timber: 12, stone: 10, bread: 8 }, serfs: 2, laborers: 1 },
+    kit: { stock: { timber: 12, stone: 10, bread: 8, coin: 4 }, serfs: 2, laborers: 1 },
     timeTarget: 220, hardTimer: 320, reward: 25 },
 
   { index: 3, name: 'The Vintner\u2019s Gamble', type: 'Economy',
@@ -60,7 +60,7 @@ export const LEVELS: LevelDef[] = [
       { kind: 'produceMulti', reqs: [{ item: 'bread', n: 8 }, { item: 'wine', n: 6 }] },
     ],
     world: { w: 40, h: 40, treeStands: 6, oreVeins: 5, waterScale: 0.7, meadows: 3, goldPiles: 3 },
-    kit: { stock: { timber: 10, stone: 10, bread: 8 }, serfs: 2, laborers: 1 },
+    kit: { stock: { timber: 10, stone: 10, bread: 8, coin: 4 }, serfs: 2, laborers: 1 },
     timeTarget: 260, hardTimer: 370, reward: 35 },
 
   { index: 4, name: 'The Coin Run', type: 'Economy',
@@ -69,7 +69,7 @@ export const LEVELS: LevelDef[] = [
       { kind: 'produceMulti', reqs: [{ item: 'coin', n: 12 }, { item: 'wine', n: 6 }] },
     ],
     world: { w: 42, h: 42, treeStands: 6, oreVeins: 7, waterScale: 0.85, meadows: 3, goldPiles: 6 },
-    kit: { stock: { timber: 12, stone: 10, bread: 8 }, serfs: 2, laborers: 2 },
+    kit: { stock: { timber: 12, stone: 10, bread: 8, coin: 5 }, serfs: 2, laborers: 2 },
     timeTarget: 360, hardTimer: 430, reward: 45 },
 
   { index: 5, name: 'Raiders at the Gate', type: 'Defend',

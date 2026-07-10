@@ -26,7 +26,7 @@ export interface StartKit {
 }
 
 export const DEFAULT_KIT: StartKit = {
-  stock: { timber: 16, stone: 10, bread: 8 },
+  stock: { timber: 16, stone: 10, bread: 8, coin: 6 },
   serfs: 4,
   laborers: 1,
   villagers: 7,

@@ -7,9 +7,9 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
   guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & laborers)', model: 'cottage',
     cost: { timber: 4, stone: 3 }, roof: 0x4a6a7a, wall: 0xcaa46e, accent: 0xffd24a, hp: 250,
     trainer: { units: [
-      { kind: 'villager', cost: { bread: 1 }, time: 5 },
-      { kind: 'serf', cost: { bread: 1 }, time: 5 },
-      { kind: 'laborer', cost: { bread: 1 }, time: 5 },
+      { kind: 'villager', cost: { coin: 1 }, time: 5 },
+      { kind: 'serf', cost: { coin: 1 }, time: 5 },
+      { kind: 'laborer', cost: { coin: 1 }, time: 5 },
     ] } },
 
   woodcutter: { name: "Woodcutter's Hut", desc: 'Chops nearby trees → trunks', model: 'cottage',
