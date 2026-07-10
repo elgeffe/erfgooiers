@@ -3,13 +3,26 @@ import type { StartKit } from '../game/Game';
 import type { ObjectiveDef } from '../game/Objectives';
 import type { UnitKind } from './units';
 
+/** One scheduled raid. Either `at` (sim seconds) or `whenArmy` (fires `delay`
+ *  seconds after the player's fighter count first reaches it — the raid waits
+ *  for YOUR muster, so eco time is never stolen). `bonusTime` extends the
+ *  level's hard timer when the wave lands. */
+export interface WaveDef {
+  kind: UnitKind;
+  count: number;
+  at?: number;
+  whenArmy?: number;
+  delay?: number;       // seconds between arming and landing (default 45)
+  bonusTime?: number;   // seconds added to the hard timer as the wave lands
+}
+
 /** A level's enemy presence, spawned by Game.setEnemies after init. */
 export interface EnemySetup {
   wild?: { kind: UnitKind; count: number }[];              // roaming beasts (boars, dragon)
   camps?: { count: number; guards: number }[];             // bandit camps with guards
   keep?: { guards: number };                               // one enemy keep (late levels)
   towers?: number;                                         // watchtowers around the keep
-  waves?: { at: number; kind: UnitKind; count: number }[]; // timed raids at the castle
+  waves?: WaveDef[];                                       // raids marching on the castle
   boss?: UnitKind;                                         // a single boss unit
   commander?: { every: number; kind: UnitKind; count: number; from?: 'edge' | 'camp' };
 }
@@ -77,8 +90,14 @@ export const LEVELS: LevelDef[] = [
     world: { w: 44, h: 44, treeStands: 6, oreVeins: 5, waterScale: 1.0, meadows: 4, goldPiles: 3, ruins: 2 },
     kit: { stock: { timber: 16, stone: 12, bread: 10, coin: 6, weapon: 2 }, serfs: 6, laborers: 2 },
     startArmy: [{ kind: 'soldier', count: 3 }],
-    enemies: { waves: [{ at: 35, kind: 'bandit', count: 5 }, { at: 105, kind: 'bandit', count: 8 }] },
-    timeTarget: 180, hardTimer: 260, reward: 55 },
+    // no raid until the player grows the muster past the starting three: build
+    // and train at your own pace, then provoke wave one. Wave two follows the
+    // same trigger and pays its fight out in extra clock.
+    enemies: { waves: [
+      { whenArmy: 4, delay: 45, kind: 'bandit', count: 5 },
+      { whenArmy: 4, delay: 90, bonusTime: 150, kind: 'bandit', count: 8 },
+    ] },
+    timeTarget: 300, hardTimer: 480, reward: 55 },
 
   { index: 6, name: 'The Boar Hunt', type: 'Hunt',
     objectives: [{ kind: 'slay', unit: 'boar', n: 8 }],

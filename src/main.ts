@@ -563,7 +563,7 @@ function frame(now: number): void {
     if (simAcc > TICK) simAcc = 0;            // drop the backlog rather than fast-forward
 
     const st = game.objective.evaluate(game);
-    const remaining = levelHardTimer - game.elapsed;
+    const remaining = levelHardTimer + game.bonusTime - game.elapsed;
     uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateObjective(st.label, st.ratio, remaining); ui.updateWave(game.nextWave()); }
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
 

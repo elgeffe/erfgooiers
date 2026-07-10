@@ -110,12 +110,13 @@ export class UI {
   }
 
   /** Refresh the "next raid" countdown banner, or hide it when no wave is pending. */
-  updateWave(info: { in: number; count: number } | null): void {
+  updateWave(info: { in: number; count: number; label?: string } | null): void {
     const el = $('wavebar') as HTMLElement;
     if (!info) { el.style.display = 'none'; return; }
     el.style.display = 'flex';
-    $('waveText').textContent = `Next raid in ${fmtTime(info.in)} · ${info.count} raiders`;
-    el.classList.toggle('imminent', info.in <= 10);
+    // muster-triggered raids show what will provoke them instead of a countdown
+    $('waveText').textContent = info.label ?? `Next raid in ${fmtTime(info.in)} · ${info.count} raiders`;
+    el.classList.toggle('imminent', !info.label && info.in <= 10);
   }
 
   /** Toggle sandbox HUD: no objective card, no timer, no debug-win button. */

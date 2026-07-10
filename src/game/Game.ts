@@ -1368,11 +1368,16 @@ export class Game {
   private waves: { units: Unit[]; cleared: boolean }[] = [];
   private commanderT = 0;
   private camps: Building[] = [];
+  /** Sim time the armed muster-triggered wave lands at (null = not armed yet). */
+  private waveArmT: number | null = null;
+  /** Extra seconds granted to the level's hard timer (waves with bonusTime). */
+  bonusTime = 0;
 
   /** Configure and spawn a level's enemy presence (called by main after init). */
   setEnemies(setup: EnemySetup | null): void {
     this.enemy = setup;
     this.waveIdx = 0; this.waves = []; this.commanderT = 0; this.camps = [];
+    this.waveArmT = null; this.bonusTime = 0;
     if (!setup) return;
     if (setup.wild) for (const w of setup.wild) this.spawnWild(w.kind, w.count);
     if (setup.camps) for (const c of setup.camps) for (let i = 0; i < c.count; i++) this.spawnStronghold('banditcamp', c.guards);
@@ -1380,23 +1385,47 @@ export class Game {
     if (setup.boss) this.spawnBoss(setup.boss);
   }
 
+  /** Player-faction fighters currently alive (arming muster-triggered raids). */
+  private playerFighters(): number {
+    let n = 0;
+    for (const u of this.units) if (!u.dead && u.faction === 'player' && u.dmg > 0) n++;
+    return n;
+  }
+
   /**
    * The next scheduled raid wave for the HUD countdown: seconds until it lands
-   * plus its size, or null when this level has no more scheduled waves.
+   * plus its size, or (for a muster-triggered raid that hasn't armed yet) a
+   * label telling the player what will provoke it.
    */
-  nextWave(): { in: number; count: number } | null {
+  nextWave(): { in: number; count: number; label?: string } | null {
     const w = this.enemy?.waves;
     if (!w || this.waveIdx >= w.length) return null;
     const def = w[this.waveIdx];
-    return { in: Math.max(0, def.at - this.elapsed), count: def.count };
+    if (def.at !== undefined) return { in: Math.max(0, def.at - this.elapsed), count: def.count };
+    if (this.waveArmT !== null) return { in: Math.max(0, this.waveArmT - this.elapsed), count: def.count };
+    return { in: Infinity, count: def.count, label: `Raiders are watching — mustering ${def.whenArmy ?? 1} fighters will provoke them` };
   }
 
   private combatDirector(sdt: number): void {
     if (!this.enemy) return;
-    // launch scheduled raid waves at the castle
+    // launch scheduled raid waves at the castle. Waves are sequential: the
+    // head wave launches on its trigger (a timestamp, or the player's muster
+    // reaching size + a grace delay), then the next takes its place.
     const w = this.enemy.waves;
-    if (w) while (this.waveIdx < w.length && this.elapsed >= w[this.waveIdx].at) {
-      const def = w[this.waveIdx++];
+    while (w && this.waveIdx < w.length) {
+      const def = w[this.waveIdx];
+      let launch = false;
+      if (def.at !== undefined) launch = this.elapsed >= def.at;
+      else if (this.waveArmT !== null) launch = this.elapsed >= this.waveArmT;
+      else if (this.playerFighters() >= (def.whenArmy ?? 1)) {
+        this.waveArmT = this.elapsed + (def.delay ?? 45);
+        this.toast('Your muster has been spotted — raiders are gathering!', 'err');
+        this.sfx('error');
+      }
+      if (!launch) break;
+      this.waveIdx++;
+      this.waveArmT = null;
+      if (def.bonusTime) { this.bonusTime += def.bonusTime; this.toast(`+${def.bonusTime}s on the clock for the fight ahead`); }
       this.waves.push({ units: this.spawnRaid(def.kind, def.count, 'edge'), cleared: false });
       this.toast('A raid approaches!', 'err'); this.sfx('error');
     }
