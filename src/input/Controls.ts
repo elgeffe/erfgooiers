@@ -3,7 +3,7 @@ import { DEFS } from '../data/buildings';
 import type { Game } from '../game/Game';
 import type { View } from '../render/View';
 import type { UI } from '../ui/UI';
-import type { Mode, Unit } from '../types';
+import type { Formation, Mode, Unit } from '../types';
 
 // Isometric screen-space basis vectors for panning.
 const RIGHT = new THREE.Vector3(1, 0, -1).normalize();
@@ -33,16 +33,27 @@ export class Controls {
   private boxStart: { x: number; y: number } | null = null;
   private boxing = false;
   private readonly selbox = document.getElementById('selbox') as HTMLElement | null;
+  private readonly formationBar = document.getElementById('formationbar') as HTMLElement | null;
+  private formation: Formation = 'grid';
 
   constructor(private readonly view: View, private readonly ui: UI) {
     const canvas = this.view.renderer.domElement;
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('pointerdown', e => this.onDown(e));
+    canvas.addEventListener('dblclick', e => this.doubleClickSelect(e));
     addEventListener('pointermove', e => this.onMove(e));
     addEventListener('pointerup', e => this.onUp(e));
     canvas.addEventListener('wheel', e => { e.preventDefault(); this.view.zoom(e.deltaY > 0 ? 1.1 : 0.9); }, { passive: false });
     addEventListener('keydown', e => this.onKey(e));
     addEventListener('keyup', e => { this.keys[e.key.toLowerCase()] = false; });
+    this.formationBar?.querySelectorAll<HTMLButtonElement>('button[data-formation]').forEach(button => {
+      button.onclick = e => {
+        e.stopPropagation();
+        this.formation = button.dataset.formation as Formation;
+        this.formationBar?.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === button));
+        this.ui.toast(`${button.title} selected`);
+      };
+    });
   }
 
   /** Bind to a level's Game; clears any active build mode and stale squads. */
@@ -165,6 +176,24 @@ export class Controls {
     this.game.selectAt(t.x, t.y);
   }
 
+  /** Double-click a fighter to select every visible player fighter of its type. */
+  private doubleClickSelect(e: MouseEvent): void {
+    if (!this.game || this.mode) return;
+    e.preventDefault();
+    const gp = this.view.groundPoint(e.clientX, e.clientY);
+    const clicked = this.game.pickUnit(gp.x, gp.z);
+    if (!clicked || clicked.faction !== 'player' || clicked.dmg <= 0) return;
+    const picked: Unit[] = [];
+    for (const u of this.game.units) {
+      if (u.dead || u.faction !== 'player' || u.dmg <= 0 || u.role !== clicked.role) continue;
+      const s = this.view.worldToScreen(u.mesh.position.x, u.mesh.position.y, u.mesh.position.z);
+      if (s.x >= 0 && s.x <= innerWidth && s.y >= 0 && s.y <= innerHeight) picked.push(u);
+    }
+    this.selUnits = picked;
+    this.game.select(clicked);
+    this.ui.toast(`${picked.length} ${clicked.roleName}${picked.length === 1 ? '' : 's'} selected`);
+  }
+
   /** Box-select every player fighter whose screen position falls in the rectangle. */
   private selectBox(x0: number, y0: number, x1: number, y1: number): void {
     if (!this.game) return;
@@ -188,9 +217,9 @@ export class Controls {
     const foe = this.game.pickUnit(gp.x, gp.z);
     const t = this.view.tileAt(e.clientX, e.clientY);
     if (foe && foe.faction !== 'player') {
-      this.game.orderGroup(this.selUnits, 'attack', foe.tx, foe.ty, foe);
+      this.game.orderGroup(this.selUnits, 'attack', foe.tx, foe.ty, foe, this.formation);
     } else if (t) {
-      this.game.orderGroup(this.selUnits, 'attackMove', t.x, t.y);
+      this.game.orderGroup(this.selUnits, 'attackMove', t.x, t.y, null, this.formation);
     }
   }
 
@@ -246,6 +275,7 @@ export class Controls {
     if (this.game && this.selUnits.length) {
       this.selUnits = this.selUnits.filter(u => !u.dead && this.game!.units.indexOf(u) >= 0);
     }
+    if (this.formationBar) this.formationBar.style.display = this.selUnits.length > 1 ? 'flex' : 'none';
     this.view.showSelection(this.selUnits);
   }
 }

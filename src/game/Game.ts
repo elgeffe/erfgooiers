@@ -6,9 +6,10 @@ import { UNITS, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
+import { formationSpots } from '../engine/formations';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
-import type { Building, BuildingKey, Coord, Faction, Site, Unit } from '../types';
+import type { Building, BuildingKey, Coord, Faction, Formation, Site, Unit } from '../types';
 import { doorTile, unitLabel } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
@@ -94,7 +95,7 @@ export class Game {
     }
     this.store = this.placeBuilding('storehouse', cx, cy, true);
     // base kit stock, then run-upgrade start bonuses on top
-    this.store.stock = { timber: 0, stone: 0, bread: 0, trunk: 0, wheat: 0, flour: 0, goldore: 0, coal: 0, coin: 0, grape: 0, wine: 0, meat: 0, sausage: 0, fish: 0, iron: 0, weapon: 0, armor: 0, ...kit.stock };
+    this.store.stock = Object.fromEntries(Object.keys(ITEMS).map(key => [key, kit.stock[key] ?? 0]));
     const bonus = this.mods.startStock();
     for (const k in bonus) this.store.stock[k] = (this.store.stock[k] || 0) + (bonus as Record<string, number>)[k];
     const d = doorTile(this.store);
@@ -114,7 +115,7 @@ export class Game {
   // =====================================================================
   placeBuilding(key: BuildingKey, tx: number, ty: number, instant = false, rot = 0, faction: Faction = 'player'): Building {
     const def = DEFS[key];
-    const mesh = this.view.createBuildingMesh(def);
+    const mesh = this.view.createBuildingMesh(key, def);
     mesh.rotation.y = -rot * Math.PI / 2;
     mesh.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
     this.view.add(mesh);
@@ -178,7 +179,7 @@ export class Game {
 
   placeSite(key: BuildingKey, tx: number, ty: number, rot = 0): Site {
     const def = DEFS[key];
-    const { group, frame } = this.view.createScaffold(def);
+    const { group, frame } = this.view.createScaffold(key, def);
     frame.rotation.y = -rot * Math.PI / 2;
     group.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
     this.view.add(group);
@@ -1268,7 +1269,9 @@ export class Game {
   /** Shift a unit if the destination isn't water or inside a building/site. */
   private nudge(u: Unit, dx: number, dz: number): void {
     const W = this.world.W, H = this.world.H;
-    const nxp = u.mesh.position.x + dx, nzp = u.mesh.position.z + dz;
+    const radius = 0.3 * (u.mesh.scale.x || 1);
+    const nxp = Math.max(-W / 2 + radius, Math.min(W / 2 - radius, u.mesh.position.x + dx));
+    const nzp = Math.max(-H / 2 + radius, Math.min(H / 2 - radius, u.mesh.position.z + dz));
     const tx = Math.max(0, Math.min(W - 1, Math.round(nxp + W / 2 - 0.5)));
     const ty = Math.max(0, Math.min(H - 1, Math.round(nzp + H / 2 - 0.5)));
     const t = this.world.tiles[ty][tx];
@@ -1294,36 +1297,19 @@ export class Game {
 
   /** Order a whole selection: attacks converge on the foe, moves fan out into a
    *  loose formation so the squad doesn't pile onto a single tile. */
-  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null): void {
+  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'grid'): void {
     if (type === 'attack' && foe) {
       for (const u of units) this.orderUnit(u, 'attack', foe.tx, foe.ty, foe);
       return;
     }
-    const spots = this.formationSpots(x, y, units.length);
+    const spots = formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), (tx, ty) => {
+      const t = this.world.T(tx, ty);
+      return !!t && t.type === 'grass' && !t.b && !t.site;
+    });
     for (let i = 0; i < units.length; i++) {
       const s = spots[Math.min(i, spots.length - 1)];
       this.orderUnit(units[i], type, s.x, s.y);
     }
-  }
-
-  /** Up to n distinct free tiles spiralling out from a point (formation targets). */
-  private formationSpots(cx: number, cy: number, n: number): Coord[] {
-    const out: Coord[] = [];
-    const tryTile = (x: number, y: number): void => {
-      if (out.length >= n) return;
-      const t = this.world.T(x, y);
-      if (!t || t.type !== 'grass' || t.b || t.site) return;
-      out.push({ x, y });
-    };
-    tryTile(cx, cy);
-    for (let r = 1; r < 10 && out.length < n; r++)
-      for (let dx = -r; dx <= r && out.length < n; dx++)
-        for (let dy = -r; dy <= r && out.length < n; dy++) {
-          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // ring perimeter only
-          tryTile(cx + dx, cy + dy);
-        }
-    if (!out.length) out.push({ x: cx, y: cy });
-    return out;
   }
 
   /** Plant (or move) a military building's rally flag — freshly trained fighters

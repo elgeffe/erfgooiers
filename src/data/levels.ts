@@ -29,9 +29,9 @@ export interface EnemySetup {
 
 /**
  * A level as pure data: objective (with random variants), world-gen params,
- * starting kit, soft/hard timers and gold reward. Levels 5–10 ship as economy
- * placeholders until Phase 3 replaces them with combat. Numbers are targets to
- * tune in playtesting — hard timers sit ~40% above the soft target.
+ * starting kit, soft/hard timers, gold reward and optional enemy setup. The
+ * table currently spans economy, defense, hunting, frontier assaults and the
+ * dragon boss. Numbers remain playtest targets rather than engine constants.
  */
 export interface LevelDef {
   index: number;
@@ -48,9 +48,8 @@ export interface LevelDef {
 }
 
 export const LEVELS: LevelDef[] = [
-  // Phase 1 economy arc. Each level asks for a deeper production chain than the
-  // last, in larger quantities, on a map with progressively more water — so the
-  // buildable land shrinks exactly as the objective demands more of it.
+  // Opening economy arc: each level asks for a deeper or wider production
+  // network before the combat arc begins at level 5.
 
   { index: 1, name: 'Daily Bread', type: 'Economy',
     objectives: [

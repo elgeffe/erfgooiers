@@ -3,9 +3,9 @@ import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { uiRng } from '../engine/rng';
 import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
-import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
+import type { Building, BuildingDef, BuildingKey, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { bakeGroupInto, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter, CRITTER_KINDS, type CritterKind } from './models';
+import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter, CRITTER_KINDS, type CritterKind } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -15,7 +15,8 @@ interface Pig { mesh: THREE.Group; x: number; z: number; tx: number; tz: number;
 /** A single fish swimming in the lake (cosmetic, real-time). */
 interface SwimFish { mesh: THREE.Group; x: number; z: number; tx: number; tz: number; wait: number; speed: number; }
 /** A wandering meadow critter (cosmetic, real-time). Ducks keep to the shore. */
-interface Critter { mesh: THREE.Group; x: number; z: number; tx: number; tz: number; wait: number; speed: number; hops: boolean; hop: number; shore: boolean; }
+interface Critter { mesh: THREE.Group; x: number; z: number; tx: number; tz: number; wait: number; speed: number; hops: boolean; hop: number; shore: boolean; pond: boolean; }
+interface SkyBird { mesh: THREE.Group; wings: THREE.Group[]; vx: number; vz: number; phase: number; }
 
 /**
  * Owns everything Three.js: renderer, scene, orthographic camera, the ground
@@ -80,6 +81,8 @@ export class View {
 
   // sparse wildlife ambling across the meadow (cosmetic, real-time)
   private readonly critters: Critter[] = [];
+  private readonly skyBirds: SkyBird[] = [];
+  private nextBirdT = 0;
 
   // minimap
   private readonly mm: HTMLCanvasElement;
@@ -96,6 +99,7 @@ export class View {
   private readonly selRings: THREE.Mesh[] = [];
   private readonly selRingGeo = new THREE.RingGeometry(0.32, 0.44, 18);
   private readonly selRingMat = noOutline(new THREE.MeshBasicMaterial({ color: 0x46c256, transparent: true, opacity: 0.85, side: THREE.DoubleSide }));
+  private readonly selectedUnits = new Set<Unit>();
 
   // ---------- HP bars (pooled, billboarded, persist across levels) ----------
   private readonly hpBarGroup = new THREE.Group();
@@ -181,6 +185,7 @@ export class View {
     this.buildAmbiance();
     this.spawnFish();
     this.spawnCritters();
+    this.nextBirdT = 6 + rnd() * 14;
   }
 
   /**
@@ -216,6 +221,8 @@ export class View {
     this.pigHerds.clear();
     this.fish.length = 0;
     this.critters.length = 0;
+    this.skyBirds.length = 0;
+    this.nextBirdT = 0;
     this.lakeTiles = [];
     this.millSails.length = 0;
     this.ghostKey = null;
@@ -331,6 +338,8 @@ export class View {
 
   /** Show green selection rings under the given units (pooled; persists across levels). */
   showSelection(units: Unit[]): void {
+    this.selectedUnits.clear();
+    for (const u of units) this.selectedUnits.add(u);
     while (this.selRings.length < units.length) {
       const r = new THREE.Mesh(this.selRingGeo, this.selRingMat);
       r.rotation.x = -Math.PI / 2; this.scene.add(r); this.selRings.push(r);
@@ -410,8 +419,8 @@ export class View {
     o.traverse((c) => { if (c.userData.ownGeometry) (c as THREE.Mesh).geometry.dispose(); });
   }
 
-  createBuildingMesh(def: BuildingDef): THREE.Group { return makeBuilding(def, false); }
-  createScaffold(def: BuildingDef) { return makeScaffold(def); }
+  createBuildingMesh(key: BuildingKey, def: BuildingDef): THREE.Group { return makeBuilding(key, def, false); }
+  createScaffold(key: BuildingKey, def: BuildingDef) { return makeScaffold(key, def); }
 
   createUnit(colorHex: number, role: string, tileX: number, tileY: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
     const u = makeUnit(colorHex, role);
@@ -785,20 +794,35 @@ export class View {
   // =====================================================================
   private buildAmbiance(): void {
     const W = this.world.W, H = this.world.H;
-    // gradient sky: deep blue overhead fading to a warm pale horizon
-    const sky = document.createElement('canvas'); sky.width = 1; sky.height = 256;
+    // Painted sky: richer vertical colour, warm sun haze and a few extremely
+    // faint high-altitude streaks. This is a screen backdrop, not a cloud count.
+    const sky = document.createElement('canvas'); sky.width = 512; sky.height = 512;
     const sctx = sky.getContext('2d')!;
-    const grad = sctx.createLinearGradient(0, 0, 0, 256);
-    grad.addColorStop(0, '#69b0dd');
-    grad.addColorStop(0.55, '#a9d3ea');
-    grad.addColorStop(1, '#e9f2ea');
-    sctx.fillStyle = grad; sctx.fillRect(0, 0, 1, 256);
+    const grad = sctx.createLinearGradient(0, 0, 0, 512);
+    grad.addColorStop(0, '#4e9bd0');
+    grad.addColorStop(0.42, '#82bddd');
+    grad.addColorStop(0.72, '#bddbea');
+    grad.addColorStop(1, '#f0e9d3');
+    sctx.fillStyle = grad; sctx.fillRect(0, 0, 512, 512);
+    const sun = sctx.createRadialGradient(405, 120, 3, 405, 120, 155);
+    sun.addColorStop(0, 'rgba(255,247,206,.72)');
+    sun.addColorStop(0.22, 'rgba(255,235,184,.3)');
+    sun.addColorStop(1, 'rgba(255,235,184,0)');
+    sctx.fillStyle = sun; sctx.fillRect(0, 0, 512, 360);
+    sctx.lineCap = 'round';
+    for (let i = 0; i < 5; i++) {
+      const y = 62 + rnd() * 150, x = rnd() * 380, w = 70 + rnd() * 150;
+      sctx.strokeStyle = `rgba(255,255,255,${0.025 + rnd() * 0.035})`;
+      sctx.lineWidth = 7 + rnd() * 13;
+      sctx.beginPath(); sctx.moveTo(x, y); sctx.bezierCurveTo(x + w * 0.3, y - 8, x + w * 0.7, y + 8, x + w, y); sctx.stroke();
+    }
     this.skyTex = new THREE.CanvasTexture(sky);
+    this.skyTex.colorSpace = THREE.SRGBColorSpace;
     this.scene.background = this.skyTex;
-    this.scene.fog = new THREE.Fog(0xddecee, 62, 150);
+    this.scene.fog = new THREE.Fog(0xd4e4df, 70, 165);
 
     // a broad meadow plain reaching out to the horizon beneath the map plinth
-    const plain = new THREE.Mesh(new THREE.CircleGeometry(240, 48), stdMat({ color: 0x7fae66 }, false));
+    const plain = new THREE.Mesh(new THREE.CircleGeometry(240, 96), stdMat({ color: 0x7da866 }, false));
     plain.rotation.x = -Math.PI / 2; plain.position.y = -2.1;
     this.worldGroup.add(plain);
     this.freeze(plain);
@@ -809,8 +833,31 @@ export class View {
     const boardR = Math.hypot(W / 2, H / 2);
     const GAP = 12;
 
+    // Patchwork countryside beyond the playable board: irregular field strips,
+    // dark hedges and glints of distant water break up the old flat green disc.
+    const fieldMats = [0x91ae61, 0xb3ad62, 0x779d59, 0xc0a86a, 0x88a968].map(c => stdMat({ color: c }, false));
+    const hedgeMat = stdMat({ color: 0x456842 }, false);
+    for (let i = 0; i < 26; i++) {
+      const ang = rnd() * Math.PI * 2, rad = boardR + GAP + 7 + rnd() * 34;
+      const w = 4 + rnd() * 8, d = 2.5 + rnd() * 5;
+      const field = new THREE.Mesh(box(w, 0.035, d), fieldMats[i % fieldMats.length]);
+      field.position.set(Math.cos(ang) * rad, -2.055, Math.sin(ang) * rad); field.rotation.y = ang + (rnd() - 0.5) * 1.2;
+      this.worldGroup.add(field); this.freeze(field);
+      if (i % 2 === 0) {
+        const hedge = new THREE.Mesh(box(w + 0.4, 0.13, 0.12), hedgeMat);
+        hedge.position.set(field.position.x, -1.98, field.position.z); hedge.rotation.y = field.rotation.y; this.worldGroup.add(hedge); this.freeze(hedge);
+      }
+    }
+    const waterMat = stdMat({ color: 0x72a9bd, transparent: true, opacity: 0.75 }, false);
+    for (let i = 0; i < 3; i++) {
+      const ang = rnd() * Math.PI * 2, rad = boardR + GAP + 15 + rnd() * 25;
+      const water = new THREE.Mesh(circle(1, 24), waterMat); water.rotation.x = -Math.PI / 2;
+      water.scale.set(3 + rnd() * 4, 1.2 + rnd() * 2.2, 1); water.position.set(Math.cos(ang) * rad, -2.01, Math.sin(ang) * rad);
+      this.worldGroup.add(water); this.freeze(water);
+    }
+
     // low rolling hill domes in three hazier and hazier rings
-    const hillTones = [0x8cbc70, 0x7aa96a, 0x6f9d74, 0x678f79].map(c => stdMat({ color: c }));
+    const hillTones = [0x91b879, 0x7da86f, 0x709a73, 0x668c7b].map(c => stdMat({ color: c }));
     for (let ring = 0; ring < 3; ring++) {
       const count = 12 + ring * 5;
       for (let i = 0; i < count; i++) {
@@ -827,15 +874,15 @@ export class View {
     }
 
     // a hazy treeline out in the meadow ring, between the plinth and the hills
-    const folA = stdMat({ color: 0x4a7350 });
-    const folB = stdMat({ color: 0x3f6a5e });
+    const foliage = [0x4a7350, 0x3f6a5e, 0x577d48, 0x426b43].map(c => stdMat({ color: c }));
     const trunkM = stdMat({ color: 0x5b4433 });
     for (let i = 0; i < 90; i++) {
       const ang = rnd() * Math.PI * 2;
       const s = 0.9 + rnd() * 1.4;
       const rad = boardR + 5 + rnd() * (GAP - 4); // sits in the gap ring, clear of the board
-      const crown = new THREE.Mesh(cone(0.75, 2.6, 6), rnd() < 0.5 ? folA : folB);
-      crown.scale.setScalar(s);
+      const deciduous = rnd() < 0.42;
+      const crown = new THREE.Mesh(deciduous ? sphere(0.82, 10, 7) : cone(0.75, 2.6, 7), foliage[Math.floor(rnd() * foliage.length)]);
+      crown.scale.set(s, deciduous ? s * (0.85 + rnd() * 0.35) : s, s);
       crown.position.set(Math.cos(ang) * rad, -2.1 + 1.5 * s, Math.sin(ang) * rad);
       this.worldGroup.add(crown);
       this.freeze(crown);
@@ -847,6 +894,22 @@ export class View {
         this.freeze(trunk);
       }
     }
+
+    // A tiny horizon village adds human scale: warm roofs, a church spire and
+    // a pale lane, all well outside the playable edge.
+    const villageAng = rnd() * Math.PI * 2, villageRad = boardR + 31;
+    const village = new THREE.Group();
+    const lane = new THREE.Mesh(box(8.5, 0.025, 0.7), stdMat({ color: 0xc9b58c }, false)); lane.position.y = 0.02; village.add(lane);
+    const villageRoofs = [0x9c4b36, 0x7e4935, 0xb0603f];
+    for (let i = 0; i < 6; i++) {
+      const x = -3.4 + i * 1.35, z = (rnd() - 0.5) * 1.1, s = 0.55 + rnd() * 0.28;
+      const house = new THREE.Mesh(box(0.9 * s, 0.75 * s, 0.72 * s), stdMat({ color: i % 2 ? 0xd6c59f : 0xc8b489 })); house.position.set(x, 0.38 * s, z); village.add(house);
+      const roof = new THREE.Mesh(cone(0.72 * s, 0.55 * s, 4), stdMat({ color: villageRoofs[i % villageRoofs.length] })); roof.rotation.y = Math.PI / 4; roof.position.set(x, 1.02 * s, z); village.add(roof);
+    }
+    const church = new THREE.Mesh(box(0.72, 1.65, 0.72), stdMat({ color: 0xd9cfb5 })); church.position.set(0.2, 0.83, -0.8); village.add(church);
+    const spire = new THREE.Mesh(cone(0.58, 1.45, 6), stdMat({ color: 0x55666a })); spire.position.set(0.2, 2.27, -0.8); village.add(spire);
+    village.position.set(Math.cos(villageAng) * villageRad, -2.08, Math.sin(villageAng) * villageRad); village.lookAt(0, -2.08, 0);
+    this.worldGroup.add(village); this.freeze(village);
 
     // one far-off windmill turning on the plain — a little postcard of Het Gooi
     const millAng = rnd() * Math.PI * 2;
@@ -873,15 +936,21 @@ export class View {
     this.freeze(mill);
     this.millSails.push(sails);
 
-    // soft clouds drifting high above, spread wide around the board. Most are
-    // plain puffballs, but a sparse few take (rough) animal shapes for fun.
+    // Two or three detailed cloud banks drift high above the board. Layered
+    // blue-grey undersides and bright crowns give them volume without turning
+    // the playfield into a ceiling of white blobs.
     const cloudSpan = boardR * 2 + 30;
     this.cloudBound = cloudSpan / 2;
-    // translucent so the board stays readable when one drifts overhead
-    const cloudMat = stdMat({ color: 0xffffff, transparent: true, opacity: 0.5 });
+    const cloudTop = stdMat({ color: 0xffffff, transparent: true, opacity: 0.72 });
+    const cloudLight = stdMat({ color: 0xf5fbff, transparent: true, opacity: 0.5 });
+    const cloudShade = stdMat({ color: 0xb8ced9, transparent: true, opacity: 0.42 });
     const mk = (c: THREE.Group, x: number, z: number, s: number, y = 0): void => {
-      const p = new THREE.Mesh(sphere(1, 8, 6), cloudMat);
-      p.position.set(x, y + rnd() * 0.25, z); p.scale.set(s, s * 0.6, s); c.add(p);
+      const shade = new THREE.Mesh(sphere(1, 14, 9), cloudShade);
+      shade.position.set(x, y - 0.16, z); shade.scale.set(s * 1.08, s * 0.34, s * 0.92); c.add(shade);
+      const p = new THREE.Mesh(sphere(1, 16, 10), cloudTop);
+      p.position.set(x, y + rnd() * 0.18, z); p.scale.set(s, s * 0.62, s); c.add(p);
+      const light = new THREE.Mesh(sphere(1, 14, 9), cloudLight);
+      light.position.set(x - s * 0.16, y + s * 0.28, z - s * 0.08); light.scale.set(s * 0.62, s * 0.31, s * 0.62); c.add(light);
     };
     // each builder sketches an animal silhouette in the horizontal plane
     const animals: Array<(c: THREE.Group) => void> = [
@@ -892,23 +961,23 @@ export class View {
       c => { mk(c, 0, 0, 1.5); mk(c, 1.6, 0, 1.0); mk(c, 2.3, 0.1, 0.5); mk(c, 2.75, 0.42, 0.4); mk(c, 3.05, 0.78, 0.3); mk(c, 1.3, -0.78, 0.5); mk(c, -1.5, 0, 0.55); }, // elephant
       c => { mk(c, 0, 0, 1.25); mk(c, 1.55, 0, 0.85); mk(c, 2.15, 0, 0.4); mk(c, 1.4, -0.55, 0.4); mk(c, -1.4, 0.2, 0.4, 0.2); }, // dog
     ];
-    for (let i = 0; i < 4; i++) {
+    const cloudCount = 2 + (rnd() < 0.35 ? 1 : 0);
+    for (let i = 0; i < cloudCount; i++) {
       const c = new THREE.Group();
-      if (rnd() < 0.3) {
-        animals[Math.floor(rnd() * animals.length)](c);  // sparse: ~2–3 of 8 are critters
+      if (rnd() < 0.18) {
+        animals[Math.floor(rnd() * animals.length)](c);
       } else {
-        const n = 3 + Math.floor(rnd() * 3);
+        const n = 4 + Math.floor(rnd() * 3);
         for (let j = 0; j < n; j++) {
-          const puff = new THREE.Mesh(sphere(1, 8, 6), cloudMat);
-          puff.position.set((j - n / 2) * 1.5 + rnd(), rnd() * 0.6, rnd() * 1.4);
           const s = 1 + rnd() * 1.2;
-          puff.scale.set(s, s * 0.6, s);
-          c.add(puff);
+          mk(c, (j - (n - 1) / 2) * 1.35 + (rnd() - 0.5) * 0.7, (rnd() - 0.5) * 1.6, s, rnd() * 0.45);
         }
       }
       c.scale.setScalar(0.9 + rnd() * 0.5);
-      c.rotation.y = rnd() * Math.PI * 2;   // face a random way so critters vary
-      c.position.set((rnd() - 0.5) * cloudSpan, 14 + rnd() * 6, (rnd() - 0.5) * cloudSpan);
+      c.rotation.y = (rnd() - 0.5) * 0.55;
+      const laneX = -this.cloudBound + (i + 0.5) * (cloudSpan / cloudCount);
+      c.position.set(laneX + (rnd() - 0.5) * cloudSpan / cloudCount * 0.45, 15 + rnd() * 4, (rnd() - 0.5) * cloudSpan);
+      c.userData.cloudSpeed = 0.38 + rnd() * 0.28;
       this.worldGroup.add(c);
       this.freeze(c, false); // the group drifts; its puffs never move within it
       this.clouds.push(c);
@@ -932,13 +1001,14 @@ export class View {
       }
     }
     for (const c of this.clouds) {
-      c.position.x += dt * 0.6;
+      c.position.x += dt * (c.userData.cloudSpeed as number || 0.5);
       if (c.position.x > this.cloudBound) c.position.x = -this.cloudBound;
     }
     for (const s of this.millSails) s.rotation.z += dt * 0.45;
     this.updatePigs(dt, buildings);
     this.updateFish(dt);
     this.updateCritters(dt);
+    this.updateSkyBirds(dt);
     this.ageGore(dt);
   }
 
@@ -982,31 +1052,31 @@ export class View {
     }
   }
 
-  /** A sparse, random handful of wildlife per level — never the whole zoo at
-   *  once. Rabbits hop, foxes trot, hedgehogs & mice snuffle, ducks waddle the
-   *  shoreline. Purely cosmetic: they drift between nearby free grass tiles. */
+  /** A genuinely sparse handful of wildlife: one colorful cat, at most two
+   *  meadow animals, and a frog only when the map has a small pond. */
   private spawnCritters(): void {
-    const kinds: CritterKind[] = [];
+    const spawn = (kind: CritterKind, spot: { x: number; y: number } | null): void => {
+      if (!spot) return;
+      const { group, hops } = makeCritter(kind);
+      this.worldGroup.add(group); this.freeze(group, false);
+      const x = this.world.wx(spot.x), z = this.world.wz(spot.y);
+      group.position.set(x, 0, z);
+      this.critters.push({
+        mesh: group, x, z, tx: x, tz: z, wait: rnd() * 4,
+        speed: kind === 'fox' ? 0.9 : kind === 'mouse' ? 0.75 : kind === 'hedgehog' ? 0.22 : kind === 'frog' ? 0.35 : 0.5,
+        hops, hop: 0, shore: kind === 'duck' || kind === 'frog', pond: kind === 'frog',
+      });
+    };
+
+    spawn('cat', this.critterGrassSpot());
+    if (rnd() < 0.3) spawn('cat', this.critterGrassSpot());
     const pool = [...CRITTER_KINDS];
-    const n = 3 + Math.floor(uiRng.next() * 3);            // 3–5 kinds of a possible 5
-    while (kinds.length < n && pool.length) kinds.push(pool.splice(Math.floor(uiRng.next() * pool.length), 1)[0]);
-    for (const kind of kinds) {
-      // rabbits & mice show up in small families; the fox hunts alone
-      const count = kind === 'fox' ? 1 : kind === 'hedgehog' ? 1 : 2 + Math.floor(uiRng.next() * 2);
-      for (let i = 0; i < count; i++) {
-        const spot = kind === 'duck' ? this.critterShoreSpot() : this.critterGrassSpot();
-        if (!spot) continue;
-        const { group, hops } = makeCritter(kind);
-        this.worldGroup.add(group); this.freeze(group, false);
-        const x = this.world.wx(spot.x), z = this.world.wz(spot.y);
-        group.position.set(x, 0, z);
-        this.critters.push({
-          mesh: group, x, z, tx: x, tz: z, wait: uiRng.next() * 4,
-          speed: kind === 'fox' ? 0.9 : kind === 'mouse' ? 0.75 : kind === 'hedgehog' ? 0.22 : 0.5,
-          hops, hop: 0, shore: kind === 'duck',
-        });
-      }
+    const extra = 1 + (rnd() < 0.45 ? 1 : 0);
+    for (let i = 0; i < extra && pool.length; i++) {
+      const kind = pool.splice(Math.floor(rnd() * pool.length), 1)[0];
+      spawn(kind, kind === 'duck' ? this.critterShoreSpot() : this.critterGrassSpot());
     }
+    spawn('frog', this.critterPondSpot());
   }
 
   private critterGrassSpot(): { x: number; y: number } | null {
@@ -1030,6 +1100,20 @@ export class View {
     return this.critterGrassSpot();
   }
 
+  /** Grass on the bank of one of the small non-lake ponds. */
+  private critterPondSpot(): { x: number; y: number } | null {
+    const banks: { x: number; y: number }[] = [];
+    for (let y = 1; y < this.world.H - 1; y++) for (let x = 1; x < this.world.W - 1; x++) {
+      const t = this.world.tiles[y][x];
+      if (t.type !== 'grass' || t.b || t.site || t.tree || t.dep) continue;
+      if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+        const w = this.world.T(x + dx, y + dy);
+        return !!w && w.type === 'water' && !w.lake;
+      })) banks.push({ x, y });
+    }
+    return banks.length ? banks[Math.floor(rnd() * banks.length)] : null;
+  }
+
   private updateCritters(dt: number): void {
     for (const c of this.critters) {
       if (c.wait > 0) {
@@ -1042,6 +1126,10 @@ export class View {
             const nx = cur.x + Math.round((uiRng.next() - 0.5) * 7), ny = cur.y + Math.round((uiRng.next() - 0.5) * 7);
             const t = this.world.T(nx, ny);
             if (!t || t.type !== 'grass' || t.b || t.site || t.tree || t.dep) continue;
+            if (c.shore && ![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([ox, oy]) => {
+              const w = this.world.T(nx + ox, ny + oy);
+              return !!w && w.type === 'water' && (!c.pond || !w.lake);
+            })) continue;
             c.tx = this.world.wx(nx) + (uiRng.next() - 0.5) * 0.5;
             c.tz = this.world.wz(ny) + (uiRng.next() - 0.5) * 0.5;
             break;
@@ -1057,6 +1145,41 @@ export class View {
       if (c.hops) { c.hop += dt * 9; c.mesh.position.y = Math.abs(Math.sin(c.hop)) * 0.06; }
       c.mesh.position.x = c.x; c.mesh.position.z = c.z;
       c.mesh.rotation.y = Math.atan2(-dz, dx); // critter models face +x
+    }
+  }
+
+  /** Occasionally send a lone bird, flock, or rare eagle across the board. */
+  private spawnSkyBirds(): void {
+    const roll = rnd(), eagle = roll > 0.9;
+    const count = eagle ? 1 : roll < 0.4 ? 1 : 3 + Math.floor(rnd() * 4);
+    const dir = rnd() < 0.5 ? 1 : -1;
+    const startX = dir > 0 ? -this.cloudBound - 5 : this.cloudBound + 5;
+    const baseZ = (rnd() - 0.5) * this.world.H * 0.8;
+    for (let i = 0; i < count; i++) {
+      const { group, wings } = makeSkyBird(eagle);
+      const row = Math.floor(i / 2) + 1, side = i === 0 ? 0 : i % 2 ? -1 : 1;
+      group.position.set(startX - dir * row * 0.8, eagle ? 12 : 8 + rnd() * 3, baseZ + side * row * 0.75);
+      if (dir < 0) group.rotation.y = Math.PI;
+      this.worldGroup.add(group); this.freeze(group, false);
+      this.skyBirds.push({ mesh: group, wings, vx: dir * (eagle ? 3.2 : 2.2 + rnd() * 0.8), vz: (rnd() - 0.5) * 0.18, phase: rnd() * Math.PI * 2 });
+    }
+  }
+
+  private updateSkyBirds(dt: number): void {
+    this.nextBirdT -= dt;
+    if (this.nextBirdT <= 0) {
+      this.spawnSkyBirds();
+      this.nextBirdT = 18 + rnd() * 28;
+    }
+    for (let i = this.skyBirds.length - 1; i >= 0; i--) {
+      const b = this.skyBirds[i];
+      b.mesh.position.x += b.vx * dt; b.mesh.position.z += b.vz * dt;
+      b.phase += dt * 7;
+      const flap = Math.sin(b.phase) * 0.55;
+      b.wings[0].rotation.x = flap; b.wings[1].rotation.x = -flap;
+      if (Math.abs(b.mesh.position.x) <= this.cloudBound + 8) continue;
+      this.worldGroup.remove(b.mesh);
+      this.skyBirds.splice(i, 1);
     }
   }
 
@@ -1119,10 +1242,10 @@ export class View {
   // =====================================================================
   //  Placement ghost & road cursor
   // =====================================================================
-  showGhost(def: BuildingDef, key: string, tx: number, ty: number, rot: number, ok: boolean): void {
+  showGhost(def: BuildingDef, key: BuildingKey, tx: number, ty: number, rot: number, ok: boolean): void {
     if (this.ghostKey !== key) {
       this.scene.remove(this.ghost);
-      this.ghost = makeBuilding(def, true);
+      this.ghost = makeBuilding(key, def, true);
       const mk = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), noOutline(new THREE.MeshBasicMaterial({ color: 0xd9a441, transparent: true, opacity: 0.7, side: THREE.DoubleSide })));
       mk.rotation.x = -Math.PI / 2; mk.position.set(-0.5, 0.04, 1.5); mk.userData.marker = true;
       this.ghost.add(mk);
@@ -1190,8 +1313,12 @@ export class View {
       mmx.fillStyle = c;
       mmx.fillRect(x * MMS, y * MMS, MMS + 0.5, MMS + 0.5);
     }
-    mmx.fillStyle = '#fff';
-    for (const u of units) mmx.fillRect((u.mesh.position.x + W / 2) * MMS - 1, (u.mesh.position.z + H / 2) * MMS - 1, 2, 2);
+    for (const u of units) {
+      const selected = this.selectedUnits.has(u);
+      const size = selected ? 3 : 2;
+      mmx.fillStyle = selected ? '#52ff68' : '#fff';
+      mmx.fillRect((u.mesh.position.x + W / 2) * MMS - size / 2, (u.mesh.position.z + H / 2) * MMS - size / 2, size, size);
+    }
     const a = innerWidth / innerHeight;
     mmx.strokeStyle = 'rgba(255,255,255,.8)'; mmx.lineWidth = 1;
     mmx.strokeRect((this.camTarget.x + W / 2 - this.viewSize * a * 0.72) * MMS, (this.camTarget.z + H / 2 - this.viewSize * 0.95) * MMS, this.viewSize * a * 1.44 * MMS, this.viewSize * 1.9 * MMS);
