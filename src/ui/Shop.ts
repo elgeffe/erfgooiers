@@ -1,6 +1,7 @@
 import { Rng, levelSeed } from '../engine/rng';
 import { MAX_CARDS, RARITY_WEIGHT, UPGRADES, UPGRADE_BY_ID, upgradePrice, type UpgradeDef } from '../data/upgrades';
 import { MUTATOR_BY_ID, type Contract } from '../data/mutators';
+import { HERO_BY_ID } from '../data/heroes';
 import { levelFor } from '../data/levels';
 import { Objective } from '../game/Objectives';
 import type { RunState } from '../game/RunState';
@@ -60,11 +61,14 @@ export class Shop {
       `<div class="tallyrow total"><span>Level total</span><b>+${Math.max(1, total)}g</b></div>`;
   }
 
-  /** Economy wares always; military wares join once combat levels are next (5+).
-   *  Owned uniques never show up again this run. */
+  /** Economy wares always; military wares join once combat levels are next (5+);
+   *  hero wares only while their hero leads the run. Owned uniques never show
+   *  up again this run. */
   private pool(): UpgradeDef[] {
     return UPGRADES.filter(u =>
-      (u.pool === 'economy' || (u.pool === 'military' && this.run.levelIndex >= 4)) &&
+      (u.pool === 'economy' ||
+       (u.pool === 'military' && this.run.levelIndex >= 4) ||
+       (u.pool === 'hero' && u.hero === this.run.hero)) &&
       !(u.unique && this.run.upgrades.includes(u.id)));
   }
 
@@ -130,7 +134,9 @@ export class Shop {
   }
 
   private render(): void {
-    $('shopGold').innerHTML = `<b>${this.run.gold}</b> gold · next: level ${this.run.levelIndex + 1}`;
+    const hero = this.run.hero ? HERO_BY_ID[this.run.hero] : null;
+    $('shopGold').innerHTML = `<b>${this.run.gold}</b> gold · next: level ${this.run.levelIndex + 1}` +
+      (hero ? ` · led by ${hero.icon} ${hero.name}` : '');
     ($('rerollCost') as HTMLElement).textContent = String(this.rerollCost());
     ($('btnReroll') as HTMLButtonElement).classList.toggle('disabled', this.run.gold < this.rerollCost());
 

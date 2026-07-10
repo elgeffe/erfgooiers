@@ -17,6 +17,8 @@ export interface UpgradeDef {
   /** A glyph shown on the shop card for quick recognition. */
   icon: string;
   pool: UpgradePool;
+  /** pool 'hero' only: the hero id this card is exclusive to. */
+  hero?: string;
   rarity: Rarity;
   /** One-of-a-kind: never offered again while owned this run. */
   unique?: boolean;
@@ -136,6 +138,26 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'coppice-craft', name: 'Coppice Craft', desc: 'Woodcutters harvest without felling the tree — but chop 50% slower', icon: '🌳',
     pool: 'economy', rarity: 'rare', unique: true, basePrice: 40,
     apply: [{ stat: 'preserveTrees', add: 1 }, { stat: 'gatherTime', mult: 1.5, filter: 'tree' }] },
+
+  // ---- hero-exclusive cards: only offered while their hero leads the run ----
+  { id: 'golden-ledger', name: 'Golden Ledger', desc: "Griet's books: +1 more gold per tavern meal and +10% gold from all sources", icon: '📒',
+    pool: 'hero', hero: 'merchant', rarity: 'rare', unique: true, basePrice: 36,
+    apply: [{ stat: 'goldPerMeal', add: 1 }, { stat: 'goldGain', mult: 1.1 }] },
+
+  { id: 'iron-discipline', name: 'Iron Discipline', desc: "Wolter's drills: fighters train 40% faster and have +15% health", icon: '🗡️',
+    pool: 'hero', hero: 'warlord', rarity: 'rare', unique: true, basePrice: 34,
+    apply: [
+      { stat: 'trainTime', mult: 0.6, filter: 'soldier' },
+      { stat: 'trainTime', mult: 0.6, filter: 'archer' },
+      { stat: 'trainTime', mult: 0.6, filter: 'knight' },
+      { stat: 'combat:hp', mult: 1.15, filter: 'soldier' },
+      { stat: 'combat:hp', mult: 1.15, filter: 'archer' },
+      { stat: 'combat:hp', mult: 1.15, filter: 'knight' },
+    ] },
+
+  { id: 'crown-masons', name: 'Crown Masons', desc: "Dirkje's guild: buildings cost 1 less stone and raise 25% faster", icon: '🧱',
+    pool: 'hero', hero: 'reeve', rarity: 'rare', unique: true, basePrice: 34,
+    apply: [{ stat: 'cost:stone', add: -1 }, { stat: 'buildTime', mult: 0.75 }] },
 ];
 
 export const UPGRADE_BY_ID: Record<string, UpgradeDef> = Object.fromEntries(UPGRADES.map(u => [u.id, u]));

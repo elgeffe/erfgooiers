@@ -12,6 +12,7 @@ import { Objective } from './game/Objectives';
 import { specsFor } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, hasMetaSpecial } from './data/metaUpgrades';
+import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
 import { levelFor, sandboxLevel, type LevelDef } from './data/levels';
 import type { UnitKind } from './data/units';
 import { RUN_LEVELS, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
@@ -64,7 +65,7 @@ function startLevel(): void {
   const world = new World({ seed, ...level.world });
   view.loadWorld(world);
   const mutators = sandbox ? [] : run.mutators;
-  const mods = new Modifiers([...specsFor(run.upgrades), ...metaSpecsFor(meta.unlocks), ...mutatorSpecsFor(mutators)]);
+  const mods = new Modifiers([...heroSpecsFor(sandbox ? null : run.hero), ...specsFor(run.upgrades), ...metaSpecsFor(meta.unlocks), ...mutatorSpecsFor(mutators)]);
   game = new Game(world, view, mods);
   game.toast = (m, c) => ui.toast(m, c);
   game.onSelect = o => ui.showInspector(o);
@@ -95,6 +96,12 @@ function startLevel(): void {
   if (!sandbox && level.startArmy) {
     const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
     for (const a of level.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
+  }
+  // the hero's warband musters at the castle at every level's start
+  const heroDef = !sandbox && run.hero ? HERO_BY_ID[run.hero] : null;
+  if (heroDef?.startArmy) {
+    const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
+    for (const a of heroDef.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
   }
   ui.setGold(run.gold);
   ui.setSandbox(sandbox);
@@ -137,9 +144,35 @@ function stampContract(r: RunState): void {
   r.rewardMult = mutatorRewardMult(r.mutators);
 }
 
-function newRunFromMenu(): void {
+// ---------- hero select (start of a run) ----------
+function openHeroSelect(): void {
+  phase = 'heroSelect';
+  renderHeroSelect();
+  showScreen('heroselect');
+}
+
+function renderHeroSelect(): void {
+  $('heroMeta').innerHTML = `<b>${meta.heritage}</b> Heritage — locked heroes are bought here, kept forever`;
+  const grid = $('heroGrid'); grid.innerHTML = '';
+  for (const h of HEROES) {
+    const owned = heroAvailable(h.id, meta.unlocks);
+    const afford = meta.heritage >= h.heritageCost;
+    const el = document.createElement('div');
+    el.className = 'scard' + (owned ? '' : afford ? '' : ' cant disabled');
+    const lines =
+      `<div class="sc-desc">✦ ${h.boon}${h.bane ? `<br>✝ ${h.bane}` : ''}</div>`;
+    const price = owned ? 'Lead this run →' : `Unlock — ${h.heritageCost} Heritage`;
+    el.innerHTML = `<div class="sc-icon">${h.icon}</div><div class="sc-body"><div class="sc-name">${h.name}</div><div class="sc-desc">${h.title}</div>${lines}<div class="sc-price">${price}</div></div>`;
+    if (owned) el.onclick = () => startRunWithHero(h.id);
+    else if (afford) el.onclick = () => { meta.heritage -= h.heritageCost; meta.unlocks.push(heroUnlockId(h.id)); Save.saveMeta(meta); audio.play('coin'); renderHeroSelect(); };
+    grid.appendChild(el);
+  }
+}
+
+function startRunWithHero(heroId: string): void {
   sandbox = false;
   run = newRun(1 + Math.floor(Math.random() * 2147483645));
+  run.hero = heroId;
   if (hasMetaSpecial(meta.unlocks, 'startGold')) run.gold = 25;
   stampContract(run);
   meta.stats.runs++;
@@ -280,10 +313,10 @@ function clearSaveData(): void {
 }
 
 // ---------- screens (DOM overlays) ----------
-type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | null;
+type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'heroselect' | null;
 function showScreen(id: ScreenId): void {
   $('pausemenu').style.display = 'none';
-  for (const s of ['menu', 'shop', 'summary', 'heritage']) $(s).style.display = id === s ? 'flex' : 'none';
+  for (const s of ['menu', 'shop', 'summary', 'heritage', 'heroselect']) $(s).style.display = id === s ? 'flex' : 'none';
   $('hud').style.display = phase === 'playing' ? 'block' : 'none';
 }
 
@@ -337,7 +370,8 @@ function buyMeta(id: string): void {
 // ---------- wire screen + debug buttons ----------
 $('menuLogo').innerHTML = logoSVG(40);
 $('introLogo').innerHTML = logoSVG(40);
-($('btnNewRun') as HTMLButtonElement).onclick = newRunFromMenu;
+($('btnNewRun') as HTMLButtonElement).onclick = openHeroSelect;
+($('btnHeroBack') as HTMLButtonElement).onclick = goMenu;
 ($('btnContinue') as HTMLButtonElement).onclick = continueRun;
 ($('btnSandbox') as HTMLButtonElement).onclick = startSandbox;
 
