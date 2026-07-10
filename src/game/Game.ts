@@ -1268,7 +1268,9 @@ export class Game {
   /** Shift a unit if the destination isn't water or inside a building/site. */
   private nudge(u: Unit, dx: number, dz: number): void {
     const W = this.world.W, H = this.world.H;
-    const nxp = u.mesh.position.x + dx, nzp = u.mesh.position.z + dz;
+    const radius = 0.3 * (u.mesh.scale.x || 1);
+    const nxp = Math.max(-W / 2 + radius, Math.min(W / 2 - radius, u.mesh.position.x + dx));
+    const nzp = Math.max(-H / 2 + radius, Math.min(H / 2 - radius, u.mesh.position.z + dz));
     const tx = Math.max(0, Math.min(W - 1, Math.round(nxp + W / 2 - 0.5)));
     const ty = Math.max(0, Math.min(H - 1, Math.round(nzp + H / 2 - 0.5)));
     const t = this.world.tiles[ty][tx];
