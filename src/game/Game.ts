@@ -8,7 +8,7 @@ import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
-import type { Building, BuildingKey, Coord, Faction, Site, Unit } from '../types';
+import type { Building, BuildingKey, Coord, Faction, Formation, Site, Unit } from '../types';
 import { doorTile, unitLabel } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
@@ -1294,27 +1294,59 @@ export class Game {
 
   /** Order a whole selection: attacks converge on the foe, moves fan out into a
    *  loose formation so the squad doesn't pile onto a single tile. */
-  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null): void {
+  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'grid'): void {
     if (type === 'attack' && foe) {
       for (const u of units) this.orderUnit(u, 'attack', foe.tx, foe.ty, foe);
       return;
     }
-    const spots = this.formationSpots(x, y, units.length);
+    const spots = this.formationSpots(x, y, units.length, formation, units);
     for (let i = 0; i < units.length; i++) {
       const s = spots[Math.min(i, spots.length - 1)];
       this.orderUnit(units[i], type, s.x, s.y);
     }
   }
 
-  /** Up to n distinct free tiles spiralling out from a point (formation targets). */
-  private formationSpots(cx: number, cy: number, n: number): Coord[] {
+  /** Distinct free targets laid out in the selected formation, oriented along travel. */
+  private formationSpots(cx: number, cy: number, n: number, formation: Formation, units: Unit[]): Coord[] {
     const out: Coord[] = [];
+    const used = new Set<string>();
     const tryTile = (x: number, y: number): void => {
       if (out.length >= n) return;
+      x = Math.round(x); y = Math.round(y);
+      const key = `${x},${y}`;
+      if (used.has(key)) return;
       const t = this.world.T(x, y);
       if (!t || t.type !== 'grass' || t.b || t.site) return;
+      used.add(key);
       out.push({ x, y });
     };
+
+    let ax = 0, ay = 0;
+    for (const u of units) { ax += u.tx; ay += u.ty; }
+    ax /= Math.max(1, units.length); ay /= Math.max(1, units.length);
+    const dx = cx - ax, dy = cy - ay, len = Math.hypot(dx, dy) || 1;
+    const fx = dx / len, fy = dy / len, rx = -fy, ry = fx;
+    const put = (side: number, back: number): void => tryTile(cx + rx * side - fx * back, cy + ry * side - fy * back);
+
+    if (formation === 'line') {
+      for (let i = 0; i < n; i++) put((i - (n - 1) / 2) * 1.2, 0);
+    } else if (formation === 'column') {
+      for (let i = 0; i < n; i++) put(0, i * 1.1);
+    } else if (formation === 'wedge') {
+      put(0, 0);
+      for (let row = 1; out.length < n && row < n; row++) {
+        put(-row * 0.85, row * 0.9);
+        put(row * 0.85, row * 0.9);
+      }
+    } else {
+      const cols = Math.ceil(Math.sqrt(n));
+      for (let i = 0; i < n; i++) {
+        const row = Math.floor(i / cols), col = i % cols;
+        put(col - (Math.min(cols, n - row * cols) - 1) / 2, row);
+      }
+    }
+
+    // Obstacles or map edges can consume planned positions; fill any gaps nearby.
     tryTile(cx, cy);
     for (let r = 1; r < 10 && out.length < n; r++)
       for (let dx = -r; dx <= r && out.length < n; dx++)
