@@ -39,7 +39,7 @@ export interface RecipeDef { inp: Partial<Record<ItemKey, number>>; out: ItemKey
 export interface TavernDef { foods: ItemKey[]; capacity: number; time: number; }
 
 /** One trainable unit at a barracks/guild hall: its own cost & training time. */
-export interface TrainDef { kind: string; cost: Partial<Record<ItemKey, number>>; time: number; }
+export interface TrainDef { kind: string; cost: Partial<Record<ItemKey, number>>; time: number; desc?: string; }
 /** A barracks/guild hall trains units, each with its own cost and time. */
 export interface MilitaryDef { units: TrainDef[]; }
 

@@ -346,7 +346,8 @@ export class UI {
         else {
           for (const t of mil.units) {
             const cost = Object.entries(t.cost).map(([k, n]) => `<span class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color};margin:0 3px 0 6px"></span>${n}`).join('') || ' free';
-            body += `<button class="inspbtn" data-train="${t.kind}">+ ${unitLabel(t.kind)}${cost}</button>`;
+            body += `<button class="inspbtn" data-train="${t.kind}" ${t.desc ? `title="${t.desc}"` : ''}>+ ${unitLabel(t.kind)}${cost} · ${t.time}s</button>`;
+            if (t.desc) body += `<div class="tinfo">${t.desc}</div>`;
           }
           if (o.def.military) body += '<div class="hnote">Right-click the map with this building selected to set a rally flag.</div>';
           const q = o.trainQ || [];
