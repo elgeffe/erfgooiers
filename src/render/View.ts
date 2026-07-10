@@ -5,7 +5,7 @@ import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { bakeGroupInto, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter } from './models';
+import { bakeGroupInto, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -419,6 +419,8 @@ export class View {
   createFireball(): THREE.Group { const m = makeFireball(); this.worldGroup.add(m); return m; }
   createFlame(): THREE.Group { const m = makeFlame(); this.worldGroup.add(m); return m; }
   createFlag(): THREE.Group { const m = makeFlag(); this.worldGroup.add(m); return m; }
+  /** Marker parented onto a building mesh (not the world) so it follows it. */
+  createPlotMarker(): THREE.Group { return makePlotMarker(); }
 
   /**
    * A tree that is still growing gets its own mesh (its root rescales every
@@ -868,7 +870,8 @@ export class View {
     // plain puffballs, but a sparse few take (rough) animal shapes for fun.
     const cloudSpan = boardR * 2 + 30;
     this.cloudBound = cloudSpan / 2;
-    const cloudMat = stdMat({ color: 0xffffff, transparent: true, opacity: 0.85 });
+    // translucent so the board stays readable when one drifts overhead
+    const cloudMat = stdMat({ color: 0xffffff, transparent: true, opacity: 0.5 });
     const mk = (c: THREE.Group, x: number, z: number, s: number, y = 0): void => {
       const p = new THREE.Mesh(sphere(1, 8, 6), cloudMat);
       p.position.set(x, y + rnd() * 0.25, z); p.scale.set(s, s * 0.6, s); c.add(p);
@@ -882,7 +885,7 @@ export class View {
       c => { mk(c, 0, 0, 1.5); mk(c, 1.6, 0, 1.0); mk(c, 2.3, 0.1, 0.5); mk(c, 2.75, 0.42, 0.4); mk(c, 3.05, 0.78, 0.3); mk(c, 1.3, -0.78, 0.5); mk(c, -1.5, 0, 0.55); }, // elephant
       c => { mk(c, 0, 0, 1.25); mk(c, 1.55, 0, 0.85); mk(c, 2.15, 0, 0.4); mk(c, 1.4, -0.55, 0.4); mk(c, -1.4, 0.2, 0.4, 0.2); }, // dog
     ];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 4; i++) {
       const c = new THREE.Group();
       if (rnd() < 0.3) {
         animals[Math.floor(rnd() * animals.length)](c);  // sparse: ~2–3 of 8 are critters
@@ -905,13 +908,21 @@ export class View {
     }
   }
 
+  private markerT = 0;
+
   /** Real-time animation independent of sim speed: turning sails, drifting clouds. */
   animate(dt: number, buildings: Building[]): void {
+    this.markerT += dt;
     for (const b of buildings) {
       const spin = b.mesh.userData.spin as THREE.Group | undefined;
       if (spin) spin.rotation.z += dt * (b.active ? 1.1 : 0.35);
       const smoke = b.mesh.userData.smoke as { puffs: THREE.Mesh[]; base: THREE.Vector3 } | undefined;
       if (smoke) this.animateSmoke(smoke, dt, b.active);
+      const pm = b.mesh.userData.plotMarker as THREE.Group | undefined;
+      if (pm) {
+        pm.visible = b.active && b.fieldsList.length < (b.def.plots ?? 8);
+        if (pm.visible) { pm.rotation.y += dt * 2.4; pm.position.y = 2.4 + Math.sin(this.markerT * 3) * 0.12; }
+      }
     }
     for (const c of this.clouds) {
       c.position.x += dt * 0.6;

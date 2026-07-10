@@ -36,11 +36,19 @@ function write<T>(key: string, data: T): void {
 
 export function loadMeta(): MetaState {
   const m = read<MetaState>(META_KEY);
-  return m ?? newMeta();
+  if (!m) return newMeta();
+  // fields added after v2 shipped — normalize older documents in place
+  m.ascension ??= 0;
+  m.stats.wins ??= 0;
+  return m;
 }
 export function saveMeta(meta: MetaState): void { write(META_KEY, meta); }
 
-export function loadRun(): RunState | null { return read<RunState>(RUN_KEY); }
+export function loadRun(): RunState | null {
+  const r = read<RunState>(RUN_KEY);
+  if (r) r.ascension ??= 0;
+  return r;
+}
 export function saveRun(run: RunState): void { write(RUN_KEY, run); }
 export function hasRun(): boolean {
   try { return localStorage.getItem(RUN_KEY) !== null; } catch { return false; }

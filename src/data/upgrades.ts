@@ -17,9 +17,13 @@ export interface UpgradeDef {
   /** A glyph shown on the shop card for quick recognition. */
   icon: string;
   pool: UpgradePool;
+  /** pool 'hero' only: the hero id this card is exclusive to. */
+  hero?: string;
   rarity: Rarity;
   /** One-of-a-kind: never offered again while owned this run. */
   unique?: boolean;
+  /** Achievement gate: hidden from the shop until the lifetime stat is reached. */
+  unlockAt?: { stat: 'levelsCleared' | 'wins'; n: number };
   basePrice: number;
   /** One or more modifier effects applied while this upgrade is owned. */
   apply: ModifierSpec[];
@@ -68,7 +72,7 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'coin-clipper', name: 'Coin Clipper', desc: '+25% gold from all sources', icon: '🪙', pool: 'economy', rarity: 'uncommon', basePrice: 28,
     apply: [{ stat: 'goldGain', mult: 1.25 }] },
 
-  { id: 'extra-hand', name: 'Extra Hand', desc: 'Start each level with +1 laborer', icon: '🧑\u200d🔧', pool: 'economy', rarity: 'common', basePrice: 22,
+  { id: 'extra-hand', name: 'Extra Hand', desc: 'Start each level with +1 builder', icon: '🧑\u200d🔧', pool: 'economy', rarity: 'common', basePrice: 22,
     apply: [{ stat: 'extraLaborer', add: 1 }] },
 
   { id: 'extra-serf', name: 'Willing Hands', desc: 'Start each level with +1 serf', icon: '🧺', pool: 'economy', rarity: 'common', basePrice: 22,
@@ -114,7 +118,7 @@ export const UPGRADES: UpgradeDef[] = [
 
   // ---- rule-benders: cards that change how the sim works, not just its numbers ----
   { id: 'communal-ovens', name: 'Communal Ovens', desc: 'Bakeries need no flour — but bake twice as slow', icon: '🫓',
-    pool: 'economy', rarity: 'rare', unique: true, basePrice: 40,
+    pool: 'economy', rarity: 'rare', unique: true, unlockAt: { stat: 'levelsCleared', n: 5 }, basePrice: 40,
     apply: [{ stat: 'freeInputs', filter: 'bread' }, { stat: 'recipeTime', mult: 2, filter: 'bread' }] },
 
   { id: 'corvee-roads', name: 'Corvée Roads', desc: 'Roads cost no stone — but walking off-road is 25% slower', icon: '🛤️',
@@ -126,19 +130,44 @@ export const UPGRADES: UpgradeDef[] = [
     apply: [{ stat: 'goldPerMeal', add: 1 }] },
 
   { id: 'guild-charter', name: 'Guild Charter', desc: 'Crafting is 2% faster per road tile paved (up to +60%)', icon: '📜',
-    pool: 'economy', rarity: 'rare', unique: true, basePrice: 45,
+    pool: 'economy', rarity: 'rare', unique: true, unlockAt: { stat: 'levelsCleared', n: 12 }, basePrice: 45,
     apply: [{ stat: 'craftPerRoad', add: 0.02 }] },
 
   { id: 'wine-fame', name: 'Famous Vintage', desc: 'Wine counts double toward objectives — but takes 25% longer to make', icon: '🍷',
-    pool: 'economy', rarity: 'rare', unique: true, basePrice: 38,
+    pool: 'economy', rarity: 'rare', unique: true, unlockAt: { stat: 'levelsCleared', n: 20 }, basePrice: 38,
     apply: [{ stat: 'objectiveWeight', add: 1, filter: 'wine' }, { stat: 'recipeTime', mult: 1.25, filter: 'wine' }] },
 
   { id: 'coppice-craft', name: 'Coppice Craft', desc: 'Woodcutters harvest without felling the tree — but chop 50% slower', icon: '🌳',
-    pool: 'economy', rarity: 'rare', unique: true, basePrice: 40,
+    pool: 'economy', rarity: 'rare', unique: true, unlockAt: { stat: 'wins', n: 1 }, basePrice: 40,
     apply: [{ stat: 'preserveTrees', add: 1 }, { stat: 'gatherTime', mult: 1.5, filter: 'tree' }] },
+
+  // ---- hero-exclusive cards: only offered while their hero leads the run ----
+  { id: 'golden-ledger', name: 'Golden Ledger', desc: "Griet's books: +1 more gold per tavern meal and +10% gold from all sources", icon: '📒',
+    pool: 'hero', hero: 'merchant', rarity: 'rare', unique: true, basePrice: 36,
+    apply: [{ stat: 'goldPerMeal', add: 1 }, { stat: 'goldGain', mult: 1.1 }] },
+
+  { id: 'iron-discipline', name: 'Iron Discipline', desc: "Wolter's drills: fighters train 40% faster and have +15% health", icon: '🗡️',
+    pool: 'hero', hero: 'warlord', rarity: 'rare', unique: true, basePrice: 34,
+    apply: [
+      { stat: 'trainTime', mult: 0.6, filter: 'soldier' },
+      { stat: 'trainTime', mult: 0.6, filter: 'archer' },
+      { stat: 'trainTime', mult: 0.6, filter: 'knight' },
+      { stat: 'combat:hp', mult: 1.15, filter: 'soldier' },
+      { stat: 'combat:hp', mult: 1.15, filter: 'archer' },
+      { stat: 'combat:hp', mult: 1.15, filter: 'knight' },
+    ] },
+
+  { id: 'crown-masons', name: 'Crown Masons', desc: "Dirkje's guild: buildings cost 1 less stone and raise 25% faster", icon: '🧱',
+    pool: 'hero', hero: 'reeve', rarity: 'rare', unique: true, basePrice: 34,
+    apply: [{ stat: 'cost:stone', add: -1 }, { stat: 'buildTime', mult: 0.75 }] },
 ];
 
 export const UPGRADE_BY_ID: Record<string, UpgradeDef> = Object.fromEntries(UPGRADES.map(u => [u.id, u]));
+
+/** Has the player's lifetime progress opened this card for the shop pool? */
+export function cardUnlocked(def: UpgradeDef, stats: { levelsCleared: number; wins: number }): boolean {
+  return !def.unlockAt || stats[def.unlockAt.stat] >= def.unlockAt.n;
+}
 
 /** Resolve owned upgrade ids into the flat ModifierSpec list Modifiers consumes. */
 export function specsFor(upgradeIds: string[]): ModifierSpec[] {

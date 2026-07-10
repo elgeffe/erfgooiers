@@ -6,6 +6,31 @@ export type Phase = 'menu' | 'heroSelect' | 'playing' | 'shop' | 'summary';
 /** Levels in a full run; level `RUN_LEVELS` is the boss (see ROADMAP §4). */
 export const RUN_LEVELS = 10;
 
+// =====================================================================
+//  Ascension — post-victory difficulty tiers (ROADMAP Phase 4). Winning a
+//  run at tier N unlocks tier N+1; each tier stacks a new constraint on
+//  top of the previous ones. Constraints pay nothing extra — the climb is
+//  the reward.
+// =====================================================================
+export const MAX_ASCENSION = 3;
+
+/** What each tier adds (cumulative), for the hero-select picker. */
+export const ASCENSION_DESCS = [
+  'The base game',
+  'A1 · The shop offers one fewer ware',
+  'A2 · Hard timers are 15% shorter',
+  'A3 · Every level carries at least one curse',
+];
+
+/** How many wares the between-level shop rolls at this tier. */
+export function ascensionShopSlots(a: number): number { return a >= 1 ? 2 : 3; }
+
+/** Multiplier on every level's hard timer at this tier. */
+export function ascensionTimerMult(a: number): number { return a >= 2 ? 0.85 : 1; }
+
+/** Does this tier force at least one curse onto every contract? */
+export function ascensionForcesCurse(a: number): boolean { return a >= 3; }
+
 /** Everything that carries across levels *within* a single run. */
 export interface RunState {
   runSeed: number;              // fixes every level's map: levelSeed(runSeed, i)
@@ -17,21 +42,23 @@ export interface RunState {
   objectiveIdx: number | null;  // contract-chosen objective variant (null = seed default)
   hero: string | null;          // chosen hero id (Phase 2)
   equipment: (string | null)[]; // weapon / boots / trinket (Phase 2)
+  ascension: number;            // difficulty tier this run is played at (Phase 4)
 }
 
 /** Meta-progress that persists across all runs forever. */
 export interface MetaState {
   heritage: number;             // meta currency ("Erfgoed")
   unlocks: string[];            // global unlock ids
-  stats: { runs: number; levelsCleared: number; bestLevel: number };
+  ascension: number;            // highest ascension tier unlocked (0..MAX_ASCENSION)
+  stats: { runs: number; levelsCleared: number; bestLevel: number; wins: number };
 }
 
-export function newRun(seed: number): RunState {
-  return { runSeed: seed >>> 0, levelIndex: 1, gold: 0, upgrades: [], mutators: [], rewardMult: 1, objectiveIdx: null, hero: null, equipment: [null, null, null] };
+export function newRun(seed: number, ascension = 0): RunState {
+  return { runSeed: seed >>> 0, levelIndex: 1, gold: 0, upgrades: [], mutators: [], rewardMult: 1, objectiveIdx: null, hero: null, equipment: [null, null, null], ascension };
 }
 
 export function newMeta(): MetaState {
-  return { heritage: 0, unlocks: [], stats: { runs: 0, levelsCleared: 0, bestLevel: 0 } };
+  return { heritage: 0, unlocks: [], ascension: 0, stats: { runs: 0, levelsCleared: 0, bestLevel: 0, wins: 0 } };
 }
 
 /** The deterministic map seed for the run's current level. */

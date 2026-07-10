@@ -9,12 +9,13 @@ import { logoSVG } from './ui/logo';
 import { simRng, uiRng } from './engine/rng';
 import { Modifiers } from './game/Modifiers';
 import { Objective } from './game/Objectives';
-import { specsFor } from './data/upgrades';
+import { UPGRADES, cardUnlocked, specsFor } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, hasMetaSpecial } from './data/metaUpgrades';
+import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
 import { levelFor, sandboxLevel, type LevelDef } from './data/levels';
 import type { UnitKind } from './data/units';
-import { RUN_LEVELS, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
+import { ASCENSION_DESCS, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
 
@@ -47,6 +48,8 @@ let sandbox = false;             // free-build mode: no objective, no timer, no 
 // per-run tallies for the summary screen (reset when a run starts)
 let clearedThisRun = 0;
 let goldEarnedThisRun = 0;
+let summaryNote = '';            // extra line on the summary (ascension unlocks)
+let levelHardTimer = 0;          // the current level's hard timer, post-ascension
 
 const shop = new Shop(shopContinue);
 
@@ -64,7 +67,7 @@ function startLevel(): void {
   const world = new World({ seed, ...level.world });
   view.loadWorld(world);
   const mutators = sandbox ? [] : run.mutators;
-  const mods = new Modifiers([...specsFor(run.upgrades), ...metaSpecsFor(meta.unlocks), ...mutatorSpecsFor(mutators)]);
+  const mods = new Modifiers([...heroSpecsFor(sandbox ? null : run.hero), ...specsFor(run.upgrades), ...metaSpecsFor(meta.unlocks), ...mutatorSpecsFor(mutators)]);
   game = new Game(world, view, mods);
   game.toast = (m, c) => ui.toast(m, c);
   game.onSelect = o => ui.showInspector(o);
@@ -96,13 +99,20 @@ function startLevel(): void {
     const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
     for (const a of level.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
   }
+  // the hero's warband musters at the castle at every level's start
+  const heroDef = !sandbox && run.hero ? HERO_BY_ID[run.hero] : null;
+  if (heroDef?.startArmy) {
+    const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
+    for (const a of heroDef.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
+  }
   ui.setGold(run.gold);
   ui.setSandbox(sandbox);
   ($('sandboxbar') as HTMLElement).style.display = sandbox ? 'flex' : 'none';
+  levelHardTimer = Math.round(level.hardTimer * ascensionTimerMult(sandbox ? 0 : run.ascension));
   if (game.objective) {
     ui.setLevel(level.index, level.name);
     ui.setObjective(game.objective.brief());
-    ui.updateObjective(game.objective.evaluate(game).label, 0, level.hardTimer);
+    ui.updateObjective(game.objective.evaluate(game).label, 0, levelHardTimer);
   }
   view.centerOn(world.wx(game.store.x) + 0.5, world.wz(game.store.y) + 2);
   view.drawMinimap(game.units);
@@ -137,9 +147,55 @@ function stampContract(r: RunState): void {
   r.rewardMult = mutatorRewardMult(r.mutators);
 }
 
-function newRunFromMenu(): void {
+// ---------- hero select (start of a run) ----------
+let pickedAscension = 0;
+
+function openHeroSelect(): void {
+  phase = 'heroSelect';
+  pickedAscension = Math.min(pickedAscension, meta.ascension);
+  renderHeroSelect();
+  showScreen('heroselect');
+}
+
+/** The ascension ladder: pick the difficulty tier the run is played at. */
+function renderAscensionRow(): void {
+  const row = $('ascensionRow');
+  if (meta.ascension <= 0) { row.innerHTML = ''; return; }
+  let s = '<div class="shopsect">Ascension — win at your highest tier to unlock the next</div><div class="ascrow">';
+  for (let a = 0; a <= meta.ascension; a++) {
+    s += `<button class="asc${a === pickedAscension ? ' on' : ''}" data-asc="${a}" title="${ASCENSION_DESCS[a]}">${a === 0 ? 'Base' : 'A' + a}</button>`;
+  }
+  const active = pickedAscension === 0 ? ASCENSION_DESCS[0] : ASCENSION_DESCS.slice(1, pickedAscension + 1).join(' · ');
+  s += `</div><div class="metaline">${active}</div>`;
+  row.innerHTML = s;
+  row.querySelectorAll<HTMLElement>('.asc').forEach(b => {
+    b.onclick = () => { pickedAscension = parseInt(b.dataset.asc!, 10); renderHeroSelect(); };
+  });
+}
+
+function renderHeroSelect(): void {
+  $('heroMeta').innerHTML = `<b>${meta.heritage}</b> Heritage — locked heroes are bought here, kept forever`;
+  const grid = $('heroGrid'); grid.innerHTML = '';
+  for (const h of HEROES) {
+    const owned = heroAvailable(h.id, meta.unlocks);
+    const afford = meta.heritage >= h.heritageCost;
+    const el = document.createElement('div');
+    el.className = 'scard' + (owned ? '' : afford ? '' : ' cant disabled');
+    const lines =
+      `<div class="sc-desc">✦ ${h.boon}${h.bane ? `<br>✝ ${h.bane}` : ''}</div>`;
+    const price = owned ? 'Lead this run →' : `Unlock — ${h.heritageCost} Heritage`;
+    el.innerHTML = `<div class="sc-icon">${h.icon}</div><div class="sc-body"><div class="sc-name">${h.name}</div><div class="sc-desc">${h.title}</div>${lines}<div class="sc-price">${price}</div></div>`;
+    if (owned) el.onclick = () => startRunWithHero(h.id);
+    else if (afford) el.onclick = () => { meta.heritage -= h.heritageCost; meta.unlocks.push(heroUnlockId(h.id)); Save.saveMeta(meta); audio.play('coin'); renderHeroSelect(); };
+    grid.appendChild(el);
+  }
+  renderAscensionRow();
+}
+
+function startRunWithHero(heroId: string): void {
   sandbox = false;
-  run = newRun(1 + Math.floor(Math.random() * 2147483645));
+  run = newRun(1 + Math.floor(Math.random() * 2147483645), Math.min(pickedAscension, meta.ascension));
+  run.hero = heroId;
   if (hasMetaSpecial(meta.unlocks, 'startGold')) run.gold = 25;
   stampContract(run);
   meta.stats.runs++;
@@ -197,6 +253,16 @@ function computeTally(): { rows: TallyRow[]; total: number } {
   return { rows, total: Math.max(1, total) };
 }
 
+/** Toast every drip-fed card whose achievement gate was just crossed. */
+function announceCardUnlocks(before: { levelsCleared: number; wins: number }): void {
+  for (const u of UPGRADES) {
+    if (u.unlockAt && !cardUnlocked(u, before) && cardUnlocked(u, meta.stats)) {
+      ui.toast(`🃏 New card unlocked — ${u.name}!`);
+      audio.play('coin');
+    }
+  }
+}
+
 /** Award gold/Heritage for a cleared level, then advance to shop or victory. */
 function onLevelClear(): void {
   if (phase !== 'playing' || !run || !currentLevel || !game) return;
@@ -205,21 +271,33 @@ function onLevelClear(): void {
   run.gold += reward;
   goldEarnedThisRun += reward;
   clearedThisRun++;
+  const statsBefore = { ...meta.stats };
   meta.stats.levelsCleared++;
   meta.stats.bestLevel = Math.max(meta.stats.bestLevel, run.levelIndex);
   meta.heritage += 3 + run.levelIndex; // banked now, sink arrives in Phase 4
-  Save.saveMeta(meta);
   audio.play('coin');
   ui.toast(`Level cleared! +${reward} gold`);
 
   const last = run.levelIndex >= RUN_LEVELS;
+  summaryNote = '';
+  if (last) {
+    meta.stats.wins++;
+    // winning at your highest tier opens the next rung of the ladder
+    if (run.ascension >= meta.ascension && meta.ascension < MAX_ASCENSION) {
+      meta.ascension = Math.min(MAX_ASCENSION, run.ascension + 1);
+      summaryNote = `Ascension ${meta.ascension} unlocked — ${ASCENSION_DESCS[meta.ascension]}`;
+    }
+  }
+  Save.saveMeta(meta);
+  announceCardUnlocks(statsBefore);
   disposeLevel();
   if (last) { phase = 'summary'; renderSummary(true); showScreen('summary'); Save.clearRun(); run = null; }
   else {
     const next = run.levelIndex + 1;
-    const contracts = contractsFor(run.runSeed, next, levelFor(next).objectives.length, levelFor(next).reward);
+    const contracts = contractsFor(run.runSeed, next, levelFor(next).objectives.length, levelFor(next).reward, ascensionForcesCurse(run.ascension));
     phase = 'shop';
-    shop.open(run, contracts, hasMetaSpecial(meta.unlocks, 'freeReroll'), tally.rows);
+    shop.open(run, contracts, hasMetaSpecial(meta.unlocks, 'freeReroll'), tally.rows,
+      { slots: ascensionShopSlots(run.ascension), lifetime: { levelsCleared: meta.stats.levelsCleared, wins: meta.stats.wins } });
     showScreen('shop');
     Save.saveRun(run);
   }
@@ -230,6 +308,7 @@ function onDefeat(): void {
   if (phase !== 'playing' || !run) return;
   audio.play('error');
   ui.toast('Out of time — the run ends here', 'err');
+  summaryNote = '';
   disposeLevel();
   phase = 'summary'; renderSummary(false); showScreen('summary');
   Save.clearRun();
@@ -280,10 +359,10 @@ function clearSaveData(): void {
 }
 
 // ---------- screens (DOM overlays) ----------
-type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | null;
+type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'heroselect' | null;
 function showScreen(id: ScreenId): void {
   $('pausemenu').style.display = 'none';
-  for (const s of ['menu', 'shop', 'summary', 'heritage']) $(s).style.display = id === s ? 'flex' : 'none';
+  for (const s of ['menu', 'shop', 'summary', 'heritage', 'heroselect']) $(s).style.display = id === s ? 'flex' : 'none';
   $('hud').style.display = phase === 'playing' ? 'block' : 'none';
 }
 
@@ -292,7 +371,8 @@ function renderMenu(): void {
   const cont = $('btnContinue') as HTMLButtonElement;
   cont.style.display = has ? 'block' : 'none';
   $('metaLine').innerHTML =
-    `<b>${meta.heritage}</b> Heritage · runs: ${meta.stats.runs} · levels cleared: ${meta.stats.levelsCleared} · best: level ${meta.stats.bestLevel || 0}`;
+    `<b>${meta.heritage}</b> Heritage · runs: ${meta.stats.runs} · wins: ${meta.stats.wins} · levels cleared: ${meta.stats.levelsCleared} · best: level ${meta.stats.bestLevel || 0}` +
+    (meta.ascension > 0 ? ` · ascension A${meta.ascension} unlocked` : '');
 }
 
 function renderSummary(victory: boolean): void {
@@ -302,7 +382,8 @@ function renderSummary(victory: boolean): void {
     : 'The clock beat you. Your gold and upgrades are gone — but the Heritage remains.';
   $('sumBody').innerHTML =
     `Cleared <b>${clearedThisRun}</b> level(s) this run · gold earned <b>${goldEarnedThisRun}</b> (lost) · ` +
-    `<b>${meta.heritage}</b> Heritage banked · lifetime levels cleared: ${meta.stats.levelsCleared}`;
+    `<b>${meta.heritage}</b> Heritage banked · lifetime levels cleared: ${meta.stats.levelsCleared}` +
+    (summaryNote ? `<br><b>⬆ ${summaryNote}</b>` : '');
 }
 
 // ---------- heritage shop (main menu) ----------
@@ -337,7 +418,8 @@ function buyMeta(id: string): void {
 // ---------- wire screen + debug buttons ----------
 $('menuLogo').innerHTML = logoSVG(40);
 $('introLogo').innerHTML = logoSVG(40);
-($('btnNewRun') as HTMLButtonElement).onclick = newRunFromMenu;
+($('btnNewRun') as HTMLButtonElement).onclick = openHeroSelect;
+($('btnHeroBack') as HTMLButtonElement).onclick = goMenu;
 ($('btnContinue') as HTMLButtonElement).onclick = continueRun;
 ($('btnSandbox') as HTMLButtonElement).onclick = startSandbox;
 
@@ -479,7 +561,7 @@ function frame(now: number): void {
     if (simAcc > TICK) simAcc = 0;            // drop the backlog rather than fast-forward
 
     const st = game.objective.evaluate(game);
-    const remaining = currentLevel.hardTimer - game.elapsed;
+    const remaining = levelHardTimer - game.elapsed;
     uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateObjective(st.label, st.ratio, remaining); ui.updateWave(game.nextWave()); }
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
 

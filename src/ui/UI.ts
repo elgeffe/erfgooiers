@@ -5,6 +5,7 @@ import { META_BY_ID } from '../data/metaUpgrades';
 import { ROAD_STONE_COST } from '../constants';
 import { installFavicon, logoSVG } from './logo';
 import { audio } from '../audio/Audio';
+import { unitLabel } from '../game/util';
 import type { Game } from '../game/Game';
 import type { BuildingDef, Mode } from '../types';
 
@@ -30,6 +31,7 @@ export class UI {
 
   private game: Game | null = null;
   private readonly resEls: Record<string, HTMLElement> = {};
+  private readonly resRowEls: Record<string, HTMLElement> = {};
   private unitsOpen = false;
   private unitTab = 'all';
   private lastTabsHTML = '';
@@ -131,11 +133,18 @@ export class UI {
       el.innerHTML = `<div class="dot" style="background:${ITEMS[k].color}"></div><b>0</b><span>${ITEMS[k].name}</span>`;
       bar.appendChild(el);
       this.resEls[k] = el.querySelector('b')!;
+      this.resRowEls[k] = el;
     }
   }
   private refreshResbar(): void {
     if (!this.game) return;
-    for (const k of RES_SHOWN) this.resEls[k].textContent = String(this.game.countItem(k));
+    // the bar counts what's actually available in the main storehouse; the
+    // tooltip breaks down where the rest of the world's supply is sitting
+    for (const k of RES_SHOWN) {
+      const d = this.game.itemBreakdown(k);
+      this.resEls[k].textContent = String(d.store);
+      this.resRowEls[k].title = `${ITEMS[k].name} — ${d.store} in the storehouse · ${d.buildings} in buildings · ${d.carried} being carried`;
+    }
   }
 
   // ---------- build menu ----------
@@ -187,11 +196,11 @@ export class UI {
 
     const sep = document.createElement('div'); sep.className = 'bsep'; row.appendChild(sep);
     const road = document.createElement('div'); road.className = 'bcard'; road.dataset.key = 'road'; road.title = `Costs ${ROAD_STONE_COST} stone per tile · workers route along roads and walk 30% faster on them · demolishing a road refunds the stone`;
-    road.innerHTML = `<div class="icon"><svg width="30" height="26" viewBox="0 0 30 26"><path d="M4 24 C10 14 20 12 26 2" stroke="#b9a179" stroke-width="6" fill="none" stroke-linecap="round"/></svg></div><div class="nm">Road</div><div class="cost"><i><span class="dot" style="background:${ITEMS.stone.color}"></span>${ROAD_STONE_COST}</i> · drag</div>`;
+    road.innerHTML = `<div class="icon"><svg width="30" height="26" viewBox="0 0 30 26"><path d="M4 24 C10 14 20 12 26 2" stroke="#b9a179" stroke-width="6" fill="none" stroke-linecap="round"/></svg></div><div class="nm">Road</div><div class="cost"><i><span class="dot" style="background:${ITEMS.stone.color}"></span>${ROAD_STONE_COST}</i> · drag</div><div class="ptime"></div>`;
     road.onclick = () => { audio.play('click'); this.onMode(road.classList.contains('on') ? null : { type: 'road' }); };
     row.appendChild(road);
     const dl = document.createElement('div'); dl.className = 'bcard'; dl.dataset.key = 'demolish'; dl.title = `Remove roads, sites and buildings \u00b7 demolishing a road refunds ${ROAD_STONE_COST} stone`;
-    dl.innerHTML = '<div class="icon"><svg width="30" height="26" viewBox="0 0 30 26"><path d="M7 5 L23 21 M23 5 L7 21" stroke="#c96b4a" stroke-width="4" fill="none" stroke-linecap="round"/></svg></div><div class="nm">Demolish</div><div class="cost"><i>click / drag</i></div>';
+    dl.innerHTML = '<div class="icon"><svg width="30" height="26" viewBox="0 0 30 26"><path d="M7 5 L23 21 M23 5 L7 21" stroke="#c96b4a" stroke-width="4" fill="none" stroke-linecap="round"/></svg></div><div class="nm">Demolish</div><div class="cost"><i>click / drag</i></div><div class="ptime"></div>';
     dl.onclick = () => { audio.play('click'); this.onMode(dl.classList.contains('on') ? null : { type: 'demolish' }); };
     row.appendChild(dl);
 
@@ -337,7 +346,7 @@ export class UI {
         else {
           for (const t of mil.units) {
             const cost = Object.entries(t.cost).map(([k, n]) => `<span class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color};margin:0 3px 0 6px"></span>${n}`).join('') || ' free';
-            body += `<button class="inspbtn" data-train="${t.kind}">+ ${t.kind[0].toUpperCase() + t.kind.slice(1)}${cost}</button>`;
+            body += `<button class="inspbtn" data-train="${t.kind}">+ ${unitLabel(t.kind)}${cost}</button>`;
           }
           if (o.def.military) body += '<div class="hnote">Right-click the map with this building selected to set a rally flag.</div>';
           const q = o.trainQ || [];
@@ -346,7 +355,7 @@ export class UI {
             body += `<div class="bar"><div style="width:${Math.round((o.prog || 0) * 100)}%"></div></div>`;
             body += '<div class="tqueue">';
             for (let i = 0; i < q.length; i++) {
-              const name = q[i][0].toUpperCase() + q[i].slice(1);
+              const name = unitLabel(q[i]);
               body += `<button class="tqchip${i === 0 ? ' active' : ''}" data-cancel="${i}" title="Cancel this order"><span>${i + 1}. ${name}</span> ✕</button>`;
             }
             body += '</div>';
