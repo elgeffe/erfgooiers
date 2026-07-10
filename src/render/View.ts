@@ -84,6 +84,9 @@ export class View {
   private readonly skyBirds: SkyBird[] = [];
   private nextBirdT = 0;
 
+  // short-lived flags marking where the player just ordered units to go
+  private readonly orderPings: { mesh: THREE.Group; life: number; max: number }[] = [];
+
   // minimap
   private readonly mm: HTMLCanvasElement;
   private readonly mmx: CanvasRenderingContext2D;
@@ -221,8 +224,10 @@ export class View {
     this.pigHerds.clear();
     this.fish.length = 0;
     this.critters.length = 0;
-    this.skyBirds.length = 0;
+this.skyBirds.length = 0;
     this.nextBirdT = 0;
+    for (const p of this.orderPings) this.worldGroup.remove(p.mesh);
+    this.orderPings.length = 0;
     this.lakeTiles = [];
     this.millSails.length = 0;
     this.ghostKey = null;
@@ -437,6 +442,30 @@ export class View {
   createFlag(): THREE.Group { const m = makeFlag(); this.worldGroup.add(m); return m; }
   /** Marker parented onto a building mesh (not the world) so it follows it. */
   createPlotMarker(): THREE.Group { return makePlotMarker(); }
+
+  /** Plant a short-lived flag where the player just ordered units to move —
+   *  it pops in, stands a moment, then shrinks away (see animate). */
+  showOrderMarker(wx: number, wz: number): void {
+    const m = makeFlag();
+    m.userData.dynamic = true;
+    m.position.set(wx, 0, wz);
+    m.scale.setScalar(0.1);
+    this.worldGroup.add(m);
+    this.freeze(m, false);
+    this.orderPings.push({ mesh: m, life: 1.5, max: 1.5 });
+  }
+
+  private updateOrderPings(dt: number): void {
+    for (let i = this.orderPings.length - 1; i >= 0; i--) {
+      const p = this.orderPings[i];
+      p.life -= dt;
+      if (p.life <= 0) { this.worldGroup.remove(p.mesh); this.orderPings.splice(i, 1); continue; }
+      const age = p.max - p.life;
+      // quick pop up, hold, then shrink out at the end
+      const s = p.life < 0.3 ? p.life / 0.3 : Math.min(1, age * 6);
+      p.mesh.scale.setScalar(Math.max(0.05, s));
+    }
+  }
 
   /**
    * A tree that is still growing gets its own mesh (its root rescales every
@@ -1010,7 +1039,8 @@ export class View {
     this.updatePigs(dt, buildings);
     this.updateFish(dt);
     this.updateCritters(dt);
-    this.updateSkyBirds(dt);
+this.updateSkyBirds(dt);
+    this.updateOrderPings(dt);
     this.ageGore(dt);
   }
 

@@ -218,8 +218,10 @@ export class Controls {
     const t = this.view.tileAt(e.clientX, e.clientY);
     if (foe && foe.faction !== 'player') {
       this.game.orderGroup(this.selUnits, 'attack', foe.tx, foe.ty, foe, this.formation);
+      this.view.showOrderMarker(foe.mesh.position.x, foe.mesh.position.z);
     } else if (t) {
       this.game.orderGroup(this.selUnits, 'attackMove', t.x, t.y, null, this.formation);
+      this.view.showOrderMarker(gp.x, gp.z);
     }
   }
 
