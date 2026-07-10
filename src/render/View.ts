@@ -96,6 +96,7 @@ export class View {
   private readonly selRings: THREE.Mesh[] = [];
   private readonly selRingGeo = new THREE.RingGeometry(0.32, 0.44, 18);
   private readonly selRingMat = noOutline(new THREE.MeshBasicMaterial({ color: 0x46c256, transparent: true, opacity: 0.85, side: THREE.DoubleSide }));
+  private readonly selectedUnits = new Set<Unit>();
 
   // ---------- HP bars (pooled, billboarded, persist across levels) ----------
   private readonly hpBarGroup = new THREE.Group();
@@ -331,6 +332,8 @@ export class View {
 
   /** Show green selection rings under the given units (pooled; persists across levels). */
   showSelection(units: Unit[]): void {
+    this.selectedUnits.clear();
+    for (const u of units) this.selectedUnits.add(u);
     while (this.selRings.length < units.length) {
       const r = new THREE.Mesh(this.selRingGeo, this.selRingMat);
       r.rotation.x = -Math.PI / 2; this.scene.add(r); this.selRings.push(r);
@@ -1190,8 +1193,12 @@ export class View {
       mmx.fillStyle = c;
       mmx.fillRect(x * MMS, y * MMS, MMS + 0.5, MMS + 0.5);
     }
-    mmx.fillStyle = '#fff';
-    for (const u of units) mmx.fillRect((u.mesh.position.x + W / 2) * MMS - 1, (u.mesh.position.z + H / 2) * MMS - 1, 2, 2);
+    for (const u of units) {
+      const selected = this.selectedUnits.has(u);
+      const size = selected ? 3 : 2;
+      mmx.fillStyle = selected ? '#52ff68' : '#fff';
+      mmx.fillRect((u.mesh.position.x + W / 2) * MMS - size / 2, (u.mesh.position.z + H / 2) * MMS - size / 2, size, size);
+    }
     const a = innerWidth / innerHeight;
     mmx.strokeStyle = 'rgba(255,255,255,.8)'; mmx.lineWidth = 1;
     mmx.strokeRect((this.camTarget.x + W / 2 - this.viewSize * a * 0.72) * MMS, (this.camTarget.z + H / 2 - this.viewSize * 0.95) * MMS, this.viewSize * a * 1.44 * MMS, this.viewSize * 1.9 * MMS);
