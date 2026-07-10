@@ -38,6 +38,7 @@ export class Controls {
     const canvas = this.view.renderer.domElement;
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('pointerdown', e => this.onDown(e));
+    canvas.addEventListener('dblclick', e => this.doubleClickSelect(e));
     addEventListener('pointermove', e => this.onMove(e));
     addEventListener('pointerup', e => this.onUp(e));
     canvas.addEventListener('wheel', e => { e.preventDefault(); this.view.zoom(e.deltaY > 0 ? 1.1 : 0.9); }, { passive: false });
@@ -163,6 +164,24 @@ export class Controls {
     }
     this.selUnits = [];
     this.game.selectAt(t.x, t.y);
+  }
+
+  /** Double-click a fighter to select every visible player fighter of its type. */
+  private doubleClickSelect(e: MouseEvent): void {
+    if (!this.game || this.mode) return;
+    e.preventDefault();
+    const gp = this.view.groundPoint(e.clientX, e.clientY);
+    const clicked = this.game.pickUnit(gp.x, gp.z);
+    if (!clicked || clicked.faction !== 'player' || clicked.dmg <= 0) return;
+    const picked: Unit[] = [];
+    for (const u of this.game.units) {
+      if (u.dead || u.faction !== 'player' || u.dmg <= 0 || u.role !== clicked.role) continue;
+      const s = this.view.worldToScreen(u.mesh.position.x, u.mesh.position.y, u.mesh.position.z);
+      if (s.x >= 0 && s.x <= innerWidth && s.y >= 0 && s.y <= innerHeight) picked.push(u);
+    }
+    this.selUnits = picked;
+    this.game.select(clicked);
+    this.ui.toast(`${picked.length} ${clicked.roleName}${picked.length === 1 ? '' : 's'} selected`);
   }
 
   /** Box-select every player fighter whose screen position falls in the rectangle. */
