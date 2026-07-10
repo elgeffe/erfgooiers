@@ -13,7 +13,7 @@ import { UPGRADES, cardUnlocked, specsFor } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, hasMetaSpecial } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
-import { levelFor, sandboxLevel, type LevelDef } from './data/levels';
+import { DEFAULT_SANDBOX, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
 import type { UnitKind } from './data/units';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
@@ -56,7 +56,7 @@ const shop = new Shop(shopContinue);
 // ---------- level lifecycle ----------
 function startLevel(): void {
   if (!run) return;
-  const level = sandbox ? sandboxLevel() : levelFor(run.levelIndex);
+  const level = sandbox ? sandboxLevel(sandboxCfg) : levelFor(run.levelIndex);
   currentLevel = level;
   const seed = currentLevelSeed(run);
   // Seed the non-world streams deterministically from the level seed so a
@@ -88,7 +88,8 @@ function startLevel(): void {
   ui.setGame(game);
   ui.setPerks(run.upgrades, meta.unlocks);
   controls.setGame(game);
-  game.setEnemies(sandbox ? null : (level.enemies ?? null));
+  // sandbox trouble is configured on the setup screen; runs use the level table
+  game.setEnemies(level.enemies ?? null);
   // mutator payloads beyond stat curses: extra wild packs on the map
   for (const id of mutators) {
     const def = MUTATOR_BY_ID[id];
@@ -212,7 +213,46 @@ function startRunWithHero(heroId: string): void {
   startLevel();
 }
 
-/** Free-build mode: a big, timer-free, objective-free map that never touches the save. */
+// ---------- sandbox setup (menu → Sandbox) ----------
+let sandboxCfg: SandboxConfig = { ...DEFAULT_SANDBOX };
+
+/** The setup screen's option groups: key into SandboxConfig, label, choices.
+ *  Stubs render greyed out — biomes that exist on the roadmap, not yet in code. */
+const SBX_GROUPS: { key: keyof SandboxConfig; label: string; opts: [string, string][]; stubs?: [string, string][] }[] = [
+  { key: 'size', label: 'Map size', opts: [['small', 'Small · 48'], ['medium', 'Medium · 64'], ['large', 'Large · 84'], ['huge', 'Huge · 100']] },
+  { key: 'biome', label: 'Biome', opts: [['gooi', 'Het Gooi']], stubs: [['winter', 'Winter'], ['duinen', 'Coastal Dunes'], ['polder', 'Polder']] },
+  { key: 'water', label: 'Water', opts: [['dry', 'Dry'], ['normal', 'Normal'], ['wet', 'Wetlands']] },
+  { key: 'mapRes', label: 'Map resources', opts: [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']] },
+  { key: 'startRes', label: 'Starting stock', opts: [['modest', 'Modest'], ['plentiful', 'Plentiful'], ['cornucopia', 'Cornucopia']] },
+  { key: 'enemies', label: 'Enemies', opts: [['none', 'None — peaceful'], ['wilds', 'Wild beasts'], ['camps', 'Bandit camps'], ['warzone', 'Warzone']] },
+];
+
+function openSandboxSetup(): void {
+  renderSandboxSetup();
+  showScreen('sandboxselect');
+}
+
+function renderSandboxSetup(): void {
+  const el = $('sbxOptions');
+  let s = '';
+  for (const grp of SBX_GROUPS) {
+    s += `<div class="optgroup"><div class="optlabel">${grp.label}</div><div class="optrow">`;
+    for (const [val, label] of grp.opts) {
+      s += `<button class="opt${sandboxCfg[grp.key] === val ? ' on' : ''}" data-key="${grp.key}" data-val="${val}">${label}</button>`;
+    }
+    for (const [, label] of grp.stubs ?? []) {
+      s += `<button class="opt stub" title="Coming in a later update">${label} · soon</button>`;
+    }
+    s += '</div></div>';
+  }
+  el.innerHTML = s;
+  el.querySelectorAll<HTMLElement>('.opt[data-key]').forEach(b => {
+    b.onclick = () => { (sandboxCfg as any)[b.dataset.key!] = b.dataset.val; audio.play('click'); renderSandboxSetup(); };
+  });
+}
+
+/** Free-build mode shaped by the setup screen: timer-free, objective-free,
+ *  never touches the save — but as hostile as you asked for. */
 function startSandbox(): void {
   sandbox = true;
   run = newRun(randomSeed());
@@ -366,10 +406,10 @@ function clearSaveData(): void {
 }
 
 // ---------- screens (DOM overlays) ----------
-type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'heroselect' | null;
+type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'heroselect' | 'sandboxselect' | null;
 function showScreen(id: ScreenId): void {
   $('pausemenu').style.display = 'none';
-  for (const s of ['menu', 'shop', 'summary', 'heritage', 'heroselect']) $(s).style.display = id === s ? 'flex' : 'none';
+  for (const s of ['menu', 'shop', 'summary', 'heritage', 'heroselect', 'sandboxselect']) $(s).style.display = id === s ? 'flex' : 'none';
   $('hud').style.display = phase === 'playing' ? 'block' : 'none';
 }
 
@@ -437,7 +477,9 @@ $('heroChip').onclick = () => {
   view.centerOn(game.heroUnit.mesh.position.x, game.heroUnit.mesh.position.z);
 };
 ($('btnContinue') as HTMLButtonElement).onclick = continueRun;
-($('btnSandbox') as HTMLButtonElement).onclick = startSandbox;
+($('btnSandbox') as HTMLButtonElement).onclick = openSandboxSetup;
+($('btnSbxBack') as HTMLButtonElement).onclick = goMenu;
+($('btnSbxStart') as HTMLButtonElement).onclick = startSandbox;
 
 // ---------- sandbox spawn toolbar ----------
 function sandboxSpawn(kind: UnitKind, count: number): void {
@@ -593,8 +635,10 @@ function frame(now: number): void {
     while (simAcc >= TICK && steps < MAX_STEPS) { game.update(TICK); simAcc -= TICK; steps++; }
     simMs += (performance.now() - t0 - simMs) * 0.05;
     if (simAcc > TICK) simAcc = 0;
-    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); }
+    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateWave(game.nextWave()); }
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
+    // a hostile sandbox can still lose its castle — that ends the session
+    if (game.defeat) onDefeat('castle');
   }
 
   view.render();

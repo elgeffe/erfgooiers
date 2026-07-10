@@ -156,18 +156,74 @@ export function levelFor(index: number): LevelDef {
   return LEVELS[Math.min(LEVELS.length, Math.max(1, index)) - 1];
 }
 
-/**
- * A no-objective free-build map (menu → Sandbox). Big, resource-rich and
- * timer-free so you can raise as much as you like — the eventual test bed for
- * massive armies and combat juice. The objective is disabled by main, so the
- * placeholder entry here is never evaluated.
- */
-export function sandboxLevel(): LevelDef {
+// =====================================================================
+//  Sandbox — a configurable free-build map (menu → Sandbox → setup screen).
+//  Civilization-style knobs: size, biome (more coming), water, resource
+//  density on the map and in the storehouse, and how much trouble to invite.
+// =====================================================================
+export interface SandboxConfig {
+  size: 'small' | 'medium' | 'large' | 'huge';
+  biome: 'gooi';                                   // stubs on the setup screen hint at more
+  water: 'dry' | 'normal' | 'wet';
+  mapRes: 'sparse' | 'normal' | 'rich';
+  startRes: 'modest' | 'plentiful' | 'cornucopia';
+  enemies: 'none' | 'wilds' | 'camps' | 'warzone';
+}
+
+export const DEFAULT_SANDBOX: SandboxConfig = {
+  size: 'large', biome: 'gooi', water: 'normal', mapRes: 'rich', startRes: 'plentiful', enemies: 'none',
+};
+
+const SBX_SIZE: Record<SandboxConfig['size'], number> = { small: 48, medium: 64, large: 84, huge: 100 };
+const SBX_WATER: Record<SandboxConfig['water'], number> = { dry: 0.3, normal: 1, wet: 1.6 };
+const SBX_DENSITY: Record<SandboxConfig['mapRes'], number> = { sparse: 0.55, normal: 1, rich: 1.7 };
+
+const SBX_KITS: Record<SandboxConfig['startRes'], StartKit> = {
+  modest: { stock: { timber: 20, stone: 16, bread: 10, coin: 8 }, serfs: 4, laborers: 2, villagers: 5 },
+  plentiful: { stock: { timber: 90, stone: 70, bread: 50, coin: 30, iron: 12, weapon: 10, armor: 5 }, serfs: 8, laborers: 3, villagers: 8 },
+  cornucopia: { stock: { timber: 320, stone: 320, bread: 160, coin: 90, iron: 50, weapon: 40, armor: 20 }, serfs: 12, laborers: 4, villagers: 12 },
+};
+
+/** A no-objective free-build map shaped by the setup screen's choices. */
+export function sandboxLevel(cfg: SandboxConfig = DEFAULT_SANDBOX): LevelDef {
+  const size = SBX_SIZE[cfg.size];
+  const den = SBX_DENSITY[cfg.mapRes];
+  const scale = size / 48;
+  const hostile = cfg.enemies === 'camps' || cfg.enemies === 'warzone';
+  const enemies: EnemySetup | undefined =
+    cfg.enemies === 'none' ? undefined
+      : cfg.enemies === 'wilds' ? {
+        wild: [
+          { kind: 'boar', count: Math.round(6 * scale) },
+          { kind: 'wolf', count: Math.round(5 * scale) },
+        ],
+      } : cfg.enemies === 'camps' ? {
+        wild: [{ kind: 'wolf', count: Math.round(4 * scale) }],
+        camps: [{ count: Math.max(2, Math.round(2 * scale)), guards: 4 }],
+        commander: { every: 120, kind: 'bandit', count: 3, from: 'camp' },
+      } : {
+        wild: [{ kind: 'boar', count: Math.round(4 * scale) }],
+        camps: [{ count: Math.max(2, Math.round(2 * scale)), guards: 5 }],
+        keep: { guards: 8 }, towers: 3,
+        commander: { every: 75, kind: 'orc', count: 4, from: 'camp' },
+        waves: [{ at: 420, kind: 'troll', count: 3 }],
+      };
   return {
     index: 0, name: 'Sandbox', type: 'Sandbox',
-    objectives: [{ kind: 'produce', item: 'coin', n: 1 }],
-    world: { w: 60, h: 60, treeStands: 14, oreVeins: 18, waterScale: 0.4, meadows: 7, goldPiles: 10 },
-    kit: { stock: { timber: 240, stone: 240, bread: 120, coin: 60, iron: 40, weapon: 30, armor: 15 }, serfs: 8, laborers: 3 },
+    objectives: [{ kind: 'produce', item: 'coin', n: 1 }], // never evaluated (main disables it)
+    world: {
+      w: size, h: size,
+      treeStands: Math.round(10 * scale * den),
+      oreVeins: Math.round(11 * scale * den),
+      waterScale: SBX_WATER[cfg.water],
+      meadows: Math.round(6 * scale),
+      goldPiles: Math.round(8 * scale * den),
+      mountains: Math.round(2 * scale),
+      ruins: Math.round(1 * scale),
+      frontier: hostile,   // hostile sandboxes keep their trouble behind the pass
+    },
+    kit: SBX_KITS[cfg.startRes],
     timeTarget: Infinity, hardTimer: Infinity, reward: 0,
+    enemies,
   };
 }
