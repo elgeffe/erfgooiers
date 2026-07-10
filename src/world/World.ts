@@ -86,6 +86,7 @@ export class World {
     if (!t) return false;
     if (t.type !== 'grass') return false; // water & rock both block
     if (t.b || t.site) return false;
+    if (t.dep) return false;              // ore heaps are solid — mine from beside them
     return true;
   }
 

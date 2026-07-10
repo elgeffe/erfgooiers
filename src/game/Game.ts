@@ -495,7 +495,18 @@ export class Game {
       else if (g.node === 'gold') ok = !!(t.dep && t.dep.kind === 'gold' && t.dep.amt > 0);
       else if (g.node === 'coal') ok = !!(t.dep && t.dep.kind === 'coal' && t.dep.amt > 0);
       else if (g.node === 'iron') ok = !!(t.dep && t.dep.kind === 'iron' && t.dep.amt > 0);
-      if (ok) { const d = Math.hypot(x - cx, y - cy); if (d < bd) { bd = d; best = { x, y }; } }
+      if (!ok) continue;
+      if (t.dep) {
+        // ore heaps are solid: the miner works from a free neighbouring tile
+        for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const sx = x + ox, sy = y + oy;
+          if (!this.world.passable(sx, sy)) continue;
+          const d = Math.hypot(sx - cx, sy - cy);
+          if (d < bd) { bd = d; best = { x: sx, y: sy, depX: x, depY: y }; }
+        }
+      } else {
+        const d = Math.hypot(x - cx, y - cy); if (d < bd) { bd = d; best = { x, y }; }
+      }
     }
     return best;
   }
@@ -569,7 +580,12 @@ export class Game {
         else if (def.gather!.node === 'plant') {
           if (!t.tree && !t.b && !t.site && !t.road && !t.field && !t.dep) { if (t.deco) this.removeDeco(n.x, n.y); t.tree = { growth: 0.12, reserved: false, meshes: [], s: 0.85 + rnd() * 0.4, kind: Math.floor(rnd() * 4) }; this.view.addTree(n.x, n.y, t.tree); }
         } else if (def.gather!.node === 'fish') { this.setCarrying(u, def.gather!.out); this.sfx('harvest'); }
-        else { if (t.dep) { t.dep.amt--; if (t.dep.amt <= 0) this.removeDep(n.x, n.y); } this.setCarrying(u, def.gather!.out); }
+        else {
+          // the miner stands beside the (solid) heap; the ore comes off the heap's tile
+          const dtile = this.world.T(n.depX ?? n.x, n.depY ?? n.y);
+          if (dtile?.dep) { dtile.dep.amt--; if (dtile.dep.amt <= 0) this.removeDep(n.depX ?? n.x, n.depY ?? n.y); }
+          this.setCarrying(u, def.gather!.out);
+        }
         u.wstate = 'return'; u.mesh.position.y = 0;
       }
       return;
@@ -1275,7 +1291,7 @@ export class Game {
     const tx = Math.max(0, Math.min(W - 1, Math.round(nxp + W / 2 - 0.5)));
     const ty = Math.max(0, Math.min(H - 1, Math.round(nzp + H / 2 - 0.5)));
     const t = this.world.tiles[ty][tx];
-    if (t.type !== 'grass' || t.b || t.site) return;
+    if (t.type !== 'grass' || t.b || t.site || t.dep) return;
     u.mesh.position.x = nxp; u.mesh.position.z = nzp;
     u.tx = tx; u.ty = ty;
   }
@@ -1304,7 +1320,7 @@ export class Game {
     }
     const spots = formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), (tx, ty) => {
       const t = this.world.T(tx, ty);
-      return !!t && t.type === 'grass' && !t.b && !t.site;
+      return !!t && t.type === 'grass' && !t.b && !t.site && !t.dep;
     });
     for (let i = 0; i < units.length; i++) {
       const s = spots[Math.min(i, spots.length - 1)];
