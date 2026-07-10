@@ -150,7 +150,7 @@ function goMenu(): void {
   sandbox = false;
   audio.setBiome('gooi'); // release any biome signature before the menu mood
   audio.setLevel(0);
-  audio.setDynamic(false);
+  audio.setDynamic(true); // the menu plays the evolving score, drifting through every mood
   renderMenu();
   showScreen('menu');
 }
@@ -548,8 +548,12 @@ function renderSound(): void {
   btnSound.title = audio.isMuted ? 'Sound off — click to unmute' : 'Sound on — click to mute';
 }
 btnSound.onclick = e => { e.stopPropagation(); audio.toggleMute(); renderSound(); };
-// Browsers gate audio behind a user gesture: unlock on the first interaction.
-addEventListener('pointerdown', () => audio.unlock(), { once: true });
+// Start the score immediately where the browser allows it (returning visitors
+// with prior engagement); everyone else gets it on their very first gesture.
+audio.unlock();
+for (const ev of ['pointerdown', 'keydown'] as const) {
+  addEventListener(ev, () => audio.unlock(), { once: true });
+}
 renderSound();
 
 // ---------- fullscreen ----------
