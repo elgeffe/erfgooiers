@@ -62,8 +62,8 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 .bcard .cost{display:flex;justify-content:center;gap:5px;margin-top:2px;font-size:9px;color:var(--ink-dim);}
 .bcard .cost i{display:inline-flex;align-items:center;gap:2px;font-style:normal;}
 .bcard .cost .dot{width:7px;height:7px;border-radius:2px;display:inline-block;}
-/* kept even when empty so cards with and without a timer stay the same height */
-.bcard .ptime{margin-top:2px;font-size:8.5px;color:var(--ink-dim);min-height:10px;}
+/* fixed height, kept even when empty, so cards with and without a timer match */
+.bcard .ptime{margin-top:2px;font-size:8.5px;color:var(--ink-dim);height:11px;line-height:11px;overflow:hidden;}
 .bsep{width:1px;align-self:stretch;background:rgba(255,255,255,.1);margin:0 3px;}
 /* ---------- panels ---------- */
 .panel{position:absolute;background:rgba(43,33,25,.95);border:1px solid rgba(217,164,65,.3);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.5);padding:10px 12px;}
