@@ -250,7 +250,7 @@ export class World {
     while (piles < this.p.goldPiles && pguard++ < 500) {
       const x = 3 + Math.floor(rnd() * (W - 6)), y = 3 + Math.floor(rnd() * (H - 6));
       const t = this.T(x, y);
-      if (t && t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep && !t.field && !t.pickup && !central(x, y)) {
+      if (t && t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep && !t.field && !t.pickup && !t.deco && !central(x, y)) {
         t.pickup = { gold: 3 + Math.floor(rnd() * 5), reserved: false, meshes: [] };
         piles++;
       }
