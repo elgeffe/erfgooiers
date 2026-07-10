@@ -129,6 +129,16 @@ export class Game {
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].b = b; if (tiles[y][x].tree) this.removeTree(x, y); if (tiles[y][x].deco) this.removeDeco(x, y); }
     this.buildings.push(b);
     if (instant) b.active = true;
+    // fields-buildings carry a floating marker that nags for plot placement
+    // until every plot square is down (toggled & animated by View.animate)
+    if (def.fields && faction === 'player') {
+      const marker = this.view.createPlotMarker();
+      marker.userData.dynamic = true;
+      marker.position.y = 2.4;
+      marker.visible = false;
+      mesh.add(marker);
+      mesh.userData.plotMarker = marker;
+    }
     return b;
   }
 

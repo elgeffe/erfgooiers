@@ -873,6 +873,20 @@ export function makeFlame(): THREE.Group {
   return g;
 }
 
+/** Floating "plots wanted" marker hovering over a fields-building: a green
+ *  diamond with a pointer cone, nudging the player to click the building
+ *  and place its crop/pasture plots. */
+export function makePlotMarker(): THREE.Group {
+  const g = new THREE.Group();
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.2), mat(0x5fb54a));
+  gem.position.y = 0.36; gem.scale.y = 1.35;
+  g.add(gem);
+  const tip = new THREE.Mesh(cone(0.09, 0.24, 6), mat(0x5fb54a));
+  tip.rotation.x = Math.PI; tip.position.y = -0.02;
+  g.add(tip);
+  return g;
+}
+
 /** The rally flag planted where a barracks sends its freshly trained fighters. */
 export function makeFlag(): THREE.Group {
   const g = new THREE.Group();
