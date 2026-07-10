@@ -27,7 +27,8 @@ export interface UnitOrder {
 }
 
 /** Purely decorative ground scatter (no gameplay effect). */
-export type DecoKind = 'lavender' | 'flowers' | 'bush' | 'reed' | 'lily';
+export type DecoKind = 'lavender' | 'flowers' | 'bush' | 'reed' | 'lily'
+  | 'heather' | 'fern' | 'mushroom' | 'edelweiss';
 
 /** Which mesh builder in render/models.ts renders a building. */
 export type ModelKind = 'cottage' | 'windmill' | 'farm' | 'barn' | 'mine' | 'tavern' | 'castle' | 'guildhall';

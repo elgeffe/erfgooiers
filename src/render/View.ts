@@ -898,6 +898,22 @@ this.skyBirds.length = 0;
       this.worldGroup.add(water); this.freeze(water);
     }
 
+    // The Ardennes rolls: an extra ring of big, close grassy domes right past
+    // the gap so the board reads as a clearing between hills.
+    if (biome.ambiance.hillBumps) {
+      const nearTones = pal.hillTones.map(c => stdMat({ color: c }));
+      for (let i = 0; i < 9; i++) {
+        const ang = (i / 9) * Math.PI * 2 + rnd() * 0.6;
+        const r = 12 + rnd() * 9;
+        const rad = boardR + GAP + r + rnd() * 6;
+        const h = 4 + rnd() * 4;
+        const dome = new THREE.Mesh(sphere(1, 20, 12), nearTones[i % nearTones.length]);
+        dome.scale.set(r, h, r * (0.8 + rnd() * 0.4));
+        dome.position.set(Math.cos(ang) * rad, -2.1, Math.sin(ang) * rad);
+        this.worldGroup.add(dome); this.freeze(dome);
+      }
+    }
+
     // low rolling hill domes in three hazier and hazier rings
     const hillTones = pal.hillTones.map(c => stdMat({ color: c }));
     for (let ring = 0; ring < 3; ring++) {
@@ -1112,20 +1128,27 @@ this.updateSkyBirds(dt);
       group.position.set(x, 0, z);
       this.critters.push({
         mesh: group, x, z, tx: x, tz: z, wait: rnd() * 4,
-        speed: kind === 'fox' ? 0.9 : kind === 'mouse' ? 0.75 : kind === 'hedgehog' ? 0.22 : kind === 'frog' ? 0.35 : 0.5,
+        speed: kind === 'fox' ? 0.9 : kind === 'mouse' ? 0.75 : kind === 'hedgehog' ? 0.22 : kind === 'frog' ? 0.35
+          : kind === 'deer' ? 0.85 : kind === 'squirrel' ? 0.8 : kind === 'marmot' ? 0.3 : kind === 'ibex' ? 0.6 : 0.5,
         hops, hop: 0, shore: kind === 'duck' || kind === 'frog', pond: kind === 'frog',
       });
     };
 
-    spawn('cat', this.critterGrassSpot());
-    if (rnd() < 0.3) spawn('cat', this.critterGrassSpot());
+    // village cats & pond frogs belong to settled biomes only (their pool says so)
     const pool = [...this.world.biome.critters];
-    const extra = 1 + (rnd() < 0.45 ? 1 : 0);
+    if (pool.includes('cat')) {
+      spawn('cat', this.critterGrassSpot());
+      if (rnd() < 0.3) spawn('cat', this.critterGrassSpot());
+    }
+    const extra = 2 + (rnd() < 0.45 ? 1 : 0);
     for (let i = 0; i < extra && pool.length; i++) {
       const kind = pool.splice(Math.floor(rnd() * pool.length), 1)[0];
+      if (kind === 'cat' || kind === 'frog') continue; // handled above/below
       spawn(kind, kind === 'duck' ? this.critterShoreSpot() : this.critterGrassSpot());
+      // herd animals show up in pairs
+      if ((kind === 'deer' || kind === 'ibex' || kind === 'rabbit') && rnd() < 0.6) spawn(kind, this.critterGrassSpot());
     }
-    spawn('frog', this.critterPondSpot());
+    if (this.world.biome.critters.includes('frog')) spawn('frog', this.critterPondSpot());
   }
 
   private critterGrassSpot(): { x: number; y: number } | null {
