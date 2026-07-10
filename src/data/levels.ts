@@ -120,7 +120,7 @@ export const LEVELS: LevelDef[] = [
     startArmy: [{ kind: 'soldier', count: 9 }, { kind: 'archer', count: 6 }, { kind: 'knight', count: 2 }],
     enemies: { wild: [{ kind: 'wolf', count: 4 }], camps: [{ count: 2, guards: 4 }],
       commander: { every: 75, kind: 'bandit', count: 3, from: 'camp' },
-      waves: [{ at: 240, kind: 'orc', count: 4 }] },
+      waves: [{ at: 380, kind: 'orc', count: 4 }] },
     timeTarget: 480, hardTimer: 720, reward: 75 },
 
   { index: 8, name: 'The Fortified Village', type: 'Military',
@@ -129,7 +129,7 @@ export const LEVELS: LevelDef[] = [
     kit: { stock: { timber: 20, stone: 16, bread: 14, coin: 16, weapon: 3, armor: 1 }, serfs: 3, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 11 }, { kind: 'archer', count: 8 }, { kind: 'knight', count: 3 }],
     enemies: { keep: { guards: 6 }, towers: 3, commander: { every: 70, kind: 'orc', count: 4, from: 'camp' },
-      waves: [{ at: 300, kind: 'troll', count: 3 }] },
+      waves: [{ at: 440, kind: 'troll', count: 3 }] },
     timeTarget: 560, hardTimer: 840, reward: 95 },
 
   { index: 9, name: 'The Enemy Keep', type: 'Military',
@@ -140,7 +140,7 @@ export const LEVELS: LevelDef[] = [
     // the demon broods over the keep's quarter instead of raiding your town
     enemies: { keep: { guards: 8 }, towers: 4, boss: 'demon',
       commander: { every: 60, kind: 'orc', count: 5, from: 'camp' },
-      waves: [{ at: 360, kind: 'troll', count: 3 }] },
+      waves: [{ at: 500, kind: 'troll', count: 3 }] },
     timeTarget: 660, hardTimer: 960, reward: 120 },
 
   { index: 10, name: 'Dragon\u2019s Hoard', type: 'Boss',
@@ -150,7 +150,7 @@ export const LEVELS: LevelDef[] = [
     startArmy: [{ kind: 'soldier', count: 17 }, { kind: 'archer', count: 12 }, { kind: 'knight', count: 6 }],
     // the dragon sleeps in its walled cul-de-sac; raids trickle in late while
     // you build the massed army its 2600 HP now demands
-    enemies: { boss: 'dragon', waves: [{ at: 180, kind: 'boar', count: 6 }, { at: 380, kind: 'orc', count: 5 }, { at: 600, kind: 'troll', count: 2 }] },
+    enemies: { boss: 'dragon', waves: [{ at: 300, kind: 'boar', count: 6 }, { at: 520, kind: 'orc', count: 5 }, { at: 760, kind: 'troll', count: 2 }] },
     timeTarget: 840, hardTimer: 1200, reward: 160 },
 ];
 
@@ -209,7 +209,7 @@ export function sandboxLevel(cfg: SandboxConfig = DEFAULT_SANDBOX): LevelDef {
         camps: [{ count: Math.max(2, Math.round(2 * scale)), guards: 5 }],
         keep: { guards: 8 }, towers: 3,
         commander: { every: 75, kind: 'orc', count: 4, from: 'camp' },
-        waves: [{ at: 420, kind: 'troll', count: 3 }],
+        waves: [{ at: 640, kind: 'troll', count: 3 }],
       };
   const startArmy = cfg.enemies === 'none' ? undefined
     : cfg.enemies === 'wilds' ? [{ kind: 'soldier' as UnitKind, count: 8 }, { kind: 'archer' as UnitKind, count: 4 }]

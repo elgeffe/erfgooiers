@@ -1048,7 +1048,11 @@ export class Game {
     // pure 'move' orders don't auto-seek (lets you march past enemies); an
     // attack-move only re-engages once the obey window has passed
     const canSeek = (!u.order || u.order.type !== 'move') && u.obeyT <= 0;
-    if (!foe && canSeek) foe = this.acquireTarget(u, def.aggro);
+    // enemies that hold ground (wild beasts, camp guards) are short-sighted:
+    // YOU choose when the fight starts by walking up to them. Raiders and
+    // player units keep their full awareness.
+    const aggro = u.faction !== 'player' && !u.raider ? Math.min(def.aggro, 4.5) : def.aggro;
+    if (!foe && canSeek) foe = this.acquireTarget(u, aggro);
     u.foe = foe;
 
     if (foe) {
@@ -1132,10 +1136,10 @@ export class Game {
     u.status = 'Grazing';
     u.timer -= dt;
     if (u.timer > 0) return;
-    u.timer = 1.5 + rnd() * 4;
+    u.timer = 4 + rnd() * 7;
     const a = u.anchor ?? { x: u.tx, y: u.ty };
     for (let tries = 0; tries < 6; tries++) {
-      const x = a.x + Math.round((rnd() - 0.5) * 8), y = a.y + Math.round((rnd() - 0.5) * 8);
+      const x = a.x + Math.round((rnd() - 0.5) * 4), y = a.y + Math.round((rnd() - 0.5) * 4);
       const t = this.world.T(x, y);
       if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
       if (this.sendTo(u, x, y)) return;
@@ -1524,6 +1528,8 @@ export class Game {
     this.waveIdx = 0; this.waves = []; this.commanderT = 0; this.camps = [];
     this.waveArmT = null; this.bonusTime = 0;
     if (!setup) return;
+    // the commander's first raid gets extra grace beyond its usual cadence
+    if (setup.commander) this.commanderT = -setup.commander.every * 0.75;
     if (setup.wild) for (const w of setup.wild) this.spawnWild(w.kind, w.count);
     if (setup.camps) for (const c of setup.camps) for (let i = 0; i < c.count; i++) this.spawnStronghold('banditcamp', c.guards);
     if (setup.keep) { const camp = this.spawnStronghold('enemycastle', setup.keep.guards); if (camp && setup.towers) for (let i = 0; i < setup.towers; i++) this.spawnTowerNear(camp); }
@@ -1630,15 +1636,16 @@ export class Game {
   /** Extra wild presence from a level mutator (e.g. Wolf Country's packs). */
   spawnMutatorWild(kind: UnitKind, count: number): void { this.spawnWild(kind, count); }
 
-  /** Scatter wild beasts across the map, well clear of the starting settlement
-   *  so nobody is in a fight before they've trained a single unit. */
+  /** Scatter wild beasts across the map's OUTER band, far from the starting
+   *  settlement — hunting them is a deliberate expedition, never an ambush. */
   private spawnWild(kind: UnitKind, count: number): void {
     const W = this.world.W, H = this.world.H, cx = W / 2, cy = H / 2;
+    const keep = Math.max(15, Math.floor(Math.min(W, H) * 0.32));
     let placed = 0, tries = 0;
     while (placed < count && tries < count * 40) {
       tries++;
       const x = 2 + Math.floor(rnd() * (W - 4)), y = 2 + Math.floor(rnd() * (H - 4));
-      if (Math.abs(x - cx) < 12 && Math.abs(y - cy) < 12) continue;
+      if (Math.hypot(x - cx, y - cy) < keep) continue;
       const t = this.world.T(x, y);
       if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
       this.spawnFighter(kind, { x, y }, 'wild'); placed++;
