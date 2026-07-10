@@ -975,6 +975,25 @@ function paintGeo(base: THREE.BufferGeometry, hex: number, m: THREE.Matrix4): TH
 //  Buildings
 // =====================================================================
 export function makeBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
+  switch (def.style) {
+    case 'woodcutter': return woodcutterHut(def, ghost);
+    case 'forester': return foresterLodge(def, ghost);
+    case 'sawmill': return sawmillBuilding(def, ghost);
+    case 'quarry': return quarryBuilding(def, ghost);
+    case 'bakery': return bakeryBuilding(def, ghost);
+    case 'mint': return mintBuilding(def, ghost);
+    case 'vineyard': return vineyardHouse(def, ghost);
+    case 'winery': return wineryBuilding(def, ghost);
+    case 'pigfarm': return pigBarn(def, ghost);
+    case 'butcher': return butcherShop(def, ghost);
+    case 'fishery': return fisheryHut(def, ghost);
+    case 'smithy': return smithyBuilding(def, ghost);
+    case 'armory': return armoryBuilding(def, ghost);
+    case 'barracks': return barracksBuilding(def, ghost);
+    case 'watchtower': return woodenWatchtower(def, ghost);
+    case 'enemywatchtower': return stoneWatchtower(def, ghost);
+    case 'banditcamp': return banditCamp(def, ghost);
+  }
   switch (def.model) {
     case 'windmill': return windmill(def, ghost);
     case 'farm': return farmhouse(def, ghost);
@@ -1261,6 +1280,226 @@ function minecart(g: THREE.Group, oreCol?: number): void {
   const body = new THREE.Mesh(box(0.4, 0.22, 0.3), mat(0x5b4433)); body.position.set(0.6, 0.22, 0.55); body.castShadow = true; g.add(body);
   for (const [wx, wz] of [[0.43, 0.42], [0.77, 0.42], [0.43, 0.68], [0.77, 0.68]]) { const w = new THREE.Mesh(cyl(0.07, 0.07, 0.04, 10), mat(0x2a2420)); w.rotation.x = Math.PI / 2; w.position.set(wx, 0.09, wz); g.add(w); }
   if (oreCol != null) for (let i = 0; i < 4; i++) { const o = new THREE.Mesh(dodeca(0.07), mat(oreCol)); o.position.set(0.5 + rnd() * 0.2, 0.34, 0.45 + rnd() * 0.2); o.rotation.set(rnd(), rnd(), rnd()); g.add(o); }
+}
+
+// ---------- fully distinct trade architecture ----------
+function gableRoof(g: THREE.Group, width: number, depth: number, y: number, color: number, ghost: boolean, steep = 0.58): void {
+  const roofM = mkMat(color, ghost);
+  for (const side of [-1, 1]) {
+    const panel = new THREE.Mesh(box(width * 0.62, 0.1, depth), roofM);
+    panel.position.set(side * width * 0.22, y, 0); panel.rotation.z = side * steep;
+    panel.castShadow = !ghost; g.add(panel);
+  }
+}
+
+function facadeWindow(g: THREE.Group, x: number, y: number, z: number, ghost: boolean, color = 0xf4d98a): void {
+  const frame = new THREE.Mesh(box(0.3, 0.34, 0.06), mkMat(0x5b4433, ghost)); frame.position.set(x, y, z); frame.userData.marker = true;
+  const pane = new THREE.Mesh(box(0.21, 0.25, 0.07), mkMat(color, ghost)); pane.position.set(x, y, z + 0.015); pane.userData.marker = true;
+  g.add(frame, pane);
+}
+
+/** A low cabin assembled from visible round logs, with a deep woodland roof. */
+function woodcutterHut(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group(), logs = mkMat(0x76502f, ghost), ends = mkMat(0xc69a62, ghost);
+  for (let row = 0; row < 6; row++) for (const z of [-0.62, 0.62]) {
+    const log = new THREE.Mesh(cyl(0.085, 0.085, 1.55, 8), logs); log.rotation.z = Math.PI / 2; log.position.set(0, 0.1 + row * 0.14, z); log.castShadow = !ghost; g.add(log);
+  }
+  for (const x of [-0.7, 0.7]) for (const z of [-0.64, 0.64]) {
+    const cap = new THREE.Mesh(circle(0.087, 8), ends); cap.rotation.y = Math.PI / 2; cap.position.set(x, 0.45, z); cap.userData.marker = true; g.add(cap);
+  }
+  gableRoof(g, 1.9, 1.65, 1.13, def.roof, ghost, 0.68);
+  const door = new THREE.Mesh(box(0.42, 0.62, 0.08), mkMat(0x3f2c20, ghost)); door.position.set(-0.32, 0.31, 0.69); door.userData.marker = true; g.add(door);
+  if (!ghost) woodcutterYard(g);
+  return g;
+}
+
+/** A ranger's lodge with stone plinth, green gable and sheltered planting porch. */
+function foresterLodge(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const plinth = new THREE.Mesh(box(1.65, 0.22, 1.35), mkMat(0x8d897c, ghost)); plinth.position.y = 0.11; g.add(plinth);
+  const hall = new THREE.Mesh(box(1.5, 0.86, 1.2), mkMat(def.wall, ghost)); hall.position.y = 0.62; hall.castShadow = !ghost; g.add(hall);
+  gableRoof(g, 1.85, 1.55, 1.35, def.roof, ghost, 0.64);
+  const porchRoof = new THREE.Mesh(box(1.0, 0.08, 0.58), mkMat(0x537448, ghost)); porchRoof.position.set(0.25, 0.88, 0.78); porchRoof.rotation.x = -0.18; g.add(porchRoof);
+  for (const x of [-0.18, 0.68]) { const p = new THREE.Mesh(cyl(0.04, 0.05, 0.78, 7), mkMat(0x65472d, ghost)); p.position.set(x, 0.42, 0.93); g.add(p); }
+  addDoor(g, ghost); facadeWindow(g, 0.48, 0.53, 0.62, ghost, 0xcde2a3);
+  if (!ghost) foresterYard(g);
+  return g;
+}
+
+/** An open-sided mill shed: timber frame, long roof and exposed circular saw. */
+function sawmillBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group(), wood = mkMat(0x6a472b, ghost);
+  const floor = new THREE.Mesh(box(1.85, 0.12, 1.45), mkMat(def.wall, ghost)); floor.position.y = 0.06; g.add(floor);
+  for (const x of [-0.76, 0.76]) for (const z of [-0.56, 0.56]) { const post = new THREE.Mesh(box(0.12, 1.25, 0.12), wood); post.position.set(x, 0.68, z); post.castShadow = !ghost; g.add(post); }
+  gableRoof(g, 2.05, 1.75, 1.48, def.roof, ghost, 0.42);
+  const bench = new THREE.Mesh(box(1.35, 0.12, 0.45), mkMat(0xd2a35c, ghost)); bench.position.set(0, 0.55, 0.05); g.add(bench);
+  const blade = new THREE.Mesh(cyl(0.34, 0.34, 0.045, 18), mkMat(0xc6ccd4, ghost)); blade.rotation.x = Math.PI / 2; blade.position.set(0.15, 0.86, 0.05); blade.userData.marker = true; g.add(blade);
+  const hub = new THREE.Mesh(cyl(0.07, 0.07, 0.08, 10), mkMat(0x44484d, ghost)); hub.rotation.x = Math.PI / 2; hub.position.set(0.15, 0.86, 0.05); hub.userData.marker = true; g.add(hub);
+  if (!ghost) sawmillYard(g);
+  return g;
+}
+
+/** A whitewashed bakehouse dominated by a brick oven and broad smoking stack. */
+function bakeryBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const house = new THREE.Mesh(box(1.48, 0.9, 1.35), mkMat(def.wall, ghost)); house.position.y = 0.45; house.castShadow = !ghost; g.add(house);
+  gableRoof(g, 1.78, 1.62, 1.18, def.roof, ghost, 0.6);
+  const oven = new THREE.Mesh(sphere(0.48, 10, 7), mkMat(0x9a6043, ghost)); oven.scale.set(1, 0.72, 0.7); oven.position.set(0.67, 0.32, 0.54); oven.castShadow = !ghost; g.add(oven);
+  const mouth = new THREE.Mesh(box(0.28, 0.28, 0.08), mkMat(0x2a211b, ghost)); mouth.position.set(0.67, 0.23, 0.89); mouth.userData.marker = true; g.add(mouth);
+  addDoor(g, ghost); addChimney(g, ghost); facadeWindow(g, 0.3, 0.58, 0.69, ghost);
+  if (!ghost) bakeryYard(g);
+  return g;
+}
+
+/** A compact civic mint: dressed stone, classical pediment and coin seal. */
+function mintBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group(), trim = mkMat(0xe3d7b8, ghost);
+  const base = new THREE.Mesh(box(1.65, 1.15, 1.35), mkMat(def.wall, ghost)); base.position.y = 0.58; base.castShadow = !ghost; g.add(base);
+  const cap = new THREE.Mesh(box(1.78, 0.13, 1.48), trim); cap.position.y = 1.18; cap.userData.marker = true; g.add(cap);
+  gableRoof(g, 1.82, 1.5, 1.52, def.roof, ghost, 0.42);
+  for (const x of [-0.55, 0.55]) { const col = new THREE.Mesh(cyl(0.07, 0.08, 0.92, 10), trim); col.position.set(x, 0.48, 0.74); col.userData.marker = true; g.add(col); }
+  const seal = new THREE.Mesh(cyl(0.18, 0.18, 0.055, 16), mkMat(0xffd24a, ghost)); seal.rotation.x = Math.PI / 2; seal.position.set(0, 0.82, 0.72); seal.userData.marker = true; g.add(seal);
+  addDoor(g, ghost); if (!ghost) mintYard(g);
+  return g;
+}
+
+/** A pale vineyard villa with purple roof and a grape-laden pergola. */
+function vineyardHouse(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const villa = new THREE.Mesh(box(1.55, 0.88, 1.22), mkMat(0xd5c39d, ghost)); villa.position.y = 0.44; villa.castShadow = !ghost; g.add(villa);
+  gableRoof(g, 1.85, 1.5, 1.18, def.roof, ghost, 0.5);
+  const wood = mkMat(0x65472d, ghost);
+  for (const x of [-0.75, -0.25, 0.25, 0.75]) { const p = new THREE.Mesh(cyl(0.035, 0.04, 0.78, 6), wood); p.position.set(x, 0.39, 0.83); g.add(p); }
+  const pergola = new THREE.Mesh(box(1.65, 0.06, 0.6), wood); pergola.position.set(0, 0.78, 0.82); g.add(pergola);
+  if (!ghost) { vineyardYard(g); for (const x of [-0.55, 0, 0.55]) { const bunch = new THREE.Mesh(sphere(0.09, 7, 6), mat(0x7a4b8a)); bunch.scale.y = 1.35; bunch.position.set(x, 0.69, 0.86); g.add(bunch); } }
+  return g;
+}
+
+/** A deep wine cellar with stepped gable, cool stone base and barrel doors. */
+function wineryBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group(), stone = mkMat(0x81786b, ghost);
+  const cellar = new THREE.Mesh(box(1.72, 0.95, 1.45), mkMat(def.wall, ghost)); cellar.position.y = 0.48; cellar.castShadow = !ghost; g.add(cellar);
+  const plinth = new THREE.Mesh(box(1.82, 0.2, 1.55), stone); plinth.position.y = 0.1; g.add(plinth);
+  gableRoof(g, 2.0, 1.72, 1.27, def.roof, ghost, 0.7);
+  for (const [w, y] of [[1.05, 1.0], [0.72, 1.18], [0.4, 1.36]]) { const step = new THREE.Mesh(box(w, 0.2, 0.12), mkMat(def.wall, ghost)); step.position.set(0, y, 0.78); g.add(step); }
+  const doors = new THREE.Mesh(box(0.64, 0.64, 0.09), mkMat(0x573722, ghost)); doors.position.set(0, 0.32, 0.77); doors.userData.marker = true; g.add(doors);
+  if (!ghost) wineryYard(g);
+  return g;
+}
+
+/** A red livestock barn with a tall hayloft and attached open pig shelter. */
+function pigBarn(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const barn = new THREE.Mesh(box(1.45, 1.05, 1.3), mkMat(0xb86a62, ghost)); barn.position.set(-0.16, 0.53, -0.12); barn.castShadow = !ghost; g.add(barn);
+  gableRoof(g, 1.72, 1.55, 1.38, def.roof, ghost, 0.72);
+  const loft = new THREE.Mesh(box(0.42, 0.38, 0.07), mkMat(0x4d3425, ghost)); loft.position.set(-0.16, 0.86, 0.56); loft.userData.marker = true; g.add(loft);
+  const lean = new THREE.Mesh(box(0.82, 0.08, 1.05), mkMat(0x8f5d45, ghost)); lean.position.set(0.77, 0.72, -0.05); lean.rotation.z = -0.28; g.add(lean);
+  for (const z of [-0.45, 0.36]) { const p = new THREE.Mesh(box(0.08, 0.65, 0.08), mkMat(0x67452c, ghost)); p.position.set(0.98, 0.34, z); g.add(p); }
+  if (!ghost) pigfarmYard(g);
+  return g;
+}
+
+/** A market butchery with tiled roof, striped awning and smokehouse stack. */
+function butcherShop(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const shop = new THREE.Mesh(box(1.5, 1.0, 1.3), mkMat(def.wall, ghost)); shop.position.y = 0.5; shop.castShadow = !ghost; g.add(shop);
+  gableRoof(g, 1.8, 1.55, 1.28, def.roof, ghost, 0.55); addChimney(g, ghost);
+  const awning = new THREE.Mesh(box(1.05, 0.08, 0.5), mkMat(0xefe0c7, ghost)); awning.position.set(0.18, 0.75, 0.82); awning.rotation.x = -0.25; awning.userData.marker = true; g.add(awning);
+  for (const x of [-0.18, 0.18, 0.54]) { const stripe = new THREE.Mesh(box(0.13, 0.085, 0.51), mkMat(0x9c4a2f, ghost)); stripe.position.set(x, 0.75, 0.82); stripe.rotation.x = -0.25; stripe.userData.marker = true; g.add(stripe); }
+  addDoor(g, ghost); if (!ghost) butcherYard(g);
+  return g;
+}
+
+/** A stilted waterside hut with a blue roof, landing deck and hanging net. */
+function fisheryHut(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group(), wood = mkMat(0x6d5034, ghost);
+  for (const x of [-0.62, 0.62]) for (const z of [-0.5, 0.5]) { const stilt = new THREE.Mesh(cyl(0.055, 0.07, 0.75, 7), wood); stilt.position.set(x, 0.38, z); g.add(stilt); }
+  const deck = new THREE.Mesh(box(1.75, 0.12, 1.5), wood); deck.position.y = 0.62; g.add(deck);
+  const hut = new THREE.Mesh(box(1.35, 0.75, 1.05), mkMat(def.wall, ghost)); hut.position.set(-0.12, 1.02, -0.1); hut.castShadow = !ghost; g.add(hut);
+  gableRoof(g, 1.65, 1.32, 1.55, def.roof, ghost, 0.55);
+  const pier = new THREE.Mesh(box(0.55, 0.1, 1.15), wood); pier.position.set(0.62, 0.58, 1.05); g.add(pier);
+  facadeWindow(g, 0.28, 1.08, 0.44, ghost, 0xb8e2e8);
+  if (!ghost) fisheryYard(g);
+  return g;
+}
+
+/** An open-fronted forge with black hearth, oversized brick stack and weapon rack. */
+function smithyBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const forge = new THREE.Mesh(box(1.65, 0.88, 1.35), mkMat(def.wall, ghost)); forge.position.y = 0.44; forge.castShadow = !ghost; g.add(forge);
+  gableRoof(g, 1.95, 1.6, 1.18, def.roof, ghost, 0.45);
+  const hearth = new THREE.Mesh(box(0.78, 0.58, 0.12), mkMat(0x252329, ghost)); hearth.position.set(0.28, 0.3, 0.71); hearth.userData.marker = true; g.add(hearth);
+  const fire = new THREE.Mesh(cone(0.14, 0.32, 7), mkMat(0xe88335, ghost)); fire.position.set(0.28, 0.2, 0.8); fire.userData.marker = true; g.add(fire);
+  const stack = new THREE.Mesh(box(0.38, 1.35, 0.42), mkMat(0x6a5550, ghost)); stack.position.set(-0.55, 1.15, -0.32); stack.castShadow = !ghost; g.add(stack);
+  if (!ghost) { mintYard(g); for (const x of [0.65, 0.82]) { const sword = new THREE.Mesh(box(0.035, 0.65, 0.05), mat(0xc6ccd4)); sword.position.set(x, 0.52, 0.74); sword.rotation.z = x === 0.65 ? 0.45 : -0.45; g.add(sword); } }
+  return g;
+}
+
+/** A fortified armorer's workshop with parapet, shield racks and narrow windows. */
+function armoryBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group(), stone = mkMat(def.wall, ghost), trim = mkMat(0x666e78, ghost);
+  const hall = new THREE.Mesh(box(1.65, 1.15, 1.45), stone); hall.position.y = 0.58; hall.castShadow = !ghost; g.add(hall);
+  const top = new THREE.Mesh(box(1.78, 0.12, 1.58), trim); top.position.y = 1.2; g.add(top);
+  for (const x of [-0.7, -0.24, 0.24, 0.7]) { const merlon = new THREE.Mesh(box(0.24, 0.28, 0.18), trim); merlon.position.set(x, 1.4, 0.68); g.add(merlon); }
+  const gate = new THREE.Mesh(box(0.46, 0.68, 0.09), mkMat(0x3d3026, ghost)); gate.position.set(0, 0.34, 0.74); gate.userData.marker = true; g.add(gate);
+  for (const x of [-0.53, 0.53]) { const shield = new THREE.Mesh(cyl(0.18, 0.18, 0.045, 8), mkMat(def.accent ?? 0x7d8794, ghost)); shield.rotation.x = Math.PI / 2; shield.position.set(x, 0.68, 0.76); shield.scale.y = 1.2; shield.userData.marker = true; g.add(shield); }
+  return g;
+}
+
+/** An excavated stone works with cut terraces, lifting crane and block yard. */
+function quarryBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group(), rock = mkMat(def.wall, ghost), cut = mkMat(0xc4cace, ghost), wood = mkMat(0x6b4a2f, ghost);
+  for (const [r, y, x] of [[0.95, 0.18, -0.1], [0.72, 0.38, -0.25], [0.48, 0.58, -0.42]] as [number, number, number][]) { const step = new THREE.Mesh(dodeca(r), rock); step.scale.y = 0.42; step.position.set(x, y, -0.25); step.castShadow = !ghost; g.add(step); }
+  const mast = new THREE.Mesh(cyl(0.06, 0.08, 1.7, 8), wood); mast.position.set(0.62, 0.85, 0.1); g.add(mast);
+  const jib = new THREE.Mesh(box(1.05, 0.08, 0.08), wood); jib.position.set(0.18, 1.55, 0.1); jib.rotation.z = -0.15; g.add(jib);
+  const rope = new THREE.Mesh(cyl(0.012, 0.012, 0.8, 5), mkMat(0x40362c, ghost)); rope.position.set(-0.25, 1.05, 0.1); rope.userData.marker = true; g.add(rope);
+  const load = new THREE.Mesh(box(0.28, 0.25, 0.28), cut); load.position.set(-0.25, 0.62, 0.1); g.add(load);
+  if (!ghost) quarryYard(g);
+  return g;
+}
+
+/** A true military barracks: gatehouse, curtain walls, four turrets and yard. */
+function barracksBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group(), stone = mkMat(def.wall, ghost), roofM = mkMat(def.roof, ghost), wood = mkMat(0x443327, ghost);
+  const hall = new THREE.Mesh(box(1.25, 1.15, 1.15), stone); hall.position.set(0, 0.58, -0.25); hall.castShadow = !ghost; g.add(hall);
+  gableRoof(g, 1.48, 1.38, 1.48, def.roof, ghost, 0.62);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const tower = new THREE.Mesh(cyl(0.23, 0.27, 1.25, 8), stone); tower.position.set(sx * 0.73, 0.63, sz * 0.65); tower.castShadow = !ghost; g.add(tower); const cap = new THREE.Mesh(cone(0.31, 0.46, 8), roofM); cap.position.set(sx * 0.73, 1.48, sz * 0.65); g.add(cap); }
+  for (const x of [-0.4, 0, 0.4]) { const crenel = new THREE.Mesh(box(0.24, 0.24, 0.18), stone); crenel.position.set(x, 1.1, 0.72); g.add(crenel); }
+  const gate = new THREE.Mesh(box(0.52, 0.72, 0.14), wood); gate.position.set(0, 0.36, 0.75); gate.userData.marker = true; g.add(gate);
+  if (!ghost) { const rack = new THREE.Mesh(box(0.62, 0.08, 0.08), mat(0x65472d)); rack.position.set(0, 0.72, 0.83); g.add(rack); for (const x of [-0.22, 0, 0.22]) { const spear = new THREE.Mesh(cyl(0.014, 0.014, 0.75, 5), mat(0x6b4a2f)); spear.position.set(x, 0.55, 0.86); g.add(spear); } }
+  return g;
+}
+
+/** A tall timber observation tower with splayed legs, braces and roofed platform. */
+function woodenWatchtower(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group(), wood = mkMat(0x67472e, ghost), dark = mkMat(0x493323, ghost);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const leg = new THREE.Mesh(cyl(0.075, 0.1, 2.15, 7), wood); leg.position.set(sx * 0.48, 1.05, sz * 0.48); leg.rotation.z = -sx * 0.08; leg.rotation.x = sz * 0.08; leg.castShadow = !ghost; g.add(leg); }
+  for (const y of [0.55, 1.15]) for (const z of [-0.5, 0.5]) { const brace = new THREE.Mesh(box(1.3, 0.07, 0.07), dark); brace.position.set(0, y, z); brace.rotation.z = y < 1 ? 0.55 : -0.55; g.add(brace); }
+  const deck = new THREE.Mesh(box(1.45, 0.14, 1.45), wood); deck.position.y = 2.0; g.add(deck);
+  const cabin = new THREE.Mesh(box(1.15, 0.62, 1.15), mkMat(def.wall, ghost)); cabin.position.y = 2.34; cabin.castShadow = !ghost; g.add(cabin);
+  for (const x of [-0.38, 0, 0.38]) { const slit = new THREE.Mesh(box(0.18, 0.18, 0.06), mkMat(0x23201e, ghost)); slit.position.set(x, 2.38, 0.59); slit.userData.marker = true; g.add(slit); }
+  const roof = new THREE.Mesh(cone(0.96, 0.68, 4), mkMat(def.roof, ghost)); roof.position.y = 2.98; roof.rotation.y = Math.PI / 4; roof.castShadow = !ghost; g.add(roof);
+  const ladder = new THREE.Mesh(box(0.42, 1.75, 0.05), dark); ladder.position.set(0, 0.95, 0.65); ladder.rotation.x = -0.12; g.add(ladder);
+  return g;
+}
+
+/** Enemy counterpart: a squat armored stone tower with a crenellated crown. */
+function stoneWatchtower(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group(), stone = mkMat(def.wall, ghost), trim = mkMat(def.roof, ghost);
+  const shaft = new THREE.Mesh(box(1.15, 2.15, 1.15), stone); shaft.position.y = 1.08; shaft.castShadow = !ghost; g.add(shaft);
+  const crown = new THREE.Mesh(box(1.42, 0.25, 1.42), trim); crown.position.y = 2.18; g.add(crown);
+  for (const x of [-0.52, 0, 0.52]) for (const z of [-0.64, 0.64]) { const m = new THREE.Mesh(box(0.24, 0.34, 0.2), trim); m.position.set(x, 2.48, z); g.add(m); }
+  for (const y of [0.75, 1.35]) { const slit = new THREE.Mesh(box(0.1, 0.35, 0.06), mkMat(0x211c1c, ghost)); slit.position.set(0, y, 0.59); slit.userData.marker = true; g.add(slit); }
+  return g;
+}
+
+/** A rough raider encampment of hide tents, palisade stakes and a cook fire. */
+function banditCamp(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group(), hide = mkMat(def.wall, ghost), wood = mkMat(0x4d3425, ghost);
+  for (const [x, z, s] of [[-0.38, -0.2, 1], [0.48, 0.25, 0.72]] as [number, number, number][]) { const tent = new THREE.Mesh(cone(0.7 * s, 1.25 * s, 4), hide); tent.position.set(x, 0.62 * s, z); tent.rotation.y = Math.PI / 4; tent.castShadow = !ghost; g.add(tent); const flap = new THREE.Mesh(cone(0.2 * s, 0.5 * s, 3), mkMat(0x251c17, ghost)); flap.position.set(x, 0.25 * s, z + 0.5 * s); flap.rotation.x = -Math.PI / 2; flap.userData.marker = true; g.add(flap); }
+  for (let i = 0; i < 9; i++) { const a = -1.2 + i * 0.3; const stake = new THREE.Mesh(cone(0.08, 0.9, 5), wood); stake.position.set(a, 0.45, -0.82 + Math.abs(a) * 0.16); g.add(stake); }
+  if (!ghost) { const fire = new THREE.Mesh(cone(0.16, 0.42, 7), mat(0xe06432)); fire.position.set(0.15, 0.21, 0.85); g.add(fire); for (const r of [-0.18, 0.18]) { const log = new THREE.Mesh(cyl(0.05, 0.05, 0.55, 7), mat(0x5b3824)); log.rotation.z = Math.PI / 2; log.rotation.y = r; log.position.set(0.15, 0.07, 0.85); g.add(log); } }
+  return g;
 }
 
 // ---------- cottage (woodcutter, forester, sawmill, bakery, mint) ----------
@@ -1671,6 +1910,16 @@ function castle(def: BuildingDef, ghost: boolean): THREE.Group {
     const win = new THREE.Mesh(box(0.14, 0.24, 0.05), mkMat(0xf4d98a, ghost));
     win.position.set(s, 1.1, 0.59); win.userData.marker = true; g.add(win);
   }
+  if (def.style === 'enemycastle') {
+    // Hostile keeps carry an iron crown and fire baskets instead of civic cargo.
+    for (const x of [-0.52, 0, 0.52]) { const spike = new THREE.Mesh(cone(0.07, 0.45, 5), mkMat(0x332c31, ghost)); spike.position.set(x, 2.02 + Math.abs(x) * 0.15, -0.58); spike.userData.marker = true; g.add(spike); }
+    for (const x of [-0.62, 0.62]) { const bowl = new THREE.Mesh(cyl(0.12, 0.08, 0.12, 8), mkMat(0x40352f, ghost)); bowl.position.set(x, 1.15, 0.92); g.add(bowl); const flame = new THREE.Mesh(cone(0.09, 0.28, 7), mkMat(0xd95335, ghost)); flame.position.set(x, 1.34, 0.92); flame.userData.marker = true; g.add(flame); }
+  } else if (!ghost) {
+    // Player storehouse reads as a busy depot: loading platform, crates and sacks.
+    const dock = new THREE.Mesh(box(1.2, 0.12, 0.42), mat(0x765538)); dock.position.set(0, 0.08, 1.05); g.add(dock);
+    for (const [x, y, z, s] of [[-0.72, 0.16, 0.78, 0.28], [0.62, 0.15, 0.92, 0.25], [0.76, 0.38, 0.86, 0.2]] as [number, number, number, number][]) { const crate = new THREE.Mesh(box(s, s, s), mat(0x9a7045)); crate.position.set(x, y, z); crate.castShadow = true; g.add(crate); }
+    for (const x of [-0.35, 0.35]) { const sack = new THREE.Mesh(cyl(0.12, 0.15, 0.3, 7), mat(0xd1bd92)); sack.position.set(x, 0.15, 1.18); g.add(sack); }
+  }
   return g;
 }
 
@@ -1696,6 +1945,22 @@ function mine(def: BuildingDef, ghost: boolean): THREE.Group {
       chunk.position.set((rnd() - 0.5) * 1.3, 0.15, -0.35 - rnd() * 0.55); chunk.rotation.set(rnd(), rnd(), rnd()); chunk.castShadow = true;
       g.add(chunk);
     }
+  }
+  // Each ore operation has different headworks, readable even without colour.
+  if (def.style === 'goldmine') {
+    const timber = mkMat(0x6b4a2f, ghost);
+    for (const x of [-0.52, 0.52]) { const leg = new THREE.Mesh(box(0.11, 1.35, 0.11), timber); leg.position.set(x, 1.05, 0.05); leg.rotation.z = x < 0 ? -0.18 : 0.18; g.add(leg); }
+    const cross = new THREE.Mesh(box(1.25, 0.12, 0.14), timber); cross.position.set(0, 1.72, 0.05); g.add(cross);
+    const wheel = new THREE.Mesh(torus(0.28, 0.035, 6, 14), mkMat(0xb8912e, ghost)); wheel.rotation.y = Math.PI / 2; wheel.position.set(0, 1.43, 0.06); wheel.userData.marker = true; g.add(wheel);
+  } else if (def.style === 'coalmine') {
+    const breaker = new THREE.Mesh(box(0.82, 0.95, 0.68), mkMat(0x45454b, ghost)); breaker.position.set(-0.35, 1.02, -0.18); breaker.rotation.z = -0.08; breaker.castShadow = !ghost; g.add(breaker);
+    const chute = new THREE.Mesh(box(0.42, 0.24, 0.52), mkMat(0x2f3035, ghost)); chute.position.set(0.1, 0.52, 0.38); chute.rotation.z = -0.35; g.add(chute);
+    const stack = new THREE.Mesh(cyl(0.13, 0.18, 1.35, 9), mkMat(0x313137, ghost)); stack.position.set(0.58, 1.16, -0.36); g.add(stack);
+  } else if (def.style === 'ironmine') {
+    const steel = mkMat(0x6d6260, ghost);
+    const mast = new THREE.Mesh(box(0.16, 1.55, 0.16), steel); mast.position.set(0.5, 1.0, -0.2); g.add(mast);
+    const arm = new THREE.Mesh(box(1.0, 0.12, 0.12), steel); arm.position.set(0.08, 1.72, -0.2); arm.rotation.z = -0.18; g.add(arm);
+    const bucket = new THREE.Mesh(box(0.35, 0.3, 0.35), mkMat(0x8a4a30, ghost)); bucket.position.set(-0.36, 0.72, -0.2); g.add(bucket);
   }
   // quarry stacks cut blocks & leans a pickaxe; the mines park an ore-laden cart
   if (!ghost) {

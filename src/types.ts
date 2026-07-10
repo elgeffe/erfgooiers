@@ -50,6 +50,7 @@ export interface TowerDef { range: number; dmg: number; rate: number; }
 export interface BuildingDef {
   name: string;
   desc: string;
+  style: BuildingKey;          // rendering identity; each building owns a distinct silhouette
   cost: Partial<Record<ItemKey, number>>;
   roof: number;
   wall: number;
