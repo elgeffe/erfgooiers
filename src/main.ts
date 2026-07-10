@@ -101,7 +101,8 @@ function startLevel(): void {
     if (def?.spawnWild) for (const w of def.spawnWild) game.spawnMutatorWild(w.kind, w.count);
   }
   ui.setMutators(mutators.map(id => MUTATOR_BY_ID[id]).filter(d => !!d));
-  if (!sandbox && level.startArmy) {
+  // hostile sandboxes grant a default garrison too (their LevelDef carries one)
+  if (level.startArmy) {
     const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
     for (const a of level.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
   }

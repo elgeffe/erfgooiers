@@ -209,9 +209,14 @@ export function sandboxLevel(cfg: SandboxConfig = DEFAULT_SANDBOX): LevelDef {
         commander: { every: 75, kind: 'orc', count: 4, from: 'camp' },
         waves: [{ at: 420, kind: 'troll', count: 3 }],
       };
+  const startArmy = cfg.enemies === 'none' ? undefined
+    : cfg.enemies === 'wilds' ? [{ kind: 'soldier' as UnitKind, count: 4 }, { kind: 'archer' as UnitKind, count: 2 }]
+      : cfg.enemies === 'camps' ? [{ kind: 'soldier' as UnitKind, count: 6 }, { kind: 'archer' as UnitKind, count: 4 }]
+        : [{ kind: 'soldier' as UnitKind, count: 8 }, { kind: 'archer' as UnitKind, count: 5 }, { kind: 'knight' as UnitKind, count: 2 }];
   return {
     index: 0, name: 'Sandbox', type: 'Sandbox',
     objectives: [{ kind: 'produce', item: 'coin', n: 1 }], // never evaluated (main disables it)
+    startArmy,
     world: {
       w: size, h: size,
       biome: cfg.biome,
