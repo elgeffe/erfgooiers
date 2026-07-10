@@ -14,7 +14,7 @@ export const PLOT_RANGE = 6;        // how far (tiles) a plot may sit from its f
 export const GRAPHICS = {
   toon: true,               // cel-shaded MeshToonMaterial everywhere; off = the old flat Lambert look
   toonBands: 3,             // how many flat light bands the toon shading quantizes into
-  outlines: true,           // ink edges around meshes via OutlineEffect
+  outlines: false,          // ink edges via OutlineEffect — off: expanded backfaces read soft/mushy, the clean cel look works better bare
   outlineThickness: 0.0022, // screen-space edge width (NDC; constant at any zoom with the ortho camera)
   outlineColor: 0x241c14,   // warm ink — softer than pure black
   outlineAlpha: 0.85,
