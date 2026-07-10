@@ -107,41 +107,48 @@ export const LEVELS: LevelDef[] = [
     enemies: { wild: [{ kind: 'boar', count: 10 }, { kind: 'wolf', count: 5 }] },
     timeTarget: 260, hardTimer: 380, reward: 60 },
 
+  // Frontier levels (7+): a mountain arc walls off an enemy quarter with a
+  // guarded pass. Nothing hostile starts near you — combat begins when YOU
+  // march through. Maps are much larger, timers sized for building an army.
   { index: 7, name: 'Bandit Country', type: 'Military',
     objectives: [{ kind: 'destroy', n: 2 }],
-    world: { w: 48, h: 48, treeStands: 7, oreVeins: 6, waterScale: 1.0, meadows: 4, goldPiles: 4, mountains: 1, ruins: 2 },
-    kit: { stock: { timber: 16, stone: 12, bread: 12, coin: 10, weapon: 3 }, serfs: 2, laborers: 2 },
+    world: { w: 64, h: 64, treeStands: 11, oreVeins: 9, waterScale: 1.0, meadows: 6, goldPiles: 6, mountains: 2, ruins: 2, frontier: true },
+    kit: { stock: { timber: 18, stone: 14, bread: 12, coin: 12, weapon: 3 }, serfs: 3, laborers: 2 },
     startArmy: [{ kind: 'soldier', count: 4 }, { kind: 'archer', count: 3 }],
     enemies: { wild: [{ kind: 'wolf', count: 4 }], camps: [{ count: 2, guards: 4 }],
-      commander: { every: 45, kind: 'bandit', count: 3, from: 'camp' },
-      waves: [{ at: 120, kind: 'orc', count: 4 }] },
-    timeTarget: 320, hardTimer: 460, reward: 75 },
+      commander: { every: 75, kind: 'bandit', count: 3, from: 'camp' },
+      waves: [{ at: 240, kind: 'orc', count: 4 }] },
+    timeTarget: 480, hardTimer: 720, reward: 75 },
 
   { index: 8, name: 'The Fortified Village', type: 'Military',
     objectives: [{ kind: 'destroy', n: 4 }],
-    world: { w: 50, h: 50, treeStands: 7, oreVeins: 6, waterScale: 1.05, meadows: 4, goldPiles: 4, ruins: 3 },
-    kit: { stock: { timber: 18, stone: 14, bread: 14, coin: 14, weapon: 3, armor: 1 }, serfs: 2, laborers: 3 },
+    world: { w: 68, h: 68, treeStands: 12, oreVeins: 10, waterScale: 1.05, meadows: 6, goldPiles: 6, mountains: 2, ruins: 3, frontier: true },
+    kit: { stock: { timber: 20, stone: 16, bread: 14, coin: 16, weapon: 3, armor: 1 }, serfs: 3, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 5 }, { kind: 'archer', count: 4 }],
-    enemies: { keep: { guards: 6 }, towers: 3, commander: { every: 40, kind: 'orc', count: 4, from: 'camp' },
-      waves: [{ at: 100, kind: 'troll', count: 3 }] },
-    timeTarget: 380, hardTimer: 540, reward: 95 },
+    enemies: { keep: { guards: 6 }, towers: 3, commander: { every: 70, kind: 'orc', count: 4, from: 'camp' },
+      waves: [{ at: 300, kind: 'troll', count: 3 }] },
+    timeTarget: 560, hardTimer: 840, reward: 95 },
 
   { index: 9, name: 'The Enemy Keep', type: 'Military',
     objectives: [{ kind: 'destroy', n: 5 }],
-    world: { w: 52, h: 52, treeStands: 8, oreVeins: 7, waterScale: 1.1, meadows: 4, goldPiles: 5, mountains: 3, ruins: 1 },
-    kit: { stock: { timber: 20, stone: 16, bread: 16, coin: 18, weapon: 4, armor: 2 }, serfs: 2, laborers: 3 },
+    world: { w: 72, h: 72, treeStands: 13, oreVeins: 11, waterScale: 1.1, meadows: 6, goldPiles: 7, mountains: 3, ruins: 2, frontier: true },
+    kit: { stock: { timber: 22, stone: 18, bread: 16, coin: 20, weapon: 4, armor: 2 }, serfs: 3, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 6 }, { kind: 'archer', count: 5 }],
-    enemies: { keep: { guards: 8 }, towers: 4, commander: { every: 32, kind: 'orc', count: 5, from: 'camp' },
-      waves: [{ at: 90, kind: 'troll', count: 3 }, { at: 200, kind: 'demon', count: 1 }] },
-    timeTarget: 440, hardTimer: 640, reward: 120 },
+    // the demon broods over the keep's quarter instead of raiding your town
+    enemies: { keep: { guards: 8 }, towers: 4, boss: 'demon',
+      commander: { every: 60, kind: 'orc', count: 5, from: 'camp' },
+      waves: [{ at: 360, kind: 'troll', count: 3 }] },
+    timeTarget: 660, hardTimer: 960, reward: 120 },
 
   { index: 10, name: 'Dragon\u2019s Hoard', type: 'Boss',
     objectives: [{ kind: 'slay', unit: 'dragon', n: 1 }],
-    world: { w: 52, h: 52, treeStands: 8, oreVeins: 8, waterScale: 1.1, meadows: 4, goldPiles: 6, mountains: 4 },
-    kit: { stock: { timber: 20, stone: 16, bread: 18, coin: 24, weapon: 4, armor: 2 }, serfs: 2, laborers: 3 },
+    world: { w: 76, h: 76, treeStands: 14, oreVeins: 12, waterScale: 1.1, meadows: 7, goldPiles: 9, mountains: 4, frontier: true },
+    kit: { stock: { timber: 24, stone: 18, bread: 20, coin: 28, weapon: 5, armor: 2 }, serfs: 3, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 8 }, { kind: 'archer', count: 6 }],
-    enemies: { boss: 'dragon', waves: [{ at: 60, kind: 'boar', count: 6 }, { at: 150, kind: 'orc', count: 5 }, { at: 240, kind: 'troll', count: 2 }] },
-    timeTarget: 480, hardTimer: 700, reward: 160 },
+    // the dragon sleeps in its walled cul-de-sac; raids trickle in late while
+    // you build the massed army its 2600 HP now demands
+    enemies: { boss: 'dragon', waves: [{ at: 180, kind: 'boar', count: 6 }, { at: 380, kind: 'orc', count: 5 }, { at: 600, kind: 'troll', count: 2 }] },
+    timeTarget: 840, hardTimer: 1200, reward: 160 },
 ];
 
 /** The level for a run index (clamped so runs never fall off the end of the table). */

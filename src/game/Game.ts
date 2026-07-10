@@ -1484,14 +1484,15 @@ export class Game {
   /** Extra wild presence from a level mutator (e.g. Wolf Country's packs). */
   spawnMutatorWild(kind: UnitKind, count: number): void { this.spawnWild(kind, count); }
 
-  /** Scatter wild beasts across the map, clear of the central build zone. */
+  /** Scatter wild beasts across the map, well clear of the starting settlement
+   *  so nobody is in a fight before they've trained a single unit. */
   private spawnWild(kind: UnitKind, count: number): void {
     const W = this.world.W, H = this.world.H, cx = W / 2, cy = H / 2;
     let placed = 0, tries = 0;
     while (placed < count && tries < count * 40) {
       tries++;
       const x = 2 + Math.floor(rnd() * (W - 4)), y = 2 + Math.floor(rnd() * (H - 4));
-      if (Math.abs(x - cx) < 7 && Math.abs(y - cy) < 7) continue;
+      if (Math.abs(x - cx) < 12 && Math.abs(y - cy) < 12) continue;
       const t = this.world.T(x, y);
       if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
       this.spawnFighter(kind, { x, y }, 'wild'); placed++;
@@ -1519,6 +1520,14 @@ export class Game {
   }
 
   private spawnBoss(kind: UnitKind): void {
+    // on frontier maps the boss broods in the walled-off enemy quarter and
+    // stays there — the player picks when to march in and start that fight
+    const ez = this.world.enemyZone;
+    if (ez) {
+      this.spawnSquad(kind, 1, this.world.wx(ez.x), this.world.wz(ez.y), UNITS[kind].faction);
+      this.toast(`The ${UNITS[kind].name} broods in its mountain lair — muster before you march`, 'err');
+      return;
+    }
     const e = this.randomEdge();
     const squad = this.spawnSquad(kind, 1, e.x, e.z, UNITS[kind].faction);
     const castle = this.store;
@@ -1536,9 +1545,20 @@ export class Game {
 
   private findStrongholdSpot(): { x: number; y: number } | null {
     const W = this.world.W, H = this.world.H, cx = W / 2, cy = H / 2;
+    // frontier maps: strongholds live inside the walled-off enemy quarter
+    const ez = this.world.enemyZone;
+    if (ez) {
+      for (let tries = 0; tries < 400; tries++) {
+        const x = ez.x + Math.floor((rnd() * 2 - 1) * ez.r), y = ez.y + Math.floor((rnd() * 2 - 1) * ez.r);
+        if (x < 2 || y < 2 || x > W - 4 || y > H - 4) continue;
+        if (Math.hypot(x - ez.x, y - ez.y) > ez.r) continue;
+        if (this.areaClear(x, y)) return { x, y };
+      }
+      // the quarter can be waterlogged on a wet seed — fall through to anywhere
+    }
     for (let tries = 0; tries < 400; tries++) {
       const x = 2 + Math.floor(rnd() * (W - 5)), y = 2 + Math.floor(rnd() * (H - 5));
-      if (Math.abs(x - cx) < 9 && Math.abs(y - cy) < 9) continue; // keep clear of the player's start
+      if (Math.abs(x - cx) < 12 && Math.abs(y - cy) < 12) continue; // keep clear of the player's start
       if (this.areaClear(x, y)) return { x, y };
     }
     return null;
