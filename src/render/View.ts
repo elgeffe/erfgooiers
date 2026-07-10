@@ -5,7 +5,7 @@ import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, BuildingKey, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter, CRITTER_KINDS, type CritterKind } from './models';
+import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeHero, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter, CRITTER_KINDS, type CritterKind } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -432,6 +432,15 @@ this.skyBirds.length = 0;
     u.group.position.set(this.world.wx(tileX), 0, this.world.wz(tileY));
     this.worldGroup.add(u.group);
     this.freeze(u.group, false); // the unit walks; its body parts are rigid
+    return u;
+  }
+
+  /** The run's mounted hero — same contract as createUnit, styled per hero id. */
+  createHero(heroId: string, tileX: number, tileY: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
+    const u = makeHero(heroId);
+    u.group.position.set(this.world.wx(tileX), 0, this.world.wz(tileY));
+    this.worldGroup.add(u.group);
+    this.freeze(u.group, false);
     return u;
   }
 

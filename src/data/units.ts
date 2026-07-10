@@ -3,10 +3,10 @@ import type { Faction } from '../types';
 
 /** Combat unit archetypes. Economy workers (serf/laborer/specialists) are not here. */
 export type UnitKind = 'soldier' | 'archer' | 'knight' | 'bandit' | 'boar' | 'dragon'
-  | 'wolf' | 'orc' | 'troll' | 'demon';
+  | 'wolf' | 'orc' | 'troll' | 'demon' | 'hero';
 
 /** How a combat unit is drawn — humanoid reuses the worker model; beasts differ. */
-export type FighterModel = 'human' | 'beast' | 'dragon' | 'wolf' | 'demon';
+export type FighterModel = 'human' | 'beast' | 'dragon' | 'wolf' | 'demon' | 'hero';
 
 export interface UnitDef {
   kind: UnitKind;
@@ -60,6 +60,10 @@ export const UNITS: Record<UnitKind, UnitDef> = {
   troll: { kind: 'troll', name: 'Troll', faction: 'enemy', color: 0x5d7263, model: 'human',
     hp: 120, dmg: 9, range: 5.5, atkCd: 1.9, speed: BASE_SPEED * 0.8, scale: 1.3, aggro: 12,
     arrows: true, wander: true },
+
+  // the run's mounted hero: sturdy and fast, but one per run — losing them stings
+  hero: { kind: 'hero', name: 'Hero', faction: 'player', color: 0xd9a441, model: 'hero',
+    hp: 220, dmg: 14, range: 1.5, atkCd: 1.0, speed: BASE_SPEED * 1.35, scale: 1, aggro: 8 },
 
   demon: { kind: 'demon', name: 'Demon', faction: 'enemy', color: 0x3a1626, model: 'demon',
     hp: 1600, dmg: 26, range: 2.2, atkCd: 1.6, speed: BASE_SPEED * 0.9, scale: 1.8, aggro: 13,

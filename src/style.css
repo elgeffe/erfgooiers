@@ -32,6 +32,9 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 #goldChip{display:flex;align-items:center;gap:5px;background:rgba(255,210,74,.14);border:1px solid rgba(255,210,74,.4);border-radius:6px;padding:4px 10px;font-variant-numeric:tabular-nums;}
 #goldChip .coin{width:15px;height:15px;display:block;}
 #goldChip b{color:#ffe08a;}
+#heroChip{display:none;align-items:center;gap:5px;background:rgba(217,164,65,.1);border:1px solid rgba(217,164,65,.35);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;}
+#heroChip:hover{border-color:var(--accent);}
+#heroChip b{color:var(--accent);font-size:12px;white-space:nowrap;}
 #timerChip{background:var(--panel2);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:4px 10px;font-variant-numeric:tabular-nums;font-weight:600;}
 #timerChip.low{border-color:var(--bad);color:#f0c0ac;}
 #speedctl{display:flex;gap:4px;}

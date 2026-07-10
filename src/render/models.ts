@@ -449,6 +449,62 @@ function bakeUnit(built: { group: THREE.Group; itemMesh: THREE.Mesh }, outline =
   return { group: g, itemMesh };
 }
 
+/** The run's hero: a mounted rider, dressed per hero so each reads at a
+ *  glance — straw hat commoner, hooded merchant, plumed warlord, capped reeve.
+ *  Faces +z like every walker (the sim rotates the group to the travel vector). */
+export function makeHero(heroId: string): { group: THREE.Group; itemMesh: THREE.Mesh } {
+  const style: Record<string, { horse: number; coat: number; trim: number; hat: number }> = {
+    erfgooier: { horse: 0x8a5a2b, coat: 0x5a7a3f, trim: 0xd9b95c, hat: 0xd9b95c },
+    merchant: { horse: 0xa9746a, coat: 0x7a4b8a, trim: 0xd4af37, hat: 0x7a4b8a },
+    warlord: { horse: 0x33302c, coat: 0x8f97a6, trim: 0xb03030, hat: 0x8f97a6 },
+    reeve: { horse: 0x9d938a, coat: 0x3f5aa0, trim: 0xece3cf, hat: 0x2a2a30 },
+  };
+  const s = style[heroId] ?? style.erfgooier;
+  const g = new THREE.Group();
+  const horseM = umat(s.horse), coatM = umat(s.coat), trimM = umat(s.trim), hatM = umat(s.hat);
+  const skin = umat(0xe8c9a0), dark = umat(0x3a2c1f);
+
+  // the horse, long axis along z (forward)
+  const body = new THREE.Mesh(sphere(0.14, 9, 8), horseM); body.scale.set(0.85, 0.95, 1.9); body.position.y = 0.3; body.castShadow = true; g.add(body);
+  for (const [lz, lx] of [[0.18, 0.07], [0.18, -0.07], [-0.18, 0.07], [-0.18, -0.07]]) {
+    const leg = new THREE.Mesh(cyl(0.026, 0.03, 0.26, 6), horseM); leg.position.set(lx, 0.13, lz); g.add(leg);
+  }
+  const neck = new THREE.Mesh(cyl(0.05, 0.075, 0.24, 7), horseM); neck.position.set(0, 0.47, 0.26); neck.rotation.x = 0.55; neck.castShadow = true; g.add(neck);
+  const head = new THREE.Mesh(sphere(0.062, 8, 7), horseM); head.scale.set(0.85, 0.85, 1.4); head.position.set(0, 0.56, 0.38); g.add(head);
+  for (const ex of [0.03, -0.03]) { const ear = new THREE.Mesh(cone(0.016, 0.05, 4), horseM); ear.position.set(ex, 0.64, 0.33); g.add(ear); }
+  const mane = new THREE.Mesh(box(0.03, 0.16, 0.14), dark); mane.position.set(0, 0.55, 0.24); mane.rotation.x = 0.5; g.add(mane);
+  const tail = new THREE.Mesh(cone(0.035, 0.2, 5), dark); tail.position.set(0, 0.32, -0.32); tail.rotation.x = Math.PI - 0.5; g.add(tail);
+  // saddle blanket in the hero's colours
+  const blanket = new THREE.Mesh(box(0.2, 0.05, 0.24), trimM); blanket.position.y = 0.41; g.add(blanket);
+
+  // the rider
+  const torso = new THREE.Mesh(geoBody, coatM); torso.scale.setScalar(0.85); torso.position.y = 0.58; torso.castShadow = true; g.add(torso);
+  const rhead = new THREE.Mesh(geoHead, skin); rhead.scale.setScalar(0.9); rhead.position.y = 0.86; g.add(rhead);
+  for (const sx of [-1, 1]) {
+    const arm = new THREE.Mesh(geoArm, coatM); arm.scale.setScalar(0.8); arm.position.set(sx * 0.15, 0.62, 0.05); arm.rotation.z = sx * 0.3; g.add(arm);
+  }
+  // a little cape off the back
+  const cape = new THREE.Mesh(box(0.2, 0.24, 0.03), trimM); cape.position.set(0, 0.6, -0.12); cape.rotation.x = -0.15; g.add(cape);
+  // per-hero headgear
+  if (heroId === 'warlord') {
+    const helm = new THREE.Mesh(sphere(0.1, 8, 6), hatM); helm.scale.y = 0.75; helm.position.y = 0.92; g.add(helm);
+    const plume = new THREE.Mesh(cone(0.03, 0.14, 5), trimM); plume.position.y = 1.04; g.add(plume);
+  } else if (heroId === 'merchant') {
+    const hood = new THREE.Mesh(cone(0.11, 0.16, 7), hatM); hood.position.y = 0.96; g.add(hood);
+    const brooch = new THREE.Mesh(sphere(0.02, 6, 5), trimM); brooch.position.set(0, 0.72, 0.11); g.add(brooch);
+  } else if (heroId === 'reeve') {
+    const cap = new THREE.Mesh(cyl(0.1, 0.1, 0.045, 8), hatM); cap.position.y = 0.94; g.add(cap);
+    const collar = new THREE.Mesh(cyl(0.08, 0.09, 0.03, 8), trimM); collar.position.y = 0.74; g.add(collar);
+  } else {
+    const brim = new THREE.Mesh(cyl(0.13, 0.13, 0.02, 9), hatM); brim.position.y = 0.93; g.add(brim);
+    const crown = new THREE.Mesh(cyl(0.07, 0.08, 0.07, 9), hatM); crown.position.y = 0.97; g.add(crown);
+  }
+  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
+  item.position.y = 1.1; item.visible = false;
+  g.add(item);
+  return bakeUnit({ group: g, itemMesh: item }, false);
+}
+
 export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group; itemMesh: THREE.Mesh } {
   // fliers keep their part meshes — the sim flaps their wings every tick
   if (role === 'dragon') return makeDragon(colorHex);

@@ -99,12 +99,19 @@ function startLevel(): void {
     const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
     for (const a of level.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
   }
-  // the hero's warband musters at the castle at every level's start
+  // the hero rides out of the castle gate at every level's start, with any warband
   const heroDef = !sandbox && run.hero ? HERO_BY_ID[run.hero] : null;
   if (heroDef?.startArmy) {
     const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
     for (const a of heroDef.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
   }
+  const heroChip = $('heroChip') as HTMLElement;
+  if (heroDef) {
+    game.spawnHero(heroDef.id, heroDef.name);
+    $('heroIcon').textContent = heroDef.icon;
+    $('heroName').textContent = heroDef.name;
+    heroChip.style.display = 'flex';
+  } else heroChip.style.display = 'none';
   ui.setGold(run.gold);
   ui.setSandbox(sandbox);
   ($('sandboxbar') as HTMLElement).style.display = sandbox ? 'flex' : 'none';
@@ -422,6 +429,13 @@ $('menuLogo').innerHTML = logoSVG(40);
 $('introLogo').innerHTML = logoSVG(40);
 ($('btnNewRun') as HTMLButtonElement).onclick = openHeroSelect;
 ($('btnHeroBack') as HTMLButtonElement).onclick = goMenu;
+// the hero chip selects the mounted hero and swings the camera to them
+$('heroChip').onclick = () => {
+  if (!game || !game.heroUnit || game.heroUnit.dead) return;
+  game.select(game.heroUnit);
+  controls.selectUnits([game.heroUnit]);   // so right-click orders work at once
+  view.centerOn(game.heroUnit.mesh.position.x, game.heroUnit.mesh.position.z);
+};
 ($('btnContinue') as HTMLButtonElement).onclick = continueRun;
 ($('btnSandbox') as HTMLButtonElement).onclick = startSandbox;
 

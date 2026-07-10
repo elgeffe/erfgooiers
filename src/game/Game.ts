@@ -47,6 +47,8 @@ export class Game {
   guild!: Building;
   selected: any = null;
   simSpeed = 1;
+  /** The run's mounted hero on this level (null in sandbox / before spawn). */
+  heroUnit: Unit | null = null;
 
   /** Sim seconds elapsed this level (drives the hard timer & speed bonus). */
   elapsed = 0;
@@ -221,6 +223,34 @@ export class Game {
       dead: false, raider: false, foe: null, foeB: null, order: null, special: 0, anchor: null, lungeT: 0, hpBar: null,
     };
     this.units.push(u);
+    return u;
+  }
+
+  /** Spawn the run's mounted hero near the castle gate: a controllable player
+   *  fighter with a per-hero look. Box-select or click it like any soldier. */
+  spawnHero(heroId: string, roleName: string): Unit {
+    const def = UNITS.hero;
+    const d = doorTile(this.store);
+    let tile = { x: d.x, y: d.y + 1 };
+    if (!this.world.passable(tile.x, tile.y)) {
+      for (let r = 1; r < 5 && !this.world.passable(tile.x, tile.y); r++)
+        for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++)
+          if (this.world.passable(d.x + dx, d.y + dy)) { tile = { x: d.x + dx, y: d.y + dy }; }
+    }
+    const { group, itemMesh } = this.view.createHero(heroId, tile.x, tile.y);
+    const u: Unit = {
+      role: 'hero', roleName, colorHex: def.color, mesh: group, itemMesh,
+      tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
+      home: null, wstate: 'idle', timer: 0, target: null, hunger: 100, bob: 0, status: 'Ready to ride',
+      faction: 'player', spd: def.speed * this.mods.combatMult('speed', 'hero'),
+      hp: Math.round(def.hp * this.mods.combatMult('hp', 'hero')),
+      maxHp: Math.round(def.hp * this.mods.combatMult('hp', 'hero')),
+      dmg: def.dmg * this.mods.combatMult('damage', 'hero'),
+      range: def.range, atkCd: def.atkCd, atkTimer: 0,
+      dead: false, raider: false, foe: null, foeB: null, order: null, special: 0, anchor: null, lungeT: 0, hpBar: null,
+    };
+    this.units.push(u);
+    this.heroUnit = u;
     return u;
   }
 
