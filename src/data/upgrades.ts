@@ -90,6 +90,12 @@ export const UPGRADES: UpgradeDef[] = [
       { stat: 'combat:damage', mult: 1.15, filter: 'soldier' },
       { stat: 'combat:damage', mult: 1.15, filter: 'archer' },
       { stat: 'combat:damage', mult: 1.15, filter: 'knight' },
+      { stat: 'combat:damage', mult: 1.15, filter: 'lancer' },
+      { stat: 'combat:damage', mult: 1.15, filter: 'horseknight' },
+      { stat: 'combat:damage', mult: 1.15, filter: 'horsearcher' },
+      { stat: 'combat:damage', mult: 1.15, filter: 'ballista' },
+      { stat: 'combat:damage', mult: 1.15, filter: 'scorpion' },
+      { stat: 'combat:damage', mult: 1.15, filter: 'trebuchet' },
     ] },
 
   { id: 'oak-shields', name: 'Oak Shields', desc: 'Your fighters have 20% more health', icon: '🛡️', pool: 'military', rarity: 'uncommon', basePrice: 26,
@@ -97,6 +103,9 @@ export const UPGRADES: UpgradeDef[] = [
       { stat: 'combat:hp', mult: 1.2, filter: 'soldier' },
       { stat: 'combat:hp', mult: 1.2, filter: 'archer' },
       { stat: 'combat:hp', mult: 1.2, filter: 'knight' },
+      { stat: 'combat:hp', mult: 1.2, filter: 'lancer' },
+      { stat: 'combat:hp', mult: 1.2, filter: 'horseknight' },
+      { stat: 'combat:hp', mult: 1.2, filter: 'horsearcher' },
     ] },
 
   { id: 'drill-yard', name: 'Drill Yard', desc: 'Fighters train 25% faster', icon: '🥁', pool: 'military', rarity: 'uncommon', basePrice: 20,
@@ -104,6 +113,12 @@ export const UPGRADES: UpgradeDef[] = [
       { stat: 'trainTime', mult: 0.75, filter: 'soldier' },
       { stat: 'trainTime', mult: 0.75, filter: 'archer' },
       { stat: 'trainTime', mult: 0.75, filter: 'knight' },
+      { stat: 'trainTime', mult: 0.75, filter: 'lancer' },
+      { stat: 'trainTime', mult: 0.75, filter: 'horseknight' },
+      { stat: 'trainTime', mult: 0.75, filter: 'horsearcher' },
+      { stat: 'trainTime', mult: 0.75, filter: 'ballista' },
+      { stat: 'trainTime', mult: 0.75, filter: 'scorpion' },
+      { stat: 'trainTime', mult: 0.75, filter: 'trebuchet' },
     ] },
 
   { id: 'fletchers-eye', name: "Fletcher's Eye", desc: 'Archers shoot 15% further', icon: '🏹', pool: 'military', rarity: 'uncommon', basePrice: 22,
@@ -114,6 +129,9 @@ export const UPGRADES: UpgradeDef[] = [
       { stat: 'combat:speed', mult: 1.15, filter: 'soldier' },
       { stat: 'combat:speed', mult: 1.15, filter: 'archer' },
       { stat: 'combat:speed', mult: 1.15, filter: 'knight' },
+      { stat: 'combat:speed', mult: 1.15, filter: 'lancer' },
+      { stat: 'combat:speed', mult: 1.15, filter: 'horseknight' },
+      { stat: 'combat:speed', mult: 1.15, filter: 'horsearcher' },
     ] },
 
   // ---- rule-benders: cards that change how the sim works, not just its numbers ----

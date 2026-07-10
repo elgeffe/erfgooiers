@@ -10,7 +10,7 @@ export type BuildingKey =
   | 'storehouse' | 'guildhall' | 'woodcutter' | 'forester' | 'sawmill' | 'quarry'
   | 'farm' | 'mill' | 'bakery' | 'goldmine' | 'coalmine' | 'mint'
   | 'vineyard' | 'winery' | 'pigfarm' | 'butcher' | 'tavern' | 'fishery'
-  | 'barracks' | 'ironmine' | 'smithy' | 'armory' | 'watchtower'
+  | 'barracks' | 'stable' | 'engineer' | 'ironmine' | 'smithy' | 'armory' | 'watchtower'
   | 'banditcamp' | 'enemywatchtower' | 'enemycastle';
 
 export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'iron' | 'field' | 'fish';

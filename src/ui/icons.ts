@@ -39,6 +39,8 @@ function specialMark(key: BuildingKey): string {
     case 'guildhall': return '<circle cx="9" cy="11" r="2.5"/><circle cx="15" cy="11" r="2.5"/><path d="M5 18c1-4 7-4 8 0M11 18c1-4 7-4 8 0"/>';
     case 'forester': return '<path d="M12 6l-6 8h4l-3 4h10l-3-4h4zM11 18h2v3h-2z"/><path d="M18 6v5M15.5 8.5h5" fill="none" stroke="#e7d9b9" stroke-width="1.4"/>';
     case 'tavern': return '<path d="M7 9h9v8c0 2-2 3-4.5 3S7 19 7 17zM16 11h2c3 0 3 5 0 5h-2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 6c-1-2 2-2 1-4M14 6c-1-2 2-2 1-4" fill="none" stroke="currentColor"/>';
+    case 'stable': return '<path d="M7 18v-6c0-4 4-6 7-4 2 1 3 3 3 5l2-1v4l-2 1v1h-3v-2h-4v2H7z"/><circle cx="14.5" cy="10.5" r=".9" fill="#2b2119"/>';
+    case 'engineer': return '<path d="M5 19l7-9M12 10l6 9M12 10V5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="4" r="1.6"/><path d="M4 19h16v2H4z"/>';
     case 'barracks': return '<path d="M6 19l12-14M6 5l12 14M5 7l3-3M16 4l3 3M5 17l3 3M16 20l3-3" fill="none" stroke="currentColor" stroke-width="2.3"/>';
     case 'watchtower': case 'enemywatchtower': return '<path d="M8 20h8l-1-11H9zM7 6h10v4H7zM6 5h3v3H6zM11 5h3v3h-3zM16 5h3v3h-3z"/><path d="M12 10v10" stroke="#493727"/>';
     case 'banditcamp': return '<path d="M5 19L12 5l7 14z"/><circle cx="10" cy="14" r="1.5" fill="#2b2119"/><circle cx="14" cy="14" r="1.5" fill="#2b2119"/><path d="M10 18l2-2 2 2" fill="none" stroke="#2b2119"/>';

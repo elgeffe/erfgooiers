@@ -523,6 +523,8 @@ function bindSandboxSpawn(id: string, kind: UnitKind, count: number): void {
 bindSandboxSpawn('sbSoldier', 'soldier', 12);
 bindSandboxSpawn('sbArcher', 'archer', 8);
 bindSandboxSpawn('sbKnight', 'knight', 6);
+bindSandboxSpawn('sbLancer', 'lancer', 8);
+bindSandboxSpawn('sbTrebuchet', 'trebuchet', 2);
 bindSandboxSpawn('sbBandit', 'bandit', 12);
 bindSandboxSpawn('sbBoar', 'boar', 6);
 bindSandboxSpawn('sbWolf', 'wolf', 8);

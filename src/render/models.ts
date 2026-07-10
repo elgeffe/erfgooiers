@@ -539,6 +539,102 @@ function bakeUnit(built: { group: THREE.Group; itemMesh: THREE.Mesh }, outline =
   return { group: g, itemMesh };
 }
 
+/** A little warhorse, long axis along z (forward), shared by hero & cavalry. */
+function addHorse(g: THREE.Group, horseM: SceneMaterial, dark: SceneMaterial): void {
+  const body = new THREE.Mesh(sphere(0.14, 9, 8), horseM); body.scale.set(0.85, 0.95, 1.9); body.position.y = 0.3; body.castShadow = true; g.add(body);
+  for (const [lz, lx] of [[0.18, 0.07], [0.18, -0.07], [-0.18, 0.07], [-0.18, -0.07]]) {
+    const leg = new THREE.Mesh(cyl(0.026, 0.03, 0.26, 6), horseM); leg.position.set(lx, 0.13, lz); g.add(leg);
+  }
+  const neck = new THREE.Mesh(cyl(0.05, 0.075, 0.24, 7), horseM); neck.position.set(0, 0.47, 0.26); neck.rotation.x = 0.55; neck.castShadow = true; g.add(neck);
+  const head = new THREE.Mesh(sphere(0.062, 8, 7), horseM); head.scale.set(0.85, 0.85, 1.4); head.position.set(0, 0.56, 0.38); g.add(head);
+  for (const ex of [0.03, -0.03]) { const ear = new THREE.Mesh(cone(0.016, 0.05, 4), horseM); ear.position.set(ex, 0.64, 0.33); g.add(ear); }
+  const mane = new THREE.Mesh(box(0.03, 0.16, 0.14), dark); mane.position.set(0, 0.55, 0.24); mane.rotation.x = 0.5; g.add(mane);
+  const tail = new THREE.Mesh(cone(0.035, 0.2, 5), dark); tail.position.set(0, 0.32, -0.32); tail.rotation.x = Math.PI - 0.5; g.add(tail);
+}
+
+/** Cavalry from the Stable: horse + armed rider, silhouette per kind —
+ *  the lancer's couched lance, the horse archer's bow & quiver, the horse
+ *  knight's full plate and shield. All face +z like every walker. */
+export function makeCavalry(kind: string, colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
+  const g = new THREE.Group();
+  const dark = umat(0x3a2c1f), skin = umat(0xe8c9a0);
+  const coatM = umat(colorHex);
+  const horseM = umat(kind === 'horseknight' ? 0x33302c : kind === 'lancer' ? 0x8a5a2b : 0xa9746a);
+  addHorse(g, horseM, dark);
+  const blanket = new THREE.Mesh(box(0.2, 0.05, 0.24), coatM); blanket.position.y = 0.41; g.add(blanket);
+  // the rider
+  const torso = new THREE.Mesh(geoBody, coatM); torso.scale.setScalar(0.85); torso.position.y = 0.58; torso.castShadow = true; g.add(torso);
+  const rhead = new THREE.Mesh(geoHead, skin); rhead.scale.setScalar(0.9); rhead.position.y = 0.86; g.add(rhead);
+  for (const sx of [-1, 1]) {
+    const arm = new THREE.Mesh(geoArm, coatM); arm.scale.setScalar(0.8); arm.position.set(sx * 0.15, 0.62, 0.05); arm.rotation.z = sx * 0.3; g.add(arm);
+  }
+  if (kind === 'lancer') {
+    // couched lance angled forward past the horse's head, with a pennon
+    const lance = new THREE.Mesh(cyl(0.014, 0.018, 0.85, 6), umat(0x8a6a44));
+    lance.position.set(0.16, 0.68, 0.28); lance.rotation.x = Math.PI / 2 - 0.35; g.add(lance);
+    const pennon = new THREE.Mesh(cone(0.035, 0.1, 3), coatM);
+    pennon.rotation.x = Math.PI / 2; pennon.position.set(0.16, 0.82, 0.52); g.add(pennon);
+    const cap = new THREE.Mesh(cyl(0.085, 0.095, 0.05, 8), umat(0x5a5f66)); cap.position.y = 0.93; g.add(cap);
+  } else if (kind === 'horsearcher') {
+    // an unstrung-looking curved bow held out and a quiver at the hip
+    const bow = new THREE.Mesh(torus(0.11, 0.014, 5, 10, Math.PI), umat(0x6b4a2f));
+    bow.position.set(0.18, 0.66, 0.1); bow.rotation.y = Math.PI / 2; g.add(bow);
+    const quiver = new THREE.Mesh(cyl(0.035, 0.03, 0.16, 6), umat(0x6b4a2f));
+    quiver.position.set(-0.16, 0.55, -0.1); quiver.rotation.x = 0.5; g.add(quiver);
+    const hood = new THREE.Mesh(cone(0.1, 0.13, 7), coatM); hood.position.y = 0.95; g.add(hood);
+  } else { // horseknight
+    const helm = new THREE.Mesh(sphere(0.1, 8, 6), umat(0xa9b2bd)); helm.scale.y = 0.8; helm.position.y = 0.9; g.add(helm);
+    const plume = new THREE.Mesh(cone(0.028, 0.13, 5), umat(0xb03030)); plume.position.y = 1.02; g.add(plume);
+    const shield = new THREE.Mesh(cyl(0.09, 0.09, 0.03, 10), umat(0x5a6470));
+    shield.rotation.z = Math.PI / 2; shield.position.set(-0.19, 0.62, 0.05); g.add(shield);
+    // barding: an armoured skirt over the horse
+    const bard = new THREE.Mesh(box(0.26, 0.14, 0.5), umat(0x7d8794)); bard.position.y = 0.3; g.add(bard);
+  }
+  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
+  item.position.y = 1.1; item.visible = false;
+  g.add(item);
+  return bakeUnit({ group: g, itemMesh: item }, false);
+}
+
+/** Siege engines from the Engineer's Workshop: all-wood machines on wheels,
+ *  facing +z. Ballista = giant crossbow, scorpion = light bolt-thrower,
+ *  trebuchet = counterweight arm. */
+export function makeSiege(kind: string): { group: THREE.Group; itemMesh: THREE.Mesh } {
+  const g = new THREE.Group();
+  const wood = umat(0x76502f), pale = umat(0xb08a5c), iron = umat(0x5a5f66), rope = umat(0xc9b58c);
+  // wheeled base shared by all three
+  const bed = new THREE.Mesh(box(0.34, 0.06, 0.52), wood); bed.position.y = 0.14; bed.castShadow = true; g.add(bed);
+  for (const [wx, wz] of [[0.19, 0.16], [-0.19, 0.16], [0.19, -0.16], [-0.19, -0.16]]) {
+    const wheel = new THREE.Mesh(cyl(0.08, 0.08, 0.04, 10), pale);
+    wheel.rotation.z = Math.PI / 2; wheel.position.set(wx, 0.08, wz); g.add(wheel);
+  }
+  if (kind === 'trebuchet') {
+    // A-frame, long throwing arm cocked back, counterweight box, sling stone
+    for (const sx of [-0.12, 0.12]) {
+      const post = new THREE.Mesh(box(0.05, 0.42, 0.05), wood); post.position.set(sx, 0.38, 0); post.rotation.x = 0.12; post.castShadow = true; g.add(post);
+    }
+    const axle = new THREE.Mesh(cyl(0.025, 0.025, 0.3, 6), iron); axle.rotation.z = Math.PI / 2; axle.position.set(0, 0.56, 0); g.add(axle);
+    const arm = new THREE.Mesh(box(0.05, 0.05, 0.78), wood); arm.position.set(0, 0.62, -0.08); arm.rotation.x = -0.55; arm.castShadow = true; g.add(arm);
+    const weight = new THREE.Mesh(box(0.16, 0.14, 0.14), iron); weight.position.set(0, 0.44, 0.28); g.add(weight);
+    const stone = new THREE.Mesh(sphere(0.05, 7, 6), umat(0x9aa0a3)); stone.position.set(0, 0.22, -0.32); g.add(stone);
+  } else {
+    // crossbow bed + curved arms + a loaded bolt; the scorpion is the slight one
+    const small = kind === 'scorpion';
+    const rail = new THREE.Mesh(box(0.08, 0.05, small ? 0.44 : 0.56), wood); rail.position.y = 0.24; rail.rotation.x = -0.08; rail.castShadow = true; g.add(rail);
+    for (const sx of [-1, 1]) {
+      const armB = new THREE.Mesh(cyl(0.018, 0.024, small ? 0.24 : 0.32, 6), pale);
+      armB.position.set(sx * (small ? 0.13 : 0.17), 0.27, 0.16); armB.rotation.z = sx * 1.25; g.add(armB);
+    }
+    const string = new THREE.Mesh(box(small ? 0.26 : 0.34, 0.012, 0.012), rope); string.position.set(0, 0.27, 0.1); g.add(string);
+    const bolt = new THREE.Mesh(cyl(0.012, 0.012, small ? 0.3 : 0.4, 5), iron); bolt.rotation.x = Math.PI / 2; bolt.position.set(0, 0.29, 0.05); g.add(bolt);
+    const stand = new THREE.Mesh(box(0.06, 0.14, 0.06), wood); stand.position.y = 0.19; g.add(stand);
+  }
+  const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
+  item.position.y = 0.9; item.visible = false;
+  g.add(item);
+  return bakeUnit({ group: g, itemMesh: item }, false);
+}
+
 /** The run's hero: a mounted rider, dressed per hero so each reads at a
  *  glance — straw hat commoner, hooded merchant, plumed warlord, capped reeve.
  *  Faces +z like every walker (the sim rotates the group to the travel vector). */
@@ -553,17 +649,7 @@ export function makeHero(heroId: string): { group: THREE.Group; itemMesh: THREE.
   const g = new THREE.Group();
   const horseM = umat(s.horse), coatM = umat(s.coat), trimM = umat(s.trim), hatM = umat(s.hat);
   const skin = umat(0xe8c9a0), dark = umat(0x3a2c1f);
-
-  // the horse, long axis along z (forward)
-  const body = new THREE.Mesh(sphere(0.14, 9, 8), horseM); body.scale.set(0.85, 0.95, 1.9); body.position.y = 0.3; body.castShadow = true; g.add(body);
-  for (const [lz, lx] of [[0.18, 0.07], [0.18, -0.07], [-0.18, 0.07], [-0.18, -0.07]]) {
-    const leg = new THREE.Mesh(cyl(0.026, 0.03, 0.26, 6), horseM); leg.position.set(lx, 0.13, lz); g.add(leg);
-  }
-  const neck = new THREE.Mesh(cyl(0.05, 0.075, 0.24, 7), horseM); neck.position.set(0, 0.47, 0.26); neck.rotation.x = 0.55; neck.castShadow = true; g.add(neck);
-  const head = new THREE.Mesh(sphere(0.062, 8, 7), horseM); head.scale.set(0.85, 0.85, 1.4); head.position.set(0, 0.56, 0.38); g.add(head);
-  for (const ex of [0.03, -0.03]) { const ear = new THREE.Mesh(cone(0.016, 0.05, 4), horseM); ear.position.set(ex, 0.64, 0.33); g.add(ear); }
-  const mane = new THREE.Mesh(box(0.03, 0.16, 0.14), dark); mane.position.set(0, 0.55, 0.24); mane.rotation.x = 0.5; g.add(mane);
-  const tail = new THREE.Mesh(cone(0.035, 0.2, 5), dark); tail.position.set(0, 0.32, -0.32); tail.rotation.x = Math.PI - 0.5; g.add(tail);
+  addHorse(g, horseM, dark);
   // saddle blanket in the hero's colours
   const blanket = new THREE.Mesh(box(0.2, 0.05, 0.24), trimM); blanket.position.y = 0.41; g.add(blanket);
 
@@ -599,6 +685,8 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
   // fliers keep their part meshes — the sim flaps their wings every tick
   if (role === 'dragon') return makeDragon(colorHex);
   if (role === 'demon') return makeDemon(colorHex);
+  if (role === 'lancer' || role === 'horseknight' || role === 'horsearcher') return makeCavalry(role, colorHex);
+  if (role === 'ballista' || role === 'scorpion' || role === 'trebuchet') return makeSiege(role);
   if (role === 'boar') return bakeUnit(makeBeast(colorHex));
   if (role === 'wolf') return bakeUnit(makeWolf(colorHex));
   return bakeUnit(makeHumanoid(colorHex, role), false);
