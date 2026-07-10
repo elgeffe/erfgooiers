@@ -927,7 +927,10 @@ export function makeUnitCorpse(role: string, colorHex: number): THREE.Mesh {
       : role === 'dragon' ? makeDragon(colorHex)
         : makeDemon(colorHex);
   built.itemMesh.parent?.remove(built.itemMesh);
-  built.group.rotation.x = Math.PI / 2;
+  // roll the body onto its side (rotating around x pitched the long horizontal
+  // beast models nose-up, leaving wolves & boars looking planted upside down)
+  built.group.rotation.z = Math.PI / 2;
+  built.group.position.y = 0.08;
   const parts: THREE.BufferGeometry[] = [];
   bakeGroupInto(parts, built.group);
   const merged = mergeGeometries(parts, false)!;
