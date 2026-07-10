@@ -49,6 +49,10 @@ export class Game {
   simSpeed = 1;
   /** The run's mounted hero on this level (null in sandbox / before spawn). */
   heroUnit: Unit | null = null;
+  /** Seconds until a fallen hero rides back out of the castle (0 = alive/none). */
+  heroRespawnT = 0;
+  private heroId: string | null = null;
+  private heroName = 'Hero';
 
   /** Sim seconds elapsed this level (drives the hard timer & speed bonus). */
   elapsed = 0;
@@ -229,6 +233,8 @@ export class Game {
   /** Spawn the run's mounted hero near the castle gate: a controllable player
    *  fighter with a per-hero look. Box-select or click it like any soldier. */
   spawnHero(heroId: string, roleName: string): Unit {
+    this.heroId = heroId;
+    this.heroName = roleName;
     const def = UNITS.hero;
     const d = doorTile(this.store);
     let tile = { x: d.x, y: d.y + 1 };
@@ -1672,6 +1678,12 @@ export class Game {
     for (let i = this.units.length - 1; i >= 0; i--) {
       const u = this.units[i];
       if (!u.dead) continue;
+      // the hero always returns: a fresh horse is saddled at the castle
+      if (u === this.heroUnit) {
+        this.heroUnit = null;
+        this.heroRespawnT = 45;
+        this.toast(`${this.heroName} has fallen — they will ride again in 45s`, 'err');
+      }
       // a slain specialist reopens their post: the building idles until
       // staffBuildings sends the next free villager to move in
       if (u.home && u.home.worker === u) {
@@ -1701,6 +1713,16 @@ export class Game {
     if (tax > 0) {
       this.taxT += sdt;
       if (this.taxT >= 60) { this.taxT -= 60; this.onGold(-tax); this.toast(`The Taxman collects ${tax} gold`, 'err'); }
+    }
+    // a fallen hero rides back out once their timer runs down
+    if (this.heroRespawnT > 0 && this.heroId) {
+      this.heroRespawnT -= sdt;
+      if (this.heroRespawnT <= 0) {
+        this.heroRespawnT = 0;
+        this.spawnHero(this.heroId, this.heroName);
+        this.toast(`${this.heroName} rides again!`);
+        this.sfx('build');
+      }
     }
     const hungerRate = this.mods.hungerRate();
     for (const u of this.units) {
