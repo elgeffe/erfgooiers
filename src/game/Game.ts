@@ -1335,6 +1335,56 @@ export class Game {
     u.tx = tx; u.ty = ty;
   }
 
+  // =====================================================================
+  //  The castle bell — ring it and every non-combat worker drops what they
+  //  are doing and shelters inside the castle (AOE town-bell style); ring
+  //  again to send them back out.
+  // =====================================================================
+  bell = false;
+
+  toggleBell(): void {
+    this.bell = !this.bell;
+    this.sfx('bell');
+    if (this.bell) {
+      this.toast('The bell tolls — workers run for the castle!', 'err');
+      for (const u of this.units) {
+        if (u.dead || u.faction !== 'player' || this.isFighter(u)) continue;
+        if (u.task) this.cancelTask(u);
+        const site = u.target as Site | null;
+        if (site && site.isSite && site.builder === u) site.builder = null;
+        u.path = null; u.target = null;
+        u.mesh.visible = true;
+        u.wstate = 'toRefuge';
+      }
+    } else {
+      this.toast('The bell falls silent — back to work');
+      const d = doorTile(this.store);
+      for (const u of this.units) {
+        if (u.dead || u.faction !== 'player' || this.isFighter(u)) continue;
+        if (u.wstate !== 'refuge' && u.wstate !== 'toRefuge') continue;
+        u.mesh.visible = true;
+        u.mesh.position.set(this.world.wx(d.x) + (rnd() - 0.5) * 0.8, 0, this.world.wz(d.y) + (rnd() - 0.5) * 0.8);
+        u.tx = d.x; u.ty = d.y;
+        u.path = null; u.target = null;
+        u.wstate = u.home ? 'goHome' : 'idle';
+        u.status = 'Idle';
+      }
+    }
+  }
+
+  /** While the bell tolls: run for the castle door, then vanish inside. */
+  private refugeUpdate(u: Unit, dt: number): void {
+    if (u.wstate === 'refuge') { u.mesh.visible = false; return; }
+    const d = doorTile(this.store);
+    if (u.tx === d.x && u.ty === d.y && !u.path) {
+      u.wstate = 'refuge'; u.mesh.visible = false; u.status = 'Sheltering in the castle';
+      return;
+    }
+    u.status = 'Running for the castle';
+    if (!u.path) { if (!this.sendTo(u, d.x, d.y)) { u.mesh.position.y = 0; return; } }
+    this.moveUnit(u, dt);
+  }
+
   /** Toggle a construction site's priority (materials & builders go there first). */
   togglePriority(s: Site): void {
     s.priority = !s.priority;
@@ -1413,6 +1463,8 @@ export class Game {
   private waveArmT: number | null = null;
   /** Extra seconds granted to the level's hard timer (waves with bonusTime). */
   bonusTime = 0;
+  /** Stretches wave timers & grace delays (higher ascensions get more prep). */
+  prepMult = 1;
 
   /** Configure and spawn a level's enemy presence (called by main after init). */
   setEnemies(setup: EnemySetup | null): void {
@@ -1429,7 +1481,8 @@ export class Game {
   /** Player-faction fighters currently alive (arming muster-triggered raids). */
   private playerFighters(): number {
     let n = 0;
-    for (const u of this.units) if (!u.dead && u.faction === 'player' && u.dmg > 0) n++;
+    // the ever-present hero doesn't count toward muster-triggered raids
+    for (const u of this.units) if (!u.dead && u.faction === 'player' && u.dmg > 0 && u.role !== 'hero') n++;
     return n;
   }
 
@@ -1442,7 +1495,7 @@ export class Game {
     const w = this.enemy?.waves;
     if (!w || this.waveIdx >= w.length) return null;
     const def = w[this.waveIdx];
-    if (def.at !== undefined) return { in: Math.max(0, def.at - this.elapsed), count: def.count };
+    if (def.at !== undefined) return { in: Math.max(0, def.at * this.prepMult - this.elapsed), count: def.count };
     if (this.waveArmT !== null) return { in: Math.max(0, this.waveArmT - this.elapsed), count: def.count };
     return { in: Infinity, count: def.count, label: `Raiders are watching — mustering ${def.whenArmy ?? 1} fighters will provoke them` };
   }
@@ -1456,10 +1509,10 @@ export class Game {
     while (w && this.waveIdx < w.length) {
       const def = w[this.waveIdx];
       let launch = false;
-      if (def.at !== undefined) launch = this.elapsed >= def.at;
+      if (def.at !== undefined) launch = this.elapsed >= def.at * this.prepMult;
       else if (this.waveArmT !== null) launch = this.elapsed >= this.waveArmT;
       else if (this.playerFighters() >= (def.whenArmy ?? 1)) {
-        this.waveArmT = this.elapsed + (def.delay ?? 45);
+        this.waveArmT = this.elapsed + (def.delay ?? 45) * this.prepMult;
         this.toast('Your muster has been spotted — raiders are gathering!', 'err');
         this.sfx('error');
       }
@@ -1610,6 +1663,14 @@ export class Game {
     for (let i = this.units.length - 1; i >= 0; i--) {
       const u = this.units[i];
       if (!u.dead) continue;
+      // a slain specialist reopens their post: the building idles until
+      // staffBuildings sends the next free villager to move in
+      if (u.home && u.home.worker === u) {
+        u.home.worker = null;
+        u.home.active = false;
+        u.home.working = false;
+        this.toast(`The ${u.home.def.name}'s ${u.roleName.toLowerCase()} was slain — a new villager is needed`, 'err');
+      }
       if (this.selected === u) this.select(null);
       this.view.remove(u.mesh);
       this.units.splice(i, 1);
@@ -1637,6 +1698,7 @@ export class Game {
       if (u.dead) continue;
       u.hunger = Math.max(0, u.hunger - sdt * 100 / 600 * hungerRate);
       if (this.isFighter(u)) this.combatUpdate(u, sdt);
+      else if (this.bell && u.faction === 'player') this.refugeUpdate(u, sdt);
       else if (u.role === 'serf') this.serfUpdate(u, sdt);
       else if (u.role === 'laborer') this.laborerUpdate(u, sdt);
       else if (u.role === 'villager' && !u.home) this.villagerStroll(u, sdt);

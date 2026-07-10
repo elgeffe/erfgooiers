@@ -16,7 +16,7 @@ import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from '.
 import { DEFAULT_SANDBOX, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
 import { BIOMES, campaignBiome } from './data/biomes';
 import type { UnitKind } from './data/units';
-import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
+import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionArmyMult, ascensionForcesCurse, ascensionPrepMult, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
 
@@ -94,6 +94,7 @@ function startLevel(): void {
   ui.setPerks(run.upgrades, meta.unlocks);
   controls.setGame(game);
   // sandbox trouble is configured on the setup screen; runs use the level table
+  game.prepMult = sandbox ? 1 : ascensionPrepMult(run.ascension);
   game.setEnemies(level.enemies ?? null);
   // mutator payloads beyond stat curses: extra wild packs on the map
   for (const id of mutators) {
@@ -101,10 +102,12 @@ function startLevel(): void {
     if (def?.spawnWild) for (const w of def.spawnWild) game.spawnMutatorWild(w.kind, w.count);
   }
   ui.setMutators(mutators.map(id => MUTATOR_BY_ID[id]).filter(d => !!d));
-  // hostile sandboxes grant a default garrison too (their LevelDef carries one)
+  // hostile sandboxes grant a default garrison too (their LevelDef carries
+  // one); higher ascensions thin the granted army but stretch prep time
   if (level.startArmy) {
+    const armyMult = sandbox ? 1 : ascensionArmyMult(run.ascension);
     const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
-    for (const a of level.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
+    for (const a of level.startArmy) game.spawnSquad(a.kind, Math.max(1, Math.round(a.count * armyMult)), sx, sz, 'player');
   }
   // the hero rides out of the castle gate at every level's start, with any warband
   const heroDef = !sandbox && run.hero ? HERO_BY_ID[run.hero] : null;

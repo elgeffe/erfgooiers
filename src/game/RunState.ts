@@ -39,6 +39,11 @@ export function ascensionTimerMult(a: number): number { return a >= 2 ? 0.85 : 1
 /** Does this tier force at least one curse onto every contract? */
 export function ascensionForcesCurse(a: number): boolean { return a >= 3; }
 
+/** Higher tiers grant a smaller default army… */
+export function ascensionArmyMult(a: number): number { return [1, 0.75, 0.55, 0.4][Math.min(3, Math.max(0, a))]; }
+/** …but more prep: enemy wave timers & grace delays stretch by this factor. */
+export function ascensionPrepMult(a: number): number { return [1, 1.4, 1.8, 2.2][Math.min(3, Math.max(0, a))]; }
+
 /** Everything that carries across levels *within* a single run. */
 export interface RunState {
   runSeed: number;              // fixes every level's map: levelSeed(runSeed, i)

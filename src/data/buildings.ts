@@ -1,8 +1,9 @@
 import type { BuildingDef, BuildingKey } from '../types';
 
 export const DEFS: Record<BuildingKey, BuildingDef> = {
-  storehouse: { name: 'Storehouse', desc: 'Stores every good', model: 'castle',
-    cost: {}, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 500 },
+  storehouse: { name: 'Storehouse', desc: 'Stores every good — its towers loose arrows at raiders, and its bell shelters your workers', model: 'castle',
+    cost: {}, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 500,
+    tower: { range: 7, dmg: 8, rate: 1.6 } },
 
   guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & builders)', model: 'guildhall',
     cost: { timber: 4, stone: 3 }, roof: 0x46606e, wall: 0x9a5a40, accent: 0xffd24a, hp: 250,

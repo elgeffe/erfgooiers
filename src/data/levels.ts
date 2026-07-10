@@ -90,13 +90,15 @@ export const LEVELS: LevelDef[] = [
     objectives: [{ kind: 'survive', waves: 2 }],
     world: { w: 44, h: 44, treeStands: 6, oreVeins: 5, waterScale: 1.0, meadows: 4, goldPiles: 3, ruins: 2 },
     kit: { stock: { timber: 16, stone: 12, bread: 10, coin: 6, weapon: 2 }, serfs: 6, laborers: 2 },
-    startArmy: [{ kind: 'soldier', count: 3 }],
-    // no raid until the player grows the muster past the starting three: build
+    // a proper garrison out of the gate (higher ascensions thin it out but
+    // stretch the prep clock in return — see ascensionArmyMult/PrepMult)
+    startArmy: [{ kind: 'soldier', count: 6 }, { kind: 'archer', count: 2 }],
+    // no raid until the player grows the muster past the starting eight: build
     // and train at your own pace, then provoke wave one. Wave two follows the
     // same trigger and pays its fight out in extra clock.
     enemies: { waves: [
-      { whenArmy: 4, delay: 45, kind: 'bandit', count: 5 },
-      { whenArmy: 4, delay: 90, bonusTime: 150, kind: 'bandit', count: 8 },
+      { whenArmy: 9, delay: 60, kind: 'bandit', count: 5 },
+      { whenArmy: 9, delay: 100, bonusTime: 150, kind: 'bandit', count: 8 },
     ] },
     timeTarget: 300, hardTimer: 480, reward: 55 },
 

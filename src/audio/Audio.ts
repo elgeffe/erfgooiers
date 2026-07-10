@@ -10,7 +10,7 @@
    is created lazily on the first unlock() call (wired to the first click).
    ===================================================================== */
 
-type SfxName = 'place' | 'build' | 'coin' | 'chop' | 'harvest' | 'demolish' | 'click' | 'error' | 'sword' | 'arrow';
+type SfxName = 'place' | 'build' | 'coin' | 'chop' | 'harvest' | 'demolish' | 'click' | 'error' | 'sword' | 'arrow' | 'bell';
 
 // Combat effects fire from every fighter in a battle, so rate-limit them
 // (per name) or a big melee becomes a wall of white noise.
@@ -443,6 +443,7 @@ export class AudioEngine {
       case 'error': return this.efError(t);
       case 'sword': return this.efSword(t);
       case 'arrow': return this.efArrow(t);
+      case 'bell': return this.efBell(t);
     }
   }
 
@@ -529,6 +530,15 @@ export class AudioEngine {
     this.tone(pluck, t, 0.07, 'triangle', 0.28);         // bowstring
     this.tone(pluck * 2, t, 0.04, 'sine', 0.12);         // string overtone
     this.burst(t + 0.02, 0.14, 2600, 'highpass', 0.14);  // fletching whoosh
+  }
+
+  // the castle bell — two solemn strikes with a bright partial ringing over each
+  private efBell(t: number): void {
+    for (const dt of [0, 0.55]) {
+      this.tone(523, t + dt, 1.1, 'sine', 0.3);
+      this.tone(1046, t + dt, 0.5, 'sine', 0.1);
+      this.tone(1567, t + dt, 0.25, 'sine', 0.05);
+    }
   }
 
   // error — a gentle low two-tone, never harsh

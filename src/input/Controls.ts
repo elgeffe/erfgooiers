@@ -245,6 +245,7 @@ export class Controls {
     this.keys[e.key.toLowerCase()] = true;
     if (e.key === 'Escape') { this.setMode(null); this.game?.select(null); }
     if (e.key === 'r' || e.key === 'R') this.rotateBuild();
+    if (e.key === 'b' || e.key === 'B') this.game?.toggleBell();
     if (e.key === ' ') { e.preventDefault(); this.ui.togglePause(); }
     // control groups: Shift+1..5 assigns the current selection, 1..5 recalls it
     const dg = /^Digit([1-5])$/.exec(e.code);
