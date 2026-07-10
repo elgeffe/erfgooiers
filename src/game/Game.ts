@@ -220,7 +220,7 @@ export class Game {
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
       home: null, wstate: 'idle', timer: 0, target: null, hunger: 70 + rnd() * 30, bob: 0, status: 'Idle',
       faction: 'player', spd: BASE_SPEED, hp: 20, maxHp: 20, dmg: 0, range: 0, atkCd: 1, atkTimer: 0,
-      dead: false, raider: false, foe: null, foeB: null, order: null, special: 0, anchor: null, lungeT: 0, hpBar: null,
+      dead: false, raider: false, foe: null, foeB: null, order: null, obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null,
     };
     this.units.push(u);
     return u;
@@ -247,7 +247,7 @@ export class Game {
       maxHp: Math.round(def.hp * this.mods.combatMult('hp', 'hero')),
       dmg: def.dmg * this.mods.combatMult('damage', 'hero'),
       range: def.range, atkCd: def.atkCd, atkTimer: 0,
-      dead: false, raider: false, foe: null, foeB: null, order: null, special: 0, anchor: null, lungeT: 0, hpBar: null,
+      dead: false, raider: false, foe: null, foeB: null, order: null, obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null,
     };
     this.units.push(u);
     this.heroUnit = u;
@@ -994,11 +994,17 @@ export class Game {
       } else if (da > def.leash) { u.wstate = 'leash'; u.foe = null; u.path = null; return; }
     }
 
+    if (u.obeyT > 0) {
+      u.obeyT = Math.max(0, u.obeyT - dt);
+      // while obeying a fresh move order, drop any current fight entirely
+      if (u.order && u.order.type !== 'attack') { u.foe = null; u.foeB = null; }
+    }
     let foe = u.foe;
     if (foe && foe.dead) foe = null;
     if (u.order && u.order.type === 'attack' && u.order.foe && !u.order.foe.dead) foe = u.order.foe;
-    // pure 'move' orders don't auto-seek (lets you march past enemies); everything else does
-    const canSeek = !u.order || u.order.type !== 'move';
+    // pure 'move' orders don't auto-seek (lets you march past enemies); an
+    // attack-move only re-engages once the obey window has passed
+    const canSeek = (!u.order || u.order.type !== 'move') && u.obeyT <= 0;
     if (!foe && canSeek) foe = this.acquireTarget(u, def.aggro);
     u.foe = foe;
 
@@ -1398,6 +1404,9 @@ export class Game {
     u.foe = type === 'attack' ? foe : null;
     u.foeB = null;
     u.path = null;
+    // a fresh move/attack-move overrules whatever fight the unit was in:
+    // suppress re-aggro (and retaliation) long enough to break off and march
+    u.obeyT = type === 'attack' ? 0 : 2.5;
   }
 
   /** Order a whole selection: attacks converge on the foe, moves fan out into a

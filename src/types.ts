@@ -178,6 +178,7 @@ export interface Unit {
   foe: Unit | null;     // current combat target (unit)
   foeB: Building | null; // current combat target (building)
   order: UnitOrder | null;
+  obeyT: number;        // seconds a fresh move order suppresses re-aggro (commands overrule combat)
   special: number;      // boss ability cooldown (dragon fire breath)
   anchor: Coord | null; // wild beasts & camp guards roam around (and leash to) this
   lungeT: number;       // melee swing animation timer (little hop toward the foe)
