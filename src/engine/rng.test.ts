@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Rng, levelSeed } from './rng';
+import { Rng, levelSeed, randomSeed } from './rng';
 
 describe('Rng', () => {
   it('is reproducible for the same seed', () => {
@@ -56,6 +56,17 @@ describe('levelSeed', () => {
       const s = levelSeed(run * 48611, lvl);
       expect(s).toBeGreaterThanOrEqual(1);
       expect(s).toBeLessThanOrEqual(2147483646);
+    }
+  });
+});
+
+describe('randomSeed', () => {
+  it('always returns a Lehmer-safe integer seed', () => {
+    for (let i = 0; i < 50; i++) {
+      const seed = randomSeed();
+      expect(Number.isInteger(seed)).toBe(true);
+      expect(seed).toBeGreaterThanOrEqual(1);
+      expect(seed).toBeLessThanOrEqual(2147483646);
     }
   });
 });

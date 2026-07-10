@@ -30,6 +30,33 @@ export class Rng {
   range(a: number, b: number): number { return a + this.next() * (b - a); }
 }
 
+// Browsers do not expose the CPU RDRAND instruction. Web Crypto is the correct
+// browser entropy surface: implementations seed it from the operating system,
+// which may itself mix hardware entropy. Keep a tiny xorshift fallback for old
+// or restricted contexts where crypto.getRandomValues is unavailable.
+let fallbackState = ((Date.now() ^ 0x9e3779b9) >>> 0) || 0x6d2b79f5;
+function fallbackWord(): number {
+  fallbackState ^= fallbackState << 13;
+  fallbackState ^= fallbackState >>> 17;
+  fallbackState ^= fallbackState << 5;
+  return fallbackState >>> 0;
+}
+
+/** Unpredictable seed for a new run, always in the Lehmer-safe range. */
+export function randomSeed(): number {
+  let word: number;
+  try {
+    const cryptoApi = globalThis.crypto;
+    if (!cryptoApi || typeof cryptoApi.getRandomValues !== 'function') throw new Error('Web Crypto unavailable');
+    const words = new Uint32Array(1);
+    cryptoApi.getRandomValues(words);
+    word = words[0];
+  } catch {
+    word = fallbackWord();
+  }
+  return (word % 2147483646) + 1;
+}
+
 // map generation only — reseeded to `levelSeed` at the start of every level
 export const worldRng = new Rng();
 // gameplay events (growth jitter, hunger, planting) — reseeded per level

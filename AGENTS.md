@@ -1,133 +1,168 @@
 # AGENTS.md — Erfgooiers
 
-Guidance for AI coding agents working in this repository. Read this before making
-changes. For the product/design vision and the phased plan, see [ROADMAP.md](ROADMAP.md);
-this file covers *how the code is organized and how to work in it*.
+Guidance for coding agents working in this repository. Read this before changing code.
+Use [README.md](README.md) for the player/developer overview and
+[ROADMAP.md](ROADMAP.md) for product status and future work.
 
-## What this is
+## Project
 
-A browser **roguelite economy builder** set in Het Gooi, built with **TypeScript +
-Three.js** and bundled by **Vite**. A run is a sequence of short, data-driven levels
-with a shop between each. It is a Settlers-style logistics sim: every good is physically
-carried between buildings by worker units — nothing teleports.
+Erfgooiers is a TypeScript + Three.js browser roguelite, bundled with Vite. It combines
+a Settlers-style physical logistics simulation with light RTS combat across ten short,
+procedurally generated levels. Shops, contracts, cards, hero rule sets, and gold persist
+within a run; Heritage unlocks and Ascension progress persist between runs.
 
 ## Commands
 
 ```bash
-npm install      # install dependencies
-npm run dev      # Vite dev server with HMR
-npm run build    # tsc --noEmit (typecheck) THEN vite build — use this to verify changes
-npm run preview  # serve the production build
+npm install
+npm run dev      # Vite development server
+npm test         # Vitest unit suite
+npm run build    # tsc --noEmit, then Vite production bundle
+npm run preview
 ```
 
-There is no test suite. **Always run `npm run build` after changes** — it typechecks the
-whole project (`tsc --noEmit`) and then bundles. Treat a clean build as the bar for done.
+After code changes, run both `npm test` and `npm run build`. A passing test suite plus a
+clean production build is the completion bar. Vite's current large-chunk advisory is a
+non-failing warning, not permission to skip validation.
 
 ## Architecture
 
-Composition root is [src/main.ts](src/main.ts): it owns the run lifecycle state machine
-(`menu → heroSelect → playing → shop → summary`), builds the persistent session objects
-once, and rebuilds each level via `startLevel()` / `disposeLevel()`.
+`src/main.ts` is the composition root. It owns the lifecycle
+`menu → heroSelect → playing → shop → summary`, creates persistent UI/view/input/audio
+objects once, and rebuilds level-scoped `World` and `Game` instances.
 
-| Area | File | Responsibility |
+| Area | Primary files | Responsibility |
 |---|---|---|
-| Entry / lifecycle | [src/main.ts](src/main.ts) | State machine, fixed-timestep loop, screen wiring |
-| Simulation | [src/game/Game.ts](src/game/Game.ts) | Buildings, sites, units, serf logistics dispatch, production. No DOM, minimal Three.js |
-| Modifiers | [src/game/Modifiers.ts](src/game/Modifiers.ts) | The single source of tunables (speeds, times, costs). Every buff/perk/mutator goes through here |
-| Objectives | [src/game/Objectives.ts](src/game/Objectives.ts) | Level goal tracking (`stock` / `produce` / `produceMulti` / `collect`) |
-| Run/save state | [src/game/RunState.ts](src/game/RunState.ts), [src/game/SaveGame.ts](src/game/SaveGame.ts) | Run + meta state, versioned `localStorage` persistence |
-| World | [src/world/World.ts](src/world/World.ts) | Procedural tile map + generation + spatial queries. Holds no Three.js |
-| Rendering | [src/render/View.ts](src/render/View.ts), [src/render/models.ts](src/render/models.ts) | Three.js scene, camera, meshes. `View` is asked for/handed meshes by `Game` |
-| Input | [src/input/Controls.ts](src/input/Controls.ts) | Camera pan/zoom, placement/road/demolish modes, selection, click-to-collect gold |
-| UI (DOM) | [src/ui/UI.ts](src/ui/UI.ts), [src/ui/Shop.ts](src/ui/Shop.ts) | Resource bar, objective card, build menu, inspector, shop |
-| Audio | [src/audio/Audio.ts](src/audio/Audio.ts) | Procedural sound effects + per-level mood |
-| Data tables | [src/data/](src/data/) | `items.ts`, `buildings.ts`, `levels.ts`, `upgrades.ts` — content lives here |
-| Tunable constants | [src/constants.ts](src/constants.ts) | Defaults (map size, walk speed, build time, road stone cost) |
-| Types | [src/types.ts](src/types.ts) | Shared interfaces + the `ItemKey` / `BuildingKey` unions |
+| Lifecycle | `src/main.ts` | Screens, run transitions, level setup/teardown, fixed-step loop |
+| Simulation | `src/game/Game.ts` | Economy, buildings, workers, combat, enemies, training; no DOM |
+| Rules | `src/game/Modifiers.ts` | All tunable run/meta/hero/mutator effects |
+| Objectives | `src/game/Objectives.ts` | Economy and combat objective progress |
+| Run/save | `src/game/RunState.ts`, `SaveGame.ts` | Run/meta state and versioned persistence |
+| World | `src/world/World.ts` | Procedural tile state and spatial queries; no Three.js |
+| Engine | `src/engine/` | RNG, pathfinding, pure formation layout |
+| View | `src/render/View.ts` | Three.js scene, camera, world lifecycle, minimap, ambience |
+| Models | `src/render/models.ts` | Reusable geometry/materials and model builders |
+| Input | `src/input/Controls.ts` | Camera, placement, selection, groups, formations, orders |
+| HUD/shop | `src/ui/UI.ts`, `Shop.ts`, `icons.ts` | DOM HUD, inspectors, shop, shared SVG icons |
+| Audio | `src/audio/Audio.ts` | Procedural SFX and music/mood |
+| Content | `src/data/` | Items, buildings, levels, units, heroes, cards, mutators, meta |
+| Shared types | `src/types.ts` | Cross-layer data contracts and key unions |
 
-### Layering rules (keep these clean)
+### Layer boundaries
 
-- `World` is pure tile state — **no Three.js imports**.
-- `Game` is the sim — **no DOM, no scene bookkeeping** beyond requesting/removing meshes
-  from `View`. It emits `toast` / `onSelect` / `onGold` / `sfx` callbacks that `main.ts` wires.
-- `UI` and `Shop` are the only DOM owners (plus screen `<div>`s in [index.html](index.html)).
+- `World` is pure tile state. Never import Three.js, DOM, UI, or audio there.
+- `Game` owns simulation behavior. It may ask `View` to create/remove meshes, but it
+  does not manipulate the DOM or own scene bookkeeping.
+- `View` and `models.ts` own Three.js representation. Visual branching by
+  `BuildingKey`/unit kind is allowed here; gameplay branching is not.
+- `UI`/`Shop` own content DOM. `Controls` may manage input-only overlays such as the
+  placement hint, selection rectangle, and formation picker.
+- `main.ts` wires callbacks (`toast`, `onSelect`, `onGold`, `sfx`, death effects) and is
+  the only place that coordinates run lifecycle concerns.
 
 ## Core conventions
 
-- **Data over code.** Levels, buildings, items, upgrades are tables in `src/data/`.
-  Adding content (a new good, a new production chain, a new level) should mean editing
-  data tables + their `ItemKey`/`BuildingKey` unions in [src/types.ts](src/types.ts) — *not*
-  special-casing `Game.ts`. If you find yourself branching on a specific building key in
-  the sim, prefer expressing it as a generic `BuildingDef` field instead.
-- **The modifier system is sacred.** Every buff/perk/mutator/ascension goes through
-  [Modifiers](src/game/Modifiers.ts). The sim consults `mods.unitSpeed(u)`,
-  `mods.buildTime()`, `mods.gatherTime(def)`, `mods.recipeTime(def)`,
-  `mods.buildingCost(def)`, etc. — never raw constants. Upgrades are pure `ModifierSpec`
-  data. If a feature can't be a modifier, extend `Modifiers`; don't hard-code.
-- **Determinism.** Three named RNG streams in [src/engine/rng.ts](src/engine/rng.ts):
-  `worldRng` (generation), `simRng` (gameplay events), `uiRng` (cosmetics). A run seed +
-  level index must fully determine a level's map and play. **Never** pull gameplay
-  randomness from `worldRng`/`uiRng`, and don't reorder sim iteration — future lockstep
-  multiplayer depends on it.
-- **Fixed-timestep sim.** `Game.update(dt)` runs at 20 ticks/s via an accumulator in
-  `main.ts`; rendering is real-time and independent. `simSpeed` (0/1/3) scales the sim,
-  and `simSpeed === 0` is the pause state.
-- **Short levels are a feature.** When in doubt, cut scope, not run scope.
+### Data over simulation branches
+
+Items, buildings, levels, units, upgrades, heroes, meta upgrades, and mutators belong in
+`src/data/`. New content should normally require data plus a key union—not a special case
+in `Game.ts`. If simulation behavior is genuinely new, add a generic definition field
+and teach the simulation that field once.
+
+Building identity is the `BuildingKey` from the `DEFS` record. Pass that key to rendering;
+do not duplicate it in `BuildingDef` as a separate style/id field.
+
+### Modifiers are the rule gateway
+
+Every card, hero rule, curse, Heritage bonus, and Ascension stat adjustment flows through
+`Modifiers`. The simulation calls methods such as `unitSpeed`, `buildTime`, `gatherTime`,
+`recipeTime`, `buildingCost`, `combatMult`, and `trainTime`. Extend `Modifiers` for a new
+tunable rather than reading upgrade ids inside the simulation.
+
+### Determinism
+
+`src/engine/rng.ts` has three seeded streams:
+
+- `worldRng` — map generation only;
+- `simRng` — gameplay events only;
+- `uiRng` — cosmetic layout only.
+
+Web Crypto chooses an unpredictable fresh run seed, with a xorshift fallback. After that,
+run seed + level index fixes the named streams. Do not use cryptographic entropy or
+`Math.random()` for gameplay. Do not reorder simulation iteration casually; future
+replays/lockstep depend on stable order.
+
+### Fixed timestep
+
+`Game.update(dt)` runs at 20 ticks per second through the accumulator in `main.ts`.
+Rendering, camera movement, clouds, wildlife, and other ambience are real-time. Simulation
+speed is 0/1/3; zero is pause.
+
+### DRY and separation of concerns
+
+- Derive repeated content sets from their source table (for example, empty stock derives
+  from `ITEMS`) instead of maintaining parallel key lists.
+- Extract logic when it is pure/testable, has a stable API, or has multiple consumers.
+  `engine/formations.ts` is the model: no Game/View dependency and direct tests.
+- Do not split a file only because it is long. `Game.ts`, `View.ts`, and `models.ts` are
+  large but cohesive enough today. Likely future seams are combat/enemy direction,
+  ambience lifecycle, and building model builders.
+- Avoid framework, ECS, dependency-injection, or state-library migrations without a
+  demonstrated feature, correctness, or profiling need.
 
 ## Content recipes
 
 ### Add an item
-1. Add the key to the `ItemKey` union in [src/types.ts](src/types.ts).
-2. Add a def (name, hex color) to `ITEMS` in [src/data/items.ts](src/data/items.ts), and
-   add it to `RES_SHOWN` if it should appear in the resource bar.
-3. If the storehouse should track it from zero, add it to the `store.stock` init object in
-   `Game.init()`.
 
-### Add a building / production chain
-1. Add the key to the `BuildingKey` union in [src/types.ts](src/types.ts).
-2. Add a `BuildingDef` to `DEFS` in [src/data/buildings.ts](src/data/buildings.ts) and list
-   it under a tab in `MENU_CATEGORIES` (the bottom build menu groups buildings by goal;
-   roads & demolish are always shown). Buildings are either:
-   - **gatherers** (`gather: { node, out, time, range }`) — a specialist walks to a map
-     node (`tree`/`stone`/`gold`/`coal`/`iron`/`field`) and returns a good. `fields: true` gives
-     the building farm-style crop plots and the `field` node.
-   - **producers** (`recipe: { inp, out, time }`) — consume input goods (serfs deliver
-     them) and emit an output good.
-3. Reuse an existing `ModelKind` (`cottage`/`windmill`/`farm`/`barn`/`mine`) for rendering —
-   no new 3D model is needed for new content. `worker` + `wcolor` name/color the specialist.
-4. The serf **dispatch** in `Game.ts` is generic: it routes any recipe input from the
-   nearest source and hauls any output to the store. New chains work without sim changes.
+1. Add its key to `ItemKey` in `src/types.ts`.
+2. Add its definition to `ITEMS` in `src/data/items.ts`.
+3. Add it to `RES_SHOWN` if it belongs in the top resource bar.
+4. Add a resource pictogram in `src/ui/icons.ts`.
 
-### Add / change a level
-Edit the `LEVELS` table in [src/data/levels.ts](src/data/levels.ts). Each level is
-`{ objective variants, world-gen params, starting kit, soft/hard timers, reward }`.
-- Objectives: `stock` (hold N now), `produce` (count N production events),
-  `produceMulti` (several products at once), `collect` (gold piles). Multiple entries in
-  `objectives[]` are picked from deterministically per run.
-- **Map difficulty** is driven by world params. Note: only **water**, deposits, roads,
-  fields and buildings block placement — trees and decoration do *not* (placing a building
-  clears them). So `waterScale` is the main lever for "less buildable space"; raise it on
-  later levels to tighten the map. The central build zone is always kept clear.
+Storehouse zero-stock initialization derives from `ITEMS`; do not add another manual list.
 
-## Current state
+### Add a building or production chain
 
-Phase 1's economy roguelite is complete (10 data-driven levels, escalating production
-arc, gold + shop, hard-timer fail → Heritage), and the combat layer is in: levels 5–10
-are Defend/Hunt/Military/Boss levels. Combat lives in `Game.ts` (fighter behaviors,
-projectiles, separation, towers, training) with unit archetypes in
-[src/data/units.ts](src/data/units.ts). The military economy runs iron → weaponsmith/
-armorer → barracks (soldier/archer/knight, per-unit costs), plus a buildable watchtower.
-Player control: box-select, right-click orders with formation spread, control groups
-(Shift+1–5 / 1–5), barracks rally flags. Pathfinding is 8-directional A* with
-line-of-sight smoothing ([src/engine/pathfinding.ts](src/engine/pathfinding.ts)); units
-soft-collide so they never stack. The hero and deeper meta-progression are still to
-come — see [ROADMAP.md](ROADMAP.md).
+1. Add a `BuildingKey`.
+2. Add a `BuildingDef` in `src/data/buildings.ts` and place it in `MENU_CATEGORIES`.
+3. Use generic `gather`, `recipe`, `fields`, `tavern`, `military`, or `tower` data.
+4. Choose a fallback `ModelKind`. For a unique silhouette, add a render-only
+   `BuildingKey` case in `makeBuilding`/`models.ts`; keep it out of `Game.ts`.
+5. Add its build-menu icon mapping in `src/ui/icons.ts` when it produces a new resource
+   or needs a special non-resource mark.
 
-## Guardrails checklist (before you commit)
+The generic serf dispatcher routes recipe inputs, outputs, and construction materials.
 
-- [ ] `npm run build` is clean (typecheck + bundle).
-- [ ] New content lives in `src/data/` + type unions, not in sim branches.
-- [ ] Any new buff/tunable goes through `Modifiers`.
-- [ ] No gameplay randomness outside `simRng`; sim iteration order unchanged.
-- [ ] `World` stays Three.js-free; `Game` stays DOM-free.
-- [ ] Don't add features, refactors, comments or error handling beyond what was asked.
+### Add or change a level
+
+Edit `src/data/levels.ts`: objective variants, world parameters, kit, timers, reward,
+enemy setup, and starting army are data. Objective variants currently support `stock`,
+`produce`, `produceMulti`, `collect`, `survive`, `slay`, and `destroy`. Contract selection
+chooses variants deterministically.
+
+Map difficulty comes mainly from dimensions, water, mountains/frontiers, deposits,
+enemy placement, and timers. Trees/decorations are cleared by construction; they are not
+hard placement pressure.
+
+## Current product state
+
+- The ten-level economy/combat run, boss, shop, contracts, saves, Heritage shop,
+  unlockable hero rule sets, mutators, and Ascension A1–A3 are playable.
+- The physical hero unit and functional equipment slots are not implemented yet.
+- Combat units include soldiers, archers, knights, and several enemy/wild archetypes.
+- Army controls include box/double-click selection, minimap highlighting, groups,
+  attack-move, rallies, and grid/line/column/wedge formations.
+- Rendering includes unique building architecture/icons, adaptive quality, and ambient
+  wildlife, birds, layered sparse clouds, and a distant landscape.
+
+## Before handing off
+
+- [ ] `npm test` passes.
+- [ ] `npm run build` passes.
+- [ ] New balance/content is data-driven.
+- [ ] New tunables flow through `Modifiers`.
+- [ ] Gameplay randomness uses `simRng`; world generation uses `worldRng`.
+- [ ] Deterministic iteration order is preserved.
+- [ ] `World` remains Three.js-free and `Game` remains DOM-free.
+- [ ] Unrelated user changes are preserved.
+- [ ] Documentation is updated when architecture, commands, or shipped status changes.

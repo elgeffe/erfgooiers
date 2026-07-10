@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { uiRng } from '../engine/rng';
 import { GRAPHICS } from '../constants';
-import type { BuildingDef, DecoKind } from '../types';
+import type { BuildingDef, BuildingKey, DecoKind } from '../types';
 
 // Mesh scatter is purely cosmetic — it must never touch gameplay/worldgen streams.
 // It normally draws from uiRng, but chunk-baked doodads swap in a per-tile
@@ -974,8 +974,8 @@ function paintGeo(base: THREE.BufferGeometry, hex: number, m: THREE.Matrix4): TH
 // =====================================================================
 //  Buildings
 // =====================================================================
-export function makeBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
-  switch (def.style) {
+export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean): THREE.Group {
+  switch (key) {
     case 'woodcutter': return woodcutterHut(def, ghost);
     case 'forester': return foresterLodge(def, ghost);
     case 'sawmill': return sawmillBuilding(def, ghost);
@@ -998,9 +998,9 @@ export function makeBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
     case 'windmill': return windmill(def, ghost);
     case 'farm': return farmhouse(def, ghost);
     case 'barn': return barn(def, ghost);
-    case 'mine': return mine(def, ghost);
+    case 'mine': return mine(key, def, ghost);
     case 'tavern': return tavern(def, ghost);
-    case 'castle': return castle(def, ghost);
+    case 'castle': return castle(key, def, ghost);
     case 'guildhall': return guildhall(def, ghost);
     default: return cottage(def, ghost);
   }
@@ -1083,13 +1083,13 @@ function guildhall(def: BuildingDef, ghost: boolean): THREE.Group {
 }
 
 /** Scaffold shown while a building is under construction. */
-export function makeScaffold(def: BuildingDef): { group: THREE.Group; frame: THREE.Group } {
+export function makeScaffold(key: BuildingKey, def: BuildingDef): { group: THREE.Group; frame: THREE.Group } {
   const g = new THREE.Group();
   const pad = new THREE.Mesh(box(1.9, 0.08, 1.9), mat(0x8a6b42)); pad.position.y = 0.04; g.add(pad);
   for (const [px, pz] of [[-0.85, -0.85], [0.85, -0.85], [-0.85, 0.85], [0.85, 0.85]]) {
     const post = new THREE.Mesh(geoPost, mat(0xc9a06a)); post.position.set(px, 0.35, pz); post.castShadow = true; g.add(post);
   }
-  const frame = makeBuilding(def, true);
+  const frame = makeBuilding(key, def, true);
   frame.visible = false;
   frame.userData.dynamic = true; // Game scales it up with build progress
   g.add(frame);
@@ -1764,7 +1764,23 @@ export function makeCritter(kind: CritterKind): { group: THREE.Group; hops: bool
     for (const [lx, lz] of [[0.09, 0.045], [0.09, -0.045], [-0.09, 0.045], [-0.09, -0.045]]) {
       const leg = new THREE.Mesh(cyl(0.014, 0.016, 0.1, 5), lx > 0 ? patchM : fur); leg.position.set(lx, 0.05, lz); g.add(leg);
     }
-    const tail = new THREE.Mesh(cyl(0.018, 0.024, 0.24, 6), fur); tail.position.set(-0.18, 0.19, 0); tail.rotation.z = -0.75; g.add(tail);
+    // A short tapered curve anchored inside the rump; the old single cylinder
+    // floated beside the body and read like a rigid stick from the iso camera.
+    const tailPoints = [
+      new THREE.Vector3(-0.12, 0.13, 0),
+      new THREE.Vector3(-0.22, 0.18, 0.012),
+      new THREE.Vector3(-0.29, 0.27, 0.035),
+      new THREE.Vector3(-0.28, 0.37, 0.06),
+    ];
+    const radii = [[0.024, 0.022], [0.022, 0.017], [0.017, 0.011]];
+    for (let i = 0; i < tailPoints.length - 1; i++) {
+      const a = tailPoints[i], b = tailPoints[i + 1], dir = b.clone().sub(a), len = dir.length();
+      const segment = new THREE.Mesh(cyl(radii[i][1], radii[i][0], len * 1.08, 7), fur);
+      segment.position.copy(a).add(b).multiplyScalar(0.5);
+      segment.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+      g.add(segment);
+    }
+    const tailTip = new THREE.Mesh(sphere(0.012, 6, 5), fur); tailTip.position.copy(tailPoints[tailPoints.length - 1]); g.add(tailTip);
   } else if (kind === 'frog') {
     hops = true;
     const greens = [0x5f9f45, 0x79ad48, 0x438453], green = mat(greens[Math.floor(rnd() * greens.length)]);
@@ -1842,7 +1858,7 @@ function barn(def: BuildingDef, ghost: boolean): THREE.Group {
 }
 
 // ---------- castle (storehouse, enemy keep) — a real keep with corner towers ----------
-function castle(def: BuildingDef, ghost: boolean): THREE.Group {
+function castle(key: BuildingKey, def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   const stone = mkMat(def.wall, ghost);
   const trim = mkMat(0x8d887c, ghost);
@@ -1910,7 +1926,7 @@ function castle(def: BuildingDef, ghost: boolean): THREE.Group {
     const win = new THREE.Mesh(box(0.14, 0.24, 0.05), mkMat(0xf4d98a, ghost));
     win.position.set(s, 1.1, 0.59); win.userData.marker = true; g.add(win);
   }
-  if (def.style === 'enemycastle') {
+  if (key === 'enemycastle') {
     // Hostile keeps carry an iron crown and fire baskets instead of civic cargo.
     for (const x of [-0.52, 0, 0.52]) { const spike = new THREE.Mesh(cone(0.07, 0.45, 5), mkMat(0x332c31, ghost)); spike.position.set(x, 2.02 + Math.abs(x) * 0.15, -0.58); spike.userData.marker = true; g.add(spike); }
     for (const x of [-0.62, 0.62]) { const bowl = new THREE.Mesh(cyl(0.12, 0.08, 0.12, 8), mkMat(0x40352f, ghost)); bowl.position.set(x, 1.15, 0.92); g.add(bowl); const flame = new THREE.Mesh(cone(0.09, 0.28, 7), mkMat(0xd95335, ghost)); flame.position.set(x, 1.34, 0.92); flame.userData.marker = true; g.add(flame); }
@@ -1924,7 +1940,7 @@ function castle(def: BuildingDef, ghost: boolean): THREE.Group {
 }
 
 // ---------- mine (quarry, gold mine, coal mine) — rocky mound + adit ----------
-function mine(def: BuildingDef, ghost: boolean): THREE.Group {
+function mine(key: BuildingKey, def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   const mound = new THREE.Mesh(dodeca(1.05), mkMat(def.wall, ghost));
   mound.position.y = 0.35; mound.scale.set(1, 0.72, 1); mound.rotation.y = 0.5; mound.castShadow = !ghost; mound.receiveShadow = !ghost; g.add(mound);
@@ -1947,16 +1963,16 @@ function mine(def: BuildingDef, ghost: boolean): THREE.Group {
     }
   }
   // Each ore operation has different headworks, readable even without colour.
-  if (def.style === 'goldmine') {
+  if (key === 'goldmine') {
     const timber = mkMat(0x6b4a2f, ghost);
     for (const x of [-0.52, 0.52]) { const leg = new THREE.Mesh(box(0.11, 1.35, 0.11), timber); leg.position.set(x, 1.05, 0.05); leg.rotation.z = x < 0 ? -0.18 : 0.18; g.add(leg); }
     const cross = new THREE.Mesh(box(1.25, 0.12, 0.14), timber); cross.position.set(0, 1.72, 0.05); g.add(cross);
     const wheel = new THREE.Mesh(torus(0.28, 0.035, 6, 14), mkMat(0xb8912e, ghost)); wheel.rotation.y = Math.PI / 2; wheel.position.set(0, 1.43, 0.06); wheel.userData.marker = true; g.add(wheel);
-  } else if (def.style === 'coalmine') {
+  } else if (key === 'coalmine') {
     const breaker = new THREE.Mesh(box(0.82, 0.95, 0.68), mkMat(0x45454b, ghost)); breaker.position.set(-0.35, 1.02, -0.18); breaker.rotation.z = -0.08; breaker.castShadow = !ghost; g.add(breaker);
     const chute = new THREE.Mesh(box(0.42, 0.24, 0.52), mkMat(0x2f3035, ghost)); chute.position.set(0.1, 0.52, 0.38); chute.rotation.z = -0.35; g.add(chute);
     const stack = new THREE.Mesh(cyl(0.13, 0.18, 1.35, 9), mkMat(0x313137, ghost)); stack.position.set(0.58, 1.16, -0.36); g.add(stack);
-  } else if (def.style === 'ironmine') {
+  } else if (key === 'ironmine') {
     const steel = mkMat(0x6d6260, ghost);
     const mast = new THREE.Mesh(box(0.16, 1.55, 0.16), steel); mast.position.set(0.5, 1.0, -0.2); g.add(mast);
     const arm = new THREE.Mesh(box(1.0, 0.12, 0.12), steel); arm.position.set(0.08, 1.72, -0.2); arm.rotation.z = -0.18; g.add(arm);

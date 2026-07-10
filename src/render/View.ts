@@ -3,9 +3,9 @@ import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { uiRng } from '../engine/rng';
 import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
-import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
+import type { Building, BuildingDef, BuildingKey, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { bakeGroupInto, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter, CRITTER_KINDS, type CritterKind } from './models';
+import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter, CRITTER_KINDS, type CritterKind } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -419,8 +419,8 @@ export class View {
     o.traverse((c) => { if (c.userData.ownGeometry) (c as THREE.Mesh).geometry.dispose(); });
   }
 
-  createBuildingMesh(def: BuildingDef): THREE.Group { return makeBuilding(def, false); }
-  createScaffold(def: BuildingDef) { return makeScaffold(def); }
+  createBuildingMesh(key: BuildingKey, def: BuildingDef): THREE.Group { return makeBuilding(key, def, false); }
+  createScaffold(key: BuildingKey, def: BuildingDef) { return makeScaffold(key, def); }
 
   createUnit(colorHex: number, role: string, tileX: number, tileY: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
     const u = makeUnit(colorHex, role);
@@ -794,20 +794,35 @@ export class View {
   // =====================================================================
   private buildAmbiance(): void {
     const W = this.world.W, H = this.world.H;
-    // gradient sky: deep blue overhead fading to a warm pale horizon
-    const sky = document.createElement('canvas'); sky.width = 1; sky.height = 256;
+    // Painted sky: richer vertical colour, warm sun haze and a few extremely
+    // faint high-altitude streaks. This is a screen backdrop, not a cloud count.
+    const sky = document.createElement('canvas'); sky.width = 512; sky.height = 512;
     const sctx = sky.getContext('2d')!;
-    const grad = sctx.createLinearGradient(0, 0, 0, 256);
-    grad.addColorStop(0, '#69b0dd');
-    grad.addColorStop(0.55, '#a9d3ea');
-    grad.addColorStop(1, '#e9f2ea');
-    sctx.fillStyle = grad; sctx.fillRect(0, 0, 1, 256);
+    const grad = sctx.createLinearGradient(0, 0, 0, 512);
+    grad.addColorStop(0, '#4e9bd0');
+    grad.addColorStop(0.42, '#82bddd');
+    grad.addColorStop(0.72, '#bddbea');
+    grad.addColorStop(1, '#f0e9d3');
+    sctx.fillStyle = grad; sctx.fillRect(0, 0, 512, 512);
+    const sun = sctx.createRadialGradient(405, 120, 3, 405, 120, 155);
+    sun.addColorStop(0, 'rgba(255,247,206,.72)');
+    sun.addColorStop(0.22, 'rgba(255,235,184,.3)');
+    sun.addColorStop(1, 'rgba(255,235,184,0)');
+    sctx.fillStyle = sun; sctx.fillRect(0, 0, 512, 360);
+    sctx.lineCap = 'round';
+    for (let i = 0; i < 5; i++) {
+      const y = 62 + rnd() * 150, x = rnd() * 380, w = 70 + rnd() * 150;
+      sctx.strokeStyle = `rgba(255,255,255,${0.025 + rnd() * 0.035})`;
+      sctx.lineWidth = 7 + rnd() * 13;
+      sctx.beginPath(); sctx.moveTo(x, y); sctx.bezierCurveTo(x + w * 0.3, y - 8, x + w * 0.7, y + 8, x + w, y); sctx.stroke();
+    }
     this.skyTex = new THREE.CanvasTexture(sky);
+    this.skyTex.colorSpace = THREE.SRGBColorSpace;
     this.scene.background = this.skyTex;
-    this.scene.fog = new THREE.Fog(0xddecee, 62, 150);
+    this.scene.fog = new THREE.Fog(0xd4e4df, 70, 165);
 
     // a broad meadow plain reaching out to the horizon beneath the map plinth
-    const plain = new THREE.Mesh(new THREE.CircleGeometry(240, 48), stdMat({ color: 0x7fae66 }, false));
+    const plain = new THREE.Mesh(new THREE.CircleGeometry(240, 96), stdMat({ color: 0x7da866 }, false));
     plain.rotation.x = -Math.PI / 2; plain.position.y = -2.1;
     this.worldGroup.add(plain);
     this.freeze(plain);
@@ -818,8 +833,31 @@ export class View {
     const boardR = Math.hypot(W / 2, H / 2);
     const GAP = 12;
 
+    // Patchwork countryside beyond the playable board: irregular field strips,
+    // dark hedges and glints of distant water break up the old flat green disc.
+    const fieldMats = [0x91ae61, 0xb3ad62, 0x779d59, 0xc0a86a, 0x88a968].map(c => stdMat({ color: c }, false));
+    const hedgeMat = stdMat({ color: 0x456842 }, false);
+    for (let i = 0; i < 26; i++) {
+      const ang = rnd() * Math.PI * 2, rad = boardR + GAP + 7 + rnd() * 34;
+      const w = 4 + rnd() * 8, d = 2.5 + rnd() * 5;
+      const field = new THREE.Mesh(box(w, 0.035, d), fieldMats[i % fieldMats.length]);
+      field.position.set(Math.cos(ang) * rad, -2.055, Math.sin(ang) * rad); field.rotation.y = ang + (rnd() - 0.5) * 1.2;
+      this.worldGroup.add(field); this.freeze(field);
+      if (i % 2 === 0) {
+        const hedge = new THREE.Mesh(box(w + 0.4, 0.13, 0.12), hedgeMat);
+        hedge.position.set(field.position.x, -1.98, field.position.z); hedge.rotation.y = field.rotation.y; this.worldGroup.add(hedge); this.freeze(hedge);
+      }
+    }
+    const waterMat = stdMat({ color: 0x72a9bd, transparent: true, opacity: 0.75 }, false);
+    for (let i = 0; i < 3; i++) {
+      const ang = rnd() * Math.PI * 2, rad = boardR + GAP + 15 + rnd() * 25;
+      const water = new THREE.Mesh(circle(1, 24), waterMat); water.rotation.x = -Math.PI / 2;
+      water.scale.set(3 + rnd() * 4, 1.2 + rnd() * 2.2, 1); water.position.set(Math.cos(ang) * rad, -2.01, Math.sin(ang) * rad);
+      this.worldGroup.add(water); this.freeze(water);
+    }
+
     // low rolling hill domes in three hazier and hazier rings
-    const hillTones = [0x8cbc70, 0x7aa96a, 0x6f9d74, 0x678f79].map(c => stdMat({ color: c }));
+    const hillTones = [0x91b879, 0x7da86f, 0x709a73, 0x668c7b].map(c => stdMat({ color: c }));
     for (let ring = 0; ring < 3; ring++) {
       const count = 12 + ring * 5;
       for (let i = 0; i < count; i++) {
@@ -836,15 +874,15 @@ export class View {
     }
 
     // a hazy treeline out in the meadow ring, between the plinth and the hills
-    const folA = stdMat({ color: 0x4a7350 });
-    const folB = stdMat({ color: 0x3f6a5e });
+    const foliage = [0x4a7350, 0x3f6a5e, 0x577d48, 0x426b43].map(c => stdMat({ color: c }));
     const trunkM = stdMat({ color: 0x5b4433 });
     for (let i = 0; i < 90; i++) {
       const ang = rnd() * Math.PI * 2;
       const s = 0.9 + rnd() * 1.4;
       const rad = boardR + 5 + rnd() * (GAP - 4); // sits in the gap ring, clear of the board
-      const crown = new THREE.Mesh(cone(0.75, 2.6, 6), rnd() < 0.5 ? folA : folB);
-      crown.scale.setScalar(s);
+      const deciduous = rnd() < 0.42;
+      const crown = new THREE.Mesh(deciduous ? sphere(0.82, 10, 7) : cone(0.75, 2.6, 7), foliage[Math.floor(rnd() * foliage.length)]);
+      crown.scale.set(s, deciduous ? s * (0.85 + rnd() * 0.35) : s, s);
       crown.position.set(Math.cos(ang) * rad, -2.1 + 1.5 * s, Math.sin(ang) * rad);
       this.worldGroup.add(crown);
       this.freeze(crown);
@@ -856,6 +894,22 @@ export class View {
         this.freeze(trunk);
       }
     }
+
+    // A tiny horizon village adds human scale: warm roofs, a church spire and
+    // a pale lane, all well outside the playable edge.
+    const villageAng = rnd() * Math.PI * 2, villageRad = boardR + 31;
+    const village = new THREE.Group();
+    const lane = new THREE.Mesh(box(8.5, 0.025, 0.7), stdMat({ color: 0xc9b58c }, false)); lane.position.y = 0.02; village.add(lane);
+    const villageRoofs = [0x9c4b36, 0x7e4935, 0xb0603f];
+    for (let i = 0; i < 6; i++) {
+      const x = -3.4 + i * 1.35, z = (rnd() - 0.5) * 1.1, s = 0.55 + rnd() * 0.28;
+      const house = new THREE.Mesh(box(0.9 * s, 0.75 * s, 0.72 * s), stdMat({ color: i % 2 ? 0xd6c59f : 0xc8b489 })); house.position.set(x, 0.38 * s, z); village.add(house);
+      const roof = new THREE.Mesh(cone(0.72 * s, 0.55 * s, 4), stdMat({ color: villageRoofs[i % villageRoofs.length] })); roof.rotation.y = Math.PI / 4; roof.position.set(x, 1.02 * s, z); village.add(roof);
+    }
+    const church = new THREE.Mesh(box(0.72, 1.65, 0.72), stdMat({ color: 0xd9cfb5 })); church.position.set(0.2, 0.83, -0.8); village.add(church);
+    const spire = new THREE.Mesh(cone(0.58, 1.45, 6), stdMat({ color: 0x55666a })); spire.position.set(0.2, 2.27, -0.8); village.add(spire);
+    village.position.set(Math.cos(villageAng) * villageRad, -2.08, Math.sin(villageAng) * villageRad); village.lookAt(0, -2.08, 0);
+    this.worldGroup.add(village); this.freeze(village);
 
     // one far-off windmill turning on the plain — a little postcard of Het Gooi
     const millAng = rnd() * Math.PI * 2;
@@ -882,15 +936,21 @@ export class View {
     this.freeze(mill);
     this.millSails.push(sails);
 
-    // soft clouds drifting high above, spread wide around the board. Most are
-    // plain puffballs, but a sparse few take (rough) animal shapes for fun.
+    // Two or three detailed cloud banks drift high above the board. Layered
+    // blue-grey undersides and bright crowns give them volume without turning
+    // the playfield into a ceiling of white blobs.
     const cloudSpan = boardR * 2 + 30;
     this.cloudBound = cloudSpan / 2;
-    // translucent so the board stays readable when one drifts overhead
-    const cloudMat = stdMat({ color: 0xffffff, transparent: true, opacity: 0.5 });
+    const cloudTop = stdMat({ color: 0xffffff, transparent: true, opacity: 0.72 });
+    const cloudLight = stdMat({ color: 0xf5fbff, transparent: true, opacity: 0.5 });
+    const cloudShade = stdMat({ color: 0xb8ced9, transparent: true, opacity: 0.42 });
     const mk = (c: THREE.Group, x: number, z: number, s: number, y = 0): void => {
-      const p = new THREE.Mesh(sphere(1, 8, 6), cloudMat);
-      p.position.set(x, y + rnd() * 0.25, z); p.scale.set(s, s * 0.6, s); c.add(p);
+      const shade = new THREE.Mesh(sphere(1, 14, 9), cloudShade);
+      shade.position.set(x, y - 0.16, z); shade.scale.set(s * 1.08, s * 0.34, s * 0.92); c.add(shade);
+      const p = new THREE.Mesh(sphere(1, 16, 10), cloudTop);
+      p.position.set(x, y + rnd() * 0.18, z); p.scale.set(s, s * 0.62, s); c.add(p);
+      const light = new THREE.Mesh(sphere(1, 14, 9), cloudLight);
+      light.position.set(x - s * 0.16, y + s * 0.28, z - s * 0.08); light.scale.set(s * 0.62, s * 0.31, s * 0.62); c.add(light);
     };
     // each builder sketches an animal silhouette in the horizontal plane
     const animals: Array<(c: THREE.Group) => void> = [
@@ -901,23 +961,23 @@ export class View {
       c => { mk(c, 0, 0, 1.5); mk(c, 1.6, 0, 1.0); mk(c, 2.3, 0.1, 0.5); mk(c, 2.75, 0.42, 0.4); mk(c, 3.05, 0.78, 0.3); mk(c, 1.3, -0.78, 0.5); mk(c, -1.5, 0, 0.55); }, // elephant
       c => { mk(c, 0, 0, 1.25); mk(c, 1.55, 0, 0.85); mk(c, 2.15, 0, 0.4); mk(c, 1.4, -0.55, 0.4); mk(c, -1.4, 0.2, 0.4, 0.2); }, // dog
     ];
-    for (let i = 0; i < 4; i++) {
+    const cloudCount = 2 + (rnd() < 0.35 ? 1 : 0);
+    for (let i = 0; i < cloudCount; i++) {
       const c = new THREE.Group();
-      if (rnd() < 0.3) {
-        animals[Math.floor(rnd() * animals.length)](c);  // sparse: ~2–3 of 8 are critters
+      if (rnd() < 0.18) {
+        animals[Math.floor(rnd() * animals.length)](c);
       } else {
-        const n = 3 + Math.floor(rnd() * 3);
+        const n = 4 + Math.floor(rnd() * 3);
         for (let j = 0; j < n; j++) {
-          const puff = new THREE.Mesh(sphere(1, 8, 6), cloudMat);
-          puff.position.set((j - n / 2) * 1.5 + rnd(), rnd() * 0.6, rnd() * 1.4);
           const s = 1 + rnd() * 1.2;
-          puff.scale.set(s, s * 0.6, s);
-          c.add(puff);
+          mk(c, (j - (n - 1) / 2) * 1.35 + (rnd() - 0.5) * 0.7, (rnd() - 0.5) * 1.6, s, rnd() * 0.45);
         }
       }
       c.scale.setScalar(0.9 + rnd() * 0.5);
-      c.rotation.y = rnd() * Math.PI * 2;   // face a random way so critters vary
-      c.position.set((rnd() - 0.5) * cloudSpan, 14 + rnd() * 6, (rnd() - 0.5) * cloudSpan);
+      c.rotation.y = (rnd() - 0.5) * 0.55;
+      const laneX = -this.cloudBound + (i + 0.5) * (cloudSpan / cloudCount);
+      c.position.set(laneX + (rnd() - 0.5) * cloudSpan / cloudCount * 0.45, 15 + rnd() * 4, (rnd() - 0.5) * cloudSpan);
+      c.userData.cloudSpeed = 0.38 + rnd() * 0.28;
       this.worldGroup.add(c);
       this.freeze(c, false); // the group drifts; its puffs never move within it
       this.clouds.push(c);
@@ -941,7 +1001,7 @@ export class View {
       }
     }
     for (const c of this.clouds) {
-      c.position.x += dt * 0.6;
+      c.position.x += dt * (c.userData.cloudSpeed as number || 0.5);
       if (c.position.x > this.cloudBound) c.position.x = -this.cloudBound;
     }
     for (const s of this.millSails) s.rotation.z += dt * 0.45;
@@ -1182,10 +1242,10 @@ export class View {
   // =====================================================================
   //  Placement ghost & road cursor
   // =====================================================================
-  showGhost(def: BuildingDef, key: string, tx: number, ty: number, rot: number, ok: boolean): void {
+  showGhost(def: BuildingDef, key: BuildingKey, tx: number, ty: number, rot: number, ok: boolean): void {
     if (this.ghostKey !== key) {
       this.scene.remove(this.ghost);
-      this.ghost = makeBuilding(def, true);
+      this.ghost = makeBuilding(key, def, true);
       const mk = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), noOutline(new THREE.MeshBasicMaterial({ color: 0xd9a441, transparent: true, opacity: 0.7, side: THREE.DoubleSide })));
       mk.rotation.x = -Math.PI / 2; mk.position.set(-0.5, 0.04, 1.5); mk.userData.marker = true;
       this.ghost.add(mk);

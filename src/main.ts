@@ -6,7 +6,7 @@ import { UI } from './ui/UI';
 import { Controls } from './input/Controls';
 import { Shop } from './ui/Shop';
 import { logoSVG } from './ui/logo';
-import { simRng, uiRng } from './engine/rng';
+import { randomSeed, simRng, uiRng } from './engine/rng';
 import { Modifiers } from './game/Modifiers';
 import { Objective } from './game/Objectives';
 import { UPGRADES, cardUnlocked, specsFor } from './data/upgrades';
@@ -194,7 +194,7 @@ function renderHeroSelect(): void {
 
 function startRunWithHero(heroId: string): void {
   sandbox = false;
-  run = newRun(1 + Math.floor(Math.random() * 2147483645), Math.min(pickedAscension, meta.ascension));
+  run = newRun(randomSeed(), Math.min(pickedAscension, meta.ascension));
   run.hero = heroId;
   if (hasMetaSpecial(meta.unlocks, 'startGold')) run.gold = 25;
   stampContract(run);
@@ -208,7 +208,7 @@ function startRunWithHero(heroId: string): void {
 /** Free-build mode: a big, timer-free, objective-free map that never touches the save. */
 function startSandbox(): void {
   sandbox = true;
-  run = newRun(1 + Math.floor(Math.random() * 2147483645));
+  run = newRun(randomSeed());
   clearedThisRun = 0;
   goldEarnedThisRun = 0;
   startLevel();

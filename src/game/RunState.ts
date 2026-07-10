@@ -40,8 +40,8 @@ export interface RunState {
   mutators: string[];           // the current level's active curse ids
   rewardMult: number;           // the chosen contract's gold multiplier (curses + elite)
   objectiveIdx: number | null;  // contract-chosen objective variant (null = seed default)
-  hero: string | null;          // chosen hero id (Phase 2)
-  equipment: (string | null)[]; // weapon / boots / trinket (Phase 2)
+  hero: string | null;          // chosen run-wide hero rule set
+  equipment: (string | null)[]; // reserved weapon / boots / trinket slots
   ascension: number;            // difficulty tier this run is played at (Phase 4)
 }
 

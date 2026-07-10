@@ -2,7 +2,7 @@ import type { ModifierSpec } from '../game/Modifiers';
 import type { UnitKind } from './units';
 
 /**
- * Heroes — the run's "character" pick (ROADMAP Phase 2). A hero is a
+ * Heroes — the run's rule-set pick. A hero is currently a
  * rule-changer, not a stat pack: beyond the basic Erfgooier every hero is a
  * double-edged sword with a real boon AND a real bane, so the pick shapes how
  * the whole run wants to be played. Hero effects are plain ModifierSpecs

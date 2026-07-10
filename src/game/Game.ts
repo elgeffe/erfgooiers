@@ -6,6 +6,7 @@ import { UNITS, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
+import { formationSpots } from '../engine/formations';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
 import type { Building, BuildingKey, Coord, Faction, Formation, Site, Unit } from '../types';
@@ -94,7 +95,7 @@ export class Game {
     }
     this.store = this.placeBuilding('storehouse', cx, cy, true);
     // base kit stock, then run-upgrade start bonuses on top
-    this.store.stock = { timber: 0, stone: 0, bread: 0, trunk: 0, wheat: 0, flour: 0, goldore: 0, coal: 0, coin: 0, grape: 0, wine: 0, meat: 0, sausage: 0, fish: 0, iron: 0, weapon: 0, armor: 0, ...kit.stock };
+    this.store.stock = Object.fromEntries(Object.keys(ITEMS).map(key => [key, kit.stock[key] ?? 0]));
     const bonus = this.mods.startStock();
     for (const k in bonus) this.store.stock[k] = (this.store.stock[k] || 0) + (bonus as Record<string, number>)[k];
     const d = doorTile(this.store);
@@ -114,7 +115,7 @@ export class Game {
   // =====================================================================
   placeBuilding(key: BuildingKey, tx: number, ty: number, instant = false, rot = 0, faction: Faction = 'player'): Building {
     const def = DEFS[key];
-    const mesh = this.view.createBuildingMesh(def);
+    const mesh = this.view.createBuildingMesh(key, def);
     mesh.rotation.y = -rot * Math.PI / 2;
     mesh.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
     this.view.add(mesh);
@@ -178,7 +179,7 @@ export class Game {
 
   placeSite(key: BuildingKey, tx: number, ty: number, rot = 0): Site {
     const def = DEFS[key];
-    const { group, frame } = this.view.createScaffold(def);
+    const { group, frame } = this.view.createScaffold(key, def);
     frame.rotation.y = -rot * Math.PI / 2;
     group.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
     this.view.add(group);
@@ -1301,63 +1302,14 @@ export class Game {
       for (const u of units) this.orderUnit(u, 'attack', foe.tx, foe.ty, foe);
       return;
     }
-    const spots = this.formationSpots(x, y, units.length, formation, units);
+    const spots = formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), (tx, ty) => {
+      const t = this.world.T(tx, ty);
+      return !!t && t.type === 'grass' && !t.b && !t.site;
+    });
     for (let i = 0; i < units.length; i++) {
       const s = spots[Math.min(i, spots.length - 1)];
       this.orderUnit(units[i], type, s.x, s.y);
     }
-  }
-
-  /** Distinct free targets laid out in the selected formation, oriented along travel. */
-  private formationSpots(cx: number, cy: number, n: number, formation: Formation, units: Unit[]): Coord[] {
-    const out: Coord[] = [];
-    const used = new Set<string>();
-    const tryTile = (x: number, y: number): void => {
-      if (out.length >= n) return;
-      x = Math.round(x); y = Math.round(y);
-      const key = `${x},${y}`;
-      if (used.has(key)) return;
-      const t = this.world.T(x, y);
-      if (!t || t.type !== 'grass' || t.b || t.site) return;
-      used.add(key);
-      out.push({ x, y });
-    };
-
-    let ax = 0, ay = 0;
-    for (const u of units) { ax += u.tx; ay += u.ty; }
-    ax /= Math.max(1, units.length); ay /= Math.max(1, units.length);
-    const dx = cx - ax, dy = cy - ay, len = Math.hypot(dx, dy) || 1;
-    const fx = dx / len, fy = dy / len, rx = -fy, ry = fx;
-    const put = (side: number, back: number): void => tryTile(cx + rx * side - fx * back, cy + ry * side - fy * back);
-
-    if (formation === 'line') {
-      for (let i = 0; i < n; i++) put((i - (n - 1) / 2) * 1.2, 0);
-    } else if (formation === 'column') {
-      for (let i = 0; i < n; i++) put(0, i * 1.1);
-    } else if (formation === 'wedge') {
-      put(0, 0);
-      for (let row = 1; out.length < n && row < n; row++) {
-        put(-row * 0.85, row * 0.9);
-        put(row * 0.85, row * 0.9);
-      }
-    } else {
-      const cols = Math.ceil(Math.sqrt(n));
-      for (let i = 0; i < n; i++) {
-        const row = Math.floor(i / cols), col = i % cols;
-        put(col - (Math.min(cols, n - row * cols) - 1) / 2, row);
-      }
-    }
-
-    // Obstacles or map edges can consume planned positions; fill any gaps nearby.
-    tryTile(cx, cy);
-    for (let r = 1; r < 10 && out.length < n; r++)
-      for (let dx = -r; dx <= r && out.length < n; dx++)
-        for (let dy = -r; dy <= r && out.length < n; dy++) {
-          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // ring perimeter only
-          tryTile(cx + dx, cy + dy);
-        }
-    if (!out.length) out.push({ x: cx, y: cy });
-    return out;
   }
 
   /** Plant (or move) a military building's rally flag — freshly trained fighters
