@@ -868,7 +868,8 @@ export class View {
     // plain puffballs, but a sparse few take (rough) animal shapes for fun.
     const cloudSpan = boardR * 2 + 30;
     this.cloudBound = cloudSpan / 2;
-    const cloudMat = stdMat({ color: 0xffffff, transparent: true, opacity: 0.85 });
+    // translucent so the board stays readable when one drifts overhead
+    const cloudMat = stdMat({ color: 0xffffff, transparent: true, opacity: 0.5 });
     const mk = (c: THREE.Group, x: number, z: number, s: number, y = 0): void => {
       const p = new THREE.Mesh(sphere(1, 8, 6), cloudMat);
       p.position.set(x, y + rnd() * 0.25, z); p.scale.set(s, s * 0.6, s); c.add(p);
@@ -882,7 +883,7 @@ export class View {
       c => { mk(c, 0, 0, 1.5); mk(c, 1.6, 0, 1.0); mk(c, 2.3, 0.1, 0.5); mk(c, 2.75, 0.42, 0.4); mk(c, 3.05, 0.78, 0.3); mk(c, 1.3, -0.78, 0.5); mk(c, -1.5, 0, 0.55); }, // elephant
       c => { mk(c, 0, 0, 1.25); mk(c, 1.55, 0, 0.85); mk(c, 2.15, 0, 0.4); mk(c, 1.4, -0.55, 0.4); mk(c, -1.4, 0.2, 0.4, 0.2); }, // dog
     ];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 4; i++) {
       const c = new THREE.Group();
       if (rnd() < 0.3) {
         animals[Math.floor(rnd() * animals.length)](c);  // sparse: ~2–3 of 8 are critters
