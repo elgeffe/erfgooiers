@@ -927,7 +927,10 @@ export function makeUnitCorpse(role: string, colorHex: number): THREE.Mesh {
       : role === 'dragon' ? makeDragon(colorHex)
         : makeDemon(colorHex);
   built.itemMesh.parent?.remove(built.itemMesh);
-  built.group.rotation.x = Math.PI / 2;
+  // roll the body onto its side (rotating around x pitched the long horizontal
+  // beast models nose-up, leaving wolves & boars looking planted upside down)
+  built.group.rotation.z = Math.PI / 2;
+  built.group.position.y = 0.08;
   const parts: THREE.BufferGeometry[] = [];
   bakeGroupInto(parts, built.group);
   const merged = mergeGeometries(parts, false)!;
@@ -979,8 +982,85 @@ export function makeBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
     case 'mine': return mine(def, ghost);
     case 'tavern': return tavern(def, ghost);
     case 'castle': return castle(def, ghost);
+    case 'guildhall': return guildhall(def, ghost);
     default: return cottage(def, ghost);
   }
+}
+
+// ---------- guild hall — a municipal Dutch raadhuis: brick, stepped gable,
+// sandstone trim, tall lit windows and a little clock turret ----------
+function guildhall(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const brick = mkMat(def.wall, ghost);
+  const sand = mkMat(0xe4d9bd, ghost);        // sandstone trim
+  const roofM = mkMat(def.roof, ghost);
+  const woodM = mkMat(0x4a3626, ghost);
+  const glowM = mkMat(def.accent ?? 0xffd24a, ghost);
+
+  // two-storey brick hall on a sandstone plinth
+  const plinth = new THREE.Mesh(box(1.75, 0.14, 1.4), sand);
+  plinth.position.y = 0.07; plinth.receiveShadow = !ghost; g.add(plinth);
+  const hall = new THREE.Mesh(box(1.6, 1.2, 1.26), brick);
+  hall.position.y = 0.72; hall.castShadow = !ghost; hall.receiveShadow = !ghost; g.add(hall);
+  const band = new THREE.Mesh(box(1.66, 0.07, 1.32), sand);
+  band.position.y = 0.78; band.userData.marker = true; g.add(band);
+
+  // steep hip roof (pre-rotated cone, squashed in z like the farmhouse thatch)
+  const roofGeo = cachedGeo('guild-roof', () => {
+    const r = new THREE.ConeGeometry(1.32, 0.95, 4);
+    r.rotateY(Math.PI / 4);
+    return r;
+  });
+  const roof = new THREE.Mesh(roofGeo, roofM);
+  roof.position.y = 1.78; roof.scale.z = 0.82; roof.castShadow = !ghost; g.add(roof);
+
+  // the stepped gable (trapgevel) crowning the entrance front
+  const steps = [[1.15, 1.42], [0.85, 1.62], [0.55, 1.82], [0.26, 2.0]] as const;
+  for (const [w, y] of steps) {
+    const s = new THREE.Mesh(box(w, 0.22, 0.16), brick);
+    s.position.set(0, y, 0.68); s.castShadow = !ghost; g.add(s);
+    const cap = new THREE.Mesh(box(w + 0.08, 0.05, 0.2), sand);
+    cap.position.set(0, y + 0.13, 0.68); cap.userData.marker = true; g.add(cap);
+  }
+
+  // clock turret on the ridge: a little white lantern with a spire and a clock
+  const turret = new THREE.Mesh(box(0.3, 0.4, 0.3), sand);
+  turret.position.y = 2.28; turret.castShadow = !ghost; g.add(turret);
+  const clock = new THREE.Mesh(cyl(0.09, 0.09, 0.03, 12), glowM);
+  clock.rotation.x = Math.PI / 2; clock.position.set(0, 2.3, 0.17); clock.userData.marker = true; g.add(clock);
+  const spire = new THREE.Mesh(cone(0.24, 0.42, 4), roofM);
+  spire.position.y = 2.68; spire.rotation.y = Math.PI / 4; spire.castShadow = !ghost; g.add(spire);
+  const orb = new THREE.Mesh(sphere(0.045, 8, 6), glowM);
+  orb.position.y = 2.93; orb.userData.marker = true; g.add(orb);
+
+  // tall lit windows in sandstone surrounds, both storeys
+  for (const wx of [-0.52, 0.52]) for (const wy of [0.42, 1.06]) {
+    const frame = new THREE.Mesh(box(0.3, 0.44, 0.05), sand);
+    frame.position.set(wx, wy, 0.64); frame.userData.marker = true; g.add(frame);
+    const win = new THREE.Mesh(box(0.22, 0.36, 0.06), glowM);
+    win.position.set(wx, wy, 0.65); win.userData.marker = true; g.add(win);
+  }
+  // round window in the gable
+  const oculus = new THREE.Mesh(cyl(0.11, 0.11, 0.05, 12), glowM);
+  oculus.rotation.x = Math.PI / 2; oculus.position.set(0, 1.44, 0.77); oculus.userData.marker = true; g.add(oculus);
+
+  // grand double door with a sandstone arch and stone steps
+  const arch = new THREE.Mesh(box(0.62, 0.78, 0.08), sand);
+  arch.position.set(0, 0.39, 0.64); arch.userData.marker = true; g.add(arch);
+  const door = new THREE.Mesh(box(0.46, 0.62, 0.09), woodM);
+  door.position.set(0, 0.31, 0.66); door.userData.marker = true; g.add(door);
+  for (let i = 0; i < 2; i++) {
+    const st = new THREE.Mesh(box(0.72 - i * 0.14, 0.07, 0.22 - i * 0.06), sand);
+    st.position.set(0, 0.035 + i * 0.07, 0.82 - i * 0.05); st.userData.marker = true; g.add(st);
+  }
+
+  // the town flag by the door
+  if (!ghost) {
+    const flag = makeFlag();
+    flag.position.set(0.78, 0, 0.62);
+    g.add(flag);
+  }
+  return g;
 }
 
 /** Scaffold shown while a building is under construction. */
@@ -1378,6 +1458,68 @@ export function makePig(big = false): THREE.Group {
   return g;
 }
 
+// ---------- ambient critters — sparse wildlife that makes the meadow breathe ----------
+export type CritterKind = 'rabbit' | 'fox' | 'hedgehog' | 'mouse' | 'duck';
+export const CRITTER_KINDS: CritterKind[] = ['rabbit', 'fox', 'hedgehog', 'mouse', 'duck'];
+
+/** A tiny cosmetic animal. All face +x (like the pig) so movers can share the
+ *  same steering; `hops` tells the View to bounce it while it travels. */
+export function makeCritter(kind: CritterKind): { group: THREE.Group; hops: boolean } {
+  const g = new THREE.Group();
+  const ink = mat(0x2a2018);
+  let hops = false;
+  if (kind === 'rabbit') {
+    hops = true;
+    const fur = mat(rnd() < 0.4 ? 0xd9cfc0 : 0xa88d6d);
+    const body = new THREE.Mesh(sphere(0.09, 8, 7), fur); body.scale.set(1.25, 1, 1); body.position.y = 0.09; body.castShadow = true; g.add(body);
+    const head = new THREE.Mesh(sphere(0.06, 8, 7), fur); head.position.set(0.1, 0.16, 0); g.add(head);
+    for (const ez of [0.028, -0.028]) {
+      const ear = new THREE.Mesh(cyl(0.012, 0.018, 0.11, 5), fur); ear.position.set(0.08, 0.27, ez); ear.rotation.x = ez * 4; g.add(ear);
+      const eye = new THREE.Mesh(sphere(0.011, 5, 4), ink); eye.position.set(0.145, 0.17, ez + Math.sign(ez) * 0.015); g.add(eye);
+    }
+    const tail = new THREE.Mesh(sphere(0.03, 6, 5), mat(0xf0ead9)); tail.position.set(-0.11, 0.1, 0); g.add(tail);
+  } else if (kind === 'fox') {
+    const red = mat(0xc26a35), cream = mat(0xe8d9c0);
+    const body = new THREE.Mesh(sphere(0.1, 8, 7), red); body.scale.set(1.8, 0.9, 0.85); body.position.y = 0.12; body.castShadow = true; g.add(body);
+    const head = new THREE.Mesh(sphere(0.065, 8, 7), red); head.position.set(0.19, 0.17, 0); g.add(head);
+    const muzzle = new THREE.Mesh(cone(0.03, 0.09, 6), cream); muzzle.rotation.z = -Math.PI / 2; muzzle.position.set(0.27, 0.15, 0); g.add(muzzle);
+    for (const ez of [0.035, -0.035]) {
+      const ear = new THREE.Mesh(cone(0.022, 0.06, 4), red); ear.position.set(0.17, 0.25, ez); g.add(ear);
+      const eye = new THREE.Mesh(sphere(0.011, 5, 4), ink); eye.position.set(0.24, 0.19, ez); g.add(eye);
+    }
+    const tail = new THREE.Mesh(sphere(0.055, 7, 6), red); tail.scale.set(2.1, 0.8, 0.8); tail.position.set(-0.24, 0.13, 0); g.add(tail);
+    const tip = new THREE.Mesh(sphere(0.032, 6, 5), cream); tip.position.set(-0.34, 0.13, 0); g.add(tip);
+    for (const [lx, lz] of [[0.1, 0.05], [0.1, -0.05], [-0.1, 0.05], [-0.1, -0.05]]) {
+      const leg = new THREE.Mesh(cyl(0.016, 0.016, 0.1, 5), mat(0x5b3a24)); leg.position.set(lx, 0.05, lz); g.add(leg);
+    }
+  } else if (kind === 'hedgehog') {
+    const spines = mat(0x6b5a48), faceM = mat(0xcbb597);
+    const body = new THREE.Mesh(sphere(0.085, 8, 7), spines); body.scale.set(1.35, 0.9, 1); body.position.y = 0.075; body.castShadow = true; g.add(body);
+    for (let i = 0; i < 7; i++) {
+      const sp = new THREE.Mesh(cone(0.016, 0.05, 4), spines);
+      sp.position.set(-0.08 + rnd() * 0.13, 0.13 + rnd() * 0.035, (rnd() - 0.5) * 0.1);
+      sp.rotation.z = 0.4 - rnd() * 0.8; g.add(sp);
+    }
+    const face = new THREE.Mesh(cone(0.035, 0.09, 6), faceM); face.rotation.z = -Math.PI / 2; face.position.set(0.12, 0.06, 0); g.add(face);
+    const nose = new THREE.Mesh(sphere(0.012, 5, 4), ink); nose.position.set(0.165, 0.06, 0); g.add(nose);
+  } else if (kind === 'mouse') {
+    const grey = mat(0x9d938a);
+    const body = new THREE.Mesh(sphere(0.05, 7, 6), grey); body.scale.set(1.5, 0.9, 0.9); body.position.y = 0.045; body.castShadow = true; g.add(body);
+    for (const ez of [0.02, -0.02]) { const ear = new THREE.Mesh(sphere(0.018, 5, 4), grey); ear.position.set(0.05, 0.09, ez); g.add(ear); }
+    const nose = new THREE.Mesh(sphere(0.008, 5, 4), ink); nose.position.set(0.085, 0.045, 0); g.add(nose);
+    const tail = new THREE.Mesh(cyl(0.005, 0.009, 0.12, 4), mat(0xc9a58f)); tail.rotation.z = Math.PI / 2 - 0.35; tail.position.set(-0.1, 0.035, 0); g.add(tail);
+  } else { // duck — waddles the shorelines
+    const white = mat(0xece7d6), bill = mat(0xe0a33c);
+    const body = new THREE.Mesh(sphere(0.08, 8, 7), white); body.scale.set(1.5, 0.95, 0.95); body.position.y = 0.09; body.castShadow = true; g.add(body);
+    const head = new THREE.Mesh(sphere(0.045, 7, 6), white); head.position.set(0.1, 0.2, 0); g.add(head);
+    const beak = new THREE.Mesh(cone(0.02, 0.06, 5), bill); beak.rotation.z = -Math.PI / 2; beak.position.set(0.16, 0.19, 0); g.add(beak);
+    const eye = new THREE.Mesh(sphere(0.009, 5, 4), ink); eye.position.set(0.12, 0.22, 0.025); g.add(eye);
+    const tail = new THREE.Mesh(cone(0.03, 0.07, 4), white); tail.rotation.z = Math.PI / 2 + 0.5; tail.position.set(-0.12, 0.11, 0); g.add(tail);
+  }
+  g.scale.setScalar(0.85 + rnd() * 0.3);
+  return { group: g, hops };
+}
+
 // ---------- fish — cute silver/orange swimmers for the lake ----------
 const FISH_COLORS = [0xd98c46, 0xc9c2b0, 0xe0a85a, 0x9fb7c4];
 export function makeFish(): THREE.Group {
@@ -1429,50 +1571,59 @@ function castle(def: BuildingDef, ghost: boolean): THREE.Group {
     }
   };
 
+  // Everything stays inside the 2×2 tile footprint (|x|,|z| ≤ ~1.05): the old
+  // towers at ±0.95 with fat drums poked ~1.3 into the neighbouring walkable
+  // tiles, so units strolled straight through them.
+  const TOW = 0.8; // corner-tower centre offset from the keep's middle
+
   // central keep — a tall square donjon with a battlement crown and a banner
-  const keep = new THREE.Mesh(box(1.15, 1.5, 1.15), stone);
+  const keep = new THREE.Mesh(box(1.1, 1.5, 1.1), stone);
   keep.position.y = 0.75; keep.castShadow = !ghost; keep.receiveShadow = !ghost; g.add(keep);
-  const keepCap = new THREE.Mesh(box(1.3, 0.12, 1.3), trim);
+  const keepCap = new THREE.Mesh(box(1.24, 0.12, 1.24), trim);
   keepCap.position.y = 1.56; keepCap.userData.marker = true; g.add(keepCap);
-  for (const [cx, cz, ax] of [[0, 0.65, true], [0, -0.65, true], [0.65, 0, false], [-0.65, 0, false]] as [number, number, boolean][])
-    crenel(cx, cz, 1.69, 1.3, ax);
-  const keepRoof = new THREE.Mesh(cone(0.72, 0.62, 4), roofM);
-  keepRoof.position.y = 1.93; keepRoof.rotation.y = Math.PI / 4; keepRoof.castShadow = !ghost; g.add(keepRoof);
-  // banner on the keep
-  const pole = new THREE.Mesh(cyl(0.02, 0.02, 0.5, 5), woodM);
-  pole.position.y = 2.42; pole.userData.marker = true; g.add(pole);
-  const banner = new THREE.Mesh(cone(0.09, 0.3, 3), roofM);
-  banner.rotation.z = -Math.PI / 2; banner.position.set(0.16, 2.56, 0); banner.userData.marker = true; g.add(banner);
+  for (const [cx, cz, ax] of [[0, 0.62, true], [0, -0.62, true], [0.62, 0, false], [-0.62, 0, false]] as [number, number, boolean][])
+    crenel(cx, cz, 1.69, 1.24, ax);
+  // a proper steep pyramid roof that covers the whole crown (the old shallow
+  // cone sat inset and read as a flat red slab from the iso camera)
+  const keepRoof = new THREE.Mesh(cone(0.93, 0.85, 4), roofM);
+  keepRoof.position.y = 2.02; keepRoof.rotation.y = Math.PI / 4; keepRoof.castShadow = !ghost; g.add(keepRoof);
+  // banner: a pole rising from the roof apex flying a little rectangular flag
+  const pole = new THREE.Mesh(cyl(0.022, 0.028, 0.62, 6), woodM);
+  pole.position.y = 2.62; pole.userData.marker = true; g.add(pole);
+  const flag = new THREE.Mesh(box(0.34, 0.2, 0.03), roofM);
+  flag.position.set(0.19, 2.82, 0); flag.userData.marker = true; g.add(flag);
+  const flagTip = new THREE.Mesh(cone(0.03, 0.06, 6), trim);
+  flagTip.position.y = 2.96; flagTip.userData.marker = true; g.add(flagTip);
 
   // curtain walls between the towers, crenellated
-  for (const [cx, cz, ax] of [[0, 0.95, true], [0, -0.95, true], [0.95, 0, false], [-0.95, 0, false]] as [number, number, boolean][]) {
-    const wall = new THREE.Mesh(box(ax ? 1.7 : 0.2, 0.72, ax ? 0.2 : 1.7), stone);
+  for (const [cx, cz, ax] of [[0, TOW, true], [0, -TOW, true], [TOW, 0, false], [-TOW, 0, false]] as [number, number, boolean][]) {
+    const wall = new THREE.Mesh(box(ax ? 1.5 : 0.2, 0.72, ax ? 0.2 : 1.5), stone);
     wall.position.set(cx, 0.36, cz); wall.castShadow = !ghost; wall.receiveShadow = !ghost; g.add(wall);
-    const walk = new THREE.Mesh(box(ax ? 1.7 : 0.26, 0.07, ax ? 0.26 : 1.7), trim);
+    const walk = new THREE.Mesh(box(ax ? 1.5 : 0.26, 0.07, ax ? 0.26 : 1.5), trim);
     walk.position.set(cx, 0.75, cz); walk.userData.marker = true; g.add(walk);
-    crenel(cx, cz, 0.86, 1.6, ax);
+    crenel(cx, cz, 0.86, 1.42, ax);
   }
 
   // round towers on each corner: drum, corbelled crown, conical roof, arrow slit
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    const tx = sx * 0.95, tz = sz * 0.95;
-    const drum = new THREE.Mesh(cyl(0.3, 0.34, 1.2, 10), stone);
+    const tx = sx * TOW, tz = sz * TOW;
+    const drum = new THREE.Mesh(cyl(0.22, 0.25, 1.2, 10), stone);
     drum.position.set(tx, 0.6, tz); drum.castShadow = !ghost; drum.receiveShadow = !ghost; g.add(drum);
-    const crown = new THREE.Mesh(cyl(0.38, 0.32, 0.18, 10), trim);
+    const crown = new THREE.Mesh(cyl(0.29, 0.24, 0.18, 10), trim);
     crown.position.set(tx, 1.28, tz); crown.userData.marker = true; g.add(crown);
-    const cap = new THREE.Mesh(cone(0.4, 0.55, 10), roofM);
+    const cap = new THREE.Mesh(cone(0.31, 0.52, 10), roofM);
     cap.position.set(tx, 1.62, tz); cap.castShadow = !ghost; g.add(cap);
     const slit = new THREE.Mesh(box(0.05, 0.26, 0.05), woodM);
-    slit.position.set(tx * 1.24, 0.78, tz * 1.24); slit.userData.marker = true; g.add(slit);
+    slit.position.set(tx * 1.22, 0.78, tz * 1.22); slit.userData.marker = true; g.add(slit);
   }
 
   // gatehouse: an arched timber gate through the front wall
   const gateFrame = new THREE.Mesh(box(0.66, 0.86, 0.3), trim);
-  gateFrame.position.set(0, 0.43, 0.95); gateFrame.castShadow = !ghost; g.add(gateFrame);
+  gateFrame.position.set(0, 0.43, TOW); gateFrame.castShadow = !ghost; g.add(gateFrame);
   const gate = new THREE.Mesh(box(0.46, 0.6, 0.1), woodM);
-  gate.position.set(0, 0.3, 1.08); gate.userData.marker = true; g.add(gate);
+  gate.position.set(0, 0.3, 0.93); gate.userData.marker = true; g.add(gate);
   const arch = new THREE.Mesh(cachedGeo('castle-arch', () => new THREE.CylinderGeometry(0.23, 0.23, 0.1, 10, 1, false, -Math.PI / 2, Math.PI)), woodM);
-  arch.rotation.x = Math.PI / 2; arch.position.set(0, 0.6, 1.08); arch.userData.marker = true; g.add(arch);
+  arch.rotation.x = Math.PI / 2; arch.position.set(0, 0.6, 0.93); arch.userData.marker = true; g.add(arch);
   // lit keep windows
   for (const s of [-0.3, 0.3]) {
     const win = new THREE.Mesh(box(0.14, 0.24, 0.05), mkMat(0xf4d98a, ghost));

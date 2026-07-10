@@ -1368,11 +1368,16 @@ export class Game {
   private waves: { units: Unit[]; cleared: boolean }[] = [];
   private commanderT = 0;
   private camps: Building[] = [];
+  /** Sim time the armed muster-triggered wave lands at (null = not armed yet). */
+  private waveArmT: number | null = null;
+  /** Extra seconds granted to the level's hard timer (waves with bonusTime). */
+  bonusTime = 0;
 
   /** Configure and spawn a level's enemy presence (called by main after init). */
   setEnemies(setup: EnemySetup | null): void {
     this.enemy = setup;
     this.waveIdx = 0; this.waves = []; this.commanderT = 0; this.camps = [];
+    this.waveArmT = null; this.bonusTime = 0;
     if (!setup) return;
     if (setup.wild) for (const w of setup.wild) this.spawnWild(w.kind, w.count);
     if (setup.camps) for (const c of setup.camps) for (let i = 0; i < c.count; i++) this.spawnStronghold('banditcamp', c.guards);
@@ -1380,23 +1385,47 @@ export class Game {
     if (setup.boss) this.spawnBoss(setup.boss);
   }
 
+  /** Player-faction fighters currently alive (arming muster-triggered raids). */
+  private playerFighters(): number {
+    let n = 0;
+    for (const u of this.units) if (!u.dead && u.faction === 'player' && u.dmg > 0) n++;
+    return n;
+  }
+
   /**
    * The next scheduled raid wave for the HUD countdown: seconds until it lands
-   * plus its size, or null when this level has no more scheduled waves.
+   * plus its size, or (for a muster-triggered raid that hasn't armed yet) a
+   * label telling the player what will provoke it.
    */
-  nextWave(): { in: number; count: number } | null {
+  nextWave(): { in: number; count: number; label?: string } | null {
     const w = this.enemy?.waves;
     if (!w || this.waveIdx >= w.length) return null;
     const def = w[this.waveIdx];
-    return { in: Math.max(0, def.at - this.elapsed), count: def.count };
+    if (def.at !== undefined) return { in: Math.max(0, def.at - this.elapsed), count: def.count };
+    if (this.waveArmT !== null) return { in: Math.max(0, this.waveArmT - this.elapsed), count: def.count };
+    return { in: Infinity, count: def.count, label: `Raiders are watching — mustering ${def.whenArmy ?? 1} fighters will provoke them` };
   }
 
   private combatDirector(sdt: number): void {
     if (!this.enemy) return;
-    // launch scheduled raid waves at the castle
+    // launch scheduled raid waves at the castle. Waves are sequential: the
+    // head wave launches on its trigger (a timestamp, or the player's muster
+    // reaching size + a grace delay), then the next takes its place.
     const w = this.enemy.waves;
-    if (w) while (this.waveIdx < w.length && this.elapsed >= w[this.waveIdx].at) {
-      const def = w[this.waveIdx++];
+    while (w && this.waveIdx < w.length) {
+      const def = w[this.waveIdx];
+      let launch = false;
+      if (def.at !== undefined) launch = this.elapsed >= def.at;
+      else if (this.waveArmT !== null) launch = this.elapsed >= this.waveArmT;
+      else if (this.playerFighters() >= (def.whenArmy ?? 1)) {
+        this.waveArmT = this.elapsed + (def.delay ?? 45);
+        this.toast('Your muster has been spotted — raiders are gathering!', 'err');
+        this.sfx('error');
+      }
+      if (!launch) break;
+      this.waveIdx++;
+      this.waveArmT = null;
+      if (def.bonusTime) { this.bonusTime += def.bonusTime; this.toast(`+${def.bonusTime}s on the clock for the fight ahead`); }
       this.waves.push({ units: this.spawnRaid(def.kind, def.count, 'edge'), cleared: false });
       this.toast('A raid approaches!', 'err'); this.sfx('error');
     }
@@ -1455,14 +1484,15 @@ export class Game {
   /** Extra wild presence from a level mutator (e.g. Wolf Country's packs). */
   spawnMutatorWild(kind: UnitKind, count: number): void { this.spawnWild(kind, count); }
 
-  /** Scatter wild beasts across the map, clear of the central build zone. */
+  /** Scatter wild beasts across the map, well clear of the starting settlement
+   *  so nobody is in a fight before they've trained a single unit. */
   private spawnWild(kind: UnitKind, count: number): void {
     const W = this.world.W, H = this.world.H, cx = W / 2, cy = H / 2;
     let placed = 0, tries = 0;
     while (placed < count && tries < count * 40) {
       tries++;
       const x = 2 + Math.floor(rnd() * (W - 4)), y = 2 + Math.floor(rnd() * (H - 4));
-      if (Math.abs(x - cx) < 7 && Math.abs(y - cy) < 7) continue;
+      if (Math.abs(x - cx) < 12 && Math.abs(y - cy) < 12) continue;
       const t = this.world.T(x, y);
       if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
       this.spawnFighter(kind, { x, y }, 'wild'); placed++;
@@ -1490,6 +1520,14 @@ export class Game {
   }
 
   private spawnBoss(kind: UnitKind): void {
+    // on frontier maps the boss broods in the walled-off enemy quarter and
+    // stays there — the player picks when to march in and start that fight
+    const ez = this.world.enemyZone;
+    if (ez) {
+      this.spawnSquad(kind, 1, this.world.wx(ez.x), this.world.wz(ez.y), UNITS[kind].faction);
+      this.toast(`The ${UNITS[kind].name} broods in its mountain lair — muster before you march`, 'err');
+      return;
+    }
     const e = this.randomEdge();
     const squad = this.spawnSquad(kind, 1, e.x, e.z, UNITS[kind].faction);
     const castle = this.store;
@@ -1507,9 +1545,20 @@ export class Game {
 
   private findStrongholdSpot(): { x: number; y: number } | null {
     const W = this.world.W, H = this.world.H, cx = W / 2, cy = H / 2;
+    // frontier maps: strongholds live inside the walled-off enemy quarter
+    const ez = this.world.enemyZone;
+    if (ez) {
+      for (let tries = 0; tries < 400; tries++) {
+        const x = ez.x + Math.floor((rnd() * 2 - 1) * ez.r), y = ez.y + Math.floor((rnd() * 2 - 1) * ez.r);
+        if (x < 2 || y < 2 || x > W - 4 || y > H - 4) continue;
+        if (Math.hypot(x - ez.x, y - ez.y) > ez.r) continue;
+        if (this.areaClear(x, y)) return { x, y };
+      }
+      // the quarter can be waterlogged on a wet seed — fall through to anywhere
+    }
     for (let tries = 0; tries < 400; tries++) {
       const x = 2 + Math.floor(rnd() * (W - 5)), y = 2 + Math.floor(rnd() * (H - 5));
-      if (Math.abs(x - cx) < 9 && Math.abs(y - cy) < 9) continue; // keep clear of the player's start
+      if (Math.abs(x - cx) < 12 && Math.abs(y - cy) < 12) continue; // keep clear of the player's start
       if (this.areaClear(x, y)) return { x, y };
     }
     return null;

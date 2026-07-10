@@ -110,12 +110,13 @@ export class UI {
   }
 
   /** Refresh the "next raid" countdown banner, or hide it when no wave is pending. */
-  updateWave(info: { in: number; count: number } | null): void {
+  updateWave(info: { in: number; count: number; label?: string } | null): void {
     const el = $('wavebar') as HTMLElement;
     if (!info) { el.style.display = 'none'; return; }
     el.style.display = 'flex';
-    $('waveText').textContent = `Next raid in ${fmtTime(info.in)} · ${info.count} raiders`;
-    el.classList.toggle('imminent', info.in <= 10);
+    // muster-triggered raids show what will provoke them instead of a countdown
+    $('waveText').textContent = info.label ?? `Next raid in ${fmtTime(info.in)} · ${info.count} raiders`;
+    el.classList.toggle('imminent', !info.label && info.in <= 10);
   }
 
   /** Toggle sandbox HUD: no objective card, no timer, no debug-win button. */
@@ -183,7 +184,7 @@ export class UI {
       tabs.appendChild(tab);
       for (const key of cat.keys) {
         const def = DEFS[key];
-        const el = document.createElement('div'); el.className = 'bcard'; el.dataset.key = key; el.dataset.cat = cat.id; el.title = def.desc;
+        const el = document.createElement('div'); el.className = 'bcard'; el.dataset.key = key; el.dataset.cat = cat.id; el.title = def.desc + ' · press R (or the ⟳ button) to rotate while placing';
         el.innerHTML = `<div class="icon">${this.iconSVG(def)}</div><div class="nm">${def.name}</div><div class="cost">${this.costHTML(def.cost)}</div><div class="ptime">${this.timeHTML(def)}</div>`;
         el.onclick = () => { audio.play('click'); this.onMode(el.classList.contains('on') ? null : { type: 'build', key }); };
         row.appendChild(el);
@@ -346,7 +347,8 @@ export class UI {
         else {
           for (const t of mil.units) {
             const cost = Object.entries(t.cost).map(([k, n]) => `<span class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color};margin:0 3px 0 6px"></span>${n}`).join('') || ' free';
-            body += `<button class="inspbtn" data-train="${t.kind}">+ ${unitLabel(t.kind)}${cost}</button>`;
+            body += `<button class="inspbtn" data-train="${t.kind}" ${t.desc ? `title="${t.desc}"` : ''}>+ ${unitLabel(t.kind)}${cost} · ${t.time}s</button>`;
+            if (t.desc) body += `<div class="tinfo">${t.desc}</div>`;
           }
           if (o.def.military) body += '<div class="hnote">Right-click the map with this building selected to set a rally flag.</div>';
           const q = o.trainQ || [];

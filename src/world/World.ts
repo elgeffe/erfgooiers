@@ -18,6 +18,10 @@ export interface WorldParams {
   goldPiles?: number;    // scattered gold pickups the hero/serfs collect
   mountains?: number;    // impassable rocky ridges (natural boundaries / biomes)
   ruins?: number;        // broken old wall lines — impassable but with gaps
+  /** Carve the map into friendly and enemy territory: a mountain arc walls off
+   *  one corner (with a guarded pass or two), and enemy strongholds/bosses are
+   *  placed inside it. Combat starts when YOU march through the pass. */
+  frontier?: boolean;
 }
 
 /**
@@ -35,6 +39,8 @@ export class World {
   /** The map's generation seed (exposed for per-tile cosmetic hashing). */
   readonly seed: number;
   readonly tiles: Tile[][] = [];
+  /** The walled-off enemy quarter on frontier maps (centre + radius), or null. */
+  enemyZone: { x: number; y: number; r: number } | null = null;
 
   private readonly p: Required<WorldParams>;
 
@@ -50,6 +56,7 @@ export class World {
       goldPiles: params.goldPiles ?? 0,
       mountains: params.mountains ?? 0,
       ruins: params.ruins ?? 0,
+      frontier: params.frontier ?? false,
     };
     this.W = this.p.w;
     this.H = this.p.h;
@@ -136,24 +143,70 @@ export class World {
     // ---- natural boundaries: rocky ridges & broken old walls (both impassable) ----
     // Ridges wander as short chains of blobs, walls as straight-ish lines with
     // gaps — carving the map into passes and biomes without sealing the centre.
+    // a mountain must never stand at the water's edge — keep a grass margin
+    const nearWater = (x: number, y: number): boolean => {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const t = this.T(x + dx, y + dy);
+        if (t && t.type === 'water') return true;
+      }
+      return false;
+    };
     const rockTile = (x: number, y: number, kind: 'peak' | 'wall'): void => {
       const t = this.T(x, y);
       if (!t || t.type !== 'grass' || nearCentre(x, y, 2)) return;
+      if (kind === 'peak' && nearWater(x, y)) return;
       t.type = 'rock'; t.rock = kind;
     };
+    // ---- the frontier: a mountain arc walls off one corner as enemy land ----
+    // A thick rock band sweeps a quarter-circle around a random corner, with
+    // one clear pass (plus any lake gaps) — the only ways in on foot. The
+    // enclosed quarter is exposed as `enemyZone` for stronghold placement.
+    if (this.p.frontier) {
+      const corner = [[0, 0], [W - 1, 0], [0, H - 1], [W - 1, H - 1]][Math.floor(rnd() * 4)];
+      const [cx0, cy0] = corner;
+      const R = Math.round(Math.min(W, H) * 0.42);
+      const sgnX = cx0 === 0 ? 1 : -1, sgnY = cy0 === 0 ? 1 : -1;
+      // the pass: a gap somewhere along the arc, kept off the arc's ends
+      const passAng = 0.25 + rnd() * (Math.PI / 2 - 0.5);
+      const passHalf = 2.5 / R;                               // ≈5 walkable tiles of gap
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const dx = (x - cx0) * sgnX, dy = (y - cy0) * sgnY;   // fold every corner into quadrant I
+        if (dx < 0 || dy < 0) continue;
+        const d = Math.hypot(dx, dy);
+        if (d < R - 1.2 || d > R + 1.2) continue;
+        const ang = Math.atan2(dy, dx);
+        if (Math.abs(ang - passAng) < passHalf) continue;      // leave the pass open
+        const t = this.tiles[y][x];
+        if (t.type !== 'grass' || nearCentre(x, y, 2)) continue;
+        t.type = 'rock'; t.rock = 'peak';
+      }
+      const ir = Math.round(R * 0.55);
+      this.enemyZone = {
+        x: cx0 + sgnX * Math.round(ir * Math.cos(Math.PI / 4)),
+        y: cy0 + sgnY * Math.round(ir * Math.sin(Math.PI / 4)),
+        r: Math.round(R * 0.5),
+      };
+    }
+
+    // ridges read as RANGES: long chains of overlapping blobs holding one
+    // heading with only gentle drift, seeded away from the water
     for (let i = 0; i < this.p.mountains; i++) {
-      let mx = 4 + rnd() * (W - 8), my = 4 + rnd() * (H - 8);
+      let mx = 0, my = 0, seedGuard = 0;
+      do { mx = 4 + rnd() * (W - 8); my = 4 + rnd() * (H - 8); }
+      while (nearWater(Math.round(mx), Math.round(my)) && seedGuard++ < 30);
       let dir = rnd() * Math.PI * 2;
-      const links = 3 + Math.floor(rnd() * 3);
+      const links = 6 + Math.floor(rnd() * 4);
       for (let j = 0; j < links; j++) {
         const r = 1 + Math.floor(rnd() * 2);
         const cx = Math.round(mx), cy = Math.round(my);
         for (let y = Math.max(0, cy - r); y <= Math.min(H - 1, cy + r); y++)
           for (let x = Math.max(0, cx - r); x <= Math.min(W - 1, cx + r); x++)
             if (Math.hypot(x - cx, y - cy) <= r * (0.75 + rnd() * 0.3)) rockTile(x, y, 'peak');
-        dir += (rnd() - 0.5) * 0.8;
-        mx += Math.cos(dir) * (r + 1.6);
-        my += Math.sin(dir) * (r + 1.6);
+        dir += (rnd() - 0.5) * 0.35;
+        mx += Math.cos(dir) * (r + 1.3);
+        my += Math.sin(dir) * (r + 1.3);
+        // a range that runs into the lake ends there rather than fording it
+        if (nearWater(Math.round(mx), Math.round(my))) break;
       }
     }
     for (let i = 0; i < this.p.ruins; i++) {
@@ -250,7 +303,7 @@ export class World {
     while (piles < this.p.goldPiles && pguard++ < 500) {
       const x = 3 + Math.floor(rnd() * (W - 6)), y = 3 + Math.floor(rnd() * (H - 6));
       const t = this.T(x, y);
-      if (t && t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep && !t.field && !t.pickup && !central(x, y)) {
+      if (t && t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep && !t.field && !t.pickup && !t.deco && !central(x, y)) {
         t.pickup = { gold: 3 + Math.floor(rnd() * 5), reserved: false, meshes: [] };
         piles++;
       }

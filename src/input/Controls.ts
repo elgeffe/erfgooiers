@@ -66,11 +66,24 @@ export class Controls {
     if (m) {
       hint.style.display = 'block';
       hint.style.bottom = (menu.getBoundingClientRect().height + 22) + 'px';
-      hint.textContent = m.type === 'road' ? 'Click & drag to paint road — Esc to stop'
-        : m.type === 'plot' ? `Click & drag to add plots for the ${m.building.name} — Esc to stop`
-        : m.type === 'demolish' ? 'Click a building or site — drag over roads & plots to remove — Esc to stop'
-          : `Click to place ${DEFS[m.key].name} — R to rotate · Esc to cancel`;
+      if (m.type === 'build') {
+        // a visible rotate control, so nobody has to *know* about the R key
+        hint.innerHTML = `Click to place ${DEFS[m.key].name} · <button id="hintRotate" class="hintbtn" title="Rotate the building">⟳ Rotate <span class="key">R</span></button> · Esc to cancel`;
+        const rb = document.getElementById('hintRotate')!;
+        rb.onpointerdown = ev => { ev.stopPropagation(); ev.preventDefault(); this.rotateBuild(); };
+      } else {
+        hint.textContent = m.type === 'road' ? 'Click & drag to paint road — Esc to stop'
+          : m.type === 'plot' ? `Click & drag to add plots for the ${m.building.name} — Esc to stop`
+          : 'Click a building or site — drag over roads & plots to remove — Esc to stop';
+      }
     } else hint.style.display = 'none';
+  }
+
+  /** Turn the pending building a quarter-turn (R key or the hint-bar button). */
+  rotateBuild(): void {
+    if (!this.mode || this.mode.type !== 'build') return;
+    this.buildRot = (this.buildRot + 1) % 4;
+    if (this.ghostTile) this.refreshGhost(this.ghostTile.x, this.ghostTile.y);
   }
 
   private refreshGhost(tx: number, ty: number): void {
@@ -195,10 +208,7 @@ export class Controls {
   private onKey(e: KeyboardEvent): void {
     this.keys[e.key.toLowerCase()] = true;
     if (e.key === 'Escape') { this.setMode(null); this.game?.select(null); }
-    if ((e.key === 'r' || e.key === 'R') && this.mode && this.mode.type === 'build') {
-      this.buildRot = (this.buildRot + 1) % 4;
-      if (this.ghostTile) this.refreshGhost(this.ghostTile.x, this.ghostTile.y);
-    }
+    if (e.key === 'r' || e.key === 'R') this.rotateBuild();
     if (e.key === ' ') { e.preventDefault(); this.ui.togglePause(); }
     // control groups: Shift+1..5 assigns the current selection, 1..5 recalls it
     const dg = /^Digit([1-5])$/.exec(e.code);

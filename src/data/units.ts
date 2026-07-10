@@ -46,8 +46,9 @@ export const UNITS: Record<UnitKind, UnitDef> = {
     hp: 70, dmg: 10, range: 1.0, atkCd: 1.2, speed: BASE_SPEED * 1.1, scale: 1, aggro: 6,
     wander: true, leash: 14, charge: 1.5 },
 
+  // a proper siege of a boss: bring a massed, trained army, not the start kit
   dragon: { kind: 'dragon', name: 'Dragon of Het Gooi', faction: 'wild', color: 0x7a2233, model: 'dragon',
-    hp: 800, dmg: 40, range: 2.5, atkCd: 2.0, speed: BASE_SPEED * 0.8, scale: 2.4, aggro: 14, flying: true, fire: true },
+    hp: 2600, dmg: 40, range: 2.5, atkCd: 2.0, speed: BASE_SPEED * 0.8, scale: 2.4, aggro: 14, flying: true, fire: true },
 
   wolf: { kind: 'wolf', name: 'Wolf', faction: 'wild', color: 0x777d84, model: 'wolf',
     hp: 40, dmg: 7, range: 1.0, atkCd: 0.9, speed: BASE_SPEED * 1.25, scale: 0.95, aggro: 8,
@@ -61,6 +62,6 @@ export const UNITS: Record<UnitKind, UnitDef> = {
     arrows: true, wander: true },
 
   demon: { kind: 'demon', name: 'Demon', faction: 'enemy', color: 0x3a1626, model: 'demon',
-    hp: 500, dmg: 26, range: 2.2, atkCd: 1.6, speed: BASE_SPEED * 0.9, scale: 1.8, aggro: 13,
+    hp: 1600, dmg: 26, range: 2.2, atkCd: 1.6, speed: BASE_SPEED * 0.9, scale: 1.8, aggro: 13,
     flying: true, fire: true },
 };

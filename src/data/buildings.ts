@@ -4,12 +4,15 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
   storehouse: { name: 'Storehouse', desc: 'Stores every good', model: 'castle',
     cost: {}, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 500 },
 
-  guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & builders)', model: 'cottage',
-    cost: { timber: 4, stone: 3 }, roof: 0x4a6a7a, wall: 0xcaa46e, accent: 0xffd24a, hp: 250,
+  guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & builders)', model: 'guildhall',
+    cost: { timber: 4, stone: 3 }, roof: 0x46606e, wall: 0x9a5a40, accent: 0xffd24a, hp: 250,
     trainer: { units: [
-      { kind: 'villager', cost: { coin: 1 }, time: 5 },
-      { kind: 'serf', cost: { coin: 1 }, time: 5 },
-      { kind: 'laborer', cost: { coin: 1 }, time: 5 },
+      { kind: 'villager', cost: { coin: 1 }, time: 5,
+        desc: 'Staffs one production building as its specialist (woodcutter, baker, miner…)' },
+      { kind: 'serf', cost: { coin: 1 }, time: 5,
+        desc: 'Hauls goods between buildings and delivers materials to construction sites' },
+      { kind: 'laborer', cost: { coin: 1 }, time: 5,
+        desc: 'Raises buildings once their materials have been delivered' },
     ] } },
 
   woodcutter: { name: "Woodcutter's Hut", desc: 'Chops nearby trees → trunks', model: 'cottage',
@@ -91,9 +94,12 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
   barracks: { name: 'Barracks', desc: 'Trains soldiers, archers & knights — weapons come from the smithy', model: 'barn',
     cost: { timber: 4, stone: 3 }, roof: 0x5a4a6a, wall: 0xb0a48c, accent: 0x8a5a2b, hp: 200,
     military: { units: [
-      { kind: 'soldier', cost: { weapon: 1, coin: 1 }, time: 6 },
-      { kind: 'archer', cost: { timber: 1, coin: 1 }, time: 6 },
-      { kind: 'knight', cost: { weapon: 1, armor: 1, coin: 2 }, time: 9 },
+      { kind: 'soldier', cost: { weapon: 1, coin: 1 }, time: 6,
+        desc: 'Steady melee line fighter — the backbone of any warband' },
+      { kind: 'archer', cost: { timber: 1, coin: 1 }, time: 6,
+        desc: 'Ranged fighter — fragile, but hits from five tiles away' },
+      { kind: 'knight', cost: { weapon: 1, armor: 1, coin: 2 }, time: 9,
+        desc: 'Heavy elite — twice a soldier\'s health and hits much harder' },
     ] } },
 
   watchtower: { name: 'Watchtower', desc: 'Looses arrows at raiders in range — build it along their path', model: 'mine',
