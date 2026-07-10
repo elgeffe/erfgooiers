@@ -16,7 +16,7 @@ import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from '.
 import { DEFAULT_SANDBOX, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
 import { BIOMES, campaignBiome } from './data/biomes';
 import type { UnitKind } from './data/units';
-import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
+import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionArmyMult, ascensionForcesCurse, ascensionPrepMult, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
 
@@ -94,6 +94,7 @@ function startLevel(): void {
   ui.setPerks(run.upgrades, meta.unlocks);
   controls.setGame(game);
   // sandbox trouble is configured on the setup screen; runs use the level table
+  game.prepMult = sandbox ? 1 : ascensionPrepMult(run.ascension);
   game.setEnemies(level.enemies ?? null);
   // mutator payloads beyond stat curses: extra wild packs on the map
   for (const id of mutators) {
@@ -101,9 +102,12 @@ function startLevel(): void {
     if (def?.spawnWild) for (const w of def.spawnWild) game.spawnMutatorWild(w.kind, w.count);
   }
   ui.setMutators(mutators.map(id => MUTATOR_BY_ID[id]).filter(d => !!d));
-  if (!sandbox && level.startArmy) {
+  // hostile sandboxes grant a default garrison too (their LevelDef carries
+  // one); higher ascensions thin the granted army but stretch prep time
+  if (level.startArmy) {
+    const armyMult = sandbox ? 1 : ascensionArmyMult(run.ascension);
     const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
-    for (const a of level.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
+    for (const a of level.startArmy) game.spawnSquad(a.kind, Math.max(1, Math.round(a.count * armyMult)), sx, sz, 'player');
   }
   // the hero rides out of the castle gate at every level's start, with any warband
   const heroDef = !sandbox && run.hero ? HERO_BY_ID[run.hero] : null;
@@ -150,7 +154,7 @@ function goMenu(): void {
   sandbox = false;
   audio.setBiome('gooi'); // release any biome signature before the menu mood
   audio.setLevel(0);
-  audio.setDynamic(false);
+  audio.setDynamic(true); // the menu plays the evolving score, drifting through every mood
   renderMenu();
   showScreen('menu');
 }
@@ -522,6 +526,8 @@ function bindSandboxSpawn(id: string, kind: UnitKind, count: number): void {
 bindSandboxSpawn('sbSoldier', 'soldier', 12);
 bindSandboxSpawn('sbArcher', 'archer', 8);
 bindSandboxSpawn('sbKnight', 'knight', 6);
+bindSandboxSpawn('sbLancer', 'lancer', 8);
+bindSandboxSpawn('sbTrebuchet', 'trebuchet', 2);
 bindSandboxSpawn('sbBandit', 'bandit', 12);
 bindSandboxSpawn('sbBoar', 'boar', 6);
 bindSandboxSpawn('sbWolf', 'wolf', 8);
@@ -548,8 +554,12 @@ function renderSound(): void {
   btnSound.title = audio.isMuted ? 'Sound off — click to unmute' : 'Sound on — click to mute';
 }
 btnSound.onclick = e => { e.stopPropagation(); audio.toggleMute(); renderSound(); };
-// Browsers gate audio behind a user gesture: unlock on the first interaction.
-addEventListener('pointerdown', () => audio.unlock(), { once: true });
+// Start the score immediately where the browser allows it (returning visitors
+// with prior engagement); everyone else gets it on their very first gesture.
+audio.unlock();
+for (const ev of ['pointerdown', 'keydown'] as const) {
+  addEventListener(ev, () => audio.unlock(), { once: true });
+}
 renderSound();
 
 // ---------- fullscreen ----------

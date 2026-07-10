@@ -49,6 +49,10 @@ export class Game {
   simSpeed = 1;
   /** The run's mounted hero on this level (null in sandbox / before spawn). */
   heroUnit: Unit | null = null;
+  /** Seconds until a fallen hero rides back out of the castle (0 = alive/none). */
+  heroRespawnT = 0;
+  private heroId: string | null = null;
+  private heroName = 'Hero';
 
   /** Sim seconds elapsed this level (drives the hard timer & speed bonus). */
   elapsed = 0;
@@ -128,6 +132,7 @@ export class Game {
       prog: 0, working: false, worker: null, fieldsList: [], mesh, name: def.name,
       faction, hp: maxHp, maxHp,
     };
+    if (def.store) b.stock = {};   // player-built storehouses start empty
     const tiles = this.world.tiles;
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].b = b; if (tiles[y][x].tree) this.removeTree(x, y); if (tiles[y][x].deco) this.removeDeco(x, y); }
     this.buildings.push(b);
@@ -220,7 +225,7 @@ export class Game {
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
       home: null, wstate: 'idle', timer: 0, target: null, hunger: 70 + rnd() * 30, bob: 0, status: 'Idle',
       faction: 'player', spd: BASE_SPEED, hp: 20, maxHp: 20, dmg: 0, range: 0, atkCd: 1, atkTimer: 0,
-      dead: false, raider: false, foe: null, foeB: null, order: null, special: 0, anchor: null, lungeT: 0, hpBar: null,
+      dead: false, raider: false, foe: null, foeB: null, order: null, obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null,
     };
     this.units.push(u);
     return u;
@@ -229,6 +234,8 @@ export class Game {
   /** Spawn the run's mounted hero near the castle gate: a controllable player
    *  fighter with a per-hero look. Box-select or click it like any soldier. */
   spawnHero(heroId: string, roleName: string): Unit {
+    this.heroId = heroId;
+    this.heroName = roleName;
     const def = UNITS.hero;
     const d = doorTile(this.store);
     let tile = { x: d.x, y: d.y + 1 };
@@ -247,7 +254,7 @@ export class Game {
       maxHp: Math.round(def.hp * this.mods.combatMult('hp', 'hero')),
       dmg: def.dmg * this.mods.combatMult('damage', 'hero'),
       range: def.range, atkCd: def.atkCd, atkTimer: 0,
-      dead: false, raider: false, foe: null, foeB: null, order: null, special: 0, anchor: null, lungeT: 0, hpBar: null,
+      dead: false, raider: false, foe: null, foeB: null, order: null, obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null,
     };
     this.units.push(u);
     this.heroUnit = u;
@@ -380,7 +387,7 @@ export class Game {
       for (const it in b.out) {
         if (b.out[it] > 0) {
           const wanted = demands.some(d => d.item === it);
-          if (!wanted || b.out[it] >= outCap - 1) demands.push({ pri: 2, to: this.store, item: it, from: b });
+          if (!wanted || b.out[it] >= outCap - 1) demands.push({ pri: 2, to: this.nearestStore(b), item: it, from: b });
         }
       }
     }
@@ -687,8 +694,7 @@ export class Game {
   /** Total goods sitting in the storehouse (the end-of-level surplus tally). */
   stockTotal(): number {
     let n = 0;
-    const s = this.store?.stock;
-    if (s) for (const k in s) n += s[k];
+    for (const st of this.stores()) { const stock = st.stock!; for (const k in stock) n += stock[k]; }
     return n;
   }
 
@@ -704,12 +710,49 @@ export class Game {
     return d.store + d.buildings + d.carried;
   }
 
-  /** Where an item currently sits: main storehouse vs. building inventories vs. in transit. */
+  /** Every standing storage building (the castle plus any built storehouses). */
+  stores(): Building[] {
+    return this.buildings.filter(b => b.def.store && !b.removed);
+  }
+
+  /** The closest storage building to a producer (surplus hauls go here). */
+  private nearestStore(from: { x: number; y: number }): Building {
+    let best = this.store, bd = 1e9;
+    for (const st of this.stores()) {
+      const d = Math.abs(st.x - from.x) + Math.abs(st.y - from.y);
+      if (d < bd) { bd = d; best = st; }
+    }
+    return best;
+  }
+
+  /** Spend `n` of an item across all storehouses (castle first). False = short. */
+  private takeStock(item: string, n: number): boolean {
+    const sts = this.stores();
+    let have = 0;
+    for (const st of sts) have += st.stock![item] || 0;
+    if (have < n) return false;
+    for (const st of sts) {
+      const take = Math.min(n, st.stock![item] || 0);
+      st.stock![item] = (st.stock![item] || 0) - take;
+      n -= take;
+      if (n <= 0) break;
+    }
+    return true;
+  }
+
+  /** Total of an item sitting in storehouses. */
+  private storeTotal(item: string): number {
+    let n = 0;
+    for (const st of this.stores()) n += st.stock![item] || 0;
+    return n;
+  }
+
+  /** Where an item currently sits: storehouses vs. building inventories vs. in transit. */
   itemBreakdown(item: string): { store: number; buildings: number; carried: number } {
-    let store = this.store.stock![item] || 0, buildings = 0, carried = 0;
+    let buildings = 0, carried = 0;
     for (const b of this.buildings) { if (!b.def.store) buildings += (b.inp[item] || 0) + (b.out[item] || 0); }
     for (const u of this.units) if (u.carrying === item) carried++;
-    return { store, buildings, carried };
+    return { store: this.storeTotal(item), buildings, carried };
   }
 
   canPlace(key: BuildingKey, tx: number, ty: number, rot: number): boolean {
@@ -777,12 +820,11 @@ export class Game {
     const t = this.world.T(tx, ty);
     if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep || t.tree?.dense) return;
     const cost = this.mods.roadCost();
-    if ((this.store.stock?.['stone'] || 0) < cost) {
+    if (cost > 0 && !this.takeStock('stone', cost)) {
       const now = Date.now();
       if (now - this.roadWarnT > 1500) { this.roadWarnT = now; this.toast('Out of stone — quarry more to build roads', 'err'); this.sfx('error'); }
       return;
     }
-    this.store.stock!['stone'] -= cost;
     if (t.tree) this.removeTree(tx, ty);
     if (t.deco) this.removeDeco(tx, ty);
     t.road = true; this.mods.ctx.roadTiles++;
@@ -799,9 +841,10 @@ export class Game {
     }
     if (dragOnly) return;
     if (t.b) {
-      if (t.b.def.store) { this.toast('The storehouse cannot be demolished', 'err'); return; }
-      if (t.b.faction !== 'player') { this.toast('Enemy strongholds must be destroyed in battle', 'err'); return; }
-      this.sfx('demolish'); this.removeBuilding(t.b); this.toast(t.b.def.name + ' demolished'); return;
+      const b = t.b; // removeBuilding clears the tile — keep the reference
+      if (b === this.store) { this.toast('The castle cannot be demolished', 'err'); return; }
+      if (b.faction !== 'player') { this.toast('Enemy strongholds must be destroyed in battle', 'err'); return; }
+      this.sfx('demolish'); this.removeBuilding(b); this.toast(b.def.name + ' demolished'); return;
     }
     if (t.site) { this.sfx('demolish'); this.removeSite(t.site); return; }
   }
@@ -994,12 +1037,22 @@ export class Game {
       } else if (da > def.leash) { u.wstate = 'leash'; u.foe = null; u.path = null; return; }
     }
 
+    if (u.obeyT > 0) {
+      u.obeyT = Math.max(0, u.obeyT - dt);
+      // while obeying a fresh move order, drop any current fight entirely
+      if (u.order && u.order.type !== 'attack') { u.foe = null; u.foeB = null; }
+    }
     let foe = u.foe;
     if (foe && foe.dead) foe = null;
     if (u.order && u.order.type === 'attack' && u.order.foe && !u.order.foe.dead) foe = u.order.foe;
-    // pure 'move' orders don't auto-seek (lets you march past enemies); everything else does
-    const canSeek = !u.order || u.order.type !== 'move';
-    if (!foe && canSeek) foe = this.acquireTarget(u, def.aggro);
+    // pure 'move' orders don't auto-seek (lets you march past enemies); an
+    // attack-move only re-engages once the obey window has passed
+    const canSeek = (!u.order || u.order.type !== 'move') && u.obeyT <= 0;
+    // enemies that hold ground (wild beasts, camp guards) are short-sighted:
+    // YOU choose when the fight starts by walking up to them. Raiders and
+    // player units keep their full awareness.
+    const aggro = u.faction !== 'player' && !u.raider ? Math.min(def.aggro, 4.5) : def.aggro;
+    if (!foe && canSeek) foe = this.acquireTarget(u, aggro);
     u.foe = foe;
 
     if (foe) {
@@ -1083,10 +1136,10 @@ export class Game {
     u.status = 'Grazing';
     u.timer -= dt;
     if (u.timer > 0) return;
-    u.timer = 1.5 + rnd() * 4;
+    u.timer = 4 + rnd() * 7;
     const a = u.anchor ?? { x: u.tx, y: u.ty };
     for (let tries = 0; tries < 6; tries++) {
-      const x = a.x + Math.round((rnd() - 0.5) * 8), y = a.y + Math.round((rnd() - 0.5) * 8);
+      const x = a.x + Math.round((rnd() - 0.5) * 4), y = a.y + Math.round((rnd() - 0.5) * 4);
       const t = this.world.T(x, y);
       if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
       if (this.sendTo(u, x, y)) return;
@@ -1335,6 +1388,56 @@ export class Game {
     u.tx = tx; u.ty = ty;
   }
 
+  // =====================================================================
+  //  The castle bell — ring it and every non-combat worker drops what they
+  //  are doing and shelters inside the castle (AOE town-bell style); ring
+  //  again to send them back out.
+  // =====================================================================
+  bell = false;
+
+  toggleBell(): void {
+    this.bell = !this.bell;
+    this.sfx('bell');
+    if (this.bell) {
+      this.toast('The bell tolls — workers run for the castle!', 'err');
+      for (const u of this.units) {
+        if (u.dead || u.faction !== 'player' || this.isFighter(u)) continue;
+        if (u.task) this.cancelTask(u);
+        const site = u.target as Site | null;
+        if (site && site.isSite && site.builder === u) site.builder = null;
+        u.path = null; u.target = null;
+        u.mesh.visible = true;
+        u.wstate = 'toRefuge';
+      }
+    } else {
+      this.toast('The bell falls silent — back to work');
+      const d = doorTile(this.store);
+      for (const u of this.units) {
+        if (u.dead || u.faction !== 'player' || this.isFighter(u)) continue;
+        if (u.wstate !== 'refuge' && u.wstate !== 'toRefuge') continue;
+        u.mesh.visible = true;
+        u.mesh.position.set(this.world.wx(d.x) + (rnd() - 0.5) * 0.8, 0, this.world.wz(d.y) + (rnd() - 0.5) * 0.8);
+        u.tx = d.x; u.ty = d.y;
+        u.path = null; u.target = null;
+        u.wstate = u.home ? 'goHome' : 'idle';
+        u.status = 'Idle';
+      }
+    }
+  }
+
+  /** While the bell tolls: run for the castle door, then vanish inside. */
+  private refugeUpdate(u: Unit, dt: number): void {
+    if (u.wstate === 'refuge') { u.mesh.visible = false; return; }
+    const d = doorTile(this.store);
+    if (u.tx === d.x && u.ty === d.y && !u.path) {
+      u.wstate = 'refuge'; u.mesh.visible = false; u.status = 'Sheltering in the castle';
+      return;
+    }
+    u.status = 'Running for the castle';
+    if (!u.path) { if (!this.sendTo(u, d.x, d.y)) { u.mesh.position.y = 0; return; } }
+    this.moveUnit(u, dt);
+  }
+
   /** Toggle a construction site's priority (materials & builders go there first). */
   togglePriority(s: Site): void {
     s.priority = !s.priority;
@@ -1348,11 +1451,14 @@ export class Game {
     u.foe = type === 'attack' ? foe : null;
     u.foeB = null;
     u.path = null;
+    // a fresh move/attack-move overrules whatever fight the unit was in:
+    // suppress re-aggro (and retaliation) long enough to break off and march
+    u.obeyT = type === 'attack' ? 0 : 2.5;
   }
 
   /** Order a whole selection: attacks converge on the foe, moves fan out into a
    *  loose formation so the squad doesn't pile onto a single tile. */
-  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'grid'): void {
+  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'box'): void {
     if (type === 'attack' && foe) {
       for (const u of units) this.orderUnit(u, 'attack', foe.tx, foe.ty, foe);
       return;
@@ -1413,6 +1519,8 @@ export class Game {
   private waveArmT: number | null = null;
   /** Extra seconds granted to the level's hard timer (waves with bonusTime). */
   bonusTime = 0;
+  /** Stretches wave timers & grace delays (higher ascensions get more prep). */
+  prepMult = 1;
 
   /** Configure and spawn a level's enemy presence (called by main after init). */
   setEnemies(setup: EnemySetup | null): void {
@@ -1420,6 +1528,8 @@ export class Game {
     this.waveIdx = 0; this.waves = []; this.commanderT = 0; this.camps = [];
     this.waveArmT = null; this.bonusTime = 0;
     if (!setup) return;
+    // the commander's first raid gets extra grace beyond its usual cadence
+    if (setup.commander) this.commanderT = -setup.commander.every * 0.75;
     if (setup.wild) for (const w of setup.wild) this.spawnWild(w.kind, w.count);
     if (setup.camps) for (const c of setup.camps) for (let i = 0; i < c.count; i++) this.spawnStronghold('banditcamp', c.guards);
     if (setup.keep) { const camp = this.spawnStronghold('enemycastle', setup.keep.guards); if (camp && setup.towers) for (let i = 0; i < setup.towers; i++) this.spawnTowerNear(camp); }
@@ -1429,7 +1539,8 @@ export class Game {
   /** Player-faction fighters currently alive (arming muster-triggered raids). */
   private playerFighters(): number {
     let n = 0;
-    for (const u of this.units) if (!u.dead && u.faction === 'player' && u.dmg > 0) n++;
+    // the ever-present hero doesn't count toward muster-triggered raids
+    for (const u of this.units) if (!u.dead && u.faction === 'player' && u.dmg > 0 && u.role !== 'hero') n++;
     return n;
   }
 
@@ -1442,7 +1553,7 @@ export class Game {
     const w = this.enemy?.waves;
     if (!w || this.waveIdx >= w.length) return null;
     const def = w[this.waveIdx];
-    if (def.at !== undefined) return { in: Math.max(0, def.at - this.elapsed), count: def.count };
+    if (def.at !== undefined) return { in: Math.max(0, def.at * this.prepMult - this.elapsed), count: def.count };
     if (this.waveArmT !== null) return { in: Math.max(0, this.waveArmT - this.elapsed), count: def.count };
     return { in: Infinity, count: def.count, label: `Raiders are watching — mustering ${def.whenArmy ?? 1} fighters will provoke them` };
   }
@@ -1456,10 +1567,10 @@ export class Game {
     while (w && this.waveIdx < w.length) {
       const def = w[this.waveIdx];
       let launch = false;
-      if (def.at !== undefined) launch = this.elapsed >= def.at;
+      if (def.at !== undefined) launch = this.elapsed >= def.at * this.prepMult;
       else if (this.waveArmT !== null) launch = this.elapsed >= this.waveArmT;
       else if (this.playerFighters() >= (def.whenArmy ?? 1)) {
-        this.waveArmT = this.elapsed + (def.delay ?? 45);
+        this.waveArmT = this.elapsed + (def.delay ?? 45) * this.prepMult;
         this.toast('Your muster has been spotted — raiders are gathering!', 'err');
         this.sfx('error');
       }
@@ -1525,15 +1636,16 @@ export class Game {
   /** Extra wild presence from a level mutator (e.g. Wolf Country's packs). */
   spawnMutatorWild(kind: UnitKind, count: number): void { this.spawnWild(kind, count); }
 
-  /** Scatter wild beasts across the map, well clear of the starting settlement
-   *  so nobody is in a fight before they've trained a single unit. */
+  /** Scatter wild beasts across the map's OUTER band, far from the starting
+   *  settlement — hunting them is a deliberate expedition, never an ambush. */
   private spawnWild(kind: UnitKind, count: number): void {
     const W = this.world.W, H = this.world.H, cx = W / 2, cy = H / 2;
+    const keep = Math.max(15, Math.floor(Math.min(W, H) * 0.32));
     let placed = 0, tries = 0;
     while (placed < count && tries < count * 40) {
       tries++;
       const x = 2 + Math.floor(rnd() * (W - 4)), y = 2 + Math.floor(rnd() * (H - 4));
-      if (Math.abs(x - cx) < 12 && Math.abs(y - cy) < 12) continue;
+      if (Math.hypot(x - cx, y - cy) < keep) continue;
       const t = this.world.T(x, y);
       if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
       this.spawnFighter(kind, { x, y }, 'wild'); placed++;
@@ -1610,6 +1722,20 @@ export class Game {
     for (let i = this.units.length - 1; i >= 0; i--) {
       const u = this.units[i];
       if (!u.dead) continue;
+      // the hero always returns: a fresh horse is saddled at the castle
+      if (u === this.heroUnit) {
+        this.heroUnit = null;
+        this.heroRespawnT = 45;
+        this.toast(`${this.heroName} has fallen — they will ride again in 45s`, 'err');
+      }
+      // a slain specialist reopens their post: the building idles until
+      // staffBuildings sends the next free villager to move in
+      if (u.home && u.home.worker === u) {
+        u.home.worker = null;
+        u.home.active = false;
+        u.home.working = false;
+        this.toast(`The ${u.home.def.name}'s ${u.roleName.toLowerCase()} was slain — a new villager is needed`, 'err');
+      }
       if (this.selected === u) this.select(null);
       this.view.remove(u.mesh);
       this.units.splice(i, 1);
@@ -1632,11 +1758,22 @@ export class Game {
       this.taxT += sdt;
       if (this.taxT >= 60) { this.taxT -= 60; this.onGold(-tax); this.toast(`The Taxman collects ${tax} gold`, 'err'); }
     }
+    // a fallen hero rides back out once their timer runs down
+    if (this.heroRespawnT > 0 && this.heroId) {
+      this.heroRespawnT -= sdt;
+      if (this.heroRespawnT <= 0) {
+        this.heroRespawnT = 0;
+        this.spawnHero(this.heroId, this.heroName);
+        this.toast(`${this.heroName} rides again!`);
+        this.sfx('build');
+      }
+    }
     const hungerRate = this.mods.hungerRate();
     for (const u of this.units) {
       if (u.dead) continue;
       u.hunger = Math.max(0, u.hunger - sdt * 100 / 600 * hungerRate);
       if (this.isFighter(u)) this.combatUpdate(u, sdt);
+      else if (this.bell && u.faction === 'player') this.refugeUpdate(u, sdt);
       else if (u.role === 'serf') this.serfUpdate(u, sdt);
       else if (u.role === 'laborer') this.laborerUpdate(u, sdt);
       else if (u.role === 'villager' && !u.home) this.villagerStroll(u, sdt);
@@ -1661,10 +1798,9 @@ export class Game {
     const spec = b.def.military ?? b.def.trainer;
     const t = spec?.units.find(s => s.kind === kind);
     if (!t || !b.active) return false;
-    const store = this.store;
-    if (!store || !store.stock) return false;
-    for (const k in t.cost) if ((store.stock[k] || 0) < (t.cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name.toLowerCase() + ' to train a ' + unitLabel(kind).toLowerCase(), 'err'); this.sfx('error'); return false; }
-    for (const k in t.cost) store.stock[k] -= (t.cost as any)[k];
+    if (!this.store || !this.store.stock) return false;
+    for (const k in t.cost) if (this.storeTotal(k) < (t.cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name.toLowerCase() + ' to train a ' + unitLabel(kind).toLowerCase(), 'err'); this.sfx('error'); return false; }
+    for (const k in t.cost) this.takeStock(k, (t.cost as any)[k]);
     (b.trainQ ||= []).push(kind);
     this.sfx('click');
     return true;

@@ -1,8 +1,9 @@
 import type { BuildingDef, BuildingKey } from '../types';
 
 export const DEFS: Record<BuildingKey, BuildingDef> = {
-  storehouse: { name: 'Storehouse', desc: 'Stores every good', model: 'castle',
-    cost: {}, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 500 },
+  storehouse: { name: 'Storehouse', desc: 'A fortified depot: stores every good and looses arrows at raiders. Your first one is the castle — build more to shorten haul routes', model: 'castle',
+    cost: { timber: 12, stone: 16, coin: 10 }, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 500,
+    tower: { range: 7, dmg: 8, rate: 1.6 } },
 
   guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & builders)', model: 'guildhall',
     cost: { timber: 4, stone: 3 }, roof: 0x46606e, wall: 0x9a5a40, accent: 0xffd24a, hp: 250,
@@ -102,6 +103,28 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
         desc: 'Heavy elite — twice a soldier\'s health and hits much harder' },
     ] } },
 
+  stable: { name: 'Stable', desc: 'Breeds warhorses and trains mounted fighters', model: 'barn',
+    cost: { timber: 4, stone: 2 }, roof: 0x7a4a2c, wall: 0xb59a6a, accent: 0x8a5a2b, hp: 220,
+    military: { units: [
+      { kind: 'lancer', cost: { weapon: 1, coin: 2 }, time: 7,
+        desc: 'Fast light cavalry — charges into melee at half again a rider\u2019s pace' },
+      { kind: 'horsearcher', cost: { timber: 1, coin: 2 }, time: 7,
+        desc: 'Mounted bowman — fragile, quick, shoots on the move' },
+      { kind: 'horseknight', cost: { weapon: 1, armor: 1, coin: 3 }, time: 10,
+        desc: 'Heavy shock cavalry — armoured horse and rider, hits like a wall' },
+    ] } },
+
+  engineer: { name: 'Engineer\u2019s Workshop', desc: 'Builds siege engines — ballistas, scorpions & trebuchets', model: 'cottage',
+    cost: { timber: 5, stone: 4 }, roof: 0x5a5346, wall: 0x9c8a6a, accent: 0xc9a94e, hp: 240,
+    military: { units: [
+      { kind: 'ballista', cost: { timber: 3, weapon: 1, coin: 2 }, time: 10,
+        desc: 'Giant crossbow on wheels — long-ranged bolts, slow to move' },
+      { kind: 'scorpion', cost: { timber: 3, iron: 2, coin: 3 }, time: 11,
+        desc: 'Rapid bolt-thrower — outranges archers and towers' },
+      { kind: 'trebuchet', cost: { timber: 5, stone: 3, coin: 4 }, time: 14,
+        desc: 'The wall-breaker — devastating stones from far off, but crawls' },
+    ] } },
+
   watchtower: { name: 'Watchtower', desc: 'Looses arrows at raiders in range — build it along their path', model: 'mine',
     cost: { timber: 2, stone: 5 }, roof: 0x6a7076, wall: 0x9aa0a3, accent: 0x3f5aa0, hp: 320,
     tower: { range: 7, dmg: 9, rate: 1.4 } },
@@ -122,8 +145,8 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
 export interface BuildCategory { id: string; name: string; keys: BuildingKey[]; stub?: string; }
 
 export const MENU_CATEGORIES: BuildCategory[] = [
-  { id: 'materials', name: 'Materials', keys: ['guildhall', 'woodcutter', 'sawmill', 'forester', 'quarry'] },
+  { id: 'materials', name: 'Materials', keys: ['guildhall', 'woodcutter', 'sawmill', 'forester', 'quarry', 'storehouse'] },
   { id: 'food', name: 'Food', keys: ['farm', 'mill', 'bakery', 'pigfarm', 'butcher', 'vineyard', 'winery', 'fishery', 'tavern'] },
   { id: 'coin', name: 'Coin', keys: ['goldmine', 'coalmine', 'mint'] },
-  { id: 'military', name: 'Military', keys: ['barracks', 'ironmine', 'smithy', 'armory', 'watchtower'] },
+  { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'ironmine', 'smithy', 'armory', 'watchtower'] },
 ];

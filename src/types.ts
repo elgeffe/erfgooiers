@@ -10,14 +10,14 @@ export type BuildingKey =
   | 'storehouse' | 'guildhall' | 'woodcutter' | 'forester' | 'sawmill' | 'quarry'
   | 'farm' | 'mill' | 'bakery' | 'goldmine' | 'coalmine' | 'mint'
   | 'vineyard' | 'winery' | 'pigfarm' | 'butcher' | 'tavern' | 'fishery'
-  | 'barracks' | 'ironmine' | 'smithy' | 'armory' | 'watchtower'
+  | 'barracks' | 'stable' | 'engineer' | 'ironmine' | 'smithy' | 'armory' | 'watchtower'
   | 'banditcamp' | 'enemywatchtower' | 'enemycastle';
 
 export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'iron' | 'field' | 'fish';
 
 /** Which side a unit or building belongs to. Economy workers are always 'player'. */
 export type Faction = 'player' | 'enemy' | 'wild';
-export type Formation = 'grid' | 'line' | 'column' | 'wedge';
+export type Formation = 'box' | 'line' | 'split';
 
 /** A player-issued command to a controllable unit (hero / soldiers). */
 export interface UnitOrder {
@@ -178,6 +178,7 @@ export interface Unit {
   foe: Unit | null;     // current combat target (unit)
   foeB: Building | null; // current combat target (building)
   order: UnitOrder | null;
+  obeyT: number;        // seconds a fresh move order suppresses re-aggro (commands overrule combat)
   special: number;      // boss ability cooldown (dragon fire breath)
   anchor: Coord | null; // wild beasts & camp guards roam around (and leash to) this
   lungeT: number;       // melee swing animation timer (little hop toward the foe)

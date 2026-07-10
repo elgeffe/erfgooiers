@@ -244,6 +244,10 @@ export class UI {
         if (o && o.def && o.def.fields) { audio.play('click'); this.onMode({ type: 'plot', building: o }); }
         return;
       }
+      if (t && t.closest('#bellBtn')) {
+        if (o && o.def && o.def.store) { this.game!.toggleBell(); this.renderInspector(); }
+        return;
+      }
       if (t && t.closest('#prioBtn')) {
         if (o && o.isSite) { this.game!.togglePriority(o); this.renderInspector(); }
         return;
@@ -310,6 +314,11 @@ export class UI {
       else body += '<div class="hnote">Waiting for serfs to deliver materials…</div>';
       body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize construction'}</button>`;
     } else if (o.def.store) {
+      if (o === this.game!.store) {
+      const bell = this.game!.bell;
+      body += `<button class="inspbtn${bell ? ' on' : ''}" id="bellBtn">\u{1F514} ${bell ? 'Bell tolling — send workers back out' : 'Ring the bell — shelter all workers'}</button>`;
+      body += '<div class="hnote">Every non-combat worker runs inside the castle until the bell rings again. Hotkey: B</div>';
+      }
       body += '<div class="sect">Stock</div>' + this.invRowsHTML(o.stock);
     } else {
       if (!o.active) body += o.def.worker ? '<div class="hnote">Waiting for a trained villager to staff it…</div>' : '<div class="hnote">Waiting for worker to arrive…</div>';
@@ -390,7 +399,7 @@ export class UI {
     if (role === 'serf') return 'serf';
     if (role === 'villager') return 'villager';
     if (role === 'laborer') return 'laborer';
-    if (role === 'soldier' || role === 'archer' || role === 'knight') return 'military';
+    if (['soldier', 'archer', 'knight', 'lancer', 'horseknight', 'horsearcher', 'ballista', 'scorpion', 'trebuchet', 'hero'].includes(role)) return 'military';
     return 'specialist';
   }
 

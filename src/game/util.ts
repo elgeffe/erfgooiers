@@ -12,5 +12,7 @@ export function doorTile(b: { x: number; y: number; rot?: number }): Coord {
 /** Display name for a trainable unit kind ('laborer' is shown as Builder). */
 export function unitLabel(kind: string): string {
   if (kind === 'laborer') return 'Builder';
+  if (kind === 'horseknight') return 'Horse Knight';
+  if (kind === 'horsearcher') return 'Horse Archer';
   return kind[0].toUpperCase() + kind.slice(1);
 }

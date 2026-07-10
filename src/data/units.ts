@@ -3,10 +3,12 @@ import type { Faction } from '../types';
 
 /** Combat unit archetypes. Economy workers (serf/laborer/specialists) are not here. */
 export type UnitKind = 'soldier' | 'archer' | 'knight' | 'bandit' | 'boar' | 'dragon'
-  | 'wolf' | 'orc' | 'troll' | 'demon' | 'hero';
+  | 'wolf' | 'orc' | 'troll' | 'demon' | 'hero'
+  | 'lancer' | 'horseknight' | 'horsearcher'
+  | 'ballista' | 'scorpion' | 'trebuchet';
 
 /** How a combat unit is drawn — humanoid reuses the worker model; beasts differ. */
-export type FighterModel = 'human' | 'beast' | 'dragon' | 'wolf' | 'demon' | 'hero';
+export type FighterModel = 'human' | 'beast' | 'dragon' | 'wolf' | 'demon' | 'hero' | 'cavalry' | 'siege';
 
 export interface UnitDef {
   kind: UnitKind;
@@ -60,6 +62,26 @@ export const UNITS: Record<UnitKind, UnitDef> = {
   troll: { kind: 'troll', name: 'Troll', faction: 'enemy', color: 0x5d7263, model: 'human',
     hp: 120, dmg: 9, range: 5.5, atkCd: 1.9, speed: BASE_SPEED * 0.8, scale: 1.3, aggro: 12,
     arrows: true, wander: true },
+
+  // ---- cavalry (trained at the Stable): speed is their armour ----
+  lancer: { kind: 'lancer', name: 'Lancer', faction: 'player', color: 0x4a7ab0, model: 'cavalry',
+    hp: 80, dmg: 12, range: 1.5, atkCd: 1.0, speed: BASE_SPEED * 1.5, scale: 1.02, aggro: 9, charge: 1.5 },
+
+  horseknight: { kind: 'horseknight', name: 'Horse Knight', faction: 'player', color: 0x8f97a6, model: 'cavalry',
+    hp: 170, dmg: 16, range: 1.5, atkCd: 1.1, speed: BASE_SPEED * 1.25, scale: 1.1, aggro: 9 },
+
+  horsearcher: { kind: 'horsearcher', name: 'Horse Archer', faction: 'player', color: 0x3f8a55, model: 'cavalry',
+    hp: 55, dmg: 6, range: 4.5, atkCd: 1.3, speed: BASE_SPEED * 1.45, scale: 1.0, aggro: 10, arrows: true },
+
+  // ---- siege engines (built at the Engineer's Workshop): slow, devastating ----
+  ballista: { kind: 'ballista', name: 'Ballista', faction: 'player', color: 0x8a6a44, model: 'siege',
+    hp: 70, dmg: 22, range: 7, atkCd: 2.6, speed: BASE_SPEED * 0.55, scale: 1, aggro: 9, arrows: true },
+
+  scorpion: { kind: 'scorpion', name: 'Scorpion', faction: 'player', color: 0x74562f, model: 'siege',
+    hp: 55, dmg: 14, range: 8, atkCd: 1.8, speed: BASE_SPEED * 0.6, scale: 0.9, aggro: 10, arrows: true },
+
+  trebuchet: { kind: 'trebuchet', name: 'Trebuchet', faction: 'player', color: 0x6b4f30, model: 'siege',
+    hp: 90, dmg: 48, range: 9, atkCd: 5, speed: BASE_SPEED * 0.4, scale: 1.15, aggro: 4, arrows: true },
 
   // the run's mounted hero: sturdy and fast, but one per run — losing them stings
   hero: { kind: 'hero', name: 'Hero', faction: 'player', color: 0xd9a441, model: 'hero',

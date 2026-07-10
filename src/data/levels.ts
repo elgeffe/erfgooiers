@@ -90,13 +90,15 @@ export const LEVELS: LevelDef[] = [
     objectives: [{ kind: 'survive', waves: 2 }],
     world: { w: 44, h: 44, treeStands: 6, oreVeins: 5, waterScale: 1.0, meadows: 4, goldPiles: 3, ruins: 2 },
     kit: { stock: { timber: 16, stone: 12, bread: 10, coin: 6, weapon: 2 }, serfs: 6, laborers: 2 },
-    startArmy: [{ kind: 'soldier', count: 3 }],
-    // no raid until the player grows the muster past the starting three: build
+    // a proper garrison out of the gate (higher ascensions thin it out but
+    // stretch the prep clock in return — see ascensionArmyMult/PrepMult)
+    startArmy: [{ kind: 'soldier', count: 10 }, { kind: 'archer', count: 4 }, { kind: 'knight', count: 1 }],
+    // no raid until the player grows the muster past the starting eight: build
     // and train at your own pace, then provoke wave one. Wave two follows the
     // same trigger and pays its fight out in extra clock.
     enemies: { waves: [
-      { whenArmy: 4, delay: 45, kind: 'bandit', count: 5 },
-      { whenArmy: 4, delay: 90, bonusTime: 150, kind: 'bandit', count: 8 },
+      { whenArmy: 16, delay: 60, kind: 'bandit', count: 5 },
+      { whenArmy: 16, delay: 100, bonusTime: 150, kind: 'bandit', count: 8 },
     ] },
     timeTarget: 300, hardTimer: 480, reward: 55 },
 
@@ -104,7 +106,7 @@ export const LEVELS: LevelDef[] = [
     objectives: [{ kind: 'slay', unit: 'boar', n: 8 }],
     world: { w: 46, h: 46, treeStands: 8, oreVeins: 5, waterScale: 0.9, meadows: 5, goldPiles: 3, mountains: 2 },
     kit: { stock: { timber: 14, stone: 10, bread: 12, coin: 8, weapon: 2 }, serfs: 2, laborers: 2 },
-    startArmy: [{ kind: 'soldier', count: 4 }, { kind: 'archer', count: 2 }],
+    startArmy: [{ kind: 'soldier', count: 8 }, { kind: 'archer', count: 4 }],
     enemies: { wild: [{ kind: 'boar', count: 10 }, { kind: 'wolf', count: 5 }] },
     timeTarget: 260, hardTimer: 380, reward: 60 },
 
@@ -115,40 +117,40 @@ export const LEVELS: LevelDef[] = [
     objectives: [{ kind: 'destroy', n: 2 }],
     world: { w: 64, h: 64, treeStands: 11, oreVeins: 9, waterScale: 1.0, meadows: 6, goldPiles: 6, mountains: 2, ruins: 2, frontier: true },
     kit: { stock: { timber: 18, stone: 14, bread: 12, coin: 12, weapon: 3 }, serfs: 3, laborers: 2 },
-    startArmy: [{ kind: 'soldier', count: 4 }, { kind: 'archer', count: 3 }],
+    startArmy: [{ kind: 'soldier', count: 9 }, { kind: 'archer', count: 6 }, { kind: 'knight', count: 2 }],
     enemies: { wild: [{ kind: 'wolf', count: 4 }], camps: [{ count: 2, guards: 4 }],
       commander: { every: 75, kind: 'bandit', count: 3, from: 'camp' },
-      waves: [{ at: 240, kind: 'orc', count: 4 }] },
+      waves: [{ at: 380, kind: 'orc', count: 4 }] },
     timeTarget: 480, hardTimer: 720, reward: 75 },
 
   { index: 8, name: 'The Fortified Village', type: 'Military',
     objectives: [{ kind: 'destroy', n: 4 }],
     world: { w: 68, h: 68, treeStands: 12, oreVeins: 10, waterScale: 1.05, meadows: 6, goldPiles: 6, mountains: 2, ruins: 3, frontier: true },
     kit: { stock: { timber: 20, stone: 16, bread: 14, coin: 16, weapon: 3, armor: 1 }, serfs: 3, laborers: 3 },
-    startArmy: [{ kind: 'soldier', count: 5 }, { kind: 'archer', count: 4 }],
+    startArmy: [{ kind: 'soldier', count: 11 }, { kind: 'archer', count: 8 }, { kind: 'knight', count: 3 }],
     enemies: { keep: { guards: 6 }, towers: 3, commander: { every: 70, kind: 'orc', count: 4, from: 'camp' },
-      waves: [{ at: 300, kind: 'troll', count: 3 }] },
+      waves: [{ at: 440, kind: 'troll', count: 3 }] },
     timeTarget: 560, hardTimer: 840, reward: 95 },
 
   { index: 9, name: 'The Enemy Keep', type: 'Military',
     objectives: [{ kind: 'destroy', n: 5 }],
     world: { w: 72, h: 72, treeStands: 13, oreVeins: 11, waterScale: 1.1, meadows: 6, goldPiles: 7, mountains: 3, ruins: 2, frontier: true },
     kit: { stock: { timber: 22, stone: 18, bread: 16, coin: 20, weapon: 4, armor: 2 }, serfs: 3, laborers: 3 },
-    startArmy: [{ kind: 'soldier', count: 6 }, { kind: 'archer', count: 5 }],
+    startArmy: [{ kind: 'soldier', count: 13 }, { kind: 'archer', count: 10 }, { kind: 'knight', count: 4 }],
     // the demon broods over the keep's quarter instead of raiding your town
     enemies: { keep: { guards: 8 }, towers: 4, boss: 'demon',
       commander: { every: 60, kind: 'orc', count: 5, from: 'camp' },
-      waves: [{ at: 360, kind: 'troll', count: 3 }] },
+      waves: [{ at: 500, kind: 'troll', count: 3 }] },
     timeTarget: 660, hardTimer: 960, reward: 120 },
 
   { index: 10, name: 'Dragon\u2019s Hoard', type: 'Boss',
     objectives: [{ kind: 'slay', unit: 'dragon', n: 1 }],
     world: { w: 76, h: 76, treeStands: 14, oreVeins: 12, waterScale: 1.1, meadows: 7, goldPiles: 9, mountains: 4, frontier: true },
     kit: { stock: { timber: 24, stone: 18, bread: 20, coin: 28, weapon: 5, armor: 2 }, serfs: 3, laborers: 3 },
-    startArmy: [{ kind: 'soldier', count: 8 }, { kind: 'archer', count: 6 }],
+    startArmy: [{ kind: 'soldier', count: 17 }, { kind: 'archer', count: 12 }, { kind: 'knight', count: 6 }],
     // the dragon sleeps in its walled cul-de-sac; raids trickle in late while
     // you build the massed army its 2600 HP now demands
-    enemies: { boss: 'dragon', waves: [{ at: 180, kind: 'boar', count: 6 }, { at: 380, kind: 'orc', count: 5 }, { at: 600, kind: 'troll', count: 2 }] },
+    enemies: { boss: 'dragon', waves: [{ at: 300, kind: 'boar', count: 6 }, { at: 520, kind: 'orc', count: 5 }, { at: 760, kind: 'troll', count: 2 }] },
     timeTarget: 840, hardTimer: 1200, reward: 160 },
 ];
 
@@ -207,11 +209,16 @@ export function sandboxLevel(cfg: SandboxConfig = DEFAULT_SANDBOX): LevelDef {
         camps: [{ count: Math.max(2, Math.round(2 * scale)), guards: 5 }],
         keep: { guards: 8 }, towers: 3,
         commander: { every: 75, kind: 'orc', count: 4, from: 'camp' },
-        waves: [{ at: 420, kind: 'troll', count: 3 }],
+        waves: [{ at: 640, kind: 'troll', count: 3 }],
       };
+  const startArmy = cfg.enemies === 'none' ? undefined
+    : cfg.enemies === 'wilds' ? [{ kind: 'soldier' as UnitKind, count: 8 }, { kind: 'archer' as UnitKind, count: 4 }]
+      : cfg.enemies === 'camps' ? [{ kind: 'soldier' as UnitKind, count: 12 }, { kind: 'archer' as UnitKind, count: 8 }, { kind: 'knight' as UnitKind, count: 2 }]
+        : [{ kind: 'soldier' as UnitKind, count: 16 }, { kind: 'archer' as UnitKind, count: 10 }, { kind: 'knight' as UnitKind, count: 4 }, { kind: 'lancer' as UnitKind, count: 4 }];
   return {
     index: 0, name: 'Sandbox', type: 'Sandbox',
     objectives: [{ kind: 'produce', item: 'coin', n: 1 }], // never evaluated (main disables it)
+    startArmy,
     world: {
       w: size, h: size,
       biome: cfg.biome,
