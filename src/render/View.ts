@@ -5,7 +5,7 @@ import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { bakeGroupInto, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter, CRITTER_KINDS, type CritterKind } from './models';
+import { bakeGroupInto, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter, CRITTER_KINDS, type CritterKind } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -15,7 +15,8 @@ interface Pig { mesh: THREE.Group; x: number; z: number; tx: number; tz: number;
 /** A single fish swimming in the lake (cosmetic, real-time). */
 interface SwimFish { mesh: THREE.Group; x: number; z: number; tx: number; tz: number; wait: number; speed: number; }
 /** A wandering meadow critter (cosmetic, real-time). Ducks keep to the shore. */
-interface Critter { mesh: THREE.Group; x: number; z: number; tx: number; tz: number; wait: number; speed: number; hops: boolean; hop: number; shore: boolean; }
+interface Critter { mesh: THREE.Group; x: number; z: number; tx: number; tz: number; wait: number; speed: number; hops: boolean; hop: number; shore: boolean; pond: boolean; }
+interface SkyBird { mesh: THREE.Group; wings: THREE.Group[]; vx: number; vz: number; phase: number; }
 
 /**
  * Owns everything Three.js: renderer, scene, orthographic camera, the ground
@@ -80,6 +81,8 @@ export class View {
 
   // sparse wildlife ambling across the meadow (cosmetic, real-time)
   private readonly critters: Critter[] = [];
+  private readonly skyBirds: SkyBird[] = [];
+  private nextBirdT = 0;
 
   // minimap
   private readonly mm: HTMLCanvasElement;
@@ -182,6 +185,7 @@ export class View {
     this.buildAmbiance();
     this.spawnFish();
     this.spawnCritters();
+    this.nextBirdT = 6 + rnd() * 14;
   }
 
   /**
@@ -217,6 +221,8 @@ export class View {
     this.pigHerds.clear();
     this.fish.length = 0;
     this.critters.length = 0;
+    this.skyBirds.length = 0;
+    this.nextBirdT = 0;
     this.lakeTiles = [];
     this.millSails.length = 0;
     this.ghostKey = null;
@@ -942,6 +948,7 @@ export class View {
     this.updatePigs(dt, buildings);
     this.updateFish(dt);
     this.updateCritters(dt);
+    this.updateSkyBirds(dt);
     this.ageGore(dt);
   }
 
@@ -985,31 +992,31 @@ export class View {
     }
   }
 
-  /** A sparse, random handful of wildlife per level — never the whole zoo at
-   *  once. Rabbits hop, foxes trot, hedgehogs & mice snuffle, ducks waddle the
-   *  shoreline. Purely cosmetic: they drift between nearby free grass tiles. */
+  /** A genuinely sparse handful of wildlife: one colorful cat, at most two
+   *  meadow animals, and a frog only when the map has a small pond. */
   private spawnCritters(): void {
-    const kinds: CritterKind[] = [];
+    const spawn = (kind: CritterKind, spot: { x: number; y: number } | null): void => {
+      if (!spot) return;
+      const { group, hops } = makeCritter(kind);
+      this.worldGroup.add(group); this.freeze(group, false);
+      const x = this.world.wx(spot.x), z = this.world.wz(spot.y);
+      group.position.set(x, 0, z);
+      this.critters.push({
+        mesh: group, x, z, tx: x, tz: z, wait: rnd() * 4,
+        speed: kind === 'fox' ? 0.9 : kind === 'mouse' ? 0.75 : kind === 'hedgehog' ? 0.22 : kind === 'frog' ? 0.35 : 0.5,
+        hops, hop: 0, shore: kind === 'duck' || kind === 'frog', pond: kind === 'frog',
+      });
+    };
+
+    spawn('cat', this.critterGrassSpot());
+    if (rnd() < 0.3) spawn('cat', this.critterGrassSpot());
     const pool = [...CRITTER_KINDS];
-    const n = 3 + Math.floor(uiRng.next() * 3);            // 3–5 kinds of a possible 5
-    while (kinds.length < n && pool.length) kinds.push(pool.splice(Math.floor(uiRng.next() * pool.length), 1)[0]);
-    for (const kind of kinds) {
-      // rabbits & mice show up in small families; the fox hunts alone
-      const count = kind === 'fox' ? 1 : kind === 'hedgehog' ? 1 : 2 + Math.floor(uiRng.next() * 2);
-      for (let i = 0; i < count; i++) {
-        const spot = kind === 'duck' ? this.critterShoreSpot() : this.critterGrassSpot();
-        if (!spot) continue;
-        const { group, hops } = makeCritter(kind);
-        this.worldGroup.add(group); this.freeze(group, false);
-        const x = this.world.wx(spot.x), z = this.world.wz(spot.y);
-        group.position.set(x, 0, z);
-        this.critters.push({
-          mesh: group, x, z, tx: x, tz: z, wait: uiRng.next() * 4,
-          speed: kind === 'fox' ? 0.9 : kind === 'mouse' ? 0.75 : kind === 'hedgehog' ? 0.22 : 0.5,
-          hops, hop: 0, shore: kind === 'duck',
-        });
-      }
+    const extra = 1 + (rnd() < 0.45 ? 1 : 0);
+    for (let i = 0; i < extra && pool.length; i++) {
+      const kind = pool.splice(Math.floor(rnd() * pool.length), 1)[0];
+      spawn(kind, kind === 'duck' ? this.critterShoreSpot() : this.critterGrassSpot());
     }
+    spawn('frog', this.critterPondSpot());
   }
 
   private critterGrassSpot(): { x: number; y: number } | null {
@@ -1033,6 +1040,20 @@ export class View {
     return this.critterGrassSpot();
   }
 
+  /** Grass on the bank of one of the small non-lake ponds. */
+  private critterPondSpot(): { x: number; y: number } | null {
+    const banks: { x: number; y: number }[] = [];
+    for (let y = 1; y < this.world.H - 1; y++) for (let x = 1; x < this.world.W - 1; x++) {
+      const t = this.world.tiles[y][x];
+      if (t.type !== 'grass' || t.b || t.site || t.tree || t.dep) continue;
+      if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+        const w = this.world.T(x + dx, y + dy);
+        return !!w && w.type === 'water' && !w.lake;
+      })) banks.push({ x, y });
+    }
+    return banks.length ? banks[Math.floor(rnd() * banks.length)] : null;
+  }
+
   private updateCritters(dt: number): void {
     for (const c of this.critters) {
       if (c.wait > 0) {
@@ -1045,6 +1066,10 @@ export class View {
             const nx = cur.x + Math.round((uiRng.next() - 0.5) * 7), ny = cur.y + Math.round((uiRng.next() - 0.5) * 7);
             const t = this.world.T(nx, ny);
             if (!t || t.type !== 'grass' || t.b || t.site || t.tree || t.dep) continue;
+            if (c.shore && ![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([ox, oy]) => {
+              const w = this.world.T(nx + ox, ny + oy);
+              return !!w && w.type === 'water' && (!c.pond || !w.lake);
+            })) continue;
             c.tx = this.world.wx(nx) + (uiRng.next() - 0.5) * 0.5;
             c.tz = this.world.wz(ny) + (uiRng.next() - 0.5) * 0.5;
             break;
@@ -1060,6 +1085,41 @@ export class View {
       if (c.hops) { c.hop += dt * 9; c.mesh.position.y = Math.abs(Math.sin(c.hop)) * 0.06; }
       c.mesh.position.x = c.x; c.mesh.position.z = c.z;
       c.mesh.rotation.y = Math.atan2(-dz, dx); // critter models face +x
+    }
+  }
+
+  /** Occasionally send a lone bird, flock, or rare eagle across the board. */
+  private spawnSkyBirds(): void {
+    const roll = rnd(), eagle = roll > 0.9;
+    const count = eagle ? 1 : roll < 0.4 ? 1 : 3 + Math.floor(rnd() * 4);
+    const dir = rnd() < 0.5 ? 1 : -1;
+    const startX = dir > 0 ? -this.cloudBound - 5 : this.cloudBound + 5;
+    const baseZ = (rnd() - 0.5) * this.world.H * 0.8;
+    for (let i = 0; i < count; i++) {
+      const { group, wings } = makeSkyBird(eagle);
+      const row = Math.floor(i / 2) + 1, side = i === 0 ? 0 : i % 2 ? -1 : 1;
+      group.position.set(startX - dir * row * 0.8, eagle ? 12 : 8 + rnd() * 3, baseZ + side * row * 0.75);
+      if (dir < 0) group.rotation.y = Math.PI;
+      this.worldGroup.add(group); this.freeze(group, false);
+      this.skyBirds.push({ mesh: group, wings, vx: dir * (eagle ? 3.2 : 2.2 + rnd() * 0.8), vz: (rnd() - 0.5) * 0.18, phase: rnd() * Math.PI * 2 });
+    }
+  }
+
+  private updateSkyBirds(dt: number): void {
+    this.nextBirdT -= dt;
+    if (this.nextBirdT <= 0) {
+      this.spawnSkyBirds();
+      this.nextBirdT = 18 + rnd() * 28;
+    }
+    for (let i = this.skyBirds.length - 1; i >= 0; i--) {
+      const b = this.skyBirds[i];
+      b.mesh.position.x += b.vx * dt; b.mesh.position.z += b.vz * dt;
+      b.phase += dt * 7;
+      const flap = Math.sin(b.phase) * 0.55;
+      b.wings[0].rotation.x = flap; b.wings[1].rotation.x = -flap;
+      if (Math.abs(b.mesh.position.x) <= this.cloudBound + 8) continue;
+      this.worldGroup.remove(b.mesh);
+      this.skyBirds.splice(i, 1);
     }
   }
 

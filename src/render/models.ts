@@ -1459,7 +1459,7 @@ export function makePig(big = false): THREE.Group {
 }
 
 // ---------- ambient critters — sparse wildlife that makes the meadow breathe ----------
-export type CritterKind = 'rabbit' | 'fox' | 'hedgehog' | 'mouse' | 'duck';
+export type CritterKind = 'rabbit' | 'fox' | 'hedgehog' | 'mouse' | 'duck' | 'cat' | 'frog';
 export const CRITTER_KINDS: CritterKind[] = ['rabbit', 'fox', 'hedgehog', 'mouse', 'duck'];
 
 /** A tiny cosmetic animal. All face +x (like the pig) so movers can share the
@@ -1508,6 +1508,34 @@ export function makeCritter(kind: CritterKind): { group: THREE.Group; hops: bool
     for (const ez of [0.02, -0.02]) { const ear = new THREE.Mesh(sphere(0.018, 5, 4), grey); ear.position.set(0.05, 0.09, ez); g.add(ear); }
     const nose = new THREE.Mesh(sphere(0.008, 5, 4), ink); nose.position.set(0.085, 0.045, 0); g.add(nose);
     const tail = new THREE.Mesh(cyl(0.005, 0.009, 0.12, 4), mat(0xc9a58f)); tail.rotation.z = Math.PI / 2 - 0.35; tail.position.set(-0.1, 0.035, 0); g.add(tail);
+  } else if (kind === 'cat') {
+    const coats = [
+      [0xd18a49, 0xf0dfc4], [0x38342f, 0xf0eadc], [0xb8aa94, 0x685c50],
+      [0xeee6d5, 0xc66d3d], [0x6d6259, 0xd9c9ae], [0x2f2b29, 0xc58a4b],
+    ];
+    const coat = coats[Math.floor(rnd() * coats.length)], fur = mat(coat[0]), patchM = mat(coat[1]);
+    const body = new THREE.Mesh(sphere(0.085, 8, 7), fur); body.scale.set(1.65, 0.95, 0.9); body.position.y = 0.105; body.castShadow = true; g.add(body);
+    const head = new THREE.Mesh(sphere(0.065, 8, 7), fur); head.position.set(0.14, 0.18, 0); g.add(head);
+    for (const ez of [0.04, -0.04]) {
+      const ear = new THREE.Mesh(cone(0.025, 0.07, 4), fur); ear.position.set(0.13, 0.275, ez); g.add(ear);
+      const eye = new THREE.Mesh(sphere(0.009, 5, 4), mat(0x95bd55)); eye.position.set(0.195, 0.2, ez); g.add(eye);
+    }
+    const bib = new THREE.Mesh(sphere(0.045, 7, 6), patchM); bib.scale.set(0.7, 1, 1); bib.position.set(0.175, 0.125, 0); g.add(bib);
+    const patch = new THREE.Mesh(sphere(0.04, 7, 6), patchM); patch.scale.set(1.6, 0.35, 0.8); patch.position.set(-0.02, 0.18, 0.055); g.add(patch);
+    for (const [lx, lz] of [[0.09, 0.045], [0.09, -0.045], [-0.09, 0.045], [-0.09, -0.045]]) {
+      const leg = new THREE.Mesh(cyl(0.014, 0.016, 0.1, 5), lx > 0 ? patchM : fur); leg.position.set(lx, 0.05, lz); g.add(leg);
+    }
+    const tail = new THREE.Mesh(cyl(0.018, 0.024, 0.24, 6), fur); tail.position.set(-0.18, 0.19, 0); tail.rotation.z = -0.75; g.add(tail);
+  } else if (kind === 'frog') {
+    hops = true;
+    const greens = [0x5f9f45, 0x79ad48, 0x438453], green = mat(greens[Math.floor(rnd() * greens.length)]);
+    const body = new THREE.Mesh(sphere(0.065, 7, 6), green); body.scale.set(1.25, 0.65, 1.05); body.position.y = 0.055; body.castShadow = true; g.add(body);
+    const head = new THREE.Mesh(sphere(0.055, 7, 6), green); head.scale.set(1, 0.75, 1.25); head.position.set(0.07, 0.09, 0); g.add(head);
+    for (const ez of [0.035, -0.035]) {
+      const eyeB = new THREE.Mesh(sphere(0.022, 6, 5), green); eyeB.position.set(0.085, 0.135, ez); g.add(eyeB);
+      const eye = new THREE.Mesh(sphere(0.009, 5, 4), ink); eye.position.set(0.101, 0.14, ez); g.add(eye);
+      const foot = new THREE.Mesh(sphere(0.028, 6, 5), green); foot.scale.set(1.8, 0.35, 0.7); foot.position.set(-0.06, 0.025, ez * 1.8); g.add(foot);
+    }
   } else { // duck — waddles the shorelines
     const white = mat(0xece7d6), bill = mat(0xe0a33c);
     const body = new THREE.Mesh(sphere(0.08, 8, 7), white); body.scale.set(1.5, 0.95, 0.95); body.position.y = 0.09; body.castShadow = true; g.add(body);
@@ -1518,6 +1546,28 @@ export function makeCritter(kind: CritterKind): { group: THREE.Group; hops: bool
   }
   g.scale.setScalar(0.85 + rnd() * 0.3);
   return { group: g, hops };
+}
+
+/** A high-flying ambient bird. Wing pivots remain dynamic for flapping. */
+export function makeSkyBird(eagle = false): { group: THREE.Group; wings: THREE.Group[] } {
+  const g = new THREE.Group();
+  const bodyM = mat(eagle ? 0x594536 : [0x4d5660, 0x817d72, 0xe4ded0][Math.floor(rnd() * 3)]);
+  const body = new THREE.Mesh(sphere(eagle ? 0.11 : 0.06, 7, 6), bodyM);
+  body.scale.set(1.8, 0.7, 0.75); g.add(body);
+  const head = new THREE.Mesh(sphere(eagle ? 0.065 : 0.035, 7, 6), eagle ? mat(0xe8dfca) : bodyM);
+  head.position.set(eagle ? 0.18 : 0.1, 0.015, 0); g.add(head);
+  const beak = new THREE.Mesh(cone(eagle ? 0.025 : 0.014, eagle ? 0.08 : 0.045, 5), mat(0xd6a33c));
+  beak.rotation.z = -Math.PI / 2; beak.position.set(eagle ? 0.25 : 0.145, 0, 0); g.add(beak);
+  const tail = new THREE.Mesh(cone(eagle ? 0.07 : 0.04, eagle ? 0.16 : 0.1, 4), bodyM);
+  tail.rotation.z = Math.PI / 2; tail.position.set(eagle ? -0.2 : -0.12, 0, 0); g.add(tail);
+  const wings: THREE.Group[] = [];
+  for (const side of [-1, 1]) {
+    const pivot = new THREE.Group(); pivot.userData.dynamic = true;
+    const wing = new THREE.Mesh(box(eagle ? 0.22 : 0.13, 0.018, eagle ? 0.55 : 0.3), bodyM);
+    wing.position.z = side * (eagle ? 0.28 : 0.15); pivot.add(wing); g.add(pivot); wings.push(pivot);
+  }
+  if (eagle) g.scale.setScalar(1.25);
+  return { group: g, wings };
 }
 
 // ---------- fish — cute silver/orange swimmers for the lake ----------
