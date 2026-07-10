@@ -914,6 +914,21 @@ this.skyBirds.length = 0;
       }
     }
 
+    // The Alps loom: a ring of great snowbound massifs on the horizon in
+    // place of soft farmland hills.
+    if (biome.ambiance.peakRing) {
+      for (let i = 0; i < 15; i++) {
+        const ang = (i / 15) * Math.PI * 2 + rnd() * 0.35;
+        const sc = 7 + rnd() * 7;
+        const rad = boardR + GAP + sc + 14 + rnd() * 26;
+        const massif = makeMountain();
+        massif.scale.setScalar(sc);
+        massif.position.set(Math.cos(ang) * rad, -2.1, Math.sin(ang) * rad);
+        massif.rotation.y = rnd() * Math.PI * 2;
+        this.worldGroup.add(massif); this.freeze(massif);
+      }
+    }
+
     // low rolling hill domes in three hazier and hazier rings
     const hillTones = pal.hillTones.map(c => stdMat({ color: c }));
     for (let ring = 0; ring < 3; ring++) {
@@ -1222,9 +1237,10 @@ this.updateSkyBirds(dt);
     }
   }
 
-  /** Occasionally send a lone bird, flock, or rare eagle across the board. */
+  /** Occasionally send a lone bird, flock, or rare eagle across the board.
+   *  In the high Alps the eagle is the rule, not the exception. */
   private spawnSkyBirds(): void {
-    const roll = rnd(), eagle = roll > 0.9;
+    const roll = rnd(), eagle = roll > (this.world.biome.ambiance.peakRing ? 0.45 : 0.9);
     const count = eagle ? 1 : roll < 0.4 ? 1 : 3 + Math.floor(rnd() * 4);
     const dir = rnd() < 0.5 ? 1 : -1;
     const startX = dir > 0 ? -this.cloudBound - 5 : this.cloudBound + 5;
