@@ -30,6 +30,7 @@ export class UI {
 
   private game: Game | null = null;
   private readonly resEls: Record<string, HTMLElement> = {};
+  private readonly resRowEls: Record<string, HTMLElement> = {};
   private unitsOpen = false;
   private unitTab = 'all';
   private lastTabsHTML = '';
@@ -131,11 +132,18 @@ export class UI {
       el.innerHTML = `<div class="dot" style="background:${ITEMS[k].color}"></div><b>0</b><span>${ITEMS[k].name}</span>`;
       bar.appendChild(el);
       this.resEls[k] = el.querySelector('b')!;
+      this.resRowEls[k] = el;
     }
   }
   private refreshResbar(): void {
     if (!this.game) return;
-    for (const k of RES_SHOWN) this.resEls[k].textContent = String(this.game.countItem(k));
+    // the bar counts what's actually available in the main storehouse; the
+    // tooltip breaks down where the rest of the world's supply is sitting
+    for (const k of RES_SHOWN) {
+      const d = this.game.itemBreakdown(k);
+      this.resEls[k].textContent = String(d.store);
+      this.resRowEls[k].title = `${ITEMS[k].name} — ${d.store} in the storehouse · ${d.buildings} in buildings · ${d.carried} being carried`;
+    }
   }
 
   // ---------- build menu ----------

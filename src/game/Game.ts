@@ -632,10 +632,16 @@ export class Game {
   }
 
   countItem(item: string): number {
-    let n = this.store.stock![item] || 0;
-    for (const b of this.buildings) { if (!b.def.store) n += (b.inp[item] || 0) + (b.out[item] || 0); }
-    for (const u of this.units) if (u.carrying === item) n++;
-    return n;
+    const d = this.itemBreakdown(item);
+    return d.store + d.buildings + d.carried;
+  }
+
+  /** Where an item currently sits: main storehouse vs. building inventories vs. in transit. */
+  itemBreakdown(item: string): { store: number; buildings: number; carried: number } {
+    let store = this.store.stock![item] || 0, buildings = 0, carried = 0;
+    for (const b of this.buildings) { if (!b.def.store) buildings += (b.inp[item] || 0) + (b.out[item] || 0); }
+    for (const u of this.units) if (u.carrying === item) carried++;
+    return { store, buildings, carried };
   }
 
   canPlace(key: BuildingKey, tx: number, ty: number, rot: number): boolean {
