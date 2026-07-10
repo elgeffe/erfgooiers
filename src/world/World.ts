@@ -136,24 +136,39 @@ export class World {
     // ---- natural boundaries: rocky ridges & broken old walls (both impassable) ----
     // Ridges wander as short chains of blobs, walls as straight-ish lines with
     // gaps — carving the map into passes and biomes without sealing the centre.
+    // a mountain must never stand at the water's edge — keep a grass margin
+    const nearWater = (x: number, y: number): boolean => {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const t = this.T(x + dx, y + dy);
+        if (t && t.type === 'water') return true;
+      }
+      return false;
+    };
     const rockTile = (x: number, y: number, kind: 'peak' | 'wall'): void => {
       const t = this.T(x, y);
       if (!t || t.type !== 'grass' || nearCentre(x, y, 2)) return;
+      if (kind === 'peak' && nearWater(x, y)) return;
       t.type = 'rock'; t.rock = kind;
     };
+    // ridges read as RANGES: long chains of overlapping blobs holding one
+    // heading with only gentle drift, seeded away from the water
     for (let i = 0; i < this.p.mountains; i++) {
-      let mx = 4 + rnd() * (W - 8), my = 4 + rnd() * (H - 8);
+      let mx = 0, my = 0, seedGuard = 0;
+      do { mx = 4 + rnd() * (W - 8); my = 4 + rnd() * (H - 8); }
+      while (nearWater(Math.round(mx), Math.round(my)) && seedGuard++ < 30);
       let dir = rnd() * Math.PI * 2;
-      const links = 3 + Math.floor(rnd() * 3);
+      const links = 6 + Math.floor(rnd() * 4);
       for (let j = 0; j < links; j++) {
         const r = 1 + Math.floor(rnd() * 2);
         const cx = Math.round(mx), cy = Math.round(my);
         for (let y = Math.max(0, cy - r); y <= Math.min(H - 1, cy + r); y++)
           for (let x = Math.max(0, cx - r); x <= Math.min(W - 1, cx + r); x++)
             if (Math.hypot(x - cx, y - cy) <= r * (0.75 + rnd() * 0.3)) rockTile(x, y, 'peak');
-        dir += (rnd() - 0.5) * 0.8;
-        mx += Math.cos(dir) * (r + 1.6);
-        my += Math.sin(dir) * (r + 1.6);
+        dir += (rnd() - 0.5) * 0.35;
+        mx += Math.cos(dir) * (r + 1.3);
+        my += Math.sin(dir) * (r + 1.3);
+        // a range that runs into the lake ends there rather than fording it
+        if (nearWater(Math.round(mx), Math.round(my))) break;
       }
     }
     for (let i = 0; i < this.p.ruins; i++) {
