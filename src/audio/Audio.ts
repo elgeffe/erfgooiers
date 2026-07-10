@@ -496,9 +496,11 @@ export class AudioEngine {
     this.tone(120, t, 0.1, 'sine', 0.3);
   }
 
-  // harvest — a soft scything swish
+  // harvest — a gentle rustle of stalks with a warm low body (the old
+  // high-passed hiss read harsh, especially with several farms running)
   private efHarvest(t: number): void {
-    this.burst(t, 0.22, 1800, 'highpass', 0.22);
+    this.burst(t, 0.16, 850, 'bandpass', 0.09);
+    this.tone(hz(64), t, 0.12, 'sine', 0.07);
   }
 
   // demolish — a low earthy rumble
