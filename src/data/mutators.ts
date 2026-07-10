@@ -116,13 +116,18 @@ export function baseObjectiveIdx(runSeed: number, levelIndex: number, nObjective
   return Math.floor((((levelSeed(runSeed, levelIndex) >>> 8) % 9973) / 9973) * nObjectives) % nObjectives;
 }
 
-export function contractsFor(runSeed: number, levelIndex: number, nObjectives: number, baseReward: number): Contract[] {
+export function contractsFor(runSeed: number, levelIndex: number, nObjectives: number, baseReward: number, forceCurse = false): Contract[] {
   const h = (levelSeed(runSeed, levelIndex) ^ 0x71c92e11) >>> 0;
   const baseObj = baseObjectiveIdx(runSeed, levelIndex, nObjectives);
-  const out: Contract[] = [
-    { kind: 'safe', name: 'Quiet Roads', mutators: [], rewardMult: 1, objectiveIdx: baseObj, reward: baseReward },
-  ];
   const pool = eligibleMutators(levelIndex);
+  // ascension 3+: even the "safe" road carries a curse — and pays nothing
+  // extra for it, because the constraint is the ascension itself
+  const forced = forceCurse && pool.length ? pool[(h >>> 3) % pool.length] : null;
+  const out: Contract[] = [
+    forced
+      ? { kind: 'safe', name: 'No Rest', mutators: [forced.id], rewardMult: 1, objectiveIdx: baseObj, reward: baseReward }
+      : { kind: 'safe', name: 'Quiet Roads', mutators: [], rewardMult: 1, objectiveIdx: baseObj, reward: baseReward },
+  ];
   if (pool.length) {
     const m1 = pool[h % pool.length];
     out.push({

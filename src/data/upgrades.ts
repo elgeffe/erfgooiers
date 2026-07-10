@@ -22,6 +22,8 @@ export interface UpgradeDef {
   rarity: Rarity;
   /** One-of-a-kind: never offered again while owned this run. */
   unique?: boolean;
+  /** Achievement gate: hidden from the shop until the lifetime stat is reached. */
+  unlockAt?: { stat: 'levelsCleared' | 'wins'; n: number };
   basePrice: number;
   /** One or more modifier effects applied while this upgrade is owned. */
   apply: ModifierSpec[];
@@ -116,7 +118,7 @@ export const UPGRADES: UpgradeDef[] = [
 
   // ---- rule-benders: cards that change how the sim works, not just its numbers ----
   { id: 'communal-ovens', name: 'Communal Ovens', desc: 'Bakeries need no flour — but bake twice as slow', icon: '🫓',
-    pool: 'economy', rarity: 'rare', unique: true, basePrice: 40,
+    pool: 'economy', rarity: 'rare', unique: true, unlockAt: { stat: 'levelsCleared', n: 5 }, basePrice: 40,
     apply: [{ stat: 'freeInputs', filter: 'bread' }, { stat: 'recipeTime', mult: 2, filter: 'bread' }] },
 
   { id: 'corvee-roads', name: 'Corvée Roads', desc: 'Roads cost no stone — but walking off-road is 25% slower', icon: '🛤️',
@@ -128,15 +130,15 @@ export const UPGRADES: UpgradeDef[] = [
     apply: [{ stat: 'goldPerMeal', add: 1 }] },
 
   { id: 'guild-charter', name: 'Guild Charter', desc: 'Crafting is 2% faster per road tile paved (up to +60%)', icon: '📜',
-    pool: 'economy', rarity: 'rare', unique: true, basePrice: 45,
+    pool: 'economy', rarity: 'rare', unique: true, unlockAt: { stat: 'levelsCleared', n: 12 }, basePrice: 45,
     apply: [{ stat: 'craftPerRoad', add: 0.02 }] },
 
   { id: 'wine-fame', name: 'Famous Vintage', desc: 'Wine counts double toward objectives — but takes 25% longer to make', icon: '🍷',
-    pool: 'economy', rarity: 'rare', unique: true, basePrice: 38,
+    pool: 'economy', rarity: 'rare', unique: true, unlockAt: { stat: 'levelsCleared', n: 20 }, basePrice: 38,
     apply: [{ stat: 'objectiveWeight', add: 1, filter: 'wine' }, { stat: 'recipeTime', mult: 1.25, filter: 'wine' }] },
 
   { id: 'coppice-craft', name: 'Coppice Craft', desc: 'Woodcutters harvest without felling the tree — but chop 50% slower', icon: '🌳',
-    pool: 'economy', rarity: 'rare', unique: true, basePrice: 40,
+    pool: 'economy', rarity: 'rare', unique: true, unlockAt: { stat: 'wins', n: 1 }, basePrice: 40,
     apply: [{ stat: 'preserveTrees', add: 1 }, { stat: 'gatherTime', mult: 1.5, filter: 'tree' }] },
 
   // ---- hero-exclusive cards: only offered while their hero leads the run ----
@@ -161,6 +163,11 @@ export const UPGRADES: UpgradeDef[] = [
 ];
 
 export const UPGRADE_BY_ID: Record<string, UpgradeDef> = Object.fromEntries(UPGRADES.map(u => [u.id, u]));
+
+/** Has the player's lifetime progress opened this card for the shop pool? */
+export function cardUnlocked(def: UpgradeDef, stats: { levelsCleared: number; wins: number }): boolean {
+  return !def.unlockAt || stats[def.unlockAt.stat] >= def.unlockAt.n;
+}
 
 /** Resolve owned upgrade ids into the flat ModifierSpec list Modifiers consumes. */
 export function specsFor(upgradeIds: string[]): ModifierSpec[] {

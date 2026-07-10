@@ -1,5 +1,5 @@
 import { Rng, levelSeed } from '../engine/rng';
-import { MAX_CARDS, RARITY_WEIGHT, UPGRADES, UPGRADE_BY_ID, upgradePrice, type UpgradeDef } from '../data/upgrades';
+import { MAX_CARDS, RARITY_WEIGHT, UPGRADES, UPGRADE_BY_ID, cardUnlocked, upgradePrice, type UpgradeDef } from '../data/upgrades';
 import { MUTATOR_BY_ID, type Contract } from '../data/mutators';
 import { HERO_BY_ID } from '../data/heroes';
 import { levelFor } from '../data/levels';
@@ -29,6 +29,8 @@ export class Shop {
   private usedFreeReroll = false;
   private contracts: Contract[] = [];
   private chosen: Contract | null = null;
+  private slotCount = 3;           // wares per roll (ascension 1 trims it)
+  private lifetime = { levelsCleared: 0, wins: 0 }; // gates the drip-fed cards
 
   constructor(private readonly onContinue: (contract: Contract) => void) {
     ($('btnShopContinue') as HTMLButtonElement).onclick = () => { if (this.chosen) this.onContinue(this.chosen); };
@@ -36,7 +38,8 @@ export class Shop {
   }
 
   /** Show the shop for the run's just-cleared level, offering next-level contracts. */
-  open(run: RunState, contracts: Contract[], freeReroll = false, tally: { label: string; gold: number }[] = []): void {
+  open(run: RunState, contracts: Contract[], freeReroll = false, tally: { label: string; gold: number }[] = [],
+    opts: { slots?: number; lifetime?: { levelsCleared: number; wins: number } } = {}): void {
     this.run = run;
     this.rng = new Rng(levelSeed(run.runSeed, run.levelIndex) ^ 0x5f356495);
     this.rerolls = 0;
@@ -44,7 +47,9 @@ export class Shop {
     this.usedFreeReroll = false;
     this.contracts = contracts;
     this.chosen = contracts.length === 1 ? contracts[0] : null;
-    this.slots = this.sample(3);
+    this.slotCount = opts.slots ?? 3;
+    if (opts.lifetime) this.lifetime = opts.lifetime;
+    this.slots = this.sample(this.slotCount);
     this.renderTally(tally);
     this.render();
   }
@@ -69,6 +74,7 @@ export class Shop {
       (u.pool === 'economy' ||
        (u.pool === 'military' && this.run.levelIndex >= 4) ||
        (u.pool === 'hero' && u.hero === this.run.hero)) &&
+      cardUnlocked(u, this.lifetime) &&
       !(u.unique && this.run.upgrades.includes(u.id)));
   }
 
@@ -101,7 +107,7 @@ export class Shop {
     if (cost === 0) this.usedFreeReroll = true;
     this.run.gold -= cost;
     this.rerolls++;
-    this.slots = this.sample(3);
+    this.slots = this.sample(this.slotCount);
     this.render();
   }
 
