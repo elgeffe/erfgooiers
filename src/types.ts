@@ -17,7 +17,7 @@ export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'iron' | '
 
 /** Which side a unit or building belongs to. Economy workers are always 'player'. */
 export type Faction = 'player' | 'enemy' | 'wild';
-export type Formation = 'grid' | 'line' | 'column' | 'wedge';
+export type Formation = 'box' | 'line' | 'split';
 
 /** A player-issued command to a controllable unit (hero / soldiers). */
 export interface UnitOrder {

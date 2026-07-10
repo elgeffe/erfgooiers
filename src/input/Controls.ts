@@ -34,7 +34,7 @@ export class Controls {
   private boxing = false;
   private readonly selbox = document.getElementById('selbox') as HTMLElement | null;
   private readonly formationBar = document.getElementById('formationbar') as HTMLElement | null;
-  private formation: Formation = 'grid';
+  private formation: Formation = 'box';
 
   constructor(private readonly view: View, private readonly ui: UI) {
     const canvas = this.view.renderer.domElement;

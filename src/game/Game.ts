@@ -1411,7 +1411,7 @@ export class Game {
 
   /** Order a whole selection: attacks converge on the foe, moves fan out into a
    *  loose formation so the squad doesn't pile onto a single tile. */
-  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'grid'): void {
+  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'box'): void {
     if (type === 'attack' && foe) {
       for (const u of units) this.orderUnit(u, 'attack', foe.tx, foe.ty, foe);
       return;

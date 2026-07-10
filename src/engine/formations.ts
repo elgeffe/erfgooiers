@@ -3,10 +3,21 @@ import type { Coord, Formation } from '../types';
 export interface FormationOrigin { x: number; y: number; }
 
 /**
- * Lay out distinct formation destinations around a target. Directional shapes
- * face away from the selected group's average origin. Blocked planned slots
- * are filled from nearby rings so callers always get as many usable spots as
- * the surrounding terrain permits.
+ * Lay out formation destinations around a target, facing away from the
+ * selected group's average origin.
+ *
+ * Built to survive HUGE selections: shapes are exact integer lattices (the
+ * facing snaps to the nearest cardinal so ranks never collapse onto shared
+ * tiles through rounding), rank depth is capped so a 200-unit line is a wide
+ * wall three ranks deep rather than one absurd 200-tile string, and a blocked
+ * slot is refilled from a small spiral around ITSELF — holes in the ground
+ * dent a rank locally instead of dumping half the army into a blob at the
+ * click point.
+ *
+ * Shapes:
+ *  - box:   a solid block, ~1.8× wider than deep
+ *  - line:  a broad wall at most 3 ranks deep
+ *  - split: two half-strength boxes flanking a gap (envelopment / pincer)
  */
 export function formationSpots(
   cx: number,
@@ -19,46 +30,72 @@ export function formationSpots(
   if (count <= 0) return [];
   const out: Coord[] = [];
   const used = new Set<string>();
-  const tryTile = (x: number, y: number): void => {
-    if (out.length >= count) return;
-    x = Math.round(x); y = Math.round(y);
+
+  const claim = (x: number, y: number): boolean => {
     const key = `${x},${y}`;
-    if (used.has(key) || !canUse(x, y)) return;
+    if (used.has(key) || !canUse(x, y)) return false;
     used.add(key);
     out.push({ x, y });
+    return true;
   };
 
+  // a planned slot that is blocked dents the rank locally: try a tight spiral
+  // around the slot itself, never falling all the way back to the click point
+  const claimNear = (x: number, y: number): void => {
+    if (out.length >= count) return;
+    if (claim(x, y)) return;
+    for (let r = 1; r <= 3; r++)
+      for (let ox = -r; ox <= r; ox++)
+        for (let oy = -r; oy <= r; oy++) {
+          if (Math.abs(ox) !== r && Math.abs(oy) !== r) continue;
+          if (claim(x + ox, y + oy)) return;
+        }
+  };
+
+  // face away from the group's average origin, snapped to the nearest
+  // cardinal so (col, row) offsets stay exact integer lattice vectors
   let ax = 0, ay = 0;
   for (const p of origins) { ax += p.x; ay += p.y; }
   ax /= Math.max(1, origins.length); ay /= Math.max(1, origins.length);
-  const dx = cx - ax, dy = cy - ay, len = Math.hypot(dx, dy) || 1;
-  const fx = dx / len, fy = dy / len, rx = -fy, ry = fx;
-  const put = (side: number, back: number): void => tryTile(cx + rx * side - fx * back, cy + ry * side - fy * back);
+  const dx = cx - ax, dy = cy - ay;
+  const fx = Math.abs(dx) >= Math.abs(dy) ? (Math.sign(dx) || 1) : 0;
+  const fy = fx === 0 ? (Math.sign(dy) || 1) : 0;
+  const rxv = -fy, ryv = fx; // the rank axis (perpendicular to facing)
+
+  /** Fill `n` slots as a block `cols` wide, ranks marching backward from the
+   *  front line, centred `shift` tiles along the rank axis. Keeps laying
+   *  deeper ranks while terrain eats slots, so the block never comes up short
+   *  as long as ground exists behind it. */
+  const block = (n: number, cols: number, shift: number): void => {
+    const target = Math.min(count, out.length + n);
+    for (let i = 0; out.length < target && i < n * 5; i++) {
+      const row = Math.floor(i / cols), col = i % cols;
+      const side = col - (cols - 1) / 2 + shift;
+      claimNear(Math.round(cx + rxv * side - fx * row), Math.round(cy + ryv * side - fy * row));
+    }
+  };
 
   if (formation === 'line') {
-    for (let i = 0; i < count; i++) put((i - (count - 1) / 2) * 1.2, 0);
-  } else if (formation === 'column') {
-    for (let i = 0; i < count; i++) put(0, i * 1.1);
-  } else if (formation === 'wedge') {
-    put(0, 0);
-    for (let row = 1; out.length < count && row < count; row++) {
-      put(-row * 0.85, row * 0.9);
-      put(row * 0.85, row * 0.9);
-    }
+    // a broad wall: never deeper than 3 ranks
+    block(count, Math.max(1, Math.ceil(count / 3)), 0);
+  } else if (formation === 'split') {
+    // two half-boxes flanking a central gap — the pincer
+    const half = Math.ceil(count / 2), rest = count - half;
+    const cols = Math.max(1, Math.round(Math.sqrt(half * 1.8)));
+    const gap = cols / 2 + 2.5;
+    block(half, cols, -gap);
+    block(rest, cols, gap);
   } else {
-    const cols = Math.ceil(Math.sqrt(count));
-    for (let i = 0; i < count; i++) {
-      const row = Math.floor(i / cols), col = i % cols;
-      put(col - (Math.min(cols, count - row * cols) - 1) / 2, row);
-    }
+    // box: a solid block, wider than deep
+    block(count, Math.max(1, Math.round(Math.sqrt(count * 1.8))), 0);
   }
 
-  tryTile(cx, cy);
-  for (let r = 1; r < 10 && out.length < count; r++)
+  // last resort for anything still unplaced (surrounded click point etc.)
+  for (let r = 0; r < 24 && out.length < count; r++)
     for (let ox = -r; ox <= r && out.length < count; ox++)
       for (let oy = -r; oy <= r && out.length < count; oy++) {
-        if (Math.abs(ox) !== r && Math.abs(oy) !== r) continue;
-        tryTile(cx + ox, cy + oy);
+        if (r > 0 && Math.abs(ox) !== r && Math.abs(oy) !== r) continue;
+        claim(cx + ox, cy + oy);
       }
   if (!out.length) out.push({ x: cx, y: cy });
   return out;
