@@ -1,8 +1,8 @@
 import type { BuildingDef, BuildingKey } from '../types';
 
 export const DEFS: Record<BuildingKey, BuildingDef> = {
-  storehouse: { name: 'Storehouse', desc: 'Stores every good — its towers loose arrows at raiders, and its bell shelters your workers', model: 'castle',
-    cost: {}, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 500,
+  storehouse: { name: 'Storehouse', desc: 'A fortified depot: stores every good and looses arrows at raiders. Your first one is the castle — build more to shorten haul routes', model: 'castle',
+    cost: { timber: 12, stone: 16, coin: 10 }, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 500,
     tower: { range: 7, dmg: 8, rate: 1.6 } },
 
   guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & builders)', model: 'guildhall',
@@ -145,7 +145,7 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
 export interface BuildCategory { id: string; name: string; keys: BuildingKey[]; stub?: string; }
 
 export const MENU_CATEGORIES: BuildCategory[] = [
-  { id: 'materials', name: 'Materials', keys: ['guildhall', 'woodcutter', 'sawmill', 'forester', 'quarry'] },
+  { id: 'materials', name: 'Materials', keys: ['guildhall', 'woodcutter', 'sawmill', 'forester', 'quarry', 'storehouse'] },
   { id: 'food', name: 'Food', keys: ['farm', 'mill', 'bakery', 'pigfarm', 'butcher', 'vineyard', 'winery', 'fishery', 'tavern'] },
   { id: 'coin', name: 'Coin', keys: ['goldmine', 'coalmine', 'mint'] },
   { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'ironmine', 'smithy', 'armory', 'watchtower'] },

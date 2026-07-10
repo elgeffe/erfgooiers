@@ -132,6 +132,7 @@ export class Game {
       prog: 0, working: false, worker: null, fieldsList: [], mesh, name: def.name,
       faction, hp: maxHp, maxHp,
     };
+    if (def.store) b.stock = {};   // player-built storehouses start empty
     const tiles = this.world.tiles;
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].b = b; if (tiles[y][x].tree) this.removeTree(x, y); if (tiles[y][x].deco) this.removeDeco(x, y); }
     this.buildings.push(b);
@@ -386,7 +387,7 @@ export class Game {
       for (const it in b.out) {
         if (b.out[it] > 0) {
           const wanted = demands.some(d => d.item === it);
-          if (!wanted || b.out[it] >= outCap - 1) demands.push({ pri: 2, to: this.store, item: it, from: b });
+          if (!wanted || b.out[it] >= outCap - 1) demands.push({ pri: 2, to: this.nearestStore(b), item: it, from: b });
         }
       }
     }
@@ -693,8 +694,7 @@ export class Game {
   /** Total goods sitting in the storehouse (the end-of-level surplus tally). */
   stockTotal(): number {
     let n = 0;
-    const s = this.store?.stock;
-    if (s) for (const k in s) n += s[k];
+    for (const st of this.stores()) { const stock = st.stock!; for (const k in stock) n += stock[k]; }
     return n;
   }
 
@@ -710,12 +710,49 @@ export class Game {
     return d.store + d.buildings + d.carried;
   }
 
-  /** Where an item currently sits: main storehouse vs. building inventories vs. in transit. */
+  /** Every standing storage building (the castle plus any built storehouses). */
+  stores(): Building[] {
+    return this.buildings.filter(b => b.def.store && !b.removed);
+  }
+
+  /** The closest storage building to a producer (surplus hauls go here). */
+  private nearestStore(from: { x: number; y: number }): Building {
+    let best = this.store, bd = 1e9;
+    for (const st of this.stores()) {
+      const d = Math.abs(st.x - from.x) + Math.abs(st.y - from.y);
+      if (d < bd) { bd = d; best = st; }
+    }
+    return best;
+  }
+
+  /** Spend `n` of an item across all storehouses (castle first). False = short. */
+  private takeStock(item: string, n: number): boolean {
+    const sts = this.stores();
+    let have = 0;
+    for (const st of sts) have += st.stock![item] || 0;
+    if (have < n) return false;
+    for (const st of sts) {
+      const take = Math.min(n, st.stock![item] || 0);
+      st.stock![item] = (st.stock![item] || 0) - take;
+      n -= take;
+      if (n <= 0) break;
+    }
+    return true;
+  }
+
+  /** Total of an item sitting in storehouses. */
+  private storeTotal(item: string): number {
+    let n = 0;
+    for (const st of this.stores()) n += st.stock![item] || 0;
+    return n;
+  }
+
+  /** Where an item currently sits: storehouses vs. building inventories vs. in transit. */
   itemBreakdown(item: string): { store: number; buildings: number; carried: number } {
-    let store = this.store.stock![item] || 0, buildings = 0, carried = 0;
+    let buildings = 0, carried = 0;
     for (const b of this.buildings) { if (!b.def.store) buildings += (b.inp[item] || 0) + (b.out[item] || 0); }
     for (const u of this.units) if (u.carrying === item) carried++;
-    return { store, buildings, carried };
+    return { store: this.storeTotal(item), buildings, carried };
   }
 
   canPlace(key: BuildingKey, tx: number, ty: number, rot: number): boolean {
@@ -783,12 +820,11 @@ export class Game {
     const t = this.world.T(tx, ty);
     if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep || t.tree?.dense) return;
     const cost = this.mods.roadCost();
-    if ((this.store.stock?.['stone'] || 0) < cost) {
+    if (cost > 0 && !this.takeStock('stone', cost)) {
       const now = Date.now();
       if (now - this.roadWarnT > 1500) { this.roadWarnT = now; this.toast('Out of stone — quarry more to build roads', 'err'); this.sfx('error'); }
       return;
     }
-    this.store.stock!['stone'] -= cost;
     if (t.tree) this.removeTree(tx, ty);
     if (t.deco) this.removeDeco(tx, ty);
     t.road = true; this.mods.ctx.roadTiles++;
@@ -805,9 +841,10 @@ export class Game {
     }
     if (dragOnly) return;
     if (t.b) {
-      if (t.b.def.store) { this.toast('The storehouse cannot be demolished', 'err'); return; }
-      if (t.b.faction !== 'player') { this.toast('Enemy strongholds must be destroyed in battle', 'err'); return; }
-      this.sfx('demolish'); this.removeBuilding(t.b); this.toast(t.b.def.name + ' demolished'); return;
+      const b = t.b; // removeBuilding clears the tile — keep the reference
+      if (b === this.store) { this.toast('The castle cannot be demolished', 'err'); return; }
+      if (b.faction !== 'player') { this.toast('Enemy strongholds must be destroyed in battle', 'err'); return; }
+      this.sfx('demolish'); this.removeBuilding(b); this.toast(b.def.name + ' demolished'); return;
     }
     if (t.site) { this.sfx('demolish'); this.removeSite(t.site); return; }
   }
@@ -1754,10 +1791,9 @@ export class Game {
     const spec = b.def.military ?? b.def.trainer;
     const t = spec?.units.find(s => s.kind === kind);
     if (!t || !b.active) return false;
-    const store = this.store;
-    if (!store || !store.stock) return false;
-    for (const k in t.cost) if ((store.stock[k] || 0) < (t.cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name.toLowerCase() + ' to train a ' + unitLabel(kind).toLowerCase(), 'err'); this.sfx('error'); return false; }
-    for (const k in t.cost) store.stock[k] -= (t.cost as any)[k];
+    if (!this.store || !this.store.stock) return false;
+    for (const k in t.cost) if (this.storeTotal(k) < (t.cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name.toLowerCase() + ' to train a ' + unitLabel(kind).toLowerCase(), 'err'); this.sfx('error'); return false; }
+    for (const k in t.cost) this.takeStock(k, (t.cost as any)[k]);
     (b.trainQ ||= []).push(kind);
     this.sfx('click');
     return true;

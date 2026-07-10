@@ -314,9 +314,11 @@ export class UI {
       else body += '<div class="hnote">Waiting for serfs to deliver materials…</div>';
       body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize construction'}</button>`;
     } else if (o.def.store) {
+      if (o === this.game!.store) {
       const bell = this.game!.bell;
       body += `<button class="inspbtn${bell ? ' on' : ''}" id="bellBtn">\u{1F514} ${bell ? 'Bell tolling — send workers back out' : 'Ring the bell — shelter all workers'}</button>`;
       body += '<div class="hnote">Every non-combat worker runs inside the castle until the bell rings again. Hotkey: B</div>';
+      }
       body += '<div class="sect">Stock</div>' + this.invRowsHTML(o.stock);
     } else {
       if (!o.active) body += o.def.worker ? '<div class="hnote">Waiting for a trained villager to staff it…</div>' : '<div class="hnote">Waiting for worker to arrive…</div>';
