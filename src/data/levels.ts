@@ -51,38 +51,39 @@ export const LEVELS: LevelDef[] = [
   // Opening economy arc: each level asks for a deeper or wider production
   // network before the combat arc begins at level 5.
 
-  { index: 1, name: 'Daily Bread', type: 'Economy',
-    objectives: [
-      { kind: 'produce', item: 'bread', n: 8 },
-      { kind: 'produce', item: 'timber', n: 12 },
-    ],
+  // Economy arc: each level's NAME matches every objective variant it can roll,
+  // and each asks for a deeper chain than the last, on a tighter-feeling clock.
+
+  // one chain, two buildings: woodcutter \u2192 sawmill. The gentlest opening.
+  { index: 1, name: 'First Timber', type: 'Economy',
+    objectives: [{ kind: 'produce', item: 'timber', n: 8 }],
+    world: { w: 36, h: 36, treeStands: 6, oreVeins: 5, waterScale: 0.5, meadows: 3, goldPiles: 2 },
+    kit: { stock: { timber: 8, stone: 8, bread: 6, coin: 4 }, serfs: 2, laborers: 1 },
+    timeTarget: 200, hardTimer: 300, reward: 25 },
+
+  // three-building food chain: farm (+plots) \u2192 mill \u2192 bakery
+  { index: 2, name: 'Daily Bread', type: 'Economy',
+    objectives: [{ kind: 'produce', item: 'bread', n: 8 }],
     world: { w: 38, h: 38, treeStands: 6, oreVeins: 5, waterScale: 0.6, meadows: 3, goldPiles: 2 },
-    kit: { stock: { timber: 10, stone: 10, bread: 6, coin: 4 }, serfs: 2, laborers: 1 },
-    timeTarget: 240, hardTimer: 340, reward: 30 },
-  
-  { index: 2, name: 'First Coin', type: 'Economy',
-    objectives: [{ kind: 'produce', item: 'coin', n: 3 }],
-    world: { w: 36, h: 36, treeStands: 5, oreVeins: 6, waterScale: 0.5, meadows: 2, goldPiles: 2 },
+    kit: { stock: { timber: 12, stone: 10, bread: 6, coin: 4 }, serfs: 2, laborers: 1 },
+    timeTarget: 260, hardTimer: 380, reward: 30 },
+
+  // two mines feeding one mint \u2014 the first dual-input recipe
+  { index: 3, name: 'First Coin', type: 'Economy',
+    objectives: [{ kind: 'produce', item: 'coin', n: 5 }],
+    world: { w: 40, h: 40, treeStands: 5, oreVeins: 7, waterScale: 0.6, meadows: 2, goldPiles: 3 },
     kit: { stock: { timber: 12, stone: 10, bread: 8, coin: 4 }, serfs: 2, laborers: 1 },
-    timeTarget: 220, hardTimer: 320, reward: 25 },
+    timeTarget: 300, hardTimer: 440, reward: 38 },
 
-  { index: 3, name: 'The Vintner\u2019s Gamble', type: 'Economy',
+  // two full chains side by side; both variants stay wine-and-bread themed
+  { index: 4, name: 'The Vintner\u2019s Gamble', type: 'Economy',
     objectives: [
-      // both chains at once: run the bakery AND the winery side by side
       { kind: 'produceMulti', reqs: [{ item: 'bread', n: 8 }, { item: 'wine', n: 6 }] },
+      { kind: 'produceMulti', reqs: [{ item: 'wine', n: 8 }, { item: 'bread', n: 6 }] },
     ],
-    world: { w: 40, h: 40, treeStands: 6, oreVeins: 5, waterScale: 0.7, meadows: 3, goldPiles: 3 },
-    kit: { stock: { timber: 10, stone: 10, bread: 8, coin: 4 }, serfs: 2, laborers: 1 },
-    timeTarget: 260, hardTimer: 370, reward: 35 },
-
-  { index: 4, name: 'The Coin Run', type: 'Economy',
-    objectives: [
-      { kind: 'produceMulti', reqs: [{ item: 'coin', n: 14 }, { item: 'bread', n: 8 }] },
-      { kind: 'produceMulti', reqs: [{ item: 'coin', n: 12 }, { item: 'wine', n: 6 }] },
-    ],
-    world: { w: 42, h: 42, treeStands: 6, oreVeins: 7, waterScale: 0.85, meadows: 3, goldPiles: 6 },
-    kit: { stock: { timber: 12, stone: 10, bread: 8, coin: 5 }, serfs: 2, laborers: 2 },
-    timeTarget: 360, hardTimer: 430, reward: 45 },
+    world: { w: 42, h: 42, treeStands: 6, oreVeins: 6, waterScale: 0.8, meadows: 3, goldPiles: 4 },
+    kit: { stock: { timber: 14, stone: 10, bread: 8, coin: 5 }, serfs: 2, laborers: 2 },
+    timeTarget: 380, hardTimer: 540, reward: 45 },
 
   { index: 5, name: 'Raiders at the Gate', type: 'Defend',
     objectives: [{ kind: 'survive', waves: 2 }],
