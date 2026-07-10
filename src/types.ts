@@ -27,7 +27,8 @@ export interface UnitOrder {
 }
 
 /** Purely decorative ground scatter (no gameplay effect). */
-export type DecoKind = 'lavender' | 'flowers' | 'bush' | 'reed' | 'lily';
+export type DecoKind = 'lavender' | 'flowers' | 'bush' | 'reed' | 'lily'
+  | 'heather' | 'fern' | 'mushroom' | 'edelweiss';
 
 /** Which mesh builder in render/models.ts renders a building. */
 export type ModelKind = 'cottage' | 'windmill' | 'farm' | 'barn' | 'mine' | 'tavern' | 'castle' | 'guildhall';
@@ -71,7 +72,11 @@ export interface BuildingDef {
 
 export interface Coord { x: number; y: number; }
 
-export interface Tree { growth: number; reserved: boolean; meshes: THREE.Object3D[]; s: number; kind: number; }
+export interface Tree {
+  growth: number; reserved: boolean; meshes: THREE.Object3D[]; s: number; kind: number;
+  /** Old-growth thicket (Black Forest): impassable, unharvestable, unbuildable. */
+  dense?: boolean;
+}
 export type DepositKind = 'stone' | 'gold' | 'coal' | 'iron';
 export interface Deposit { kind: DepositKind; amt: number; meshes: THREE.Object3D[]; }
 export interface Deco { kind: DecoKind; meshes: THREE.Object3D[]; }

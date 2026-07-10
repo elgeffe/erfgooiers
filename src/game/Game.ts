@@ -47,6 +47,8 @@ export class Game {
   guild!: Building;
   selected: any = null;
   simSpeed = 1;
+  /** The run's mounted hero on this level (null in sandbox / before spawn). */
+  heroUnit: Unit | null = null;
 
   /** Sim seconds elapsed this level (drives the hard timer & speed bonus). */
   elapsed = 0;
@@ -153,7 +155,7 @@ export class Game {
   placePlot(tx: number, ty: number, b: Building): void {
     if (b.removed || !b.def.fields) return;
     const t = this.world.T(tx, ty);
-    if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep) return;
+    if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep || t.tree?.dense) return;
     if (b.fieldsList.length >= this.fieldCap(b)) {
       const now = Date.now();
       if (now - this.plotWarnT > 1500) { this.plotWarnT = now; this.toast(`${b.name} has no room for more plots`, 'err'); this.sfx('error'); }
@@ -221,6 +223,34 @@ export class Game {
       dead: false, raider: false, foe: null, foeB: null, order: null, special: 0, anchor: null, lungeT: 0, hpBar: null,
     };
     this.units.push(u);
+    return u;
+  }
+
+  /** Spawn the run's mounted hero near the castle gate: a controllable player
+   *  fighter with a per-hero look. Box-select or click it like any soldier. */
+  spawnHero(heroId: string, roleName: string): Unit {
+    const def = UNITS.hero;
+    const d = doorTile(this.store);
+    let tile = { x: d.x, y: d.y + 1 };
+    if (!this.world.passable(tile.x, tile.y)) {
+      for (let r = 1; r < 5 && !this.world.passable(tile.x, tile.y); r++)
+        for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++)
+          if (this.world.passable(d.x + dx, d.y + dy)) { tile = { x: d.x + dx, y: d.y + dy }; }
+    }
+    const { group, itemMesh } = this.view.createHero(heroId, tile.x, tile.y);
+    const u: Unit = {
+      role: 'hero', roleName, colorHex: def.color, mesh: group, itemMesh,
+      tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
+      home: null, wstate: 'idle', timer: 0, target: null, hunger: 100, bob: 0, status: 'Ready to ride',
+      faction: 'player', spd: def.speed * this.mods.combatMult('speed', 'hero'),
+      hp: Math.round(def.hp * this.mods.combatMult('hp', 'hero')),
+      maxHp: Math.round(def.hp * this.mods.combatMult('hp', 'hero')),
+      dmg: def.dmg * this.mods.combatMult('damage', 'hero'),
+      range: def.range, atkCd: def.atkCd, atkTimer: 0,
+      dead: false, raider: false, foe: null, foeB: null, order: null, special: 0, anchor: null, lungeT: 0, hpBar: null,
+    };
+    this.units.push(u);
+    this.heroUnit = u;
     return u;
   }
 
@@ -490,12 +520,23 @@ export class Game {
     for (let y = Math.max(0, b.y - g.range); y <= Math.min(H - 1, b.y + 1 + g.range); y++) for (let x = Math.max(0, b.x - g.range); x <= Math.min(W - 1, b.x + 1 + g.range); x++) {
       const t = tiles[y][x];
       let ok = false;
-      if (g.node === 'tree') ok = !!(t.tree && t.tree.growth >= 1 && !t.tree.reserved);
+      if (g.node === 'tree') ok = !!(t.tree && t.tree.growth >= 1 && !t.tree.reserved && !t.tree.dense);
       else if (g.node === 'stone') ok = !!(t.dep && t.dep.kind === 'stone' && t.dep.amt > 0);
       else if (g.node === 'gold') ok = !!(t.dep && t.dep.kind === 'gold' && t.dep.amt > 0);
       else if (g.node === 'coal') ok = !!(t.dep && t.dep.kind === 'coal' && t.dep.amt > 0);
       else if (g.node === 'iron') ok = !!(t.dep && t.dep.kind === 'iron' && t.dep.amt > 0);
-      if (ok) { const d = Math.hypot(x - cx, y - cy); if (d < bd) { bd = d; best = { x, y }; } }
+      if (!ok) continue;
+      if (t.dep) {
+        // ore heaps are solid: the miner works from a free neighbouring tile
+        for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const sx = x + ox, sy = y + oy;
+          if (!this.world.passable(sx, sy)) continue;
+          const d = Math.hypot(sx - cx, sy - cy);
+          if (d < bd) { bd = d; best = { x: sx, y: sy, depX: x, depY: y }; }
+        }
+      } else {
+        const d = Math.hypot(x - cx, y - cy); if (d < bd) { bd = d; best = { x, y }; }
+      }
     }
     return best;
   }
@@ -569,7 +610,12 @@ export class Game {
         else if (def.gather!.node === 'plant') {
           if (!t.tree && !t.b && !t.site && !t.road && !t.field && !t.dep) { if (t.deco) this.removeDeco(n.x, n.y); t.tree = { growth: 0.12, reserved: false, meshes: [], s: 0.85 + rnd() * 0.4, kind: Math.floor(rnd() * 4) }; this.view.addTree(n.x, n.y, t.tree); }
         } else if (def.gather!.node === 'fish') { this.setCarrying(u, def.gather!.out); this.sfx('harvest'); }
-        else { if (t.dep) { t.dep.amt--; if (t.dep.amt <= 0) this.removeDep(n.x, n.y); } this.setCarrying(u, def.gather!.out); }
+        else {
+          // the miner stands beside the (solid) heap; the ore comes off the heap's tile
+          const dtile = this.world.T(n.depX ?? n.x, n.depY ?? n.y);
+          if (dtile?.dep) { dtile.dep.amt--; if (dtile.dep.amt <= 0) this.removeDep(n.depX ?? n.x, n.depY ?? n.y); }
+          this.setCarrying(u, def.gather!.out);
+        }
         u.wstate = 'return'; u.mesh.position.y = 0;
       }
       return;
@@ -670,6 +716,7 @@ export class Game {
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) {
       const t = this.world.T(x, y);
       if (!t || t.type !== 'grass' || t.b || t.site || t.dep || t.road || t.field) return false;
+      if (t.tree?.dense) return false;    // old-growth is not for clearing
     }
     const d = doorTile({ x: tx, y: ty, rot });
     return this.world.passable(d.x, d.y);
@@ -702,7 +749,15 @@ export class Game {
     return false;
   }
 
+  /** Buildings this map's biome forbids (mirrored by the build menu). */
+  disabledBuildings(): BuildingKey[] { return this.world.biome.disabledBuildings; }
+
   tryPlace(key: BuildingKey, tx: number, ty: number, rot: number): void {
+    if (this.world.biome.disabledBuildings.includes(key)) {
+      this.sfx('error');
+      this.toast(`No ${DEFS[key].name.toLowerCase()} can be raised in ${this.world.biome.name}`, 'err');
+      return;
+    }
     if (!this.canPlace(key, tx, ty, rot)) { this.sfx('error'); this.toast('Cannot build here — the entrance tile must be clear too', 'err'); return; }
     const def = DEFS[key];
     if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.toast('No stone deposits in range — build near the grey rocks', 'err'); return; }
@@ -720,7 +775,7 @@ export class Game {
 
   paintRoad(tx: number, ty: number): void {
     const t = this.world.T(tx, ty);
-    if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep) return;
+    if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep || t.tree?.dense) return;
     const cost = this.mods.roadCost();
     if ((this.store.stock?.['stone'] || 0) < cost) {
       const now = Date.now();
@@ -1275,7 +1330,7 @@ export class Game {
     const tx = Math.max(0, Math.min(W - 1, Math.round(nxp + W / 2 - 0.5)));
     const ty = Math.max(0, Math.min(H - 1, Math.round(nzp + H / 2 - 0.5)));
     const t = this.world.tiles[ty][tx];
-    if (t.type !== 'grass' || t.b || t.site) return;
+    if (t.type !== 'grass' || t.b || t.site || t.dep) return;
     u.mesh.position.x = nxp; u.mesh.position.z = nzp;
     u.tx = tx; u.ty = ty;
   }
@@ -1304,7 +1359,7 @@ export class Game {
     }
     const spots = formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), (tx, ty) => {
       const t = this.world.T(tx, ty);
-      return !!t && t.type === 'grass' && !t.b && !t.site;
+      return !!t && t.type === 'grass' && !t.b && !t.site && !t.dep;
     });
     for (let i = 0; i < units.length; i++) {
       const s = spots[Math.min(i, spots.length - 1)];

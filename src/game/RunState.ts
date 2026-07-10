@@ -14,12 +14,20 @@ export const RUN_LEVELS = 10;
 // =====================================================================
 export const MAX_ASCENSION = 3;
 
+/** Tier display names: sensible at first, increasingly honest about the absurdity. */
+export const ASCENSION_NAMES = [
+  'Normal',
+  'Hard',
+  'Very Hard',
+  'Absurd — the Erfgooiers Weep',
+];
+
 /** What each tier adds (cumulative), for the hero-select picker. */
 export const ASCENSION_DESCS = [
-  'The base game',
-  'A1 · The shop offers one fewer ware',
-  'A2 · Hard timers are 15% shorter',
-  'A3 · Every level carries at least one curse',
+  'The base game, at home in Het Gooi',
+  'Hard · One fewer shop ware — and levels 5+ cross into the Ardennes (no vineyards this far north)',
+  'Very Hard · Timers 15% shorter — and the Black Forest swallows levels 7+ (no farmland under the canopy)',
+  'Absurd · Every level cursed — and the run ends among the peaks of the Alps',
 ];
 
 /** How many wares the between-level shop rolls at this tier. */

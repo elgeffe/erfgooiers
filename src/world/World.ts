@@ -1,5 +1,6 @@
 import { W as DEFAULT_W, H as DEFAULT_H } from '../constants';
 import { worldRng } from '../engine/rng';
+import { BIOMES, pickTreeKind, type BiomeDef, type BiomeKey } from '../data/biomes';
 import type { DecoKind, DepositKind, Tile } from '../types';
 
 // Worldgen pulls exclusively from this stream (reseeded per level) so a level's
@@ -22,6 +23,8 @@ export interface WorldParams {
    *  one corner (with a guarded pass or two), and enemy strongholds/bosses are
    *  placed inside it. Combat starts when YOU march through the pass. */
   frontier?: boolean;
+  /** The landscape this map is cut from (palette, flora, fauna, gen character). */
+  biome?: BiomeKey;
 }
 
 /**
@@ -41,6 +44,8 @@ export class World {
   readonly tiles: Tile[][] = [];
   /** The walled-off enemy quarter on frontier maps (centre + radius), or null. */
   enemyZone: { x: number; y: number; r: number } | null = null;
+  /** The biome this map was generated in (View/models read its palette). */
+  readonly biome: BiomeDef;
 
   private readonly p: Required<WorldParams>;
 
@@ -57,7 +62,12 @@ export class World {
       mountains: params.mountains ?? 0,
       ruins: params.ruins ?? 0,
       frontier: params.frontier ?? false,
+      biome: params.biome ?? 'gooi',
     };
+    this.biome = BIOMES[this.p.biome];
+    // the biome shapes the terrain: extra ridge chains, denser or thinner woods
+    this.p.mountains += this.biome.gen.mountainsAdd;
+    this.p.treeStands = Math.round(this.p.treeStands * this.biome.gen.treeMult);
     this.W = this.p.w;
     this.H = this.p.h;
     this.seed = this.p.seed;
@@ -86,6 +96,8 @@ export class World {
     if (!t) return false;
     if (t.type !== 'grass') return false; // water & rock both block
     if (t.b || t.site) return false;
+    if (t.dep) return false;              // ore heaps are solid — mine from beside them
+    if (t.tree?.dense) return false;      // old-growth thickets are a wall of trunks
     return true;
   }
 
@@ -229,8 +241,9 @@ export class World {
       }
       return placed;
     };
-    // ore veins — random clusters, weighted toward stone
-    const kindPool: DepositKind[] = ['stone', 'stone', 'gold', 'coal', 'iron'];
+    // ore veins — random clusters, mixed to the biome's taste (iron-red
+    // Ardennes, charcoal Black Forest, stone-rich Alps)
+    const kindPool: DepositKind[] = this.biome.oreWeights;
     const oreCount: Record<DepositKind, number> = { stone: 0, gold: 0, coal: 0, iron: 0 };
     for (let i = 0; i < this.p.oreVeins; i++) {
       const kind = kindPool[i % kindPool.length];
@@ -256,7 +269,7 @@ export class World {
         const { x, y } = this.near(cx, cy, r);
         const t = this.T(x, y);
         if (t && t.type === 'grass' && !t.dep && !t.tree) {
-          t.tree = { growth: 1, reserved: false, meshes: [], s: 0.8 + rnd() * 0.45, kind: Math.floor(rnd() * 4) };
+          t.tree = { growth: 1, reserved: false, meshes: [], s: 0.8 + rnd() * 0.45, kind: pickTreeKind(this.biome, rnd()) };
           placed++;
         }
       }
@@ -272,11 +285,25 @@ export class World {
       treeCount += forest(5 + Math.floor(rnd() * (W - 10)), 5 + Math.floor(rnd() * (H - 10)), 4, 12);
     }
 
-    // ---- lavender meadows: dense purple patches of rows ----
+    // ---- old-growth thickets (Black Forest): dense clusters of towering
+    // pines no one passes, harvests or builds through — walls made of wood ----
+    for (let i = 0; i < this.biome.gen.denseThickets; i++) {
+      let cx = 0, cy = 0, guard = 0;
+      do { cx = 5 + Math.floor(rnd() * (W - 10)); cy = 5 + Math.floor(rnd() * (H - 10)); }
+      while (nearCentre(cx, cy, 4) && guard++ < 40);
+      if (nearCentre(cx, cy, 4)) continue;
+      blob(cx, cy, 2 + Math.floor(rnd() * 2), t => {
+        if (t.type !== 'grass' || t.dep || t.pickup) return;
+        if (t.deco) t.deco = null;
+        t.tree = { growth: 1, reserved: true, meshes: [], s: 1.15 + rnd() * 0.45, kind: 1, dense: true };
+      });
+    }
+
+    // ---- flowering meadows: dense patches of the biome's signature flora ----
     for (let i = 0; i < this.p.meadows; i++) {
       const cx = 6 + Math.floor(rnd() * (W - 12)), cy = 6 + Math.floor(rnd() * (H - 12));
       blob(cx, cy, 2 + Math.floor(rnd() * 3), t => {
-        if (t.type === 'grass' && !t.tree && !t.dep && !t.deco && rnd() < 0.85) this.setDeco(t, 'lavender');
+        if (t.type === 'grass' && !t.tree && !t.dep && !t.deco && rnd() < 0.85) this.setDeco(t, this.biome.meadowDeco);
       });
     }
 
@@ -294,8 +321,8 @@ export class World {
       const t = this.tiles[y][x];
       if (t.type !== 'grass' || t.tree || t.dep || t.deco || central(x, y)) continue;
       const r = rnd();
-      if (r < 0.045) this.setDeco(t, 'flowers');
-      else if (r < 0.065) this.setDeco(t, 'bush');
+      if (r < 0.045) this.setDeco(t, this.biome.scatterDeco[0]);
+      else if (r < 0.065) this.setDeco(t, this.biome.scatterDeco[1]);
     }
 
     // ---- gold piles: scattered pickups for collection quests & gold income ----

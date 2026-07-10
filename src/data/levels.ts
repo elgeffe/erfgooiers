@@ -2,6 +2,7 @@ import type { WorldParams } from '../world/World';
 import type { StartKit } from '../game/Game';
 import type { ObjectiveDef } from '../game/Objectives';
 import type { UnitKind } from './units';
+import type { BiomeKey } from './biomes';
 
 /** One scheduled raid. Either `at` (sim seconds) or `whenArmy` (fires `delay`
  *  seconds after the player's fighter count first reaches it — the raid waits
@@ -51,38 +52,39 @@ export const LEVELS: LevelDef[] = [
   // Opening economy arc: each level asks for a deeper or wider production
   // network before the combat arc begins at level 5.
 
-  { index: 1, name: 'Daily Bread', type: 'Economy',
-    objectives: [
-      { kind: 'produce', item: 'bread', n: 8 },
-      { kind: 'produce', item: 'timber', n: 12 },
-    ],
+  // Economy arc: each level's NAME matches every objective variant it can roll,
+  // and each asks for a deeper chain than the last, on a tighter-feeling clock.
+
+  // one chain, two buildings: woodcutter \u2192 sawmill. The gentlest opening.
+  { index: 1, name: 'First Timber', type: 'Economy',
+    objectives: [{ kind: 'produce', item: 'timber', n: 8 }],
+    world: { w: 36, h: 36, treeStands: 6, oreVeins: 5, waterScale: 0.5, meadows: 3, goldPiles: 2 },
+    kit: { stock: { timber: 8, stone: 8, bread: 6, coin: 4 }, serfs: 2, laborers: 1 },
+    timeTarget: 200, hardTimer: 300, reward: 25 },
+
+  // three-building food chain: farm (+plots) \u2192 mill \u2192 bakery
+  { index: 2, name: 'Daily Bread', type: 'Economy',
+    objectives: [{ kind: 'produce', item: 'bread', n: 8 }],
     world: { w: 38, h: 38, treeStands: 6, oreVeins: 5, waterScale: 0.6, meadows: 3, goldPiles: 2 },
-    kit: { stock: { timber: 10, stone: 10, bread: 6, coin: 4 }, serfs: 2, laborers: 1 },
-    timeTarget: 240, hardTimer: 340, reward: 30 },
-  
-  { index: 2, name: 'First Coin', type: 'Economy',
-    objectives: [{ kind: 'produce', item: 'coin', n: 3 }],
-    world: { w: 36, h: 36, treeStands: 5, oreVeins: 6, waterScale: 0.5, meadows: 2, goldPiles: 2 },
+    kit: { stock: { timber: 12, stone: 10, bread: 6, coin: 4 }, serfs: 2, laborers: 1 },
+    timeTarget: 260, hardTimer: 380, reward: 30 },
+
+  // two mines feeding one mint \u2014 the first dual-input recipe
+  { index: 3, name: 'First Coin', type: 'Economy',
+    objectives: [{ kind: 'produce', item: 'coin', n: 5 }],
+    world: { w: 40, h: 40, treeStands: 5, oreVeins: 7, waterScale: 0.6, meadows: 2, goldPiles: 3 },
     kit: { stock: { timber: 12, stone: 10, bread: 8, coin: 4 }, serfs: 2, laborers: 1 },
-    timeTarget: 220, hardTimer: 320, reward: 25 },
+    timeTarget: 300, hardTimer: 440, reward: 38 },
 
-  { index: 3, name: 'The Vintner\u2019s Gamble', type: 'Economy',
+  // two full chains side by side; both variants stay wine-and-bread themed
+  { index: 4, name: 'The Vintner\u2019s Gamble', type: 'Economy',
     objectives: [
-      // both chains at once: run the bakery AND the winery side by side
       { kind: 'produceMulti', reqs: [{ item: 'bread', n: 8 }, { item: 'wine', n: 6 }] },
+      { kind: 'produceMulti', reqs: [{ item: 'wine', n: 8 }, { item: 'bread', n: 6 }] },
     ],
-    world: { w: 40, h: 40, treeStands: 6, oreVeins: 5, waterScale: 0.7, meadows: 3, goldPiles: 3 },
-    kit: { stock: { timber: 10, stone: 10, bread: 8, coin: 4 }, serfs: 2, laborers: 1 },
-    timeTarget: 260, hardTimer: 370, reward: 35 },
-
-  { index: 4, name: 'The Coin Run', type: 'Economy',
-    objectives: [
-      { kind: 'produceMulti', reqs: [{ item: 'coin', n: 14 }, { item: 'bread', n: 8 }] },
-      { kind: 'produceMulti', reqs: [{ item: 'coin', n: 12 }, { item: 'wine', n: 6 }] },
-    ],
-    world: { w: 42, h: 42, treeStands: 6, oreVeins: 7, waterScale: 0.85, meadows: 3, goldPiles: 6 },
-    kit: { stock: { timber: 12, stone: 10, bread: 8, coin: 5 }, serfs: 2, laborers: 2 },
-    timeTarget: 360, hardTimer: 430, reward: 45 },
+    world: { w: 42, h: 42, treeStands: 6, oreVeins: 6, waterScale: 0.8, meadows: 3, goldPiles: 4 },
+    kit: { stock: { timber: 14, stone: 10, bread: 8, coin: 5 }, serfs: 2, laborers: 2 },
+    timeTarget: 380, hardTimer: 540, reward: 45 },
 
   { index: 5, name: 'Raiders at the Gate', type: 'Defend',
     objectives: [{ kind: 'survive', waves: 2 }],
@@ -155,18 +157,75 @@ export function levelFor(index: number): LevelDef {
   return LEVELS[Math.min(LEVELS.length, Math.max(1, index)) - 1];
 }
 
-/**
- * A no-objective free-build map (menu → Sandbox). Big, resource-rich and
- * timer-free so you can raise as much as you like — the eventual test bed for
- * massive armies and combat juice. The objective is disabled by main, so the
- * placeholder entry here is never evaluated.
- */
-export function sandboxLevel(): LevelDef {
+// =====================================================================
+//  Sandbox — a configurable free-build map (menu → Sandbox → setup screen).
+//  Civilization-style knobs: size, biome (more coming), water, resource
+//  density on the map and in the storehouse, and how much trouble to invite.
+// =====================================================================
+export interface SandboxConfig {
+  size: 'small' | 'medium' | 'large' | 'huge';
+  biome: BiomeKey;
+  water: 'dry' | 'normal' | 'wet';
+  mapRes: 'sparse' | 'normal' | 'rich';
+  startRes: 'modest' | 'plentiful' | 'cornucopia';
+  enemies: 'none' | 'wilds' | 'camps' | 'warzone';
+}
+
+export const DEFAULT_SANDBOX: SandboxConfig = {
+  size: 'large', biome: 'gooi', water: 'normal', mapRes: 'rich', startRes: 'plentiful', enemies: 'none',
+};
+
+const SBX_SIZE: Record<SandboxConfig['size'], number> = { small: 48, medium: 64, large: 84, huge: 100 };
+const SBX_WATER: Record<SandboxConfig['water'], number> = { dry: 0.3, normal: 1, wet: 1.6 };
+const SBX_DENSITY: Record<SandboxConfig['mapRes'], number> = { sparse: 0.55, normal: 1, rich: 1.7 };
+
+const SBX_KITS: Record<SandboxConfig['startRes'], StartKit> = {
+  modest: { stock: { timber: 20, stone: 16, bread: 10, coin: 8 }, serfs: 4, laborers: 2, villagers: 5 },
+  plentiful: { stock: { timber: 90, stone: 70, bread: 50, coin: 30, iron: 12, weapon: 10, armor: 5 }, serfs: 8, laborers: 3, villagers: 8 },
+  cornucopia: { stock: { timber: 320, stone: 320, bread: 160, coin: 90, iron: 50, weapon: 40, armor: 20 }, serfs: 12, laborers: 4, villagers: 12 },
+};
+
+/** A no-objective free-build map shaped by the setup screen's choices. */
+export function sandboxLevel(cfg: SandboxConfig = DEFAULT_SANDBOX): LevelDef {
+  const size = SBX_SIZE[cfg.size];
+  const den = SBX_DENSITY[cfg.mapRes];
+  const scale = size / 48;
+  const hostile = cfg.enemies === 'camps' || cfg.enemies === 'warzone';
+  const enemies: EnemySetup | undefined =
+    cfg.enemies === 'none' ? undefined
+      : cfg.enemies === 'wilds' ? {
+        wild: [
+          { kind: 'boar', count: Math.round(6 * scale) },
+          { kind: 'wolf', count: Math.round(5 * scale) },
+        ],
+      } : cfg.enemies === 'camps' ? {
+        wild: [{ kind: 'wolf', count: Math.round(4 * scale) }],
+        camps: [{ count: Math.max(2, Math.round(2 * scale)), guards: 4 }],
+        commander: { every: 120, kind: 'bandit', count: 3, from: 'camp' },
+      } : {
+        wild: [{ kind: 'boar', count: Math.round(4 * scale) }],
+        camps: [{ count: Math.max(2, Math.round(2 * scale)), guards: 5 }],
+        keep: { guards: 8 }, towers: 3,
+        commander: { every: 75, kind: 'orc', count: 4, from: 'camp' },
+        waves: [{ at: 420, kind: 'troll', count: 3 }],
+      };
   return {
     index: 0, name: 'Sandbox', type: 'Sandbox',
-    objectives: [{ kind: 'produce', item: 'coin', n: 1 }],
-    world: { w: 60, h: 60, treeStands: 14, oreVeins: 18, waterScale: 0.4, meadows: 7, goldPiles: 10 },
-    kit: { stock: { timber: 240, stone: 240, bread: 120, coin: 60, iron: 40, weapon: 30, armor: 15 }, serfs: 8, laborers: 3 },
+    objectives: [{ kind: 'produce', item: 'coin', n: 1 }], // never evaluated (main disables it)
+    world: {
+      w: size, h: size,
+      biome: cfg.biome,
+      treeStands: Math.round(10 * scale * den),
+      oreVeins: Math.round(11 * scale * den),
+      waterScale: SBX_WATER[cfg.water],
+      meadows: Math.round(6 * scale),
+      goldPiles: Math.round(8 * scale * den),
+      mountains: Math.round(2 * scale),
+      ruins: Math.round(1 * scale),
+      frontier: hostile,   // hostile sandboxes keep their trouble behind the pass
+    },
+    kit: SBX_KITS[cfg.startRes],
     timeTarget: Infinity, hardTimer: Infinity, reward: 0,
+    enemies,
   };
 }

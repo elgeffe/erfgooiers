@@ -5,7 +5,7 @@ import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, BuildingKey, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter, CRITTER_KINDS, type CritterKind } from './models';
+import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeHero, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, setActiveBiome, sphere, stdMat, withSeededScatter, type CritterKind } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -83,6 +83,9 @@ export class View {
   private readonly critters: Critter[] = [];
   private readonly skyBirds: SkyBird[] = [];
   private nextBirdT = 0;
+
+  // short-lived flags marking where the player just ordered units to go
+  private readonly orderPings: { mesh: THREE.Group; life: number; max: number }[] = [];
 
   // minimap
   private readonly mm: HTMLCanvasElement;
@@ -179,6 +182,7 @@ export class View {
   /** Attach a freshly generated world and build its ground, doodads and ambiance. */
   loadWorld(world: World): void {
     this.world = world;
+    setActiveBiome(world.biome);   // foliage palette, snowlines, flora variants
     this.fitShadowToMap();
     this.buildGround();
     this.populateDoodads();
@@ -221,8 +225,10 @@ export class View {
     this.pigHerds.clear();
     this.fish.length = 0;
     this.critters.length = 0;
-    this.skyBirds.length = 0;
+this.skyBirds.length = 0;
     this.nextBirdT = 0;
+    for (const p of this.orderPings) this.worldGroup.remove(p.mesh);
+    this.orderPings.length = 0;
     this.lakeTiles = [];
     this.millSails.length = 0;
     this.ghostKey = null;
@@ -430,6 +436,15 @@ export class View {
     return u;
   }
 
+  /** The run's mounted hero — same contract as createUnit, styled per hero id. */
+  createHero(heroId: string, tileX: number, tileY: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
+    const u = makeHero(heroId);
+    u.group.position.set(this.world.wx(tileX), 0, this.world.wz(tileY));
+    this.worldGroup.add(u.group);
+    this.freeze(u.group, false);
+    return u;
+  }
+
   /** Combat effect meshes, owned & positioned by the sim (removed via `remove`). */
   createArrow(): THREE.Group { const m = makeArrow(); this.worldGroup.add(m); return m; }
   createFireball(): THREE.Group { const m = makeFireball(); this.worldGroup.add(m); return m; }
@@ -437,6 +452,30 @@ export class View {
   createFlag(): THREE.Group { const m = makeFlag(); this.worldGroup.add(m); return m; }
   /** Marker parented onto a building mesh (not the world) so it follows it. */
   createPlotMarker(): THREE.Group { return makePlotMarker(); }
+
+  /** Plant a short-lived flag where the player just ordered units to move —
+   *  it pops in, stands a moment, then shrinks away (see animate). */
+  showOrderMarker(wx: number, wz: number): void {
+    const m = makeFlag();
+    m.userData.dynamic = true;
+    m.position.set(wx, 0, wz);
+    m.scale.setScalar(0.1);
+    this.worldGroup.add(m);
+    this.freeze(m, false);
+    this.orderPings.push({ mesh: m, life: 1.5, max: 1.5 });
+  }
+
+  private updateOrderPings(dt: number): void {
+    for (let i = this.orderPings.length - 1; i >= 0; i--) {
+      const p = this.orderPings[i];
+      p.life -= dt;
+      if (p.life <= 0) { this.worldGroup.remove(p.mesh); this.orderPings.splice(i, 1); continue; }
+      const age = p.max - p.life;
+      // quick pop up, hold, then shrink out at the end
+      const s = p.life < 0.3 ? p.life / 0.3 : Math.min(1, age * 6);
+      p.mesh.scale.setScalar(Math.max(0.05, s));
+    }
+  }
 
   /**
    * A tree that is still growing gets its own mesh (its root rescales every
@@ -500,20 +539,21 @@ export class View {
   }
   private tileBaseColor(tx: number, ty: number): { hex: number; sh: number } {
     const t = this.world.tiles[ty][tx];
-    if (t.type === 'water') return { hex: 0x36648f, sh: 0.9 + ((tx * 7 + ty * 13) % 10) / 100 };
+    const pal = this.world.biome.palette;
+    if (t.type === 'water') return { hex: pal.water, sh: 0.9 + ((tx * 7 + ty * 13) % 10) / 100 };
     // rocky ground: grey scree under mountain peaks, dusty earth under ruined walls
     if (t.type === 'rock') return t.rock === 'wall'
       ? { hex: 0x9a8a6e, sh: 0.92 + ((tx * 3 + ty * 7) % 8) / 100 }
-      : { hex: 0x83837e, sh: 0.88 + ((tx * 5 + ty * 3) % 12) / 100 };
+      : { hex: pal.scree, sh: 0.88 + ((tx * 5 + ty * 3) % 12) / 100 };
     if (t.road) return { hex: 0xcbb389, sh: 0.96 + ((tx * 3 + ty * 5) % 8) / 100 };
     if (t.field) {
       const out = t.field.farm.def.gather?.out;
       const ripe = out === 'grape' ? 0x5e7d3a : out === 'meat' ? 0x6fae52 : 0xe0c24e;
       return { hex: this.lerpHex(0x8a6b42, ripe, Math.min(1, t.field.growth)), sh: 1 };
     }
-    // lush meadow — two greens dithered by position
+    // lush meadow — the biome's two greens dithered by position
     const g2 = ((tx * 5 + ty * 11) % 7) / 7;
-    return { hex: this.lerpHex(0x6fae52, 0x89c266, g2), sh: t.cshade };
+    return { hex: this.lerpHex(pal.grassA, pal.grassB, g2), sh: t.cshade };
   }
   private setTileColor(tx: number, ty: number, hex: number, shade: number): void {
     this._c.setHex(hex).multiplyScalar(shade);
@@ -794,15 +834,17 @@ export class View {
   // =====================================================================
   private buildAmbiance(): void {
     const W = this.world.W, H = this.world.H;
+    const biome = this.world.biome;
+    const pal = biome.palette;
     // Painted sky: richer vertical colour, warm sun haze and a few extremely
     // faint high-altitude streaks. This is a screen backdrop, not a cloud count.
     const sky = document.createElement('canvas'); sky.width = 512; sky.height = 512;
     const sctx = sky.getContext('2d')!;
     const grad = sctx.createLinearGradient(0, 0, 0, 512);
-    grad.addColorStop(0, '#4e9bd0');
-    grad.addColorStop(0.42, '#82bddd');
-    grad.addColorStop(0.72, '#bddbea');
-    grad.addColorStop(1, '#f0e9d3');
+    grad.addColorStop(0, pal.sky[0]);
+    grad.addColorStop(0.42, pal.sky[1]);
+    grad.addColorStop(0.72, pal.sky[2]);
+    grad.addColorStop(1, pal.sky[3]);
     sctx.fillStyle = grad; sctx.fillRect(0, 0, 512, 512);
     const sun = sctx.createRadialGradient(405, 120, 3, 405, 120, 155);
     sun.addColorStop(0, 'rgba(255,247,206,.72)');
@@ -819,10 +861,10 @@ export class View {
     this.skyTex = new THREE.CanvasTexture(sky);
     this.skyTex.colorSpace = THREE.SRGBColorSpace;
     this.scene.background = this.skyTex;
-    this.scene.fog = new THREE.Fog(0xd4e4df, 70, 165);
+    this.scene.fog = new THREE.Fog(pal.fog, 70, 165);
 
     // a broad meadow plain reaching out to the horizon beneath the map plinth
-    const plain = new THREE.Mesh(new THREE.CircleGeometry(240, 96), stdMat({ color: 0x7da866 }, false));
+    const plain = new THREE.Mesh(new THREE.CircleGeometry(240, 96), stdMat({ color: pal.plain }, false));
     plain.rotation.x = -Math.PI / 2; plain.position.y = -2.1;
     this.worldGroup.add(plain);
     this.freeze(plain);
@@ -835,7 +877,7 @@ export class View {
 
     // Patchwork countryside beyond the playable board: irregular field strips,
     // dark hedges and glints of distant water break up the old flat green disc.
-    const fieldMats = [0x91ae61, 0xb3ad62, 0x779d59, 0xc0a86a, 0x88a968].map(c => stdMat({ color: c }, false));
+    const fieldMats = pal.fieldTones.map(c => stdMat({ color: c }, false));
     const hedgeMat = stdMat({ color: 0x456842 }, false);
     for (let i = 0; i < 26; i++) {
       const ang = rnd() * Math.PI * 2, rad = boardR + GAP + 7 + rnd() * 34;
@@ -856,8 +898,39 @@ export class View {
       this.worldGroup.add(water); this.freeze(water);
     }
 
+    // The Ardennes rolls: an extra ring of big, close grassy domes right past
+    // the gap so the board reads as a clearing between hills.
+    if (biome.ambiance.hillBumps) {
+      const nearTones = pal.hillTones.map(c => stdMat({ color: c }));
+      for (let i = 0; i < 9; i++) {
+        const ang = (i / 9) * Math.PI * 2 + rnd() * 0.6;
+        const r = 12 + rnd() * 9;
+        const rad = boardR + GAP + r + rnd() * 6;
+        const h = 4 + rnd() * 4;
+        const dome = new THREE.Mesh(sphere(1, 20, 12), nearTones[i % nearTones.length]);
+        dome.scale.set(r, h, r * (0.8 + rnd() * 0.4));
+        dome.position.set(Math.cos(ang) * rad, -2.1, Math.sin(ang) * rad);
+        this.worldGroup.add(dome); this.freeze(dome);
+      }
+    }
+
+    // The Alps loom: a ring of great snowbound massifs on the horizon in
+    // place of soft farmland hills.
+    if (biome.ambiance.peakRing) {
+      for (let i = 0; i < 15; i++) {
+        const ang = (i / 15) * Math.PI * 2 + rnd() * 0.35;
+        const sc = 7 + rnd() * 7;
+        const rad = boardR + GAP + sc + 14 + rnd() * 26;
+        const massif = makeMountain();
+        massif.scale.setScalar(sc);
+        massif.position.set(Math.cos(ang) * rad, -2.1, Math.sin(ang) * rad);
+        massif.rotation.y = rnd() * Math.PI * 2;
+        this.worldGroup.add(massif); this.freeze(massif);
+      }
+    }
+
     // low rolling hill domes in three hazier and hazier rings
-    const hillTones = [0x91b879, 0x7da86f, 0x709a73, 0x668c7b].map(c => stdMat({ color: c }));
+    const hillTones = pal.hillTones.map(c => stdMat({ color: c }));
     for (let ring = 0; ring < 3; ring++) {
       const count = 12 + ring * 5;
       for (let i = 0; i < count; i++) {
@@ -876,11 +949,13 @@ export class View {
     // a hazy treeline out in the meadow ring, between the plinth and the hills
     const foliage = [0x4a7350, 0x3f6a5e, 0x577d48, 0x426b43].map(c => stdMat({ color: c }));
     const trunkM = stdMat({ color: 0x5b4433 });
-    for (let i = 0; i < 90; i++) {
+    // the Black Forest closes in: a far denser, near-solid ring of dark pines
+    const ringCount = biome.ambiance.forestRing ? 260 : 90;
+    for (let i = 0; i < ringCount; i++) {
       const ang = rnd() * Math.PI * 2;
-      const s = 0.9 + rnd() * 1.4;
-      const rad = boardR + 5 + rnd() * (GAP - 4); // sits in the gap ring, clear of the board
-      const deciduous = rnd() < 0.42;
+      const s = (0.9 + rnd() * 1.4) * (biome.ambiance.forestRing ? 1.25 : 1);
+      const rad = boardR + 5 + rnd() * (biome.ambiance.forestRing ? GAP + 16 : GAP - 4);
+      const deciduous = !biome.ambiance.forestRing && rnd() < 0.42;
       const crown = new THREE.Mesh(deciduous ? sphere(0.82, 10, 7) : cone(0.75, 2.6, 7), foliage[Math.floor(rnd() * foliage.length)]);
       crown.scale.set(s, deciduous ? s * (0.85 + rnd() * 0.35) : s, s);
       crown.position.set(Math.cos(ang) * rad, -2.1 + 1.5 * s, Math.sin(ang) * rad);
@@ -896,7 +971,8 @@ export class View {
     }
 
     // A tiny horizon village adds human scale: warm roofs, a church spire and
-    // a pale lane, all well outside the playable edge.
+    // a pale lane, all well outside the playable edge. Wilder biomes skip it.
+    if (biome.ambiance.village) {
     const villageAng = rnd() * Math.PI * 2, villageRad = boardR + 31;
     const village = new THREE.Group();
     const lane = new THREE.Mesh(box(8.5, 0.025, 0.7), stdMat({ color: 0xc9b58c }, false)); lane.position.y = 0.02; village.add(lane);
@@ -910,9 +986,13 @@ export class View {
     const spire = new THREE.Mesh(cone(0.58, 1.45, 6), stdMat({ color: 0x55666a })); spire.position.set(0.2, 2.27, -0.8); village.add(spire);
     village.position.set(Math.cos(villageAng) * villageRad, -2.08, Math.sin(villageAng) * villageRad); village.lookAt(0, -2.08, 0);
     this.worldGroup.add(village); this.freeze(village);
+    }
 
-    // one far-off windmill turning on the plain — a little postcard of Het Gooi
-    const millAng = rnd() * Math.PI * 2;
+    // one far-off windmill turning on the plain — a little postcard of Het
+    // Gooi. Pinned to the map's north (up-screen from the iso camera, world
+    // (-1,-1)) so it's actually in view instead of hiding behind the camera.
+    if (biome.ambiance.windmill) {
+    const millAng = -Math.PI * 3 / 4 + (rnd() - 0.5) * 0.5;
     const millRad = boardR + 38;
     const mill = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.7, 5.2, 8), stdMat({ color: 0x6b5540 }));
@@ -935,6 +1015,7 @@ export class View {
     this.worldGroup.add(mill);
     this.freeze(mill);
     this.millSails.push(sails);
+    }
 
     // Two or three detailed cloud banks drift high above the board. Layered
     // blue-grey undersides and bright crowns give them volume without turning
@@ -1008,7 +1089,8 @@ export class View {
     this.updatePigs(dt, buildings);
     this.updateFish(dt);
     this.updateCritters(dt);
-    this.updateSkyBirds(dt);
+this.updateSkyBirds(dt);
+    this.updateOrderPings(dt);
     this.ageGore(dt);
   }
 
@@ -1063,20 +1145,27 @@ export class View {
       group.position.set(x, 0, z);
       this.critters.push({
         mesh: group, x, z, tx: x, tz: z, wait: rnd() * 4,
-        speed: kind === 'fox' ? 0.9 : kind === 'mouse' ? 0.75 : kind === 'hedgehog' ? 0.22 : kind === 'frog' ? 0.35 : 0.5,
+        speed: kind === 'fox' ? 0.9 : kind === 'mouse' ? 0.75 : kind === 'hedgehog' ? 0.22 : kind === 'frog' ? 0.35
+          : kind === 'deer' ? 0.85 : kind === 'squirrel' ? 0.8 : kind === 'marmot' ? 0.3 : kind === 'ibex' ? 0.6 : 0.5,
         hops, hop: 0, shore: kind === 'duck' || kind === 'frog', pond: kind === 'frog',
       });
     };
 
-    spawn('cat', this.critterGrassSpot());
-    if (rnd() < 0.3) spawn('cat', this.critterGrassSpot());
-    const pool = [...CRITTER_KINDS];
-    const extra = 1 + (rnd() < 0.45 ? 1 : 0);
+    // village cats & pond frogs belong to settled biomes only (their pool says so)
+    const pool = [...this.world.biome.critters];
+    if (pool.includes('cat')) {
+      spawn('cat', this.critterGrassSpot());
+      if (rnd() < 0.3) spawn('cat', this.critterGrassSpot());
+    }
+    const extra = 2 + (rnd() < 0.45 ? 1 : 0);
     for (let i = 0; i < extra && pool.length; i++) {
       const kind = pool.splice(Math.floor(rnd() * pool.length), 1)[0];
+      if (kind === 'cat' || kind === 'frog') continue; // handled above/below
       spawn(kind, kind === 'duck' ? this.critterShoreSpot() : this.critterGrassSpot());
+      // herd animals show up in pairs
+      if ((kind === 'deer' || kind === 'ibex' || kind === 'rabbit') && rnd() < 0.6) spawn(kind, this.critterGrassSpot());
     }
-    spawn('frog', this.critterPondSpot());
+    if (this.world.biome.critters.includes('frog')) spawn('frog', this.critterPondSpot());
   }
 
   private critterGrassSpot(): { x: number; y: number } | null {
@@ -1148,9 +1237,10 @@ export class View {
     }
   }
 
-  /** Occasionally send a lone bird, flock, or rare eagle across the board. */
+  /** Occasionally send a lone bird, flock, or rare eagle across the board.
+   *  In the high Alps the eagle is the rule, not the exception. */
   private spawnSkyBirds(): void {
-    const roll = rnd(), eagle = roll > 0.9;
+    const roll = rnd(), eagle = roll > (this.world.biome.ambiance.peakRing ? 0.45 : 0.9);
     const count = eagle ? 1 : roll < 0.4 ? 1 : 3 + Math.floor(rnd() * 4);
     const dir = rnd() < 0.5 ? 1 : -1;
     const startX = dir > 0 ? -this.cloudBound - 5 : this.cloudBound + 5;

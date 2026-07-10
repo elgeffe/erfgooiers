@@ -13,9 +13,10 @@ import { UPGRADES, cardUnlocked, specsFor } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, hasMetaSpecial } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
-import { levelFor, sandboxLevel, type LevelDef } from './data/levels';
+import { DEFAULT_SANDBOX, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
+import { BIOMES, campaignBiome } from './data/biomes';
 import type { UnitKind } from './data/units';
-import { ASCENSION_DESCS, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
+import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
 
@@ -56,7 +57,7 @@ const shop = new Shop(shopContinue);
 // ---------- level lifecycle ----------
 function startLevel(): void {
   if (!run) return;
-  const level = sandbox ? sandboxLevel() : levelFor(run.levelIndex);
+  const level = sandbox ? sandboxLevel(sandboxCfg) : levelFor(run.levelIndex);
   currentLevel = level;
   const seed = currentLevelSeed(run);
   // Seed the non-world streams deterministically from the level seed so a
@@ -64,7 +65,10 @@ function startLevel(): void {
   simRng.reseed(seed ^ 0x5bd1e995);
   uiRng.reseed(seed ^ 0x27d4eb2f);
 
-  const world = new World({ seed, ...level.world });
+  // ascension journey: higher tiers march the run's later levels into
+  // harsher biomes (sandbox picks its own on the setup screen)
+  const biomeKey = sandbox ? sandboxCfg.biome : campaignBiome(run.ascension, run.levelIndex);
+  const world = new World({ seed, ...level.world, biome: biomeKey });
   view.loadWorld(world);
   const mutators = sandbox ? [] : run.mutators;
   const mods = new Modifiers([...heroSpecsFor(sandbox ? null : run.hero), ...specsFor(run.upgrades), ...metaSpecsFor(meta.unlocks), ...mutatorSpecsFor(mutators)]);
@@ -72,8 +76,9 @@ function startLevel(): void {
   game.toast = (m, c) => ui.toast(m, c);
   game.onSelect = o => ui.showInspector(o);
   game.sfx = name => audio.play(name as any);
+  audio.setBiome(biomeKey); // before setLevel: a biome signature owns the score
   audio.setLevel(level.index);
-  audio.setDynamic(sandbox);
+  audio.setDynamic(sandbox && sandboxCfg.biome === 'gooi');
   game.onGold = amt => { if (run) { run.gold = Math.max(0, run.gold + amt); if (amt > 0) goldEarnedThisRun += amt; ui.setGold(run.gold); } };
   game.onHurt = (x, z) => view.spawnHurt(x, z);
   game.onDeath = (x, z, _fac, color, role, scale) => view.spawnCorpse(x, z, color, role, scale);
@@ -88,7 +93,8 @@ function startLevel(): void {
   ui.setGame(game);
   ui.setPerks(run.upgrades, meta.unlocks);
   controls.setGame(game);
-  game.setEnemies(sandbox ? null : (level.enemies ?? null));
+  // sandbox trouble is configured on the setup screen; runs use the level table
+  game.setEnemies(level.enemies ?? null);
   // mutator payloads beyond stat curses: extra wild packs on the map
   for (const id of mutators) {
     const def = MUTATOR_BY_ID[id];
@@ -99,12 +105,19 @@ function startLevel(): void {
     const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
     for (const a of level.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
   }
-  // the hero's warband musters at the castle at every level's start
+  // the hero rides out of the castle gate at every level's start, with any warband
   const heroDef = !sandbox && run.hero ? HERO_BY_ID[run.hero] : null;
   if (heroDef?.startArmy) {
     const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
     for (const a of heroDef.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
   }
+  const heroChip = $('heroChip') as HTMLElement;
+  if (heroDef) {
+    game.spawnHero(heroDef.id, heroDef.name);
+    $('heroIcon').textContent = heroDef.icon;
+    $('heroName').textContent = heroDef.name;
+    heroChip.style.display = 'flex';
+  } else heroChip.style.display = 'none';
   ui.setGold(run.gold);
   ui.setSandbox(sandbox);
   ($('sandboxbar') as HTMLElement).style.display = sandbox ? 'flex' : 'none';
@@ -135,6 +148,7 @@ function disposeLevel(): void {
 function goMenu(): void {
   phase = 'menu';
   sandbox = false;
+  audio.setBiome('gooi'); // release any biome signature before the menu mood
   audio.setLevel(0);
   audio.setDynamic(false);
   renderMenu();
@@ -163,7 +177,7 @@ function renderAscensionRow(): void {
   if (meta.ascension <= 0) { row.innerHTML = ''; return; }
   let s = '<div class="shopsect">Ascension — win at your highest tier to unlock the next</div><div class="ascrow">';
   for (let a = 0; a <= meta.ascension; a++) {
-    s += `<button class="asc${a === pickedAscension ? ' on' : ''}" data-asc="${a}" title="${ASCENSION_DESCS[a]}">${a === 0 ? 'Base' : 'A' + a}</button>`;
+    s += `<button class="asc${a === pickedAscension ? ' on' : ''}" data-asc="${a}" title="${ASCENSION_DESCS[a]}">${ASCENSION_NAMES[a]}</button>`;
   }
   const active = pickedAscension === 0 ? ASCENSION_DESCS[0] : ASCENSION_DESCS.slice(1, pickedAscension + 1).join(' · ');
   s += `</div><div class="metaline">${active}</div>`;
@@ -205,7 +219,46 @@ function startRunWithHero(heroId: string): void {
   startLevel();
 }
 
-/** Free-build mode: a big, timer-free, objective-free map that never touches the save. */
+// ---------- sandbox setup (menu → Sandbox) ----------
+let sandboxCfg: SandboxConfig = { ...DEFAULT_SANDBOX };
+
+/** The setup screen's option groups: key into SandboxConfig, label, choices.
+ *  Stubs render greyed out — biomes that exist on the roadmap, not yet in code. */
+const SBX_GROUPS: { key: keyof SandboxConfig; label: string; opts: [string, string][]; stubs?: [string, string][] }[] = [
+  { key: 'size', label: 'Map size', opts: [['small', 'Small · 48'], ['medium', 'Medium · 64'], ['large', 'Large · 84'], ['huge', 'Huge · 100']] },
+  { key: 'biome', label: 'Biome', opts: [['gooi', 'Het Gooi'], ['ardennes', 'The Ardennes'], ['blackforest', 'The Black Forest'], ['alps', 'The Alps']], stubs: [['winter', 'Winter'], ['polder', 'Polder']] },
+  { key: 'water', label: 'Water', opts: [['dry', 'Dry'], ['normal', 'Normal'], ['wet', 'Wetlands']] },
+  { key: 'mapRes', label: 'Map resources', opts: [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']] },
+  { key: 'startRes', label: 'Starting stock', opts: [['modest', 'Modest'], ['plentiful', 'Plentiful'], ['cornucopia', 'Cornucopia']] },
+  { key: 'enemies', label: 'Enemies', opts: [['none', 'None — peaceful'], ['wilds', 'Wild beasts'], ['camps', 'Bandit camps'], ['warzone', 'Warzone']] },
+];
+
+function openSandboxSetup(): void {
+  renderSandboxSetup();
+  showScreen('sandboxselect');
+}
+
+function renderSandboxSetup(): void {
+  const el = $('sbxOptions');
+  let s = '';
+  for (const grp of SBX_GROUPS) {
+    s += `<div class="optgroup"><div class="optlabel">${grp.label}</div><div class="optrow">`;
+    for (const [val, label] of grp.opts) {
+      s += `<button class="opt${sandboxCfg[grp.key] === val ? ' on' : ''}" data-key="${grp.key}" data-val="${val}">${label}</button>`;
+    }
+    for (const [, label] of grp.stubs ?? []) {
+      s += `<button class="opt stub" title="Coming in a later update">${label} · soon</button>`;
+    }
+    s += '</div></div>';
+  }
+  el.innerHTML = s;
+  el.querySelectorAll<HTMLElement>('.opt[data-key]').forEach(b => {
+    b.onclick = () => { (sandboxCfg as any)[b.dataset.key!] = b.dataset.val; audio.play('click'); renderSandboxSetup(); };
+  });
+}
+
+/** Free-build mode shaped by the setup screen: timer-free, objective-free,
+ *  never touches the save — but as hostile as you asked for. */
 function startSandbox(): void {
   sandbox = true;
   run = newRun(randomSeed());
@@ -285,7 +338,7 @@ function onLevelClear(): void {
     // winning at your highest tier opens the next rung of the ladder
     if (run.ascension >= meta.ascension && meta.ascension < MAX_ASCENSION) {
       meta.ascension = Math.min(MAX_ASCENSION, run.ascension + 1);
-      summaryNote = `Ascension ${meta.ascension} unlocked — ${ASCENSION_DESCS[meta.ascension]}`;
+      summaryNote = `New ascension unlocked: ${ASCENSION_NAMES[meta.ascension]} — ${ASCENSION_DESCS[meta.ascension]}`;
     }
   }
   Save.saveMeta(meta);
@@ -359,10 +412,10 @@ function clearSaveData(): void {
 }
 
 // ---------- screens (DOM overlays) ----------
-type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'heroselect' | null;
+type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'heroselect' | 'sandboxselect' | null;
 function showScreen(id: ScreenId): void {
   $('pausemenu').style.display = 'none';
-  for (const s of ['menu', 'shop', 'summary', 'heritage', 'heroselect']) $(s).style.display = id === s ? 'flex' : 'none';
+  for (const s of ['menu', 'shop', 'summary', 'heritage', 'heroselect', 'sandboxselect']) $(s).style.display = id === s ? 'flex' : 'none';
   $('hud').style.display = phase === 'playing' ? 'block' : 'none';
 }
 
@@ -372,7 +425,7 @@ function renderMenu(): void {
   cont.style.display = has ? 'block' : 'none';
   $('metaLine').innerHTML =
     `<b>${meta.heritage}</b> Heritage · runs: ${meta.stats.runs} · wins: ${meta.stats.wins} · levels cleared: ${meta.stats.levelsCleared} · best: level ${meta.stats.bestLevel || 0}` +
-    (meta.ascension > 0 ? ` · ascension A${meta.ascension} unlocked` : '');
+    (meta.ascension > 0 ? ` · ascension unlocked: ${ASCENSION_NAMES[meta.ascension]}` : '');
 }
 
 function renderSummary(victory: boolean, reason: 'timeout' | 'castle' = 'timeout'): void {
@@ -422,8 +475,17 @@ $('menuLogo').innerHTML = logoSVG(40);
 $('introLogo').innerHTML = logoSVG(40);
 ($('btnNewRun') as HTMLButtonElement).onclick = openHeroSelect;
 ($('btnHeroBack') as HTMLButtonElement).onclick = goMenu;
+// the hero chip selects the mounted hero and swings the camera to them
+$('heroChip').onclick = () => {
+  if (!game || !game.heroUnit || game.heroUnit.dead) return;
+  game.select(game.heroUnit);
+  controls.selectUnits([game.heroUnit]);   // so right-click orders work at once
+  view.centerOn(game.heroUnit.mesh.position.x, game.heroUnit.mesh.position.z);
+};
 ($('btnContinue') as HTMLButtonElement).onclick = continueRun;
-($('btnSandbox') as HTMLButtonElement).onclick = startSandbox;
+($('btnSandbox') as HTMLButtonElement).onclick = openSandboxSetup;
+($('btnSbxBack') as HTMLButtonElement).onclick = goMenu;
+($('btnSbxStart') as HTMLButtonElement).onclick = startSandbox;
 
 // ---------- sandbox spawn toolbar ----------
 function sandboxSpawn(kind: UnitKind, count: number): void {
@@ -579,8 +641,10 @@ function frame(now: number): void {
     while (simAcc >= TICK && steps < MAX_STEPS) { game.update(TICK); simAcc -= TICK; steps++; }
     simMs += (performance.now() - t0 - simMs) * 0.05;
     if (simAcc > TICK) simAcc = 0;
-    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); }
+    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateWave(game.nextWave()); }
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
+    // a hostile sandbox can still lose its castle — that ends the session
+    if (game.defeat) onDefeat('castle');
   }
 
   view.render();

@@ -2,6 +2,7 @@ import { Rng, levelSeed } from '../engine/rng';
 import { MAX_CARDS, RARITY_WEIGHT, UPGRADES, UPGRADE_BY_ID, cardUnlocked, upgradePrice, type UpgradeDef } from '../data/upgrades';
 import { MUTATOR_BY_ID, type Contract } from '../data/mutators';
 import { HERO_BY_ID } from '../data/heroes';
+import { BIOMES, campaignBiome } from '../data/biomes';
 import { levelFor } from '../data/levels';
 import { Objective } from '../game/Objectives';
 import type { RunState } from '../game/RunState';
@@ -179,13 +180,15 @@ export class Shop {
       const el = document.createElement('div');
       el.className = `scard contract con-${c.kind}` + (this.chosen === c ? ' picked' : '');
       const brief = new Objective(level.objectives[c.objectiveIdx % level.objectives.length]).brief();
+      const bio = BIOMES[campaignBiome(this.run.ascension, nextIndex)];
+      const bioLine = bio.key !== 'gooi' ? `<br><i>${bio.name} — ${bio.desc}</i>` : '';
       const curses = c.mutators.map(id => {
         const m = MUTATOR_BY_ID[id];
         return m ? `<span class="mutchip" title="${m.desc}">${m.icon} ${m.name}</span>` : '';
       }).join('') || '<span class="mutchip calm">No curses</span>';
       el.innerHTML =
         `<div class="sc-body"><div class="sc-name">${c.kind === 'elite' ? '⚔️ ' : ''}${c.name}</div>` +
-        `<div class="sc-desc">Level ${nextIndex} · ${level.name}<br>${brief}</div>` +
+        `<div class="sc-desc">Level ${nextIndex} · ${level.name}<br>${brief}${bioLine}</div>` +
         `<div class="conchips">${curses}</div>` +
         `<div class="sc-price">${c.reward}g on clear</div></div>`;
       el.onclick = () => { this.chosen = c; this.render(); };
