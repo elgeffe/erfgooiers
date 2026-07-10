@@ -155,7 +155,7 @@ export class Game {
   placePlot(tx: number, ty: number, b: Building): void {
     if (b.removed || !b.def.fields) return;
     const t = this.world.T(tx, ty);
-    if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep) return;
+    if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep || t.tree?.dense) return;
     if (b.fieldsList.length >= this.fieldCap(b)) {
       const now = Date.now();
       if (now - this.plotWarnT > 1500) { this.plotWarnT = now; this.toast(`${b.name} has no room for more plots`, 'err'); this.sfx('error'); }
@@ -520,7 +520,7 @@ export class Game {
     for (let y = Math.max(0, b.y - g.range); y <= Math.min(H - 1, b.y + 1 + g.range); y++) for (let x = Math.max(0, b.x - g.range); x <= Math.min(W - 1, b.x + 1 + g.range); x++) {
       const t = tiles[y][x];
       let ok = false;
-      if (g.node === 'tree') ok = !!(t.tree && t.tree.growth >= 1 && !t.tree.reserved);
+      if (g.node === 'tree') ok = !!(t.tree && t.tree.growth >= 1 && !t.tree.reserved && !t.tree.dense);
       else if (g.node === 'stone') ok = !!(t.dep && t.dep.kind === 'stone' && t.dep.amt > 0);
       else if (g.node === 'gold') ok = !!(t.dep && t.dep.kind === 'gold' && t.dep.amt > 0);
       else if (g.node === 'coal') ok = !!(t.dep && t.dep.kind === 'coal' && t.dep.amt > 0);
@@ -716,6 +716,7 @@ export class Game {
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) {
       const t = this.world.T(x, y);
       if (!t || t.type !== 'grass' || t.b || t.site || t.dep || t.road || t.field) return false;
+      if (t.tree?.dense) return false;    // old-growth is not for clearing
     }
     const d = doorTile({ x: tx, y: ty, rot });
     return this.world.passable(d.x, d.y);
@@ -766,7 +767,7 @@ export class Game {
 
   paintRoad(tx: number, ty: number): void {
     const t = this.world.T(tx, ty);
-    if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep) return;
+    if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep || t.tree?.dense) return;
     const cost = this.mods.roadCost();
     if ((this.store.stock?.['stone'] || 0) < cost) {
       const now = Date.now();

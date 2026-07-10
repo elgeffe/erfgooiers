@@ -934,11 +934,13 @@ this.skyBirds.length = 0;
     // a hazy treeline out in the meadow ring, between the plinth and the hills
     const foliage = [0x4a7350, 0x3f6a5e, 0x577d48, 0x426b43].map(c => stdMat({ color: c }));
     const trunkM = stdMat({ color: 0x5b4433 });
-    for (let i = 0; i < 90; i++) {
+    // the Black Forest closes in: a far denser, near-solid ring of dark pines
+    const ringCount = biome.ambiance.forestRing ? 260 : 90;
+    for (let i = 0; i < ringCount; i++) {
       const ang = rnd() * Math.PI * 2;
-      const s = 0.9 + rnd() * 1.4;
-      const rad = boardR + 5 + rnd() * (GAP - 4); // sits in the gap ring, clear of the board
-      const deciduous = rnd() < 0.42;
+      const s = (0.9 + rnd() * 1.4) * (biome.ambiance.forestRing ? 1.25 : 1);
+      const rad = boardR + 5 + rnd() * (biome.ambiance.forestRing ? GAP + 16 : GAP - 4);
+      const deciduous = !biome.ambiance.forestRing && rnd() < 0.42;
       const crown = new THREE.Mesh(deciduous ? sphere(0.82, 10, 7) : cone(0.75, 2.6, 7), foliage[Math.floor(rnd() * foliage.length)]);
       crown.scale.set(s, deciduous ? s * (0.85 + rnd() * 0.35) : s, s);
       crown.position.set(Math.cos(ang) * rad, -2.1 + 1.5 * s, Math.sin(ang) * rad);

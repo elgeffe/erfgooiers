@@ -97,6 +97,7 @@ export class World {
     if (t.type !== 'grass') return false; // water & rock both block
     if (t.b || t.site) return false;
     if (t.dep) return false;              // ore heaps are solid — mine from beside them
+    if (t.tree?.dense) return false;      // old-growth thickets are a wall of trunks
     return true;
   }
 
@@ -281,6 +282,20 @@ export class World {
     let tguard = 0;
     while (treeCount < 14 && tguard++ < 60) {
       treeCount += forest(5 + Math.floor(rnd() * (W - 10)), 5 + Math.floor(rnd() * (H - 10)), 4, 12);
+    }
+
+    // ---- old-growth thickets (Black Forest): dense clusters of towering
+    // pines no one passes, harvests or builds through — walls made of wood ----
+    for (let i = 0; i < this.biome.gen.denseThickets; i++) {
+      let cx = 0, cy = 0, guard = 0;
+      do { cx = 5 + Math.floor(rnd() * (W - 10)); cy = 5 + Math.floor(rnd() * (H - 10)); }
+      while (nearCentre(cx, cy, 4) && guard++ < 40);
+      if (nearCentre(cx, cy, 4)) continue;
+      blob(cx, cy, 2 + Math.floor(rnd() * 2), t => {
+        if (t.type !== 'grass' || t.dep || t.pickup) return;
+        if (t.deco) t.deco = null;
+        t.tree = { growth: 1, reserved: true, meshes: [], s: 1.15 + rnd() * 0.45, kind: 1, dense: true };
+      });
     }
 
     // ---- flowering meadows: dense patches of the biome's signature flora ----

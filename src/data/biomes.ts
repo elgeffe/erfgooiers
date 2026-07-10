@@ -102,9 +102,9 @@ export const BIOMES: Record<BiomeKey, BiomeDef> = {
       folGreens: [0x2e4d28, 0x35582c, 0x2a462a, 0x3d612f, 0x315227],
     },
     treeWeights: [3, 5, 1, 1],
-    meadowDeco: 'bush',             // → ferns (own commit)
-    scatterDeco: ['bush', 'flowers'], // → mushrooms & ferns
-    critters: ['fox', 'hedgehog', 'mouse'],    // + deer, squirrel & owl (own commit)
+    meadowDeco: 'fern',
+    scatterDeco: ['mushroom', 'fern'],
+    critters: ['deer', 'squirrel', 'fox', 'hedgehog', 'mouse'],
     gen: { mountainsAdd: 1, treeMult: 1.8, denseThickets: 6, snowline: false },
     ambiance: { windmill: false, village: false, forestRing: true, peakRing: false, hillBumps: false },
   },
