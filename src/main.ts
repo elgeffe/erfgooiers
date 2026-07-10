@@ -303,14 +303,14 @@ function onLevelClear(): void {
   }
 }
 
-/** The hard timer expired — the run is over. */
-function onDefeat(): void {
+/** The run is over: the hard timer expired or the castle fell. */
+function onDefeat(reason: 'timeout' | 'castle' = 'timeout'): void {
   if (phase !== 'playing' || !run) return;
   audio.play('error');
-  ui.toast('Out of time — the run ends here', 'err');
+  ui.toast(reason === 'castle' ? 'The castle has fallen — the run ends here' : 'Out of time — the run ends here', 'err');
   summaryNote = '';
   disposeLevel();
-  phase = 'summary'; renderSummary(false); showScreen('summary');
+  phase = 'summary'; renderSummary(false, reason); showScreen('summary');
   Save.clearRun();
   run = null;
 }
@@ -375,11 +375,13 @@ function renderMenu(): void {
     (meta.ascension > 0 ? ` · ascension A${meta.ascension} unlocked` : '');
 }
 
-function renderSummary(victory: boolean): void {
+function renderSummary(victory: boolean, reason: 'timeout' | 'castle' = 'timeout'): void {
   $('sumTitle').textContent = victory ? 'Run complete — victory!' : 'Run over';
   $('sumSub').textContent = victory
     ? `You cleared all ${RUN_LEVELS} levels of Het Gooi.`
-    : 'The clock beat you. Your gold and upgrades are gone — but the Heritage remains.';
+    : reason === 'castle'
+      ? 'The enemy razed your castle. Your gold and upgrades are gone — but the Heritage remains.'
+      : 'The clock beat you. Your gold and upgrades are gone — but the Heritage remains.';
   $('sumBody').innerHTML =
     `Cleared <b>${clearedThisRun}</b> level(s) this run · gold earned <b>${goldEarnedThisRun}</b> (lost) · ` +
     `<b>${meta.heritage}</b> Heritage banked · lifetime levels cleared: ${meta.stats.levelsCleared}` +
@@ -567,8 +569,8 @@ function frame(now: number): void {
 
     // resolve the level last: win, castle lost, or timeout tears the level down
     if (st.done) onLevelClear();
-    else if (game.defeat) onDefeat();
-    else if (remaining <= 0) onDefeat();
+    else if (game.defeat) onDefeat('castle');
+    else if (remaining <= 0) onDefeat('timeout');
   } else if (phase === 'playing' && game && currentLevel) {
     // sandbox: tick the sim with no objective/timer to resolve against
     simAcc += dt * game.simSpeed;
