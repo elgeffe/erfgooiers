@@ -1432,50 +1432,59 @@ function castle(def: BuildingDef, ghost: boolean): THREE.Group {
     }
   };
 
+  // Everything stays inside the 2×2 tile footprint (|x|,|z| ≤ ~1.05): the old
+  // towers at ±0.95 with fat drums poked ~1.3 into the neighbouring walkable
+  // tiles, so units strolled straight through them.
+  const TOW = 0.8; // corner-tower centre offset from the keep's middle
+
   // central keep — a tall square donjon with a battlement crown and a banner
-  const keep = new THREE.Mesh(box(1.15, 1.5, 1.15), stone);
+  const keep = new THREE.Mesh(box(1.1, 1.5, 1.1), stone);
   keep.position.y = 0.75; keep.castShadow = !ghost; keep.receiveShadow = !ghost; g.add(keep);
-  const keepCap = new THREE.Mesh(box(1.3, 0.12, 1.3), trim);
+  const keepCap = new THREE.Mesh(box(1.24, 0.12, 1.24), trim);
   keepCap.position.y = 1.56; keepCap.userData.marker = true; g.add(keepCap);
-  for (const [cx, cz, ax] of [[0, 0.65, true], [0, -0.65, true], [0.65, 0, false], [-0.65, 0, false]] as [number, number, boolean][])
-    crenel(cx, cz, 1.69, 1.3, ax);
-  const keepRoof = new THREE.Mesh(cone(0.72, 0.62, 4), roofM);
-  keepRoof.position.y = 1.93; keepRoof.rotation.y = Math.PI / 4; keepRoof.castShadow = !ghost; g.add(keepRoof);
-  // banner on the keep
-  const pole = new THREE.Mesh(cyl(0.02, 0.02, 0.5, 5), woodM);
-  pole.position.y = 2.42; pole.userData.marker = true; g.add(pole);
-  const banner = new THREE.Mesh(cone(0.09, 0.3, 3), roofM);
-  banner.rotation.z = -Math.PI / 2; banner.position.set(0.16, 2.56, 0); banner.userData.marker = true; g.add(banner);
+  for (const [cx, cz, ax] of [[0, 0.62, true], [0, -0.62, true], [0.62, 0, false], [-0.62, 0, false]] as [number, number, boolean][])
+    crenel(cx, cz, 1.69, 1.24, ax);
+  // a proper steep pyramid roof that covers the whole crown (the old shallow
+  // cone sat inset and read as a flat red slab from the iso camera)
+  const keepRoof = new THREE.Mesh(cone(0.93, 0.85, 4), roofM);
+  keepRoof.position.y = 2.02; keepRoof.rotation.y = Math.PI / 4; keepRoof.castShadow = !ghost; g.add(keepRoof);
+  // banner: a pole rising from the roof apex flying a little rectangular flag
+  const pole = new THREE.Mesh(cyl(0.022, 0.028, 0.62, 6), woodM);
+  pole.position.y = 2.62; pole.userData.marker = true; g.add(pole);
+  const flag = new THREE.Mesh(box(0.34, 0.2, 0.03), roofM);
+  flag.position.set(0.19, 2.82, 0); flag.userData.marker = true; g.add(flag);
+  const flagTip = new THREE.Mesh(cone(0.03, 0.06, 6), trim);
+  flagTip.position.y = 2.96; flagTip.userData.marker = true; g.add(flagTip);
 
   // curtain walls between the towers, crenellated
-  for (const [cx, cz, ax] of [[0, 0.95, true], [0, -0.95, true], [0.95, 0, false], [-0.95, 0, false]] as [number, number, boolean][]) {
-    const wall = new THREE.Mesh(box(ax ? 1.7 : 0.2, 0.72, ax ? 0.2 : 1.7), stone);
+  for (const [cx, cz, ax] of [[0, TOW, true], [0, -TOW, true], [TOW, 0, false], [-TOW, 0, false]] as [number, number, boolean][]) {
+    const wall = new THREE.Mesh(box(ax ? 1.5 : 0.2, 0.72, ax ? 0.2 : 1.5), stone);
     wall.position.set(cx, 0.36, cz); wall.castShadow = !ghost; wall.receiveShadow = !ghost; g.add(wall);
-    const walk = new THREE.Mesh(box(ax ? 1.7 : 0.26, 0.07, ax ? 0.26 : 1.7), trim);
+    const walk = new THREE.Mesh(box(ax ? 1.5 : 0.26, 0.07, ax ? 0.26 : 1.5), trim);
     walk.position.set(cx, 0.75, cz); walk.userData.marker = true; g.add(walk);
-    crenel(cx, cz, 0.86, 1.6, ax);
+    crenel(cx, cz, 0.86, 1.42, ax);
   }
 
   // round towers on each corner: drum, corbelled crown, conical roof, arrow slit
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    const tx = sx * 0.95, tz = sz * 0.95;
-    const drum = new THREE.Mesh(cyl(0.3, 0.34, 1.2, 10), stone);
+    const tx = sx * TOW, tz = sz * TOW;
+    const drum = new THREE.Mesh(cyl(0.22, 0.25, 1.2, 10), stone);
     drum.position.set(tx, 0.6, tz); drum.castShadow = !ghost; drum.receiveShadow = !ghost; g.add(drum);
-    const crown = new THREE.Mesh(cyl(0.38, 0.32, 0.18, 10), trim);
+    const crown = new THREE.Mesh(cyl(0.29, 0.24, 0.18, 10), trim);
     crown.position.set(tx, 1.28, tz); crown.userData.marker = true; g.add(crown);
-    const cap = new THREE.Mesh(cone(0.4, 0.55, 10), roofM);
+    const cap = new THREE.Mesh(cone(0.31, 0.52, 10), roofM);
     cap.position.set(tx, 1.62, tz); cap.castShadow = !ghost; g.add(cap);
     const slit = new THREE.Mesh(box(0.05, 0.26, 0.05), woodM);
-    slit.position.set(tx * 1.24, 0.78, tz * 1.24); slit.userData.marker = true; g.add(slit);
+    slit.position.set(tx * 1.22, 0.78, tz * 1.22); slit.userData.marker = true; g.add(slit);
   }
 
   // gatehouse: an arched timber gate through the front wall
   const gateFrame = new THREE.Mesh(box(0.66, 0.86, 0.3), trim);
-  gateFrame.position.set(0, 0.43, 0.95); gateFrame.castShadow = !ghost; g.add(gateFrame);
+  gateFrame.position.set(0, 0.43, TOW); gateFrame.castShadow = !ghost; g.add(gateFrame);
   const gate = new THREE.Mesh(box(0.46, 0.6, 0.1), woodM);
-  gate.position.set(0, 0.3, 1.08); gate.userData.marker = true; g.add(gate);
+  gate.position.set(0, 0.3, 0.93); gate.userData.marker = true; g.add(gate);
   const arch = new THREE.Mesh(cachedGeo('castle-arch', () => new THREE.CylinderGeometry(0.23, 0.23, 0.1, 10, 1, false, -Math.PI / 2, Math.PI)), woodM);
-  arch.rotation.x = Math.PI / 2; arch.position.set(0, 0.6, 1.08); arch.userData.marker = true; g.add(arch);
+  arch.rotation.x = Math.PI / 2; arch.position.set(0, 0.6, 0.93); arch.userData.marker = true; g.add(arch);
   // lit keep windows
   for (const s of [-0.3, 0.3]) {
     const win = new THREE.Mesh(box(0.14, 0.24, 0.05), mkMat(0xf4d98a, ghost));
