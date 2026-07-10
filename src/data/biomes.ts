@@ -1,5 +1,5 @@
 import type { CritterKind } from '../render/models';
-import type { DecoKind } from '../types';
+import type { BuildingKey, DecoKind, DepositKind } from '../types';
 
 /**
  * Biomes — the landscape a map is cut from. A biome recolours the board
@@ -39,6 +39,12 @@ export interface BiomeDef {
   scatterDeco: [DecoKind, DecoKind];
   /** Which cosmetic critters may spawn here. */
   critters: CritterKind[];
+  /** Buildings that cannot be raised in this landscape (hidden in the menu).
+   *  Chosen so no campaign level's objective ever needs a chain its ascension
+   *  biome forbids — the economy levels (1-4) always play in Het Gooi. */
+  disabledBuildings: BuildingKey[];
+  /** The ore-vein mix this ground favours (drawn round-robin per vein). */
+  oreWeights: DepositKind[];
   gen: {
     mountainsAdd: number;   // ridge chains added on top of the level's own count
     treeMult: number;       // ×density of tree stands
@@ -69,6 +75,8 @@ export const BIOMES: Record<BiomeKey, BiomeDef> = {
     meadowDeco: 'lavender',
     scatterDeco: ['flowers', 'bush'],
     critters: ['rabbit', 'fox', 'hedgehog', 'mouse', 'duck', 'cat', 'frog'],
+    disabledBuildings: [],
+    oreWeights: ['stone', 'stone', 'gold', 'coal', 'iron'],
     gen: { mountainsAdd: 0, treeMult: 1, denseThickets: 0, snowline: false },
     ambiance: { windmill: true, village: true, forestRing: false, peakRing: false, hillBumps: false },
   },
@@ -87,6 +95,10 @@ export const BIOMES: Record<BiomeKey, BiomeDef> = {
     meadowDeco: 'heather',
     scatterDeco: ['fern', 'bush'],
     critters: ['deer', 'squirrel', 'fox', 'rabbit', 'hedgehog'],
+    // too cold and clouded for grapes
+    disabledBuildings: ['vineyard', 'winery'],
+    // old iron country: the veins run red
+    oreWeights: ['stone', 'iron', 'iron', 'coal', 'gold'],
     gen: { mountainsAdd: 3, treeMult: 1.3, denseThickets: 0, snowline: false },
     ambiance: { windmill: false, village: true, forestRing: false, peakRing: false, hillBumps: true },
   },
@@ -105,6 +117,11 @@ export const BIOMES: Record<BiomeKey, BiomeDef> = {
     meadowDeco: 'fern',
     scatterDeco: ['mushroom', 'fern'],
     critters: ['deer', 'squirrel', 'fox', 'hedgehog', 'mouse'],
+    // no open farmland under the canopy: you live on pigs, fish and what the
+    // forest gives — bread only from your start stores
+    disabledBuildings: ['farm', 'mill', 'bakery', 'vineyard', 'winery'],
+    // charcoal country
+    oreWeights: ['stone', 'coal', 'coal', 'iron', 'gold'],
     gen: { mountainsAdd: 1, treeMult: 1.8, denseThickets: 6, snowline: false },
     ambiance: { windmill: false, village: false, forestRing: true, peakRing: false, hillBumps: false },
   },
@@ -123,10 +140,29 @@ export const BIOMES: Record<BiomeKey, BiomeDef> = {
     meadowDeco: 'edelweiss',
     scatterDeco: ['edelweiss', 'bush'],
     critters: ['ibex', 'marmot', 'rabbit', 'fox'],
+    // grapes and pigs don't survive the altitude; hardy grain on high meadows does
+    disabledBuildings: ['vineyard', 'winery', 'pigfarm', 'butcher'],
+    // the mountains are made of building stone
+    oreWeights: ['stone', 'stone', 'stone', 'iron', 'gold', 'coal'],
     gen: { mountainsAdd: 5, treeMult: 0.7, denseThickets: 0, snowline: true },
     ambiance: { windmill: false, village: false, forestRing: false, peakRing: true, hillBumps: false },
   },
 };
+
+/**
+ * The campaign's ascension journey: climbing the ladder marches the run into
+ * harsher lands. The economy arc (levels 1-4) always stays in Het Gooi so
+ * production objectives remain honest; the combat arc migrates.
+ *   Hard      → levels 5-6 cross into the Ardennes
+ *   Very Hard → …and the Black Forest swallows levels 7-8
+ *   Absurd    → …and the run ends among the peaks of the Alps (9-10)
+ */
+export function campaignBiome(ascension: number, levelIndex: number): BiomeKey {
+  if (levelIndex <= 4 || ascension <= 0) return 'gooi';
+  if (ascension >= 3 && levelIndex >= 9) return 'alps';
+  if (ascension >= 2 && levelIndex >= 7) return 'blackforest';
+  return 'ardennes';
+}
 
 /** Pick a tree species index (0..3) by this biome's weights. */
 export function pickTreeKind(biome: BiomeDef, r: number): number {

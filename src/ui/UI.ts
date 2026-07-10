@@ -55,6 +55,11 @@ export class UI {
   /** Bind the HUD to a level's Game and reset transient UI state. */
   setGame(game: Game): void {
     this.game = game;
+    // the biome decides what may be built: forbidden cards vanish for the level
+    const banned = new Set<string>(game.disabledBuildings());
+    document.querySelectorAll<HTMLElement>('.bcard[data-key]').forEach(el => {
+      el.classList.toggle('bio-hidden', banned.has(el.dataset.key!));
+    });
     this.showInspector(null);
     this.updateWave(null);
     this.setPerksOpen(false);

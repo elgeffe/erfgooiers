@@ -24,10 +24,10 @@ export const ASCENSION_NAMES = [
 
 /** What each tier adds (cumulative), for the hero-select picker. */
 export const ASCENSION_DESCS = [
-  'The base game',
-  'Hard · The shop offers one fewer ware',
-  'Very Hard · Hard timers are 15% shorter',
-  'Absurd · Every level carries at least one curse',
+  'The base game, at home in Het Gooi',
+  'Hard · One fewer shop ware — and levels 5+ cross into the Ardennes (no vineyards this far north)',
+  'Very Hard · Timers 15% shorter — and the Black Forest swallows levels 7+ (no farmland under the canopy)',
+  'Absurd · Every level cursed — and the run ends among the peaks of the Alps',
 ];
 
 /** How many wares the between-level shop rolls at this tier. */

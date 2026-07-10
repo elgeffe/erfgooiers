@@ -749,7 +749,15 @@ export class Game {
     return false;
   }
 
+  /** Buildings this map's biome forbids (mirrored by the build menu). */
+  disabledBuildings(): BuildingKey[] { return this.world.biome.disabledBuildings; }
+
   tryPlace(key: BuildingKey, tx: number, ty: number, rot: number): void {
+    if (this.world.biome.disabledBuildings.includes(key)) {
+      this.sfx('error');
+      this.toast(`No ${DEFS[key].name.toLowerCase()} can be raised in ${this.world.biome.name}`, 'err');
+      return;
+    }
     if (!this.canPlace(key, tx, ty, rot)) { this.sfx('error'); this.toast('Cannot build here — the entrance tile must be clear too', 'err'); return; }
     const def = DEFS[key];
     if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.toast('No stone deposits in range — build near the grey rocks', 'err'); return; }

@@ -241,8 +241,9 @@ export class World {
       }
       return placed;
     };
-    // ore veins — random clusters, weighted toward stone
-    const kindPool: DepositKind[] = ['stone', 'stone', 'gold', 'coal', 'iron'];
+    // ore veins — random clusters, mixed to the biome's taste (iron-red
+    // Ardennes, charcoal Black Forest, stone-rich Alps)
+    const kindPool: DepositKind[] = this.biome.oreWeights;
     const oreCount: Record<DepositKind, number> = { stone: 0, gold: 0, coal: 0, iron: 0 };
     for (let i = 0; i < this.p.oreVeins; i++) {
       const kind = kindPool[i % kindPool.length];

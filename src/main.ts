@@ -14,6 +14,7 @@ import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutat
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, hasMetaSpecial } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
 import { DEFAULT_SANDBOX, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
+import { BIOMES, campaignBiome } from './data/biomes';
 import type { UnitKind } from './data/units';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
@@ -64,7 +65,10 @@ function startLevel(): void {
   simRng.reseed(seed ^ 0x5bd1e995);
   uiRng.reseed(seed ^ 0x27d4eb2f);
 
-  const world = new World({ seed, ...level.world });
+  // ascension journey: higher tiers march the run's later levels into
+  // harsher biomes (sandbox picks its own on the setup screen)
+  const biomeKey = sandbox ? sandboxCfg.biome : campaignBiome(run.ascension, run.levelIndex);
+  const world = new World({ seed, ...level.world, biome: biomeKey });
   view.loadWorld(world);
   const mutators = sandbox ? [] : run.mutators;
   const mods = new Modifiers([...heroSpecsFor(sandbox ? null : run.hero), ...specsFor(run.upgrades), ...metaSpecsFor(meta.unlocks), ...mutatorSpecsFor(mutators)]);
@@ -72,7 +76,7 @@ function startLevel(): void {
   game.toast = (m, c) => ui.toast(m, c);
   game.onSelect = o => ui.showInspector(o);
   game.sfx = name => audio.play(name as any);
-  audio.setBiome(sandbox ? sandboxCfg.biome : 'gooi'); // before setLevel: a biome signature owns the score
+  audio.setBiome(biomeKey); // before setLevel: a biome signature owns the score
   audio.setLevel(level.index);
   audio.setDynamic(sandbox && sandboxCfg.biome === 'gooi');
   game.onGold = amt => { if (run) { run.gold = Math.max(0, run.gold + amt); if (amt > 0) goldEarnedThisRun += amt; ui.setGold(run.gold); } };
