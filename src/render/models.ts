@@ -982,8 +982,85 @@ export function makeBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
     case 'mine': return mine(def, ghost);
     case 'tavern': return tavern(def, ghost);
     case 'castle': return castle(def, ghost);
+    case 'guildhall': return guildhall(def, ghost);
     default: return cottage(def, ghost);
   }
+}
+
+// ---------- guild hall — a municipal Dutch raadhuis: brick, stepped gable,
+// sandstone trim, tall lit windows and a little clock turret ----------
+function guildhall(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const brick = mkMat(def.wall, ghost);
+  const sand = mkMat(0xe4d9bd, ghost);        // sandstone trim
+  const roofM = mkMat(def.roof, ghost);
+  const woodM = mkMat(0x4a3626, ghost);
+  const glowM = mkMat(def.accent ?? 0xffd24a, ghost);
+
+  // two-storey brick hall on a sandstone plinth
+  const plinth = new THREE.Mesh(box(1.75, 0.14, 1.4), sand);
+  plinth.position.y = 0.07; plinth.receiveShadow = !ghost; g.add(plinth);
+  const hall = new THREE.Mesh(box(1.6, 1.2, 1.26), brick);
+  hall.position.y = 0.72; hall.castShadow = !ghost; hall.receiveShadow = !ghost; g.add(hall);
+  const band = new THREE.Mesh(box(1.66, 0.07, 1.32), sand);
+  band.position.y = 0.78; band.userData.marker = true; g.add(band);
+
+  // steep hip roof (pre-rotated cone, squashed in z like the farmhouse thatch)
+  const roofGeo = cachedGeo('guild-roof', () => {
+    const r = new THREE.ConeGeometry(1.32, 0.95, 4);
+    r.rotateY(Math.PI / 4);
+    return r;
+  });
+  const roof = new THREE.Mesh(roofGeo, roofM);
+  roof.position.y = 1.78; roof.scale.z = 0.82; roof.castShadow = !ghost; g.add(roof);
+
+  // the stepped gable (trapgevel) crowning the entrance front
+  const steps = [[1.15, 1.42], [0.85, 1.62], [0.55, 1.82], [0.26, 2.0]] as const;
+  for (const [w, y] of steps) {
+    const s = new THREE.Mesh(box(w, 0.22, 0.16), brick);
+    s.position.set(0, y, 0.68); s.castShadow = !ghost; g.add(s);
+    const cap = new THREE.Mesh(box(w + 0.08, 0.05, 0.2), sand);
+    cap.position.set(0, y + 0.13, 0.68); cap.userData.marker = true; g.add(cap);
+  }
+
+  // clock turret on the ridge: a little white lantern with a spire and a clock
+  const turret = new THREE.Mesh(box(0.3, 0.4, 0.3), sand);
+  turret.position.y = 2.28; turret.castShadow = !ghost; g.add(turret);
+  const clock = new THREE.Mesh(cyl(0.09, 0.09, 0.03, 12), glowM);
+  clock.rotation.x = Math.PI / 2; clock.position.set(0, 2.3, 0.17); clock.userData.marker = true; g.add(clock);
+  const spire = new THREE.Mesh(cone(0.24, 0.42, 4), roofM);
+  spire.position.y = 2.68; spire.rotation.y = Math.PI / 4; spire.castShadow = !ghost; g.add(spire);
+  const orb = new THREE.Mesh(sphere(0.045, 8, 6), glowM);
+  orb.position.y = 2.93; orb.userData.marker = true; g.add(orb);
+
+  // tall lit windows in sandstone surrounds, both storeys
+  for (const wx of [-0.52, 0.52]) for (const wy of [0.42, 1.06]) {
+    const frame = new THREE.Mesh(box(0.3, 0.44, 0.05), sand);
+    frame.position.set(wx, wy, 0.64); frame.userData.marker = true; g.add(frame);
+    const win = new THREE.Mesh(box(0.22, 0.36, 0.06), glowM);
+    win.position.set(wx, wy, 0.65); win.userData.marker = true; g.add(win);
+  }
+  // round window in the gable
+  const oculus = new THREE.Mesh(cyl(0.11, 0.11, 0.05, 12), glowM);
+  oculus.rotation.x = Math.PI / 2; oculus.position.set(0, 1.44, 0.77); oculus.userData.marker = true; g.add(oculus);
+
+  // grand double door with a sandstone arch and stone steps
+  const arch = new THREE.Mesh(box(0.62, 0.78, 0.08), sand);
+  arch.position.set(0, 0.39, 0.64); arch.userData.marker = true; g.add(arch);
+  const door = new THREE.Mesh(box(0.46, 0.62, 0.09), woodM);
+  door.position.set(0, 0.31, 0.66); door.userData.marker = true; g.add(door);
+  for (let i = 0; i < 2; i++) {
+    const st = new THREE.Mesh(box(0.72 - i * 0.14, 0.07, 0.22 - i * 0.06), sand);
+    st.position.set(0, 0.035 + i * 0.07, 0.82 - i * 0.05); st.userData.marker = true; g.add(st);
+  }
+
+  // the town flag by the door
+  if (!ghost) {
+    const flag = makeFlag();
+    flag.position.set(0.78, 0, 0.62);
+    g.add(flag);
+  }
+  return g;
 }
 
 /** Scaffold shown while a building is under construction. */

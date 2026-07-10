@@ -4,8 +4,8 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
   storehouse: { name: 'Storehouse', desc: 'Stores every good', model: 'castle',
     cost: {}, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 500 },
 
-  guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & builders)', model: 'cottage',
-    cost: { timber: 4, stone: 3 }, roof: 0x4a6a7a, wall: 0xcaa46e, accent: 0xffd24a, hp: 250,
+  guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & builders)', model: 'guildhall',
+    cost: { timber: 4, stone: 3 }, roof: 0x46606e, wall: 0x9a5a40, accent: 0xffd24a, hp: 250,
     trainer: { units: [
       { kind: 'villager', cost: { coin: 1 }, time: 5,
         desc: 'Staffs one production building as its specialist (woodcutter, baker, miner…)' },
