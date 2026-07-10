@@ -5,6 +5,7 @@ import { META_BY_ID } from '../data/metaUpgrades';
 import { ROAD_STONE_COST } from '../constants';
 import { installFavicon, logoSVG } from './logo';
 import { audio } from '../audio/Audio';
+import { unitLabel } from '../game/util';
 import type { Game } from '../game/Game';
 import type { BuildingDef, Mode } from '../types';
 
@@ -345,7 +346,7 @@ export class UI {
         else {
           for (const t of mil.units) {
             const cost = Object.entries(t.cost).map(([k, n]) => `<span class="dot" style="background:${ITEMS[k as keyof typeof ITEMS].color};margin:0 3px 0 6px"></span>${n}`).join('') || ' free';
-            body += `<button class="inspbtn" data-train="${t.kind}">+ ${t.kind[0].toUpperCase() + t.kind.slice(1)}${cost}</button>`;
+            body += `<button class="inspbtn" data-train="${t.kind}">+ ${unitLabel(t.kind)}${cost}</button>`;
           }
           if (o.def.military) body += '<div class="hnote">Right-click the map with this building selected to set a rally flag.</div>';
           const q = o.trainQ || [];
@@ -354,7 +355,7 @@ export class UI {
             body += `<div class="bar"><div style="width:${Math.round((o.prog || 0) * 100)}%"></div></div>`;
             body += '<div class="tqueue">';
             for (let i = 0; i < q.length; i++) {
-              const name = q[i][0].toUpperCase() + q[i].slice(1);
+              const name = unitLabel(q[i]);
               body += `<button class="tqchip${i === 0 ? ' active' : ''}" data-cancel="${i}" title="Cancel this order"><span>${i + 1}. ${name}</span> ✕</button>`;
             }
             body += '</div>';

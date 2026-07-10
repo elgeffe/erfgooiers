@@ -9,7 +9,7 @@ import { findPath } from '../engine/pathfinding';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
 import type { Building, BuildingKey, Coord, Faction, Site, Unit } from '../types';
-import { doorTile } from './util';
+import { doorTile, unitLabel } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
 
@@ -101,7 +101,7 @@ export class Game {
     const serfs = kit.serfs + this.mods.extraSerfs();
     const laborers = kit.laborers + this.mods.extraLaborers();
     for (let i = 0; i < serfs; i++) this.spawnUnit('serf', 0xd8c49a, { x: d.x - 2 + (i % 4), y: d.y + Math.floor(i / 4) });
-    for (let i = 0; i < laborers; i++) { const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + (i % 3), y: d.y + Math.floor(i / 3) }); u.roleName = 'Laborer'; }
+    for (let i = 0; i < laborers; i++) { const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + (i % 3), y: d.y + Math.floor(i / 3) }); u.roleName = 'Builder'; }
     // the Guild Hall trains the villagers who staff your buildings (separate from storage)
     this.guild = this.placeBuilding('guildhall', cx + 3, cy, true);
     const gd = doorTile(this.guild);
@@ -424,16 +424,27 @@ export class Game {
         s.frame.scale.y = Math.max(0.05, s.progress);
         s.frame.position.y = 0;
         if (s.progress >= 1) { u.wstate = 'idle'; u.target = null; u.status = 'Idle'; this.completeSite(s); }
-      } else if (!u.path) { if (!this.sendTo(u, d.x, d.y)) { u.wstate = 'idle'; u.target = null; } }
+      } else if (!u.path) {
+        // can't reach the site right now — release the claim so another
+        // builder (or this one, later) can take it, instead of it sitting
+        // claimed-but-untouched forever
+        if (!this.sendTo(u, d.x, d.y)) { s.builder = null; u.wstate = 'idle'; u.target = null; }
+      }
       if (u.path) this.moveUnit(u, dt);
       return;
     }
     u.status = 'Idle';
     u.mesh.position.y = 0;
-    // build prioritized sites first, then any other ready site
+    // build prioritized sites first, then any other ready site; a claim whose
+    // builder died or wandered off no longer blocks the site
+    const claimable = (s: Site): boolean => {
+      if (!s.ready) return false;
+      if (s.builder && (s.builder.dead || s.builder.target !== s)) s.builder = null;
+      return !s.builder;
+    };
     let target: Site | null = null;
-    for (const s of this.sites) { if (s.ready && !s.builder && s.priority) { target = s; break; } }
-    if (!target) for (const s of this.sites) { if (s.ready && !s.builder) { target = s; break; } }
+    for (const s of this.sites) { if (claimable(s) && s.priority) { target = s; break; } }
+    if (!target) for (const s of this.sites) { if (claimable(s)) { target = s; break; } }
     if (target) { target.builder = u; u.target = target; u.wstate = 'build'; }
   }
 
@@ -1552,7 +1563,7 @@ export class Game {
     if (!t || !b.active) return false;
     const store = this.store;
     if (!store || !store.stock) return false;
-    for (const k in t.cost) if ((store.stock[k] || 0) < (t.cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name.toLowerCase() + ' to train a ' + kind, 'err'); this.sfx('error'); return false; }
+    for (const k in t.cost) if ((store.stock[k] || 0) < (t.cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name.toLowerCase() + ' to train a ' + unitLabel(kind).toLowerCase(), 'err'); this.sfx('error'); return false; }
     for (const k in t.cost) store.stock[k] -= (t.cost as any)[k];
     (b.trainQ ||= []).push(kind);
     this.sfx('click');
@@ -1573,7 +1584,7 @@ export class Game {
   /** Spawn a civilian worker (serf / laborer / villager) at a tile. */
   private spawnCivilian(role: string, tile: { x: number; y: number }): Unit {
     if (role === 'serf') return this.spawnUnit('serf', 0xd8c49a, tile);
-    if (role === 'laborer') { const u = this.spawnUnit('laborer', 0xc97b3d, tile); u.roleName = 'Laborer'; return u; }
+    if (role === 'laborer') { const u = this.spawnUnit('laborer', 0xc97b3d, tile); u.roleName = 'Builder'; return u; }
     const u = this.spawnUnit('villager', 0xcdbb8f, tile); u.roleName = 'Villager'; u.status = 'Awaiting a post'; return u;
   }
 

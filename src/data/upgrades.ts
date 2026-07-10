@@ -68,7 +68,7 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'coin-clipper', name: 'Coin Clipper', desc: '+25% gold from all sources', icon: '🪙', pool: 'economy', rarity: 'uncommon', basePrice: 28,
     apply: [{ stat: 'goldGain', mult: 1.25 }] },
 
-  { id: 'extra-hand', name: 'Extra Hand', desc: 'Start each level with +1 laborer', icon: '🧑\u200d🔧', pool: 'economy', rarity: 'common', basePrice: 22,
+  { id: 'extra-hand', name: 'Extra Hand', desc: 'Start each level with +1 builder', icon: '🧑\u200d🔧', pool: 'economy', rarity: 'common', basePrice: 22,
     apply: [{ stat: 'extraLaborer', add: 1 }] },
 
   { id: 'extra-serf', name: 'Willing Hands', desc: 'Start each level with +1 serf', icon: '🧺', pool: 'economy', rarity: 'common', basePrice: 22,

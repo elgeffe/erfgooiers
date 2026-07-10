@@ -8,3 +8,9 @@ export function doorTile(b: { x: number; y: number; rot?: number }): Coord {
   const o = DOOR_OFF[b.rot || 0];
   return { x: Math.floor(b.x + 1 + o[0]), y: Math.floor(b.y + 1 + o[1]) };
 }
+
+/** Display name for a trainable unit kind ('laborer' is shown as Builder). */
+export function unitLabel(kind: string): string {
+  if (kind === 'laborer') return 'Builder';
+  return kind[0].toUpperCase() + kind.slice(1);
+}

@@ -18,7 +18,7 @@ export interface MetaUpgradeDef {
 export const META_UPGRADES: MetaUpgradeDef[] = [
   { id: 'willing-hands', name: 'Willing Hands', desc: 'Start every level with +1 serf', icon: '🧺', cost: 15,
     apply: [{ stat: 'extraSerf', add: 1 }] },
-  { id: 'seasoned-hands', name: 'Seasoned Hands', desc: 'Start every level with +1 laborer', icon: '🧑\u200d🔧', cost: 15,
+  { id: 'seasoned-hands', name: 'Seasoned Hands', desc: 'Start every level with +1 builder', icon: '🧑\u200d🔧', cost: 15,
     apply: [{ stat: 'extraLaborer', add: 1 }] },
   { id: 'quartermaster', name: 'Quartermaster', desc: 'Start every level with +4 timber & +4 stone', icon: '📦', cost: 18,
     apply: [{ stat: 'startTimber', add: 4 }, { stat: 'startStone', add: 4 }] },
