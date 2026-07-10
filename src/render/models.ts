@@ -1576,7 +1576,7 @@ function castle(def: BuildingDef, ghost: boolean): THREE.Group {
   // tiles, so units strolled straight through them.
   const TOW = 0.8; // corner-tower centre offset from the keep's middle
 
-  // central keep — a tall square donjon with a battlement crown and a banner
+  // central keep — a tall square donjon with a battlement crown
   const keep = new THREE.Mesh(box(1.1, 1.5, 1.1), stone);
   keep.position.y = 0.75; keep.castShadow = !ghost; keep.receiveShadow = !ghost; g.add(keep);
   const keepCap = new THREE.Mesh(box(1.24, 0.12, 1.24), trim);
@@ -1587,14 +1587,6 @@ function castle(def: BuildingDef, ghost: boolean): THREE.Group {
   // cone sat inset and read as a flat red slab from the iso camera)
   const keepRoof = new THREE.Mesh(cone(0.93, 0.85, 4), roofM);
   keepRoof.position.y = 2.02; keepRoof.rotation.y = Math.PI / 4; keepRoof.castShadow = !ghost; g.add(keepRoof);
-  // banner: a pole rising from the roof apex flying a little rectangular flag
-  const pole = new THREE.Mesh(cyl(0.022, 0.028, 0.62, 6), woodM);
-  pole.position.y = 2.62; pole.userData.marker = true; g.add(pole);
-  const flag = new THREE.Mesh(box(0.34, 0.2, 0.03), roofM);
-  flag.position.set(0.19, 2.82, 0); flag.userData.marker = true; g.add(flag);
-  const flagTip = new THREE.Mesh(cone(0.03, 0.06, 6), trim);
-  flagTip.position.y = 2.96; flagTip.userData.marker = true; g.add(flagTip);
-
   // curtain walls between the towers, crenellated
   for (const [cx, cz, ax] of [[0, TOW, true], [0, -TOW, true], [TOW, 0, false], [-TOW, 0, false]] as [number, number, boolean][]) {
     const wall = new THREE.Mesh(box(ax ? 1.5 : 0.2, 0.72, ax ? 0.2 : 1.5), stone);
