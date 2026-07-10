@@ -183,7 +183,7 @@ export class UI {
       tabs.appendChild(tab);
       for (const key of cat.keys) {
         const def = DEFS[key];
-        const el = document.createElement('div'); el.className = 'bcard'; el.dataset.key = key; el.dataset.cat = cat.id; el.title = def.desc;
+        const el = document.createElement('div'); el.className = 'bcard'; el.dataset.key = key; el.dataset.cat = cat.id; el.title = def.desc + ' · press R (or the ⟳ button) to rotate while placing';
         el.innerHTML = `<div class="icon">${this.iconSVG(def)}</div><div class="nm">${def.name}</div><div class="cost">${this.costHTML(def.cost)}</div><div class="ptime">${this.timeHTML(def)}</div>`;
         el.onclick = () => { audio.play('click'); this.onMode(el.classList.contains('on') ? null : { type: 'build', key }); };
         row.appendChild(el);
