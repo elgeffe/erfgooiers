@@ -5,7 +5,7 @@ import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { bakeGroupInto, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter } from './models';
+import { bakeGroupInto, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeTree, makeUnit, noOutline, sphere, stdMat, withSeededScatter, CRITTER_KINDS, type CritterKind } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -14,6 +14,8 @@ const rnd = () => uiRng.next();
 interface Pig { mesh: THREE.Group; x: number; z: number; tx: number; tz: number; wait: number; big: boolean; }
 /** A single fish swimming in the lake (cosmetic, real-time). */
 interface SwimFish { mesh: THREE.Group; x: number; z: number; tx: number; tz: number; wait: number; speed: number; }
+/** A wandering meadow critter (cosmetic, real-time). Ducks keep to the shore. */
+interface Critter { mesh: THREE.Group; x: number; z: number; tx: number; tz: number; wait: number; speed: number; hops: boolean; hop: number; shore: boolean; }
 
 /**
  * Owns everything Three.js: renderer, scene, orthographic camera, the ground
@@ -75,6 +77,9 @@ export class View {
   // fish swimming in the lake (cosmetic, real-time)
   private readonly fish: SwimFish[] = [];
   private lakeTiles: { x: number; y: number }[] = [];
+
+  // sparse wildlife ambling across the meadow (cosmetic, real-time)
+  private readonly critters: Critter[] = [];
 
   // minimap
   private readonly mm: HTMLCanvasElement;
@@ -175,6 +180,7 @@ export class View {
     this.populateDoodads();
     this.buildAmbiance();
     this.spawnFish();
+    this.spawnCritters();
   }
 
   /**
@@ -209,6 +215,7 @@ export class View {
     this.clouds.length = 0;
     this.pigHerds.clear();
     this.fish.length = 0;
+    this.critters.length = 0;
     this.lakeTiles = [];
     this.millSails.length = 0;
     this.ghostKey = null;
@@ -931,6 +938,7 @@ export class View {
     for (const s of this.millSails) s.rotation.z += dt * 0.45;
     this.updatePigs(dt, buildings);
     this.updateFish(dt);
+    this.updateCritters(dt);
     this.ageGore(dt);
   }
 
@@ -971,6 +979,84 @@ export class View {
       f.x += dx / dist * step; f.z += dz / dist * step;
       f.mesh.position.set(f.x, 0.05, f.z);
       f.mesh.rotation.y = Math.atan2(-dz, dx); // fish model faces +x
+    }
+  }
+
+  /** A sparse, random handful of wildlife per level — never the whole zoo at
+   *  once. Rabbits hop, foxes trot, hedgehogs & mice snuffle, ducks waddle the
+   *  shoreline. Purely cosmetic: they drift between nearby free grass tiles. */
+  private spawnCritters(): void {
+    const kinds: CritterKind[] = [];
+    const pool = [...CRITTER_KINDS];
+    const n = 3 + Math.floor(uiRng.next() * 3);            // 3–5 kinds of a possible 5
+    while (kinds.length < n && pool.length) kinds.push(pool.splice(Math.floor(uiRng.next() * pool.length), 1)[0]);
+    for (const kind of kinds) {
+      // rabbits & mice show up in small families; the fox hunts alone
+      const count = kind === 'fox' ? 1 : kind === 'hedgehog' ? 1 : 2 + Math.floor(uiRng.next() * 2);
+      for (let i = 0; i < count; i++) {
+        const spot = kind === 'duck' ? this.critterShoreSpot() : this.critterGrassSpot();
+        if (!spot) continue;
+        const { group, hops } = makeCritter(kind);
+        this.worldGroup.add(group); this.freeze(group, false);
+        const x = this.world.wx(spot.x), z = this.world.wz(spot.y);
+        group.position.set(x, 0, z);
+        this.critters.push({
+          mesh: group, x, z, tx: x, tz: z, wait: uiRng.next() * 4,
+          speed: kind === 'fox' ? 0.9 : kind === 'mouse' ? 0.75 : kind === 'hedgehog' ? 0.22 : 0.5,
+          hops, hop: 0, shore: kind === 'duck',
+        });
+      }
+    }
+  }
+
+  private critterGrassSpot(): { x: number; y: number } | null {
+    for (let i = 0; i < 40; i++) {
+      const x = 2 + Math.floor(uiRng.next() * (this.world.W - 4)), y = 2 + Math.floor(uiRng.next() * (this.world.H - 4));
+      const t = this.world.tiles[y][x];
+      if (t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep) return { x, y };
+    }
+    return null;
+  }
+
+  private critterShoreSpot(): { x: number; y: number } | null {
+    for (let i = 0; i < 60; i++) {
+      const s = this.critterGrassSpot();
+      if (!s) return null;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const t = this.world.T(s.x + dx, s.y + dy);
+        if (t && t.type === 'water') return s;
+      }
+    }
+    return this.critterGrassSpot();
+  }
+
+  private updateCritters(dt: number): void {
+    for (const c of this.critters) {
+      if (c.wait > 0) {
+        c.wait -= dt;
+        c.mesh.position.y = 0;
+        if (c.wait <= 0) {
+          // pick a nearby free grass tile to drift to (shore-birds stay coastal)
+          const cur = { x: Math.round(c.x + this.world.W / 2 - 0.5), y: Math.round(c.z + this.world.H / 2 - 0.5) };
+          for (let i = 0; i < 8; i++) {
+            const nx = cur.x + Math.round((uiRng.next() - 0.5) * 7), ny = cur.y + Math.round((uiRng.next() - 0.5) * 7);
+            const t = this.world.T(nx, ny);
+            if (!t || t.type !== 'grass' || t.b || t.site || t.tree || t.dep) continue;
+            c.tx = this.world.wx(nx) + (uiRng.next() - 0.5) * 0.5;
+            c.tz = this.world.wz(ny) + (uiRng.next() - 0.5) * 0.5;
+            break;
+          }
+        }
+        continue;
+      }
+      const dx = c.tx - c.x, dz = c.tz - c.z, dist = Math.hypot(dx, dz);
+      if (dist < 0.05) { c.wait = 2 + uiRng.next() * 6; c.mesh.position.y = 0; continue; }
+      const step = Math.min(c.speed * dt, dist);
+      c.x += dx / dist * step; c.z += dz / dist * step;
+      // hoppers bounce along; everyone else glides
+      if (c.hops) { c.hop += dt * 9; c.mesh.position.y = Math.abs(Math.sin(c.hop)) * 0.06; }
+      c.mesh.position.x = c.x; c.mesh.position.z = c.z;
+      c.mesh.rotation.y = Math.atan2(-dz, dx); // critter models face +x
     }
   }
 

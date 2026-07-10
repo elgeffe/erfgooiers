@@ -1458,6 +1458,68 @@ export function makePig(big = false): THREE.Group {
   return g;
 }
 
+// ---------- ambient critters — sparse wildlife that makes the meadow breathe ----------
+export type CritterKind = 'rabbit' | 'fox' | 'hedgehog' | 'mouse' | 'duck';
+export const CRITTER_KINDS: CritterKind[] = ['rabbit', 'fox', 'hedgehog', 'mouse', 'duck'];
+
+/** A tiny cosmetic animal. All face +x (like the pig) so movers can share the
+ *  same steering; `hops` tells the View to bounce it while it travels. */
+export function makeCritter(kind: CritterKind): { group: THREE.Group; hops: boolean } {
+  const g = new THREE.Group();
+  const ink = mat(0x2a2018);
+  let hops = false;
+  if (kind === 'rabbit') {
+    hops = true;
+    const fur = mat(rnd() < 0.4 ? 0xd9cfc0 : 0xa88d6d);
+    const body = new THREE.Mesh(sphere(0.09, 8, 7), fur); body.scale.set(1.25, 1, 1); body.position.y = 0.09; body.castShadow = true; g.add(body);
+    const head = new THREE.Mesh(sphere(0.06, 8, 7), fur); head.position.set(0.1, 0.16, 0); g.add(head);
+    for (const ez of [0.028, -0.028]) {
+      const ear = new THREE.Mesh(cyl(0.012, 0.018, 0.11, 5), fur); ear.position.set(0.08, 0.27, ez); ear.rotation.x = ez * 4; g.add(ear);
+      const eye = new THREE.Mesh(sphere(0.011, 5, 4), ink); eye.position.set(0.145, 0.17, ez + Math.sign(ez) * 0.015); g.add(eye);
+    }
+    const tail = new THREE.Mesh(sphere(0.03, 6, 5), mat(0xf0ead9)); tail.position.set(-0.11, 0.1, 0); g.add(tail);
+  } else if (kind === 'fox') {
+    const red = mat(0xc26a35), cream = mat(0xe8d9c0);
+    const body = new THREE.Mesh(sphere(0.1, 8, 7), red); body.scale.set(1.8, 0.9, 0.85); body.position.y = 0.12; body.castShadow = true; g.add(body);
+    const head = new THREE.Mesh(sphere(0.065, 8, 7), red); head.position.set(0.19, 0.17, 0); g.add(head);
+    const muzzle = new THREE.Mesh(cone(0.03, 0.09, 6), cream); muzzle.rotation.z = -Math.PI / 2; muzzle.position.set(0.27, 0.15, 0); g.add(muzzle);
+    for (const ez of [0.035, -0.035]) {
+      const ear = new THREE.Mesh(cone(0.022, 0.06, 4), red); ear.position.set(0.17, 0.25, ez); g.add(ear);
+      const eye = new THREE.Mesh(sphere(0.011, 5, 4), ink); eye.position.set(0.24, 0.19, ez); g.add(eye);
+    }
+    const tail = new THREE.Mesh(sphere(0.055, 7, 6), red); tail.scale.set(2.1, 0.8, 0.8); tail.position.set(-0.24, 0.13, 0); g.add(tail);
+    const tip = new THREE.Mesh(sphere(0.032, 6, 5), cream); tip.position.set(-0.34, 0.13, 0); g.add(tip);
+    for (const [lx, lz] of [[0.1, 0.05], [0.1, -0.05], [-0.1, 0.05], [-0.1, -0.05]]) {
+      const leg = new THREE.Mesh(cyl(0.016, 0.016, 0.1, 5), mat(0x5b3a24)); leg.position.set(lx, 0.05, lz); g.add(leg);
+    }
+  } else if (kind === 'hedgehog') {
+    const spines = mat(0x6b5a48), faceM = mat(0xcbb597);
+    const body = new THREE.Mesh(sphere(0.085, 8, 7), spines); body.scale.set(1.35, 0.9, 1); body.position.y = 0.075; body.castShadow = true; g.add(body);
+    for (let i = 0; i < 7; i++) {
+      const sp = new THREE.Mesh(cone(0.016, 0.05, 4), spines);
+      sp.position.set(-0.08 + rnd() * 0.13, 0.13 + rnd() * 0.035, (rnd() - 0.5) * 0.1);
+      sp.rotation.z = 0.4 - rnd() * 0.8; g.add(sp);
+    }
+    const face = new THREE.Mesh(cone(0.035, 0.09, 6), faceM); face.rotation.z = -Math.PI / 2; face.position.set(0.12, 0.06, 0); g.add(face);
+    const nose = new THREE.Mesh(sphere(0.012, 5, 4), ink); nose.position.set(0.165, 0.06, 0); g.add(nose);
+  } else if (kind === 'mouse') {
+    const grey = mat(0x9d938a);
+    const body = new THREE.Mesh(sphere(0.05, 7, 6), grey); body.scale.set(1.5, 0.9, 0.9); body.position.y = 0.045; body.castShadow = true; g.add(body);
+    for (const ez of [0.02, -0.02]) { const ear = new THREE.Mesh(sphere(0.018, 5, 4), grey); ear.position.set(0.05, 0.09, ez); g.add(ear); }
+    const nose = new THREE.Mesh(sphere(0.008, 5, 4), ink); nose.position.set(0.085, 0.045, 0); g.add(nose);
+    const tail = new THREE.Mesh(cyl(0.005, 0.009, 0.12, 4), mat(0xc9a58f)); tail.rotation.z = Math.PI / 2 - 0.35; tail.position.set(-0.1, 0.035, 0); g.add(tail);
+  } else { // duck — waddles the shorelines
+    const white = mat(0xece7d6), bill = mat(0xe0a33c);
+    const body = new THREE.Mesh(sphere(0.08, 8, 7), white); body.scale.set(1.5, 0.95, 0.95); body.position.y = 0.09; body.castShadow = true; g.add(body);
+    const head = new THREE.Mesh(sphere(0.045, 7, 6), white); head.position.set(0.1, 0.2, 0); g.add(head);
+    const beak = new THREE.Mesh(cone(0.02, 0.06, 5), bill); beak.rotation.z = -Math.PI / 2; beak.position.set(0.16, 0.19, 0); g.add(beak);
+    const eye = new THREE.Mesh(sphere(0.009, 5, 4), ink); eye.position.set(0.12, 0.22, 0.025); g.add(eye);
+    const tail = new THREE.Mesh(cone(0.03, 0.07, 4), white); tail.rotation.z = Math.PI / 2 + 0.5; tail.position.set(-0.12, 0.11, 0); g.add(tail);
+  }
+  g.scale.setScalar(0.85 + rnd() * 0.3);
+  return { group: g, hops };
+}
+
 // ---------- fish — cute silver/orange swimmers for the lake ----------
 const FISH_COLORS = [0xd98c46, 0xc9c2b0, 0xe0a85a, 0x9fb7c4];
 export function makeFish(): THREE.Group {
