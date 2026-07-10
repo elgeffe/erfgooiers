@@ -14,12 +14,20 @@ export const RUN_LEVELS = 10;
 // =====================================================================
 export const MAX_ASCENSION = 3;
 
+/** Tier display names: sensible at first, increasingly honest about the absurdity. */
+export const ASCENSION_NAMES = [
+  'Normal',
+  'Hard',
+  'Very Hard',
+  'Absurd — the Erfgooiers Weep',
+];
+
 /** What each tier adds (cumulative), for the hero-select picker. */
 export const ASCENSION_DESCS = [
   'The base game',
-  'A1 · The shop offers one fewer ware',
-  'A2 · Hard timers are 15% shorter',
-  'A3 · Every level carries at least one curse',
+  'Hard · The shop offers one fewer ware',
+  'Very Hard · Hard timers are 15% shorter',
+  'Absurd · Every level carries at least one curse',
 ];
 
 /** How many wares the between-level shop rolls at this tier. */

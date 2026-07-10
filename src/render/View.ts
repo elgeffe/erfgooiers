@@ -895,7 +895,7 @@ export class View {
       }
     }
 
-    // A tiny horizon village adds human scale: warm roofs, a church spire and
+// A tiny horizon village adds human scale: warm roofs, a church spire and
     // a pale lane, all well outside the playable edge.
     const villageAng = rnd() * Math.PI * 2, villageRad = boardR + 31;
     const village = new THREE.Group();
@@ -911,8 +911,10 @@ export class View {
     village.position.set(Math.cos(villageAng) * villageRad, -2.08, Math.sin(villageAng) * villageRad); village.lookAt(0, -2.08, 0);
     this.worldGroup.add(village); this.freeze(village);
 
-    // one far-off windmill turning on the plain — a little postcard of Het Gooi
-    const millAng = rnd() * Math.PI * 2;
+    // one far-off windmill turning on the plain — a little postcard of Het
+    // Gooi. Pinned to the map's north (up-screen from the iso camera, world
+    // (-1,-1)) so it's actually in view instead of hiding behind the camera.
+    const millAng = -Math.PI * 3 / 4 + (rnd() - 0.5) * 0.5;
     const millRad = boardR + 38;
     const mill = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.7, 5.2, 8), stdMat({ color: 0x6b5540 }));

@@ -15,7 +15,7 @@ import { META_UPGRADES, META_BY_ID, metaSpecsFor, hasMetaSpecial } from './data/
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
 import { levelFor, sandboxLevel, type LevelDef } from './data/levels';
 import type { UnitKind } from './data/units';
-import { ASCENSION_DESCS, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
+import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
 
@@ -163,7 +163,7 @@ function renderAscensionRow(): void {
   if (meta.ascension <= 0) { row.innerHTML = ''; return; }
   let s = '<div class="shopsect">Ascension — win at your highest tier to unlock the next</div><div class="ascrow">';
   for (let a = 0; a <= meta.ascension; a++) {
-    s += `<button class="asc${a === pickedAscension ? ' on' : ''}" data-asc="${a}" title="${ASCENSION_DESCS[a]}">${a === 0 ? 'Base' : 'A' + a}</button>`;
+    s += `<button class="asc${a === pickedAscension ? ' on' : ''}" data-asc="${a}" title="${ASCENSION_DESCS[a]}">${ASCENSION_NAMES[a]}</button>`;
   }
   const active = pickedAscension === 0 ? ASCENSION_DESCS[0] : ASCENSION_DESCS.slice(1, pickedAscension + 1).join(' · ');
   s += `</div><div class="metaline">${active}</div>`;
@@ -285,7 +285,7 @@ function onLevelClear(): void {
     // winning at your highest tier opens the next rung of the ladder
     if (run.ascension >= meta.ascension && meta.ascension < MAX_ASCENSION) {
       meta.ascension = Math.min(MAX_ASCENSION, run.ascension + 1);
-      summaryNote = `Ascension ${meta.ascension} unlocked — ${ASCENSION_DESCS[meta.ascension]}`;
+      summaryNote = `New ascension unlocked: ${ASCENSION_NAMES[meta.ascension]} — ${ASCENSION_DESCS[meta.ascension]}`;
     }
   }
   Save.saveMeta(meta);
@@ -372,7 +372,7 @@ function renderMenu(): void {
   cont.style.display = has ? 'block' : 'none';
   $('metaLine').innerHTML =
     `<b>${meta.heritage}</b> Heritage · runs: ${meta.stats.runs} · wins: ${meta.stats.wins} · levels cleared: ${meta.stats.levelsCleared} · best: level ${meta.stats.bestLevel || 0}` +
-    (meta.ascension > 0 ? ` · ascension A${meta.ascension} unlocked` : '');
+    (meta.ascension > 0 ? ` · ascension unlocked: ${ASCENSION_NAMES[meta.ascension]}` : '');
 }
 
 function renderSummary(victory: boolean, reason: 'timeout' | 'castle' = 'timeout'): void {

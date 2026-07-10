@@ -873,16 +873,19 @@ export function makeFlame(): THREE.Group {
   return g;
 }
 
-/** Floating "plots wanted" marker hovering over a fields-building: a green
- *  diamond with a pointer cone, nudging the player to click the building
- *  and place its crop/pasture plots. */
+/** Floating "plots wanted" marker hovering over a fields-building: a red
+ *  diamond with a long down-arrow stabbing at the roof, so it's unmistakable
+ *  which building wants to be clicked for its crop/pasture plots. */
 export function makePlotMarker(): THREE.Group {
   const g = new THREE.Group();
-  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.2), mat(0x5fb54a));
-  gem.position.y = 0.36; gem.scale.y = 1.35;
+  const red = mat(0xd9483a);
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.2), red);
+  gem.position.y = 0.52; gem.scale.y = 1.35;
   g.add(gem);
-  const tip = new THREE.Mesh(cone(0.09, 0.24, 6), mat(0x5fb54a));
-  tip.rotation.x = Math.PI; tip.position.y = -0.02;
+  const shaft = new THREE.Mesh(cyl(0.05, 0.05, 0.3, 6), red);
+  shaft.position.y = 0.12; g.add(shaft);
+  const tip = new THREE.Mesh(cone(0.13, 0.28, 8), red);
+  tip.rotation.x = Math.PI; tip.position.y = -0.16;
   g.add(tip);
   return g;
 }
