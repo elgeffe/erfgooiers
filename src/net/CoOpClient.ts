@@ -54,7 +54,9 @@ export class CoOpClient {
     readonly baseUrl = (import.meta.env.VITE_COOP_SERVER_URL || 'http://localhost:8787').replace(/\/$/, ''),
     private readonly storage: Storage = localStorage,
     private readonly makeWebSocket: WebSocketFactory = url => new WebSocket(url),
-    private readonly fetcher: typeof fetch = fetch,
+    // bound wrapper: a bare `fetch` reference invoked as `this.fetcher(...)`
+    // loses its Window receiver and throws "Illegal invocation"
+    private readonly fetcher: typeof fetch = (...args) => fetch(...args),
   ) {}
 
   snapshot(): ConnectionSnapshot {

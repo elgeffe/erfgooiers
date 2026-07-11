@@ -857,7 +857,9 @@ $('heroChip').onclick = () => {
 ($('btnCoopReady') as HTMLButtonElement).onclick = () => {
   const snapshot = coop.snapshot();
   const local = snapshot.room?.players.find(player => player.id === snapshot.playerId);
-  coop.setReady(!local?.ready);
+  // the lobby renders before the socket finishes opening — a dropped ready
+  // toggle must not fail silently
+  if (!coop.setReady(!local?.ready)) ui.toast('Still connecting — try Ready again in a moment', 'err');
 };
 
 coop.onConnection = renderMultiplayer;

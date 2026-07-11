@@ -143,26 +143,32 @@ and shop while sharing the map, enemies, objectives, and Expedition outcome. The
 is authoritative for networking, while a small WebSocket room service provides
 host/invite, public server browsing, relay, presence, checkpoints, and reconnects.
 
-- First extract versioned gameplay commands and stable entity IDs while keeping
-  singleplayer on the same command path.
-- Add canonical fingerprints plus render-free checkpoints/replay so a guest can be
-  corrected or rejoined without serializing Three.js objects.
-- Prove two-tab command replication under latency/jitter, then add the room service and
-  main-menu Host / Join by invite / Server browser / Lobby flow.
-- Add an in-game Multiplayer panel for connection health, invite copying, automatic and
-  manual reconnect, player presence, and approved seat reclaim. The same invite code
-  remains usable during a run and restores the original player/settlement.
-- Ship a two-player sandbox vertical slice before building the four dedicated Expedition
-  levels, composable co-op objectives, difficulty presets, shops, contracts, saves,
-  participation rewards, and summaries.
-- Add a Trade tab for requests and physical, interceptable shipments between
-  player-owned stores; resources never teleport or silently enter the ally's logistics
-  network.
-- Scale difficulty through simultaneous fronts, tighter logistics, enemy composition,
-  and recovery pressure before relying on HP inflation.
-- Keep strict player ownership, shared team victory, fixed `1x` speed, personal hero
-  effects unless explicitly team-wide, mutual lifecycle readiness, friend-level trust,
-  durable reconnect seats, and no host migration for v1.
+Shipped (first playable slice):
+
+- Versioned gameplay commands with stable entity IDs; singleplayer and co-op share one
+  command-application path with per-player ownership validation.
+- The Node room service (rooms, invites, public browser, relay, presence, reconnect
+  credentials, seat reclaim) plus the main-menu Host / Join by invite / Server browser /
+  Lobby flow and the in-game Multiplayer panel.
+- Two fully separate player economies on one map: stores, workers, dispatch, training,
+  bells, roads, demolition, and player-scoped HUD.
+- The Trade tab with requests and physical, interceptable cart shipments — reserve on
+  send, deliver on arrival, recall physically, lose cargo with the cart.
+- Four data-driven Expedition levels with three difficulty presets (Journey /
+  Erfgooiers / Veldheer) routed through `Modifiers`; both-ready lobbies auto-start from
+  a shared seed, raids target either castle, defeat ends the run for both, and a
+  disconnected peer freezes rather than drifting.
+- Fixed `1x` speed, strict ownership, shared team victory, and no host migration.
+
+Still to build before co-op is release-ready:
+
+- Canonical fingerprints plus render-free checkpoints/replay so a drifted or rejoining
+  guest is corrected mid-level (today a mid-level rejoin waits for the next level and
+  long sessions rely on both sims staying in step).
+- Tick-aligned command application under measured latency/jitter (commands currently
+  apply on receipt in server order).
+- Per-player heroes, shops, cards, contracts, participation rewards, and co-op resume
+  saves; scale difficulty through fronts and logistics before HP inflation.
 
 The staged architecture, protocol, recovery model, security boundaries, risks, and exit
 criteria are documented in [docs/co-op-design.md](docs/co-op-design.md).
