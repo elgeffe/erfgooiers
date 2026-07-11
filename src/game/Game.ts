@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ROAD_STONE_COST, PLOT_RANGE, BASE_SPEED } from '../constants';
 import { DEFS } from '../data/buildings';
 import { ITEMS } from '../data/items';
-import { UNITS, type UnitKind } from '../data/units';
+import { UNITS, formationRank, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
@@ -1474,9 +1474,15 @@ export class Game {
       const t = this.world.T(tx, ty);
       return !!t && t.type === 'grass' && !t.b && !t.site && !t.dep;
     });
-    for (let i = 0; i < units.length; i++) {
+    // spots come back front rank first; march the army in battle order so
+    // melee take the leading tiles and ranged/cavalry/siege fall in behind.
+    // Stable sort keeps each rank's own order (and same-rank kinds together).
+    const ordered = units
+      .map((u, i) => ({ u, i, r: formationRank(u.role) }))
+      .sort((a, b) => a.r - b.r || a.i - b.i);
+    for (let i = 0; i < ordered.length; i++) {
       const s = spots[Math.min(i, spots.length - 1)];
-      this.orderUnit(units[i], type, s.x, s.y);
+      this.orderUnit(ordered[i].u, type, s.x, s.y);
     }
   }
 

@@ -45,4 +45,15 @@ describe('formationSpots', () => {
     expect(spots).toHaveLength(4);
     expect(spots).not.toContainEqual({ x: 5, y: 5 });
   });
+
+  it('orders spots front rank first, along the direction of travel', () => {
+    // approaching from the west (-x): the army faces +x, so the front rank
+    // (largest x) must come back before deeper ranks (smaller x)
+    for (const shape of ['box', 'line', 'split'] as const) {
+      const spots = formationSpots(50, 50, 30, shape, [{ x: 0, y: 50 }], open);
+      const depths = spots.map(p => p.x);
+      // non-increasing x: each spot is at or behind the previous one
+      for (let i = 1; i < depths.length; i++) expect(depths[i]).toBeLessThanOrEqual(depths[i - 1]);
+    }
+  });
 });
