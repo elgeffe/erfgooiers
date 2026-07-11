@@ -109,6 +109,8 @@ export interface Tile {
 }
 
 export interface Building {
+  id: number;
+  owner: OwnerId;
   key: BuildingKey;
   def: BuildingDef;
   x: number; y: number; rot: number;
@@ -135,6 +137,8 @@ export interface Building {
 }
 
 export interface Site {
+  id: number;
+  owner: PlayerId;
   key: BuildingKey;
   def: BuildingDef;
   x: number; y: number; rot: number;
@@ -155,6 +159,8 @@ export interface Site {
 export interface Task { from: any; to: any; item: string; phase: 'pickup' | 'deliver'; }
 
 export interface Unit {
+  id: number;
+  owner: OwnerId;
   role: string;
   roleName: string;
   colorHex: number;

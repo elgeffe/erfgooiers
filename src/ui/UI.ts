@@ -281,7 +281,9 @@ export class UI {
       $('inspName').textContent = o.roleName;
       // fighters show combat stats; workers show hunger & task
       if (o.dmg > 0) {
-        $('inspSub').textContent = o.faction === 'player' ? 'Fighter — right-click to order, drag to box-select' : 'Hostile';
+        $('inspSub').textContent = o.faction === 'player'
+          ? this.game?.ownedByLocal(o) ? 'Fighter — right-click to order, drag to box-select' : 'Allied fighter'
+          : 'Hostile';
         const hp = Math.max(0, Math.round(o.hp)), ratio = Math.max(0, o.hp / o.maxHp);
         const hcol2 = ratio > 0.5 ? 'var(--good)' : ratio > 0.25 ? 'var(--accent)' : 'var(--bad)';
         let fb = '<div class="sect">Status</div><div class="invrow">' + o.status + '</div>';
@@ -405,7 +407,7 @@ export class UI {
 
   private renderUnits(): void {
     if (!this.unitsOpen || !this.game) return;
-    const players = this.game.units.filter(u => u.faction === 'player');
+    const players = this.game.units.filter(u => u.faction === 'player' && this.game!.ownedByLocal(u));
     const counts: Record<string, number> = { all: players.length, serf: 0, villager: 0, laborer: 0, specialist: 0, military: 0 };
     for (const u of players) counts[this.unitCat(u.role)]++;
     $('unitTitle').textContent = `Workers · ${players.length}`;

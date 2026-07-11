@@ -9,10 +9,11 @@ import { findPath } from '../engine/pathfinding';
 import { formationSpots } from '../engine/formations';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
-import type { Building, BuildingKey, Coord, Faction, Formation, Site, Unit } from '../types';
+import type { Building, BuildingKey, Coord, Faction, Formation, OwnerId, PlayerId, Site, Unit } from '../types';
 import { doorTile, unitLabel } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
+import { canControl, ownerForFaction } from './ownership';
 
 // Gameplay events use the sim stream (reseeded per level), never worldgen/cosmetic.
 const rnd = () => simRng.next();
@@ -79,8 +80,25 @@ export class Game {
   private fieldT = 0;
   private roadWarnT = 0;
   private plotWarnT = 0;
+  private nextEntityId = 1;
 
-  constructor(private readonly world: World, private readonly view: View, readonly mods: Modifiers = new Modifiers()) {}
+  constructor(
+    private readonly world: World,
+    private readonly view: View,
+    readonly mods: Modifiers = new Modifiers(),
+    readonly localPlayerId: PlayerId = 'p1',
+  ) {}
+
+  entityById(id: number): Building | Site | Unit | null {
+    return this.buildings.find(entity => entity.id === id)
+      ?? this.sites.find(entity => entity.id === id)
+      ?? this.units.find(entity => entity.id === id)
+      ?? null;
+  }
+
+  ownedByLocal(entity: { owner: OwnerId }): boolean {
+    return canControl(this.localPlayerId, entity.owner);
+  }
 
   // =====================================================================
   //  Setup
@@ -119,7 +137,10 @@ export class Game {
   // =====================================================================
   //  Buildings / sites
   // =====================================================================
-  placeBuilding(key: BuildingKey, tx: number, ty: number, instant = false, rot = 0, faction: Faction = 'player'): Building {
+  placeBuilding(
+    key: BuildingKey, tx: number, ty: number, instant = false, rot = 0,
+    faction: Faction = 'player', owner: OwnerId = ownerForFaction(faction, this.localPlayerId),
+  ): Building {
     const def = DEFS[key];
     const mesh = this.view.createBuildingMesh(key, def);
     mesh.rotation.y = -rot * Math.PI / 2;
@@ -128,6 +149,7 @@ export class Game {
     const facMult = faction === 'player' ? (def.store ? this.mods.castleHpMult() : 1) : (this.mods.buildingHpMult(faction) || 1);
     const maxHp = Math.round((def.hp ?? 100) * facMult);
     const b: Building = {
+      id: this.nextEntityId++, owner,
       key, def, x: tx, y: ty, rot, active: false, inp: {}, out: {}, incoming: {},
       prog: 0, working: false, worker: null, fieldsList: [], mesh, name: def.name,
       faction, hp: maxHp, maxHp,
@@ -184,13 +206,14 @@ export class Game {
   removeDep(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.dep) { this.view.removeMeshes(t.dep.meshes); t.dep = null; this.view.dirtyTile(x, y); } }
   removeDeco(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.deco) { this.view.removeMeshes(t.deco.meshes); t.deco = null; this.view.dirtyTile(x, y); } }
 
-  placeSite(key: BuildingKey, tx: number, ty: number, rot = 0): Site {
+  placeSite(key: BuildingKey, tx: number, ty: number, rot = 0, owner: PlayerId = this.localPlayerId): Site {
     const def = DEFS[key];
     const { group, frame } = this.view.createScaffold(key, def);
     frame.rotation.y = -rot * Math.PI / 2;
     group.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
     this.view.add(group);
     const s: Site = {
+      id: this.nextEntityId++, owner,
       key, def, x: tx, y: ty, rot, needs: this.mods.buildingCost(def) as Record<string, number>, delivered: {}, incoming: {},
       progress: 0, ready: false, builder: null, mesh: group, frame, isSite: true, name: def.name + ' (site)',
     };
@@ -207,7 +230,7 @@ export class Game {
     for (let y = s.y; y < s.y + 2; y++) for (let x = s.x; x < s.x + 2; x++) tiles[y][x].site = null;
     this.view.remove(s.mesh);
     this.sites.splice(this.sites.indexOf(s), 1);
-    const b = this.placeBuilding(s.key, s.x, s.y, false, s.rot);
+    const b = this.placeBuilding(s.key, s.x, s.y, false, s.rot, 'player', s.owner);
     this.toast(s.def.name + ' completed');
     this.sfx('build');
     // worker buildings stay unstaffed until a trained villager reports in (staffBuildings)
@@ -218,9 +241,10 @@ export class Game {
   // =====================================================================
   //  Units
   // =====================================================================
-  spawnUnit(role: string, colorHex: number, tile: { x: number; y: number }): Unit {
+  spawnUnit(role: string, colorHex: number, tile: { x: number; y: number }, owner: PlayerId = this.localPlayerId): Unit {
     const { group, itemMesh } = this.view.createUnit(colorHex, role, tile.x, tile.y);
     const u: Unit = {
+      id: this.nextEntityId++, owner,
       role, roleName: role[0].toUpperCase() + role.slice(1), colorHex, mesh: group, itemMesh,
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
       home: null, wstate: 'idle', timer: 0, target: null, hunger: 70 + rnd() * 30, bob: 0, status: 'Idle',
@@ -233,7 +257,7 @@ export class Game {
 
   /** Spawn the run's mounted hero near the castle gate: a controllable player
    *  fighter with a per-hero look. Box-select or click it like any soldier. */
-  spawnHero(heroId: string, roleName: string): Unit {
+  spawnHero(heroId: string, roleName: string, owner: PlayerId = this.localPlayerId): Unit {
     this.heroId = heroId;
     this.heroName = roleName;
     const def = UNITS.hero;
@@ -246,6 +270,7 @@ export class Game {
     }
     const { group, itemMesh } = this.view.createHero(heroId, tile.x, tile.y);
     const u: Unit = {
+      id: this.nextEntityId++, owner,
       role: 'hero', roleName, colorHex: def.color, mesh: group, itemMesh,
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
       home: null, wstate: 'idle', timer: 0, target: null, hunger: 100, bob: 0, status: 'Ready to ride',
@@ -262,12 +287,14 @@ export class Game {
   }
 
   /** Spawn a combat unit (player soldier/archer, or enemy/wild fighter) from its def. */
-  spawnFighter(kind: UnitKind, tile: { x: number; y: number }, faction?: Faction): Unit {
+  spawnFighter(kind: UnitKind, tile: { x: number; y: number }, faction?: Faction, owner?: OwnerId): Unit {
     const def = UNITS[kind];
     const fac = faction ?? def.faction;
-    const u = this.spawnUnit(kind, def.color, tile);
+    const unitOwner = owner ?? ownerForFaction(fac, this.localPlayerId);
+    const u = this.spawnUnit(kind, def.color, tile, unitOwner === 'p2' ? 'p2' : 'p1');
     u.roleName = def.name;
     u.faction = fac;
+    u.owner = unitOwner;
     u.spd = def.speed * this.mods.combatMult('speed', kind);
     u.maxHp = u.hp = Math.round(def.hp * this.mods.combatMult('hp', kind));
     u.dmg = def.dmg * this.mods.combatMult('damage', kind);

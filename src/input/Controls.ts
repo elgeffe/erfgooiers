@@ -58,7 +58,7 @@ export class Controls {
 
   /** Programmatic selection (e.g. the hero chip) — same as click-selecting. */
   selectUnits(units: Unit[]): void {
-    this.selUnits = units.filter(u => !u.dead && u.faction === 'player' && u.dmg > 0);
+    this.selUnits = units.filter(u => !u.dead && u.faction === 'player' && this.game?.ownedByLocal(u) && u.dmg > 0);
   }
 
   /** Bind to a level's Game; clears any active build mode and stale squads. */
@@ -174,7 +174,7 @@ export class Controls {
     const u = this.game.pickUnit(gp.x, gp.z);
     if (u) {
       this.game.select(u);
-      this.selUnits = u.faction === 'player' && u.dmg > 0 ? [u] : [];
+      this.selUnits = u.faction === 'player' && this.game.ownedByLocal(u) && u.dmg > 0 ? [u] : [];
       return;
     }
     this.selUnits = [];
@@ -187,10 +187,10 @@ export class Controls {
     e.preventDefault();
     const gp = this.view.groundPoint(e.clientX, e.clientY);
     const clicked = this.game.pickUnit(gp.x, gp.z);
-    if (!clicked || clicked.faction !== 'player' || clicked.dmg <= 0) return;
+    if (!clicked || clicked.faction !== 'player' || !this.game.ownedByLocal(clicked) || clicked.dmg <= 0) return;
     const picked: Unit[] = [];
     for (const u of this.game.units) {
-      if (u.dead || u.faction !== 'player' || u.dmg <= 0 || u.role !== clicked.role) continue;
+      if (u.dead || u.faction !== 'player' || !this.game.ownedByLocal(u) || u.dmg <= 0 || u.role !== clicked.role) continue;
       const s = this.view.worldToScreen(u.mesh.position.x, u.mesh.position.y, u.mesh.position.z);
       if (s.x >= 0 && s.x <= innerWidth && s.y >= 0 && s.y <= innerHeight) picked.push(u);
     }
@@ -206,7 +206,7 @@ export class Controls {
     const minY = Math.min(y0, y1), maxY = Math.max(y0, y1);
     const picked: Unit[] = [];
     for (const u of this.game.units) {
-      if (u.faction !== 'player' || u.dmg <= 0) continue;
+      if (u.faction !== 'player' || !this.game.ownedByLocal(u) || u.dmg <= 0) continue;
       const s = this.view.worldToScreen(u.mesh.position.x, u.mesh.position.y, u.mesh.position.z);
       if (s.x >= minX && s.x <= maxX && s.y >= minY && s.y <= maxY) picked.push(u);
     }
