@@ -98,6 +98,7 @@ export interface AcceptedCommand {
 export type ClientMessage =
   | { type: 'command'; commandId: string; command: GameCommand }
   | { type: 'ready'; ready: boolean }
+  | { type: 'hostTick'; tick: number }
   | { type: 'ping'; sentAt: number }
   | { type: 'checkpoint'; tick: number; sequence: number; payload: string }
   | { type: 'reclaimDecision'; requestId: string; approve: boolean };
@@ -171,6 +172,10 @@ export function parseClientMessage(raw: unknown): ParseResult<ClientMessage> {
       return finite(value.sentAt)
         ? { ok: true, value: value as unknown as ClientMessage }
         : { ok: false, error: 'invalid_ping' };
+    case 'hostTick':
+      return integer(value.tick) && value.tick >= 0
+        ? { ok: true, value: value as unknown as ClientMessage }
+        : { ok: false, error: 'invalid_host_tick' };
     case 'checkpoint':
       return integer(value.tick) && value.tick >= 0 && integer(value.sequence) && value.sequence >= 0 && typeof value.payload === 'string' && value.payload.length <= MAX_MESSAGE_BYTES
         ? { ok: true, value: value as unknown as ClientMessage }
