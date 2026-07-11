@@ -96,6 +96,7 @@ export interface Pickup { gold: number; reserved: boolean; meshes: THREE.Object3
 export interface Tile {
   type: 'grass' | 'water' | 'rock';
   road: boolean;
+  roadOwner: PlayerId | null;
   lake: boolean;               // part of the big fish-stocked lake (not a pond)
   rock?: 'peak' | 'wall';      // rock tiles: impassable mountain or a ruined wall
   b: Building | null;
