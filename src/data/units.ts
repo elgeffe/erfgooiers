@@ -5,7 +5,7 @@ import type { Faction } from '../types';
 export type UnitKind = 'soldier' | 'archer' | 'knight' | 'bandit' | 'boar' | 'dragon'
   | 'wolf' | 'orc' | 'troll' | 'demon' | 'hero'
   | 'lancer' | 'horseknight' | 'horsearcher'
-  | 'ballista' | 'scorpion' | 'trebuchet';
+  | 'ballista' | 'onager' | 'trebuchet';
 
 /** How a combat unit is drawn — humanoid reuses the worker model; beasts differ. */
 export type FighterModel = 'human' | 'beast' | 'dragon' | 'wolf' | 'demon' | 'hero' | 'cavalry' | 'siege';
@@ -30,6 +30,7 @@ export interface UnitDef {
   flying?: boolean;     // moves in straight lines over any terrain (the dragon)
   fire?: boolean;       // periodically hurls a fiery volley (dragon breath, demon magic)
   rank?: number;        // battle order for group moves: 0 = front line, higher = further back
+  splash?: number;      // lobs an arcing rock that damages everything within this tile radius (onager)
 }
 
 /** Front-to-back battle order when a mixed group moves in formation:
@@ -83,11 +84,14 @@ export const UNITS: Record<UnitKind, UnitDef> = {
     hp: 55, dmg: 6, range: 4.5, atkCd: 1.3, speed: BASE_SPEED * 1.45, scale: 1.0, aggro: 10, arrows: true, rank: 3 },
 
   // ---- siege engines (built at the Engineer's Workshop): slow, devastating ----
+  // ballista: a heavy single bolt that spikes one tough target
   ballista: { kind: 'ballista', name: 'Ballista', faction: 'player', color: 0x8a6a44, model: 'siege',
     hp: 70, dmg: 22, range: 7, atkCd: 2.6, speed: BASE_SPEED * 0.55, scale: 1, aggro: 9, arrows: true, rank: 4 },
 
-  scorpion: { kind: 'scorpion', name: 'Scorpion', faction: 'player', color: 0x74562f, model: 'siege',
-    hp: 55, dmg: 14, range: 8, atkCd: 1.8, speed: BASE_SPEED * 0.6, scale: 0.9, aggro: 10, arrows: true, rank: 4 },
+  // onager: lobs a rock that splashes — the anti-swarm engine, weak per-hit but
+  // scattering damage across a whole cluster of foes
+  onager: { kind: 'onager', name: 'Onager', faction: 'player', color: 0x74562f, model: 'siege',
+    hp: 65, dmg: 16, range: 7.5, atkCd: 3.2, speed: BASE_SPEED * 0.55, scale: 1.02, aggro: 9, splash: 1.7, rank: 4 },
 
   trebuchet: { kind: 'trebuchet', name: 'Trebuchet', faction: 'player', color: 0x6b4f30, model: 'siege',
     hp: 90, dmg: 48, range: 9, atkCd: 5, speed: BASE_SPEED * 0.4, scale: 1.15, aggro: 4, arrows: true, rank: 4 },

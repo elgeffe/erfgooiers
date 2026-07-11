@@ -120,13 +120,13 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
         desc: 'Heavy shock cavalry — armoured horse and rider, hits like a wall' },
     ] } },
 
-  engineer: { name: 'Engineer\u2019s Workshop', desc: 'Builds siege engines — ballistas, scorpions & trebuchets', model: 'cottage',
+  engineer: { name: 'Engineer\u2019s Workshop', desc: 'Builds siege engines — ballistas, onagers & trebuchets', model: 'cottage',
     cost: { timber: 5, stone: 4 }, roof: 0x5a5346, wall: 0x9c8a6a, accent: 0xc9a94e, hp: 240,
     military: { units: [
       { kind: 'ballista', cost: { timber: 3, weapon: 1, coin: 2 }, time: 10,
         desc: 'Giant crossbow on wheels — long-ranged bolts, slow to move' },
-      { kind: 'scorpion', cost: { timber: 3, iron: 2, coin: 3 }, time: 11,
-        desc: 'Rapid bolt-thrower — outranges archers and towers' },
+      { kind: 'onager', cost: { timber: 3, stone: 2, coin: 3 }, time: 11,
+        desc: 'Rock-lobbing catapult — splashes damage across a cluster of foes' },
       { kind: 'trebuchet', cost: { timber: 5, stone: 3, coin: 4 }, time: 14,
         desc: 'The wall-breaker — devastating stones from far off, but crawls' },
     ] } },

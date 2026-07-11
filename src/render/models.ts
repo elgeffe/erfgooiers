@@ -728,8 +728,8 @@ export function makeCavalry(kind: string, colorHex: number): { group: THREE.Grou
 }
 
 /** Siege engines from the Engineer's Workshop: all-wood machines on wheels,
- *  facing +z. Ballista = giant crossbow, scorpion = light bolt-thrower,
- *  trebuchet = counterweight arm. */
+ *  facing +z. Ballista = giant crossbow, onager = torsion catapult flinging
+ *  rocks, trebuchet = counterweight arm. */
 export function makeSiege(kind: string): { group: THREE.Group; itemMesh: THREE.Mesh } {
   const g = new THREE.Group();
   const wood = umat(0x76502f), pale = umat(0xb08a5c), iron = umat(0x5a5f66), rope = umat(0xc9b58c);
@@ -748,16 +748,24 @@ export function makeSiege(kind: string): { group: THREE.Group; itemMesh: THREE.M
     const arm = new THREE.Mesh(box(0.05, 0.05, 0.78), wood); arm.position.set(0, 0.62, -0.08); arm.rotation.x = -0.55; arm.castShadow = true; g.add(arm);
     const weight = new THREE.Mesh(box(0.16, 0.14, 0.14), iron); weight.position.set(0, 0.44, 0.28); g.add(weight);
     const stone = new THREE.Mesh(sphere(0.05, 7, 6), umat(0x9aa0a3)); stone.position.set(0, 0.22, -0.32); g.add(stone);
+  } else if (kind === 'onager') {
+    // squat torsion catapult: low frame, a single sprung arm angled up with a
+    // bucket cradling a boulder, braced against a padded crossbar
+    const frame = new THREE.Mesh(box(0.24, 0.09, 0.4), wood); frame.position.y = 0.22; frame.castShadow = true; g.add(frame);
+    const skein = new THREE.Mesh(cyl(0.05, 0.05, 0.26, 8), rope); skein.rotation.z = Math.PI / 2; skein.position.set(0, 0.26, 0.12); g.add(skein);
+    const arm = new THREE.Mesh(box(0.045, 0.045, 0.44), wood); arm.position.set(0, 0.36, -0.02); arm.rotation.x = 0.7; arm.castShadow = true; g.add(arm);
+    const bucket = new THREE.Mesh(cyl(0.08, 0.06, 0.06, 8), iron); bucket.position.set(0, 0.52, -0.18); g.add(bucket);
+    const boulder = new THREE.Mesh(sphere(0.06, 6, 5), umat(0x8f9195)); boulder.position.set(0, 0.56, -0.18); g.add(boulder);
+    const crossbar = new THREE.Mesh(cyl(0.02, 0.02, 0.26, 6), pale); crossbar.rotation.z = Math.PI / 2; crossbar.position.set(0, 0.34, -0.18); g.add(crossbar);
   } else {
-    // crossbow bed + curved arms + a loaded bolt; the scorpion is the slight one
-    const small = kind === 'scorpion';
-    const rail = new THREE.Mesh(box(0.08, 0.05, small ? 0.44 : 0.56), wood); rail.position.y = 0.24; rail.rotation.x = -0.08; rail.castShadow = true; g.add(rail);
+    // ballista: crossbow bed + curved arms + a loaded bolt
+    const rail = new THREE.Mesh(box(0.08, 0.05, 0.56), wood); rail.position.y = 0.24; rail.rotation.x = -0.08; rail.castShadow = true; g.add(rail);
     for (const sx of [-1, 1]) {
-      const armB = new THREE.Mesh(cyl(0.018, 0.024, small ? 0.24 : 0.32, 6), pale);
-      armB.position.set(sx * (small ? 0.13 : 0.17), 0.27, 0.16); armB.rotation.z = sx * 1.25; g.add(armB);
+      const armB = new THREE.Mesh(cyl(0.018, 0.024, 0.32, 6), pale);
+      armB.position.set(sx * 0.17, 0.27, 0.16); armB.rotation.z = sx * 1.25; g.add(armB);
     }
-    const string = new THREE.Mesh(box(small ? 0.26 : 0.34, 0.012, 0.012), rope); string.position.set(0, 0.27, 0.1); g.add(string);
-    const bolt = new THREE.Mesh(cyl(0.012, 0.012, small ? 0.3 : 0.4, 5), iron); bolt.rotation.x = Math.PI / 2; bolt.position.set(0, 0.29, 0.05); g.add(bolt);
+    const string = new THREE.Mesh(box(0.34, 0.012, 0.012), rope); string.position.set(0, 0.27, 0.1); g.add(string);
+    const bolt = new THREE.Mesh(cyl(0.012, 0.012, 0.4, 5), iron); bolt.rotation.x = Math.PI / 2; bolt.position.set(0, 0.29, 0.05); g.add(bolt);
     const stand = new THREE.Mesh(box(0.06, 0.14, 0.06), wood); stand.position.y = 0.19; g.add(stand);
   }
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
@@ -817,7 +825,7 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
   if (role === 'dragon') return makeDragon(colorHex);
   if (role === 'demon') return makeDemon(colorHex);
   if (role === 'lancer' || role === 'horseknight' || role === 'horsearcher') return makeCavalry(role, colorHex);
-  if (role === 'ballista' || role === 'scorpion' || role === 'trebuchet') return makeSiege(role);
+  if (role === 'ballista' || role === 'onager' || role === 'trebuchet') return makeSiege(role);
   if (role === 'boar') return bakeUnit(makeBeast(colorHex));
   if (role === 'wolf') return bakeUnit(makeWolf(colorHex));
   return bakeUnit(makeHumanoid(colorHex, role), false);
@@ -1209,6 +1217,16 @@ export function makeArrow(): THREE.Group {
   head.rotation.x = Math.PI / 2; head.position.z = 0.24; g.add(head);
   const fletch = new THREE.Mesh(cone(0.045, 0.1, 4), mat(0xefe6d0));
   fletch.rotation.x = -Math.PI / 2; fletch.position.z = -0.2; g.add(fletch);
+  return g;
+}
+
+/** An onager boulder in flight — a chunky grey rock, faceted low-poly. */
+export function makeRock(): THREE.Group {
+  const g = new THREE.Group();
+  const rock = new THREE.Mesh(sphere(0.12, 6, 5), mat(0x8f9195));
+  rock.scale.set(1, 0.85, 1.05); g.add(rock);
+  const chip = new THREE.Mesh(box(0.1, 0.09, 0.11), mat(0x74767a));
+  chip.rotation.set(0.6, 0.4, 0.3); g.add(chip);
   return g;
 }
 
