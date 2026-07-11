@@ -84,6 +84,8 @@ export class View {
   private readonly critters: Critter[] = [];
   private readonly skyBirds: SkyBird[] = [];
   private nextBirdT = 0;
+  // the horizon whale (island seas only), cruising in real time
+  private whale: THREE.Group | null = null;
 
   // short-lived flags marking where the player just ordered units to go
   private readonly orderPings: { mesh: THREE.Group; life: number; max: number; mats: THREE.Material[] }[] = [];
@@ -233,6 +235,7 @@ this.skyBirds.length = 0;
     this.lakeTiles = [];
     this.millSails.length = 0;
     this.beacons.length = 0;
+    this.whale = null;
     this.ghostKey = null;
     this.clearGore();
   }
@@ -1003,8 +1006,9 @@ this.skyBirds.length = 0;
     const foliage = [0x4a7350, 0x3f6a5e, 0x577d48, 0x426b43].map(c => stdMat({ color: c }));
     const trunkM = stdMat({ color: 0x5b4433 });
     // the Black Forest closes in: a far denser, near-solid ring of dark pines
-    // (island boards rise straight from the beach: barely any treeline at all)
-    const ringCount = biome.ambiance.forestRing ? 260 : seaAmb === 'all' ? 24 : 90;
+    // (island boards get none at all — past the beach the plain IS the sea,
+    // and a treeline there reads as trees standing in the water)
+    const ringCount = biome.ambiance.forestRing ? 260 : seaAmb === 'all' ? 0 : 90;
     for (let i = 0; i < ringCount; i++) {
       const ang = rnd() * Math.PI * 2;
       if (seaAmb === 'coast' && seaward(ang)) continue;
@@ -1106,6 +1110,27 @@ this.skyBirds.length = 0;
       this.beacons.push(beam);
     }
 
+    // A great whale cruises the horizon sea in a slow circle, its back arching
+    // out of the water and sliding under again (real-time, like the beacons).
+    if (biome.ambiance.whale && seaAmb) {
+      const w = new THREE.Group();
+      const bodyM = stdMat({ color: 0x46525e }), bellyM = stdMat({ color: 0x9fb3bd });
+      const body = new THREE.Mesh(sphere(1, 16, 10), bodyM);
+      body.scale.set(1.35, 1.2, 3.4); w.add(body);                 // nose along +z
+      const belly = new THREE.Mesh(sphere(1, 14, 9), bellyM);
+      belly.scale.set(1.2, 1.0, 3.1); belly.position.y = -0.3; w.add(belly);
+      const fin = new THREE.Mesh(cone(0.5, 1.0, 5), bodyM);
+      fin.position.set(0, 1.25, -0.5); w.add(fin);
+      for (const s of [1, -1]) {                                   // tail flukes
+        const fl = new THREE.Mesh(sphere(1, 10, 7), bodyM);
+        fl.scale.set(1.0, 0.18, 0.6); fl.position.set(s * 0.6, 0.3, -3.3);
+        fl.rotation.y = s * 0.6; w.add(fl);
+      }
+      w.userData = { ang: rnd() * Math.PI * 2, rad: boardR + GAP + 22 + rnd() * 14, t: rnd() * 20 };
+      this.worldGroup.add(w);
+      this.whale = w;
+    }
+
     // Two or three detailed cloud banks drift high above the board. Layered
     // blue-grey undersides and bright crowns give them volume without turning
     // the playfield into a ceiling of white blobs.
@@ -1176,12 +1201,28 @@ this.skyBirds.length = 0;
     }
     for (const s of this.millSails) s.rotation.z += dt * 0.45;
     for (const b of this.beacons) b.rotation.y += dt * 0.7;
+    this.updateWhale(dt);
     this.updatePigs(dt, buildings);
     this.updateFish(dt);
     this.updateCritters(dt);
 this.updateSkyBirds(dt);
     this.updateOrderPings(dt);
     this.ageGore(dt);
+  }
+
+  /** The horizon whale: a slow circular cruise with a breach-and-dive cycle. */
+  private updateWhale(dt: number): void {
+    const w = this.whale;
+    if (!w) return;
+    const u = w.userData as { ang: number; rad: number; t: number };
+    u.ang += dt * 0.045;
+    u.t += dt;
+    const cycle = Math.sin(u.t * 0.35);          // >0 back above the surf, <0 diving
+    const x = Math.cos(u.ang) * u.rad, z = Math.sin(u.ang) * u.rad;
+    w.position.set(x, -3.4 + cycle * 1.6, z);
+    // nose (+z) points along the direction of travel
+    w.lookAt(Math.cos(u.ang + 0.02) * u.rad, w.position.y, Math.sin(u.ang + 0.02) * u.rad);
+    w.rotateX(Math.cos(u.t * 0.35) * 0.3);       // pitch up surfacing, down diving
   }
 
   /** Scatter cute fish across the lake's water tiles (not the small ponds). */

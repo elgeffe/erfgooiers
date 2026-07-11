@@ -70,6 +70,7 @@ export class World {
     this.biome = BIOMES[this.p.biome];
     // the biome shapes the terrain: extra ridge chains, denser or thinner woods
     this.p.mountains += this.biome.gen.mountainsAdd;
+    if (this.biome.gen.flatland) this.p.mountains = 0;
     this.p.treeStands = Math.round(this.p.treeStands * this.biome.gen.treeMult);
     this.W = this.p.w;
     this.H = this.p.h;
