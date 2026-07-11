@@ -145,10 +145,75 @@ const MOOD_ALPS: Mood = {
   ],
 };
 
+// Winter — a held breath in A minor: very slow open add9 voicings, a heavy
+// shimmer like frost in sunlight, and long silences between the chords.
+const MOOD_WINTER: Mood = {
+  bpm: 46, pad: 1.0, fb: 0.3, shimmer: 0.75, air: 0.1, drone: 0.06, drum: 0,
+  prog: [
+    { bass: 45, chord: [57, 64, 71] }, // Am(add9), wide and cold
+    { bass: 41, chord: [53, 60, 69] }, // Fmaj7 colours
+    { bass: 43, chord: [55, 62, 71] }, // G(add9)
+    { bass: 40, chord: [52, 59, 67] }, // Em7
+  ],
+};
+
+// The Polder — an easy F-major stroll under a big sky: the Gooi's warmth
+// with a light walking drum, music for straight roads and tulip strips.
+const MOOD_POLDER: Mood = {
+  bpm: 63, pad: 1.0, fb: 0.2, shimmer: 0.35, air: 0.04, drone: 0, drum: 2,
+  prog: [
+    { bass: 41, chord: [53, 57, 60] }, // F
+    { bass: 46, chord: [58, 62, 65] }, // Bb
+    { bass: 48, chord: [60, 64, 67] }, // C
+    { bass: 41, chord: [53, 57, 60] }, // F
+  ],
+};
+
+// The Zeeland Delta — a rolling G mixolydian: the flattened seventh washes
+// in and out like surf, with plenty of open air and a steady swell of a drum.
+const MOOD_SEASIDE: Mood = {
+  bpm: 70, pad: 1.05, fb: 0.26, shimmer: 0.4, air: 0.09, drone: 0.04, drum: 2,
+  prog: [
+    { bass: 43, chord: [59, 62, 67] }, // G
+    { bass: 41, chord: [57, 60, 65] }, // F — the mixolydian wave
+    { bass: 48, chord: [60, 64, 67] }, // C
+    { bass: 43, chord: [59, 62, 67] }, // G
+  ],
+};
+
+// Texel — wide D major with salt in the air: slow bright chords, gull-height
+// shimmer and a soft drone underneath like the sea you can always hear.
+const MOOD_ISLAND: Mood = {
+  bpm: 56, pad: 1.05, fb: 0.28, shimmer: 0.55, air: 0.11, drone: 0.06, drum: 0,
+  prog: [
+    { bass: 38, chord: [57, 62, 66] }, // D
+    { bass: 43, chord: [59, 62, 67] }, // G
+    { bass: 45, chord: [61, 64, 69] }, // A
+    { bass: 47, chord: [59, 62, 66] }, // Bm
+  ],
+};
+
+// Hell — an E phrygian grind: the flat second leaning on the tonic, a deep
+// drone, thick air and a slow heavy drum. The ground itself is smouldering.
+const MOOD_HELL: Mood = {
+  bpm: 58, pad: 1.1, fb: 0.45, shimmer: 0.15, air: 0.12, drone: 0.2, drum: 4,
+  prog: [
+    { bass: 40, chord: [59, 64, 67] }, // Em
+    { bass: 41, chord: [60, 65, 69] }, // F — the phrygian shadow a half-step up
+    { bass: 40, chord: [59, 64, 67] }, // Em
+    { bass: 47, chord: [59, 63, 66] }, // B — a glint of heat in the dark
+  ],
+};
+
 const BIOME_MOODS: Record<string, Mood> = {
   ardennes: MOOD_ARDENNES,
   blackforest: MOOD_BLACKFOREST,
   alps: MOOD_ALPS,
+  winter: MOOD_WINTER,
+  polder: MOOD_POLDER,
+  seaside: MOOD_SEASIDE,
+  island: MOOD_ISLAND,
+  hell: MOOD_HELL,
 };
 
 /** Map a 1-based level within a run to a mood tier. */

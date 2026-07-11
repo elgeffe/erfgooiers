@@ -12,7 +12,8 @@ import type { BuildingKey, DecoKind, DepositKind } from '../types';
  * `palette`/`ambiance`/`critters`, models read the foliage palette, Audio maps
  * the key to a biome mood. Het Gooi is the default and the campaign's home.
  */
-export type BiomeKey = 'gooi' | 'ardennes' | 'blackforest' | 'alps';
+export type BiomeKey = 'gooi' | 'ardennes' | 'blackforest' | 'alps'
+  | 'winter' | 'polder' | 'seaside' | 'island' | 'hell';
 
 export interface BiomePalette {
   grassA: number; grassB: number;   // meadow dither pair
@@ -50,6 +51,16 @@ export interface BiomeDef {
     treeMult: number;       // ×density of tree stands
     denseThickets: number;  // impassable old-growth clusters (Black Forest)
     snowline: boolean;      // every mountain peak carries snow (Alps)
+    treeSnow?: boolean;     // every tree carries snow (Winter)
+    /** Sea water claims map edges: one coastline ('sea') or all four ('island'). */
+    coast?: 'sea' | 'island';
+    /** A river rises inland and braids into distributaries as it meets the sea. */
+    riverDelta?: boolean;
+    /** Straight drainage canals with crossing gaps cut across the flats (Polder). */
+    ditches?: number;
+    /** Hellscape: peaks smoulder instead of snowing, water is lava (no fish,
+     *  no reeds), and the flora reads as scorched. */
+    scorched?: boolean;
   };
   ambiance: {
     windmill: boolean;      // the horizon postcard windmill (Het Gooi)
@@ -57,6 +68,10 @@ export interface BiomeDef {
     forestRing: boolean;    // a dense dark tree ring instead of open fields
     peakRing: boolean;      // a ring of big snowy massifs on the horizon
     hillBumps: boolean;     // extra near rolling hills (Ardennes)
+    /** Open sea on the horizon: half of it ('coast') or all around ('all'). */
+    sea?: 'coast' | 'all';
+    lighthouse?: boolean;   // a red-banded light turning on the coast (Texel)
+    dunes?: boolean;        // a near ring of sandy marram dunes instead of green hills
   };
 }
 
@@ -145,6 +160,115 @@ export const BIOMES: Record<BiomeKey, BiomeDef> = {
     // the mountains are made of building stone
     oreWeights: ['stone', 'stone', 'stone', 'iron', 'gold', 'coal'],
     gen: { mountainsAdd: 5, treeMult: 0.7, denseThickets: 0, snowline: true },
+    ambiance: { windmill: false, village: false, forestRing: false, peakRing: true, hillBumps: false },
+  },
+
+  winter: {
+    key: 'winter', name: 'Winter', desc: 'The land under snow — bare birches, red berries and chimney smoke',
+    palette: {
+      grassA: 0xdde4de, grassB: 0xecf0ea, water: 0x3e6a86, scree: 0x9aa0a2,
+      plain: 0xdbe2dd, fog: 0xe8eef2,
+      sky: ['#7fa8c9', '#a8c4d8', '#d3e0e6', '#f2efe4'],
+      hillTones: [0xd9e0da, 0xcdd6d1, 0xc0cbc9, 0xb3c0c2],
+      fieldTones: [0xdfe5dd, 0xd2dad2, 0xe7ebe2, 0xc9d3cd, 0xdae0d6],
+      folGreens: [0x2f5136, 0x3a5c3c, 0x2c4a34, 0x44684a, 0x39573f],
+    },
+    treeWeights: [4, 3, 0, 3],
+    meadowDeco: 'winterberry',
+    scatterDeco: ['snowdrift', 'winterberry'],
+    critters: ['fox', 'rabbit', 'deer', 'mouse'],
+    // frozen fields and vines: you live on pigs, fish and your start stores
+    disabledBuildings: ['farm', 'mill', 'bakery', 'vineyard', 'winery'],
+    // the cold burns through coal
+    oreWeights: ['stone', 'coal', 'coal', 'iron', 'gold'],
+    gen: { mountainsAdd: 2, treeMult: 0.9, denseThickets: 0, snowline: true, treeSnow: true },
+    ambiance: { windmill: false, village: true, forestRing: false, peakRing: false, hillBumps: false },
+  },
+
+  polder: {
+    key: 'polder', name: 'The Polder', desc: 'Land won from the water — tulips, ditches and a big Dutch sky',
+    palette: {
+      grassA: 0x63a85c, grassB: 0x7fbc6a, water: 0x4a7391, scree: 0x8b8a80,
+      plain: 0x6ba463, fog: 0xdce7e4,
+      sky: ['#4d95cd', '#84bade', '#c2dcec', '#f2ecd8'],
+      hillTones: [0x84b46e, 0x76a868, 0x699c6b, 0x5f8f70],
+      fieldTones: [0xc2454f, 0xd9a437, 0x7fae5c, 0xb85c9e, 0x8fb066],
+      folGreens: [0x4d7c3b, 0x5a8a3f, 0x467337, 0x639145, 0x548140],
+    },
+    treeWeights: [1, 0, 3, 4],
+    meadowDeco: 'tulip',
+    scatterDeco: ['flowers', 'reed'],
+    critters: ['duck', 'heron', 'rabbit', 'cat', 'frog'],
+    // too wet and too windy for grapes below sea level
+    disabledBuildings: ['vineyard', 'winery'],
+    // clay ground: what stone there is, you prize
+    oreWeights: ['stone', 'stone', 'coal', 'iron', 'gold'],
+    gen: { mountainsAdd: 0, treeMult: 0.6, denseThickets: 0, snowline: false, ditches: 5 },
+    ambiance: { windmill: true, village: true, forestRing: false, peakRing: false, hillBumps: false },
+  },
+
+  seaside: {
+    key: 'seaside', name: 'The Zeeland Delta', desc: 'Where the river braids into the sea — dunes, gulls and salt wind',
+    palette: {
+      grassA: 0x8fae62, grassB: 0xa5bd6f, water: 0x3a6e8c, scree: 0xcbb98a,
+      plain: 0x9cb077, fog: 0xdfe9e8,
+      sky: ['#4b9ccc', '#83c0de', '#c4dfea', '#f4eed7'],
+      hillTones: [0xd8c894, 0xccbb85, 0xbfae7c, 0xa9a578],
+      fieldTones: [0x9cae66, 0xb8ad6a, 0x86a35e, 0xc4ac72, 0x93a96b],
+      folGreens: [0x557d3d, 0x628a42, 0x4b7239, 0x6f9448, 0x5c8340],
+    },
+    treeWeights: [2, 1, 2, 3],
+    meadowDeco: 'dunegrass',
+    scatterDeco: ['dunegrass', 'bush'],
+    critters: ['gull', 'duck', 'heron', 'rabbit', 'fox'],
+    // salt wind strips the vines
+    disabledBuildings: ['vineyard', 'winery'],
+    oreWeights: ['stone', 'stone', 'iron', 'coal', 'gold'],
+    gen: { mountainsAdd: 0, treeMult: 0.7, denseThickets: 0, snowline: false, coast: 'sea', riverDelta: true },
+    ambiance: { windmill: true, village: true, forestRing: false, peakRing: false, hillBumps: false, sea: 'coast', dunes: true },
+  },
+
+  island: {
+    key: 'island', name: 'Texel', desc: 'Dunes, sheep and a striped lighthouse — the sea on every side',
+    palette: {
+      grassA: 0x84b063, grassB: 0x9cc172, water: 0x41708f, scree: 0xd3c193,
+      plain: 0x4a7898, fog: 0xe2ebee,
+      sky: ['#4293c9', '#7cbcdd', '#c0dcea', '#f2eddb'],
+      hillTones: [0xdccf9e, 0xd0c28f, 0xc2b482, 0xb0a97e],
+      fieldTones: [0x96b168, 0xafb06e, 0x84a660, 0xc9b57c, 0x8fac6a],
+      folGreens: [0x527a3c, 0x5f8841, 0x497038, 0x6b9147, 0x58803f],
+    },
+    treeWeights: [1, 1, 2, 4],
+    meadowDeco: 'dunegrass',
+    scatterDeco: ['dunegrass', 'flowers'],
+    critters: ['sheep', 'gull', 'rabbit', 'seal', 'duck'],
+    // nothing tall survives the North Sea wind
+    disabledBuildings: ['vineyard', 'winery'],
+    oreWeights: ['stone', 'stone', 'gold', 'iron', 'coal'],
+    gen: { mountainsAdd: 0, treeMult: 0.5, denseThickets: 0, snowline: false, coast: 'island' },
+    // no horizon village: past the beach there is only the sea
+    ambiance: { windmill: false, village: false, forestRing: false, peakRing: false, hillBumps: false, sea: 'all', lighthouse: true, dunes: true },
+  },
+
+  hell: {
+    key: 'hell', name: 'Hell', desc: 'Ash plains, rivers of fire and smouldering peaks — nothing kind grows here',
+    palette: {
+      grassA: 0x4a3a38, grassB: 0x5c4640, water: 0xd8551e, scree: 0x3f3236,
+      plain: 0x453538, fog: 0x5a3c34,
+      sky: ['#2b1518', '#4a1f1a', '#7a3520', '#c26a2e'],
+      hillTones: [0x4d3336, 0x422b2f, 0x372428, 0x2e1e22],
+      fieldTones: [0x54403a, 0x61443a, 0x48362f, 0x6b4a35, 0x503b31],
+      folGreens: [0x4a2f22, 0x5c3826, 0x3f2a1e, 0x6b3d24, 0x55321f],
+    },
+    treeWeights: [3, 4, 0, 1],
+    meadowDeco: 'embers',
+    scatterDeco: ['bones', 'embers'],
+    critters: [], // nothing lives here that you'd want to pet
+    // nothing grows and nothing swims: pigs (of a sort) and your stores
+    disabledBuildings: ['farm', 'mill', 'bakery', 'vineyard', 'winery', 'fishery'],
+    // brimstone country
+    oreWeights: ['coal', 'coal', 'iron', 'gold', 'stone'],
+    gen: { mountainsAdd: 6, treeMult: 0.4, denseThickets: 0, snowline: false, scorched: true },
     ambiance: { windmill: false, village: false, forestRing: false, peakRing: true, hillBumps: false },
   },
 };

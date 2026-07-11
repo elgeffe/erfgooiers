@@ -218,6 +218,18 @@ export function makeTree(kind = 0): THREE.Group {
       break;
     }
   }
+  // in the Winter biome every crown carries a load of snow
+  if (activeBiome.gen.treeSnow) {
+    const snowM = mat(0xf2f4f1);
+    const isConifer = kind % 4 === 0 || kind % 4 === 1;
+    if (isConifer) {
+      const cap = new THREE.Mesh(cone(0.22, 0.3, 7), snowM);
+      cap.position.y = kind % 4 === 1 ? 2.12 : 1.52; g.add(cap);
+    } else {
+      const drift = new THREE.Mesh(sphere(0.26, 7, 5), snowM);
+      drift.scale.y = 0.4; drift.position.y = kind % 4 === 2 ? 1.32 : 1.42; g.add(drift);
+    }
+  }
   g.rotation.y = rnd() * Math.PI;
   return g;
 }
@@ -235,8 +247,123 @@ export function makeDeco(kind: DecoKind): THREE.Group {
     case 'fern': return fern();
     case 'mushroom': return mushrooms();
     case 'edelweiss': return edelweiss();
+    case 'tulip': return tulips();
+    case 'dunegrass': return dunegrass();
+    case 'winterberry': return winterberry();
+    case 'snowdrift': return snowdrift();
+    case 'bones': return bones();
+    case 'embers': return embers();
     default: return lily();
   }
+}
+
+/** Hell's meadow flowers: rocks that never stopped burning. */
+function embers(): THREE.Group {
+  const g = new THREE.Group();
+  const charM = mat(0x2e2226);
+  const glowCols = [0xe8622a, 0xd8451e, 0xf0913a];
+  const n = 3 + Math.floor(rnd() * 3);
+  for (let i = 0; i < n; i++) {
+    const px = (rnd() - 0.5) * 0.7, pz = (rnd() - 0.5) * 0.7;
+    const s = 0.6 + rnd() * 0.6;
+    const rock = new THREE.Mesh(dodeca(0.09 * s), charM);
+    rock.position.set(px, 0.05 * s, pz); rock.rotation.y = rnd() * 3; g.add(rock);
+    const glow = new THREE.Mesh(sphere(0.035 * s, 5, 4), mat(glowCols[Math.floor(rnd() * glowCols.length)]));
+    glow.position.set(px + (rnd() - 0.5) * 0.06, 0.09 * s, pz + (rnd() - 0.5) * 0.06); g.add(glow);
+  }
+  return g;
+}
+
+/** Bleached remains half-sunk in the ash: ribs, a long bone, sometimes a skull. */
+function bones(): THREE.Group {
+  const g = new THREE.Group();
+  const boneM = mat(0xdcd4c0);
+  const a = rnd() * Math.PI * 2;
+  for (let i = 0; i < 3; i++) { // a rib cage arching out of the ground
+    const rib = new THREE.Mesh(torus(0.09 + i * 0.012, 0.012, 5, 8, Math.PI), boneM);
+    rib.position.set(Math.cos(a) * (i - 1) * 0.12, 0.02, Math.sin(a) * (i - 1) * 0.12);
+    rib.rotation.y = a + Math.PI / 2; g.add(rib);
+  }
+  const shaft = new THREE.Mesh(cyl(0.014, 0.014, 0.3, 5), boneM);
+  shaft.rotation.z = Math.PI / 2 - 0.25; shaft.rotation.y = rnd() * Math.PI;
+  shaft.position.set((rnd() - 0.5) * 0.4, 0.03, (rnd() - 0.5) * 0.4); g.add(shaft);
+  if (rnd() < 0.4) {
+    const skull = new THREE.Mesh(sphere(0.055, 7, 6), boneM);
+    skull.scale.set(1.25, 0.9, 0.9);
+    skull.position.set((rnd() - 0.5) * 0.5, 0.045, (rnd() - 0.5) * 0.5); g.add(skull);
+  }
+  return g;
+}
+
+/** Polder tulips: stiff bright cups in rows of red, yellow and pink. */
+function tulips(): THREE.Group {
+  const g = new THREE.Group();
+  const stemM = mat(0x4f8a3e);
+  const cups = [0xd0342c, 0xe8b52e, 0xe07a9e, 0xf3f0e2];
+  // one field grows one colour — that's what makes the strips read from above
+  const cupM = mat(cups[Math.floor(rnd() * cups.length)]);
+  const n = 5 + Math.floor(rnd() * 4);
+  for (let i = 0; i < n; i++) {
+    const px = (rnd() - 0.5) * 0.75, pz = (rnd() - 0.5) * 0.75;
+    const stem = new THREE.Mesh(box(0.02, 0.2, 0.02), stemM); stem.position.set(px, 0.1, pz); g.add(stem);
+    const cup = new THREE.Mesh(cyl(0.045, 0.025, 0.08, 6), cupM); cup.position.set(px, 0.23, pz); g.add(cup);
+  }
+  return g;
+}
+
+/** Coastal marram grass: pale wind-bent blades in a sandy tussock. */
+function dunegrass(): THREE.Group {
+  const g = new THREE.Group();
+  const bladeM = mat(rnd() < 0.5 ? 0xb8bd7e : 0xa3b070);
+  const lean = rnd() * Math.PI * 2; // the whole tussock leans off the sea wind
+  const n = 6 + Math.floor(rnd() * 5);
+  for (let i = 0; i < n; i++) {
+    const px = (rnd() - 0.5) * 0.55, pz = (rnd() - 0.5) * 0.55;
+    const h = 0.28 + rnd() * 0.22;
+    const blade = new THREE.Mesh(cone(0.018, h, 4), bladeM);
+    blade.position.set(px, h / 2, pz);
+    blade.rotation.z = Math.cos(lean) * (0.35 + rnd() * 0.25);
+    blade.rotation.x = -Math.sin(lean) * (0.35 + rnd() * 0.25);
+    g.add(blade);
+  }
+  if (rnd() < 0.4) { // a hump of bare sand at the roots
+    const sandM = mat(0xd8c894);
+    const hump = new THREE.Mesh(sphere(0.16, 7, 5), sandM); hump.scale.y = 0.3; hump.position.y = 0.02; g.add(hump);
+  }
+  return g;
+}
+
+/** Winter brambles: bare dark twigs hung with bright red berries. */
+function winterberry(): THREE.Group {
+  const g = new THREE.Group();
+  const twigM = mat(0x4a3a2c), berryM = mat(0xc22b30);
+  const n = 4 + Math.floor(rnd() * 3);
+  for (let i = 0; i < n; i++) {
+    const px = (rnd() - 0.5) * 0.6, pz = (rnd() - 0.5) * 0.6;
+    const h = 0.2 + rnd() * 0.15;
+    const twig = new THREE.Mesh(cyl(0.008, 0.014, h, 4), twigM);
+    twig.position.set(px, h / 2, pz); twig.rotation.z = (rnd() - 0.5) * 0.6; g.add(twig);
+    for (let b = 0; b < 2 + Math.floor(rnd() * 3); b++) {
+      const berry = new THREE.Mesh(sphere(0.016, 5, 4), berryM);
+      berry.position.set(px + (rnd() - 0.5) * 0.09, h * 0.5 + rnd() * h * 0.55, pz + (rnd() - 0.5) * 0.09);
+      g.add(berry);
+    }
+  }
+  return g;
+}
+
+/** A wind-piled drift: low white humps that break up the snowfield. */
+function snowdrift(): THREE.Group {
+  const g = new THREE.Group();
+  const snowM = mat(0xf4f6f3);
+  const n = 2 + Math.floor(rnd() * 2);
+  for (let i = 0; i < n; i++) {
+    const hump = new THREE.Mesh(sphere(0.2 + rnd() * 0.14, 8, 6), snowM);
+    hump.scale.y = 0.28 + rnd() * 0.14;
+    hump.position.set((rnd() - 0.5) * 0.5, 0.03, (rnd() - 0.5) * 0.5);
+    g.add(hump);
+  }
+  return g;
 }
 
 // ---------- biome flora ----------
@@ -430,8 +557,12 @@ export function makeMountain(): THREE.Group {
   peak.scale.set(0.58 + rnd() * 0.12, h, 0.58 + rnd() * 0.12);
   peak.position.set((rnd() - 0.5) * 0.2, h / 2, (rnd() - 0.5) * 0.2);
   peak.rotation.y = rnd() * Math.PI; peak.castShadow = true; g.add(peak);
-  // a snowy cap crowns the tallest peaks (in the Alps, every peak)
-  if (h > 1.6 || activeBiome.gen.snowline) {
+  // a snowy cap crowns the tallest peaks (in the Alps, every peak);
+  // in Hell the tips smoulder instead
+  if (activeBiome.gen.scorched) {
+    const glow = new THREE.Mesh(cone(0.16, 0.28, 6), mat(0xe8622a));
+    glow.position.set(peak.position.x, h - 0.13, peak.position.z); glow.rotation.y = peak.rotation.y; g.add(glow);
+  } else if (h > 1.6 || activeBiome.gen.snowline) {
     const snow = new THREE.Mesh(cone(0.2, 0.34, 6), mat(0xf2f3f0));
     snow.position.set(peak.position.x, h - 0.16, peak.position.z); snow.rotation.y = peak.rotation.y; g.add(snow);
   }
@@ -1938,7 +2069,8 @@ export function makePig(big = false): THREE.Group {
 
 // ---------- ambient critters — sparse wildlife that makes the meadow breathe ----------
 export type CritterKind = 'rabbit' | 'fox' | 'hedgehog' | 'mouse' | 'duck' | 'cat' | 'frog'
-  | 'deer' | 'squirrel' | 'marmot' | 'ibex';
+  | 'deer' | 'squirrel' | 'marmot' | 'ibex'
+  | 'sheep' | 'gull' | 'heron' | 'seal';
 export const CRITTER_KINDS: CritterKind[] = ['rabbit', 'fox', 'hedgehog', 'mouse', 'duck'];
 
 /** A tiny cosmetic animal. All face +x (like the pig) so movers can share the
@@ -2084,6 +2216,52 @@ export function makeCritter(kind: CritterKind): { group: THREE.Group; hops: bool
         hx -= 0.055; hy += 0.035 - seg * 0.02; ang -= 0.55;
       }
     }
+  } else if (kind === 'sheep') { // island pastures — a woolly Texel grazer
+    const wool = mat(0xeae4d4), skin = mat(0x3a332c);
+    const body = new THREE.Mesh(sphere(0.1, 8, 7), wool); body.scale.set(1.5, 1.05, 1.05); body.position.y = 0.16; body.castShadow = true; g.add(body);
+    for (let i = 0; i < 3; i++) { // extra puffs make the fleece lumpy
+      const puff = new THREE.Mesh(sphere(0.055, 6, 5), wool);
+      puff.position.set(-0.08 + rnd() * 0.16, 0.24 + rnd() * 0.03, (rnd() - 0.5) * 0.12); g.add(puff);
+    }
+    const head = new THREE.Mesh(sphere(0.05, 7, 6), skin); head.scale.set(1.3, 1, 0.85); head.position.set(0.17, 0.19, 0); g.add(head);
+    for (const ez of [0.035, -0.035]) {
+      const ear = new THREE.Mesh(sphere(0.02, 5, 4), skin); ear.scale.set(1.6, 0.6, 0.8); ear.position.set(0.15, 0.22, ez); g.add(ear);
+    }
+    for (const [lx, lz] of [[0.09, 0.05], [0.09, -0.05], [-0.09, 0.05], [-0.09, -0.05]]) {
+      const leg = new THREE.Mesh(cyl(0.015, 0.017, 0.12, 5), skin); leg.position.set(lx, 0.06, lz); g.add(leg);
+    }
+  } else if (kind === 'gull') { // the coast — white, loud and eyeing your bread
+    const white = mat(0xf0eee4), grey = mat(0xb9c0c4);
+    const body = new THREE.Mesh(sphere(0.07, 8, 7), white); body.scale.set(1.6, 0.9, 0.9); body.position.y = 0.1; body.castShadow = true; g.add(body);
+    const wing = new THREE.Mesh(sphere(0.055, 7, 6), grey); wing.scale.set(1.7, 0.55, 1.2); wing.position.set(-0.02, 0.135, 0); g.add(wing);
+    const head = new THREE.Mesh(sphere(0.04, 7, 6), white); head.position.set(0.1, 0.19, 0); g.add(head);
+    const beak = new THREE.Mesh(cone(0.014, 0.055, 5), mat(0xe0a33c)); beak.rotation.z = -Math.PI / 2; beak.position.set(0.15, 0.185, 0); g.add(beak);
+    const eye = new THREE.Mesh(sphere(0.008, 5, 4), ink); eye.position.set(0.115, 0.205, 0.022); g.add(eye);
+    const tail = new THREE.Mesh(cone(0.024, 0.07, 4), grey); tail.rotation.z = Math.PI / 2 + 0.35; tail.position.set(-0.12, 0.11, 0); g.add(tail);
+    for (const lz of [0.025, -0.025]) {
+      const leg = new THREE.Mesh(cyl(0.006, 0.006, 0.07, 4), mat(0xd6a33c)); leg.position.set(0.01, 0.035, lz); g.add(leg);
+    }
+  } else if (kind === 'heron') { // the ditches and shallows — a patient stilt-walker
+    const slate = mat(0x8d99a0), white = mat(0xe8e6da);
+    const body = new THREE.Mesh(sphere(0.07, 8, 7), slate); body.scale.set(1.5, 0.95, 0.85); body.position.y = 0.22; body.castShadow = true; g.add(body);
+    const neck = new THREE.Mesh(cyl(0.016, 0.022, 0.18, 5), white); neck.position.set(0.09, 0.36, 0); neck.rotation.z = -0.35; g.add(neck);
+    const head = new THREE.Mesh(sphere(0.03, 7, 6), white); head.scale.set(1.3, 0.9, 0.85); head.position.set(0.13, 0.46, 0); g.add(head);
+    const beak = new THREE.Mesh(cone(0.011, 0.11, 5), mat(0xd6a33c)); beak.rotation.z = -Math.PI / 2; beak.position.set(0.21, 0.45, 0); g.add(beak);
+    const crest = new THREE.Mesh(cone(0.008, 0.05, 4), ink); crest.rotation.z = Math.PI / 2 + 0.4; crest.position.set(0.1, 0.485, 0); g.add(crest);
+    const eye = new THREE.Mesh(sphere(0.007, 5, 4), ink); eye.position.set(0.15, 0.47, 0.018); g.add(eye);
+    for (const lz of [0.025, -0.025]) {
+      const leg = new THREE.Mesh(cyl(0.007, 0.007, 0.19, 4), mat(0x8a7248)); leg.position.set(0, 0.095, lz); g.add(leg);
+    }
+  } else if (kind === 'seal') { // hauled out on the shore, doing nothing at speed
+    const coat = mat(rnd() < 0.5 ? 0x9aa0a4 : 0x8b8478);
+    const body = new THREE.Mesh(sphere(0.11, 9, 7), coat); body.scale.set(2, 0.75, 0.95); body.position.y = 0.08; body.castShadow = true; g.add(body);
+    const head = new THREE.Mesh(sphere(0.055, 8, 6), coat); head.position.set(0.21, 0.13, 0); g.add(head);
+    const nose = new THREE.Mesh(sphere(0.012, 5, 4), ink); nose.position.set(0.265, 0.125, 0); g.add(nose);
+    for (const ez of [0.022, -0.022]) { const eye = new THREE.Mesh(sphere(0.009, 5, 4), ink); eye.position.set(0.245, 0.155, ez); g.add(eye); }
+    for (const fz of [0.07, -0.07]) { // front flippers splayed on the sand
+      const fl = new THREE.Mesh(sphere(0.035, 6, 5), coat); fl.scale.set(1.6, 0.3, 0.7); fl.position.set(0.08, 0.02, fz); g.add(fl);
+    }
+    const tail = new THREE.Mesh(sphere(0.04, 6, 5), coat); tail.scale.set(1.8, 0.4, 1.3); tail.position.set(-0.23, 0.045, 0); tail.rotation.y = 0.25; g.add(tail);
   } else { // duck — waddles the shorelines
     const white = mat(0xece7d6), bill = mat(0xe0a33c);
     const body = new THREE.Mesh(sphere(0.08, 8, 7), white); body.scale.set(1.5, 0.95, 0.95); body.position.y = 0.09; body.castShadow = true; g.add(body);

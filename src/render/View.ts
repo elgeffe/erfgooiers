@@ -59,8 +59,9 @@ export class View {
   private readonly roadGeo = new THREE.PlaneGeometry(1.0, 1.0);
   private readonly roadMats: THREE.Material[] = [];
 
-  // ambient scenery that turns in real time (distant windmill sails)
+  // ambient scenery that turns in real time (distant windmill sails, lighthouse beams)
   private readonly millSails: THREE.Object3D[] = [];
+  private readonly beacons: THREE.Object3D[] = [];
   private cloudBound = 40;
 
   // the sun follows the camera so its shadow map only covers what's visible
@@ -231,6 +232,7 @@ this.skyBirds.length = 0;
     this.orderPings.length = 0;
     this.lakeTiles = [];
     this.millSails.length = 0;
+    this.beacons.length = 0;
     this.ghostKey = null;
     this.clearGore();
   }
@@ -875,12 +877,49 @@ this.skyBirds.length = 0;
     const boardR = Math.hypot(W / 2, H / 2);
     const GAP = 12;
 
+    // The open sea on the horizon. On single-coast maps the sea half of the
+    // horizon follows the in-map coastline's direction; island maps are ringed
+    // by it (their palette already paints the whole plain as water).
+    const seaAmb = biome.ambiance.sea;
+    const coastAng = this.world.coastDir
+      ? Math.atan2(this.world.coastDir.y, this.world.coastDir.x)
+      : rnd() * Math.PI * 2;
+    // is a horizon angle on the open-sea side (skip land scenery there)?
+    const seaward = (ang: number): boolean =>
+      seaAmb === 'all' || (seaAmb === 'coast' && Math.cos(ang - coastAng) > 0.25);
+    if (seaAmb === 'coast') {
+      // CircleGeometry lives in XY; after the -90° X-rotation a vertex at angle
+      // θ lands at world angle -θ, hence the negated start angle.
+      const half = new THREE.Mesh(
+        new THREE.CircleGeometry(240, 64, -coastAng - Math.PI / 2, Math.PI),
+        stdMat({ color: 0x4a7898 }, false));
+      half.rotation.x = -Math.PI / 2; half.position.y = -2.07;
+      this.worldGroup.add(half); this.freeze(half);
+    }
+    if (seaAmb) {
+      // a few sailboats out on the water
+      const hullM = stdMat({ color: 0x6b4a33 }), sailM = stdMat({ color: 0xf0ead8 });
+      for (let i = 0, n = 3 + Math.floor(rnd() * 2); i < n; i++) {
+        const ang = seaAmb === 'all' ? rnd() * Math.PI * 2 : coastAng + (rnd() - 0.5) * 1.4;
+        const rad = boardR + GAP + 14 + rnd() * 30;
+        const boat = new THREE.Group();
+        const hull = new THREE.Mesh(box(1.5, 0.3, 0.55), hullM); hull.position.y = 0.15; boat.add(hull);
+        const mast = new THREE.Mesh(cyl(0.03, 0.03, 1.6, 4), hullM); mast.position.y = 1.0; boat.add(mast);
+        const sail = new THREE.Mesh(cone(0.55, 1.3, 3), sailM); sail.scale.z = 0.12; sail.position.set(0.12, 1.05, 0); boat.add(sail);
+        boat.position.set(Math.cos(ang) * rad, -2.06, Math.sin(ang) * rad);
+        boat.rotation.y = rnd() * Math.PI * 2;
+        this.worldGroup.add(boat); this.freeze(boat);
+      }
+    }
+
     // Patchwork countryside beyond the playable board: irregular field strips,
     // dark hedges and glints of distant water break up the old flat green disc.
+    // (The open-sea side of the horizon stays clear of them.)
     const fieldMats = pal.fieldTones.map(c => stdMat({ color: c }, false));
     const hedgeMat = stdMat({ color: 0x456842 }, false);
     for (let i = 0; i < 26; i++) {
       const ang = rnd() * Math.PI * 2, rad = boardR + GAP + 7 + rnd() * 34;
+      if (seaward(ang)) continue;
       const w = 4 + rnd() * 8, d = 2.5 + rnd() * 5;
       const field = new THREE.Mesh(box(w, 0.035, d), fieldMats[i % fieldMats.length]);
       field.position.set(Math.cos(ang) * rad, -2.055, Math.sin(ang) * rad); field.rotation.y = ang + (rnd() - 0.5) * 1.2;
@@ -890,12 +929,30 @@ this.skyBirds.length = 0;
         hedge.position.set(field.position.x, -1.98, field.position.z); hedge.rotation.y = field.rotation.y; this.worldGroup.add(hedge); this.freeze(hedge);
       }
     }
-    const waterMat = stdMat({ color: 0x72a9bd, transparent: true, opacity: 0.75 }, false);
-    for (let i = 0; i < 3; i++) {
-      const ang = rnd() * Math.PI * 2, rad = boardR + GAP + 15 + rnd() * 25;
-      const water = new THREE.Mesh(circle(1, 24), waterMat); water.rotation.x = -Math.PI / 2;
-      water.scale.set(3 + rnd() * 4, 1.2 + rnd() * 2.2, 1); water.position.set(Math.cos(ang) * rad, -2.01, Math.sin(ang) * rad);
-      this.worldGroup.add(water); this.freeze(water);
+    if (!seaAmb) {
+      const waterMat = stdMat({ color: 0x72a9bd, transparent: true, opacity: 0.75 }, false);
+      for (let i = 0; i < 3; i++) {
+        const ang = rnd() * Math.PI * 2, rad = boardR + GAP + 15 + rnd() * 25;
+        const water = new THREE.Mesh(circle(1, 24), waterMat); water.rotation.x = -Math.PI / 2;
+        water.scale.set(3 + rnd() * 4, 1.2 + rnd() * 2.2, 1); water.position.set(Math.cos(ang) * rad, -2.01, Math.sin(ang) * rad);
+        this.worldGroup.add(water); this.freeze(water);
+      }
+    }
+
+    // A belt of sandy marram dunes between the land and the open sea.
+    if (biome.ambiance.dunes) {
+      const sand = [0xdccf9e, 0xd0c28f, 0xc2b482].map(c => stdMat({ color: c }));
+      for (let i = 0; i < 12; i++) {
+        const ang = (i / 12) * Math.PI * 2 + rnd() * 0.5;
+        if (seaAmb === 'coast' && Math.cos(ang - coastAng) < 0.1) continue; // dunes line the shore
+        const r = 6 + rnd() * 6;
+        const rad = boardR + GAP + r + rnd() * 5;
+        const dune = new THREE.Mesh(sphere(1, 18, 10), sand[i % 3]);
+        dune.scale.set(r, 1.6 + rnd() * 1.6, r * (0.6 + rnd() * 0.4));
+        dune.rotation.y = ang + Math.PI / 2 + (rnd() - 0.5) * 0.5;
+        dune.position.set(Math.cos(ang) * rad, -2.1, Math.sin(ang) * rad);
+        this.worldGroup.add(dune); this.freeze(dune);
+      }
     }
 
     // The Ardennes rolls: an extra ring of big, close grassy domes right past
@@ -929,12 +986,15 @@ this.skyBirds.length = 0;
       }
     }
 
-    // low rolling hill domes in three hazier and hazier rings
+    // low rolling hill domes in three hazier and hazier rings. On an island
+    // they stay: sandy-toned and out in the water, they read as neighbouring
+    // isles. A single coast keeps its open-sea half properly empty.
     const hillTones = pal.hillTones.map(c => stdMat({ color: c }));
     for (let ring = 0; ring < 3; ring++) {
       const count = 12 + ring * 5;
       for (let i = 0; i < count; i++) {
         const ang = (i / count) * Math.PI * 2 + rnd() * 0.5;
+        if (seaAmb === 'coast' && seaward(ang)) continue;
         const r = 9 + ring * 7 + rnd() * 7;
         const rad = boardR + GAP + r + ring * 22 + rnd() * 10; // inner edge = rad - r ≥ boardR + GAP
         const h = (2.5 + rnd() * 2.5) * (1 + ring * 0.5);
@@ -950,9 +1010,11 @@ this.skyBirds.length = 0;
     const foliage = [0x4a7350, 0x3f6a5e, 0x577d48, 0x426b43].map(c => stdMat({ color: c }));
     const trunkM = stdMat({ color: 0x5b4433 });
     // the Black Forest closes in: a far denser, near-solid ring of dark pines
-    const ringCount = biome.ambiance.forestRing ? 260 : 90;
+    // (island boards rise straight from the beach: barely any treeline at all)
+    const ringCount = biome.ambiance.forestRing ? 260 : seaAmb === 'all' ? 24 : 90;
     for (let i = 0; i < ringCount; i++) {
       const ang = rnd() * Math.PI * 2;
+      if (seaAmb === 'coast' && seaward(ang)) continue;
       const s = (0.9 + rnd() * 1.4) * (biome.ambiance.forestRing ? 1.25 : 1);
       const rad = boardR + 5 + rnd() * (biome.ambiance.forestRing ? GAP + 16 : GAP - 4);
       const deciduous = !biome.ambiance.forestRing && rnd() < 0.42;
@@ -973,7 +1035,9 @@ this.skyBirds.length = 0;
     // A tiny horizon village adds human scale: warm roofs, a church spire and
     // a pale lane, all well outside the playable edge. Wilder biomes skip it.
     if (biome.ambiance.village) {
-    const villageAng = rnd() * Math.PI * 2, villageRad = boardR + 31;
+    // coastal villages keep to the landward side of the horizon
+    const villageAng = seaAmb ? coastAng + Math.PI + (rnd() - 0.5) * 1.6 : rnd() * Math.PI * 2;
+    const villageRad = boardR + 31;
     const village = new THREE.Group();
     const lane = new THREE.Mesh(box(8.5, 0.025, 0.7), stdMat({ color: 0xc9b58c }, false)); lane.position.y = 0.02; village.add(lane);
     const villageRoofs = [0x9c4b36, 0x7e4935, 0xb0603f];
@@ -992,7 +1056,8 @@ this.skyBirds.length = 0;
     // Gooi. Pinned to the map's north (up-screen from the iso camera, world
     // (-1,-1)) so it's actually in view instead of hiding behind the camera.
     if (biome.ambiance.windmill) {
-    const millAng = -Math.PI * 3 / 4 + (rnd() - 0.5) * 0.5;
+    const millAng = seaAmb ? coastAng + Math.PI + (rnd() - 0.5) * 0.9
+      : -Math.PI * 3 / 4 + (rnd() - 0.5) * 0.5;
     const millRad = boardR + 38;
     const mill = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.7, 5.2, 8), stdMat({ color: 0x6b5540 }));
@@ -1015,6 +1080,37 @@ this.skyBirds.length = 0;
     this.worldGroup.add(mill);
     this.freeze(mill);
     this.millSails.push(sails);
+    }
+
+    // A red-banded lighthouse (Texel's Eierland, more or less) stands among
+    // the dunes, its twin beam sweeping the horizon in real time.
+    if (biome.ambiance.lighthouse) {
+      const lhAng = seaAmb === 'coast' ? coastAng + (rnd() - 0.5) * 0.6
+        : -Math.PI * 3 / 4 + (rnd() - 0.5) * 0.8; // island: pinned up-screen like the mill
+      const lh = new THREE.Group();
+      const bands = [0xc23a2e, 0xf0ece0, 0xc23a2e, 0xf0ece0, 0xc23a2e];
+      for (let i = 0; i < 5; i++) {
+        const seg = new THREE.Mesh(cyl(0.62 - i * 0.06, 0.68 - i * 0.06, 1.05, 10), stdMat({ color: bands[i] }));
+        seg.position.y = 0.55 + i * 1.02; lh.add(seg);
+      }
+      const gallery = new THREE.Mesh(cyl(0.55, 0.55, 0.12, 10), stdMat({ color: 0x3a3a3a })); gallery.position.y = 5.62; lh.add(gallery);
+      const lampRoom = new THREE.Mesh(cyl(0.34, 0.38, 0.55, 8), stdMat({ color: 0x2e2e2e })); lampRoom.position.y = 5.95; lh.add(lampRoom);
+      const lamp = new THREE.Mesh(sphere(0.2, 8, 6), stdMat({ color: 0xffe9a3 })); lamp.position.y = 5.95; lh.add(lamp);
+      const cap = new THREE.Mesh(cone(0.45, 0.5, 8), stdMat({ color: 0xc23a2e })); cap.position.y = 6.42; lh.add(cap);
+      const beam = new THREE.Group();
+      beam.userData.dynamic = true; // sweeps every frame
+      beam.position.y = 5.95;
+      const rayM = stdMat({ color: 0xfff3c0, transparent: true, opacity: 0.3 }, false);
+      for (const s of [1, -1]) {
+        const ray = new THREE.Mesh(cone(0.5, 7, 6), rayM);
+        ray.rotation.z = s * Math.PI / 2; // apex at the lamp, base flaring outward
+        ray.position.x = s * 3.5;
+        beam.add(ray);
+      }
+      lh.add(beam);
+      lh.position.set(Math.cos(lhAng) * (boardR + 18), -2.1, Math.sin(lhAng) * (boardR + 18));
+      this.worldGroup.add(lh); this.freeze(lh);
+      this.beacons.push(beam);
     }
 
     // Two or three detailed cloud banks drift high above the board. Layered
@@ -1086,6 +1182,7 @@ this.skyBirds.length = 0;
       if (c.position.x > this.cloudBound) c.position.x = -this.cloudBound;
     }
     for (const s of this.millSails) s.rotation.z += dt * 0.45;
+    for (const b of this.beacons) b.rotation.y += dt * 0.7;
     this.updatePigs(dt, buildings);
     this.updateFish(dt);
     this.updateCritters(dt);
@@ -1096,6 +1193,7 @@ this.updateSkyBirds(dt);
 
   /** Scatter cute fish across the lake's water tiles (not the small ponds). */
   private spawnFish(): void {
+    if (this.world.biome.gen.scorched) return; // nothing swims in lava
     const lake: { x: number; y: number }[] = [];
     for (let y = 0; y < this.world.H; y++) for (let x = 0; x < this.world.W; x++) {
       const t = this.world.tiles[y][x];
@@ -1146,8 +1244,11 @@ this.updateSkyBirds(dt);
       this.critters.push({
         mesh: group, x, z, tx: x, tz: z, wait: rnd() * 4,
         speed: kind === 'fox' ? 0.9 : kind === 'mouse' ? 0.75 : kind === 'hedgehog' ? 0.22 : kind === 'frog' ? 0.35
-          : kind === 'deer' ? 0.85 : kind === 'squirrel' ? 0.8 : kind === 'marmot' ? 0.3 : kind === 'ibex' ? 0.6 : 0.5,
-        hops, hop: 0, shore: kind === 'duck' || kind === 'frog', pond: kind === 'frog',
+          : kind === 'deer' ? 0.85 : kind === 'squirrel' ? 0.8 : kind === 'marmot' ? 0.3 : kind === 'ibex' ? 0.6
+          : kind === 'sheep' ? 0.25 : kind === 'gull' ? 0.5 : kind === 'heron' ? 0.35 : kind === 'seal' ? 0.12 : 0.5,
+        hops, hop: 0,
+        shore: kind === 'duck' || kind === 'frog' || kind === 'gull' || kind === 'heron' || kind === 'seal',
+        pond: kind === 'frog',
       });
     };
 
@@ -1161,9 +1262,13 @@ this.updateSkyBirds(dt);
     for (let i = 0; i < extra && pool.length; i++) {
       const kind = pool.splice(Math.floor(rnd() * pool.length), 1)[0];
       if (kind === 'cat' || kind === 'frog') continue; // handled above/below
-      spawn(kind, kind === 'duck' ? this.critterShoreSpot() : this.critterGrassSpot());
+      const coastal = kind === 'duck' || kind === 'gull' || kind === 'heron' || kind === 'seal';
+      spawn(kind, coastal ? this.critterShoreSpot() : this.critterGrassSpot());
       // herd animals show up in pairs
       if ((kind === 'deer' || kind === 'ibex' || kind === 'rabbit') && rnd() < 0.6) spawn(kind, this.critterGrassSpot());
+      // sheep graze in small flocks, gulls squabble in pairs
+      if (kind === 'sheep') for (let s = 0; s < 2 + (rnd() < 0.5 ? 1 : 0); s++) spawn('sheep', this.critterGrassSpot());
+      if (kind === 'gull' && rnd() < 0.7) spawn('gull', this.critterShoreSpot());
     }
     if (this.world.biome.critters.includes('frog')) spawn('frog', this.critterPondSpot());
   }
@@ -1388,14 +1493,18 @@ this.updateSkyBirds(dt);
     if (!this.world) return;
     const W = this.world.W, H = this.world.H;
     const mmx = this.mmx, MMS = this.mm.width / W;
+    // ground, water and woodland take the biome's own colours (snow, lava, ash)
+    const pal = this.world.biome.palette;
+    const hex = (n: number): string => '#' + n.toString(16).padStart(6, '0');
+    const cGrass = hex(pal.grassA), cWater = hex(pal.water), cTree = hex(pal.folGreens[0]);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const t = this.world.tiles[y][x];
-      let c = '#6fae52';
-      if (t.type === 'water') c = '#5b93b0';
+      let c = cGrass;
+      if (t.type === 'water') c = cWater;
       else if (t.type === 'rock') c = t.rock === 'wall' ? '#8f8168' : '#757570';
       else if (t.road) c = '#cbb389';
       else if (t.field) c = '#d3bd56';
-      else if (t.tree) c = '#3d5c2e';
+      else if (t.tree) c = cTree;
       else if (t.dep) c = t.dep.kind === 'stone' ? '#9aa0a3' : t.dep.kind === 'gold' ? '#c9a94e' : t.dep.kind === 'iron' ? '#a86a4a' : '#3d3d44';
       if (t.pickup) c = '#ffd24a';
       if (t.b) c = '#7a4a2e';
