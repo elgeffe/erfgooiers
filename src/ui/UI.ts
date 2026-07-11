@@ -7,8 +7,9 @@ import { installFavicon, logoSVG } from './logo';
 import { audio } from '../audio/Audio';
 import { unitLabel } from '../game/util';
 import { buildingIconSVG, itemIconSVG } from './icons';
+import { tradeLoadTime, tradePartner, tradeShipmentActive } from '../game/trade';
 import type { Game } from '../game/Game';
-import type { BuildingDef, ItemKey, Mode } from '../types';
+import type { Building, BuildingDef, ItemKey, Mode } from '../types';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -39,6 +40,8 @@ export class UI {
   private perksOpen = false;
   private perkUpgrades: string[] = [];
   private perkUnlocks: string[] = [];
+  private tradeOpen = false;
+  private pendingRequestId: string | null = null;
 
   constructor() {
     $('logo').innerHTML = logoSVG(30);
@@ -50,6 +53,8 @@ export class UI {
     this.wireUnitPanel();
     this.wirePerkPanel();
     this.wireInspector();
+    this.wireTradePanel();
+    this.setCoOp(false);
   }
 
   /** Bind the HUD to a level's Game and reset transient UI state. */
@@ -131,6 +136,128 @@ export class UI {
     ($('objective') as HTMLElement).style.display = on ? 'none' : '';
     ($('timerChip') as HTMLElement).style.display = on ? 'none' : '';
     ($('btnDebugWin') as HTMLElement).style.display = on ? 'none' : '';
+  }
+
+  /** Toggle the co-op HUD: the Trade tab appears, the speed stays locked at 1×. */
+  setCoOp(on: boolean): void {
+    ($('btnTrade') as HTMLElement).style.display = on ? 'block' : 'none';
+    ($('sp0') as HTMLElement).style.display = on ? 'none' : '';
+    ($('sp3') as HTMLElement).style.display = on ? 'none' : '';
+    if (!on) this.setTradeOpen(false);
+  }
+
+  // ---------- co-op trade tab ----------
+  private wireTradePanel(): void {
+    $('btnTrade').onclick = () => this.setTradeOpen(!this.tradeOpen);
+    $('closeTrade').onclick = () => this.setTradeOpen(false);
+    for (const id of ['tradeSendItem', 'tradeReqItem']) {
+      ($(id) as HTMLSelectElement).innerHTML = RES_SHOWN.map(k => `<option value="${k}">${ITEMS[k].name}</option>`).join('');
+    }
+    $('btnTradeSend').onclick = () => this.submitTradeSend();
+    $('btnTradeRequest').onclick = () => this.submitTradeRequest();
+    // lists re-render each tick, so actions are delegated like the inspector's
+    for (const id of ['tradeRequests', 'tradeShipments']) {
+      $(id).addEventListener('pointerdown', e => {
+        const b = (e.target as HTMLElement).closest('button[data-act]') as HTMLElement | null;
+        if (b) this.tradeAction(b.dataset.act!, b.dataset.id!);
+      });
+    }
+  }
+
+  private setTradeOpen(open: boolean): void {
+    this.tradeOpen = open;
+    ($('tradepanel') as HTMLElement).style.display = open ? 'block' : 'none';
+    if (open) this.renderTrade();
+    else { this.pendingRequestId = null; $('tradeSendNote').textContent = ''; }
+  }
+
+  /** The ally's main storehouse (deliveries land at their castle). */
+  private allyStore(): Building | null {
+    if (!this.game) return null;
+    return this.game.stores(tradePartner(this.game.localPlayerId))[0] ?? null;
+  }
+
+  /** Your storehouse holding the most of the item — carts load there. */
+  private ownStoreFor(item: string): Building | null {
+    if (!this.game) return null;
+    const stores = this.game.stores(this.game.localPlayerId);
+    if (!stores.length) return null;
+    return stores.reduce((a, b) => ((b.stock![item] || 0) > (a.stock![item] || 0) ? b : a));
+  }
+
+  private submitTradeSend(): void {
+    if (!this.game) return;
+    const item = ($('tradeSendItem') as HTMLSelectElement).value;
+    const amount = Math.max(1, Math.min(999, parseInt(($('tradeSendAmt') as HTMLInputElement).value, 10) || 0));
+    const source = this.ownStoreFor(item);
+    const dest = this.allyStore();
+    if (!source || !dest) { this.toast('Trade needs both castles standing', 'err'); return; }
+    this.game.submitCommand({
+      type: 'sendTrade', item: item as ItemKey, amount,
+      sourceId: source.id, destinationId: dest.id,
+      requestId: this.pendingRequestId ?? undefined,
+    });
+    this.pendingRequestId = null;
+    $('tradeSendNote').textContent = '';
+    audio.play('click');
+  }
+
+  private submitTradeRequest(): void {
+    if (!this.game) return;
+    const item = ($('tradeReqItem') as HTMLSelectElement).value;
+    const amount = Math.max(1, Math.min(999, parseInt(($('tradeReqAmt') as HTMLInputElement).value, 10) || 0));
+    const dest = this.game.stores(this.game.localPlayerId)[0];
+    if (!dest) return;
+    this.game.submitCommand({ type: 'requestTrade', item: item as ItemKey, amount, destinationId: dest.id });
+    audio.play('click');
+  }
+
+  private tradeAction(act: string, id: string): void {
+    if (!this.game) return;
+    if (act === 'fulfill') {
+      const r = this.game.tradeRequests.find(req => req.id === id && req.status === 'open');
+      if (!r) return;
+      ($('tradeSendItem') as HTMLSelectElement).value = r.item;
+      ($('tradeSendAmt') as HTMLInputElement).value = String(r.amount);
+      this.pendingRequestId = r.id;
+      $('tradeSendNote').textContent = 'Fulfilling your ally’s request — adjust the amount, then press Send.';
+      audio.play('click');
+      return;
+    }
+    if (act === 'cancelReq') { this.game.submitCommand({ type: 'cancelTradeRequest', requestId: id }); return; }
+    if (act === 'cancelShip') this.game.submitCommand({ type: 'cancelTradeShipment', shipmentId: id });
+  }
+
+  private renderTrade(): void {
+    const g = this.game;
+    if (!g || !this.tradeOpen) return;
+    const local = g.localPlayerId;
+    const open = g.tradeRequests.filter(r => r.status === 'open');
+    $('tradeRequests').innerHTML = open.length ? open.map(r => {
+      const mine = r.from === local;
+      const who = mine ? 'You ask for' : 'Your ally asks for';
+      const actions = mine
+        ? `<button data-act="cancelReq" data-id="${r.id}">Cancel</button>`
+        : `<button data-act="fulfill" data-id="${r.id}">Fulfill</button><button data-act="cancelReq" data-id="${r.id}">Decline</button>`;
+      return `<div class="tr-line">${itemIconSVG(r.item, 13)}<div class="grow">${who} <b>${r.amount} ${ITEMS[r.item].name.toLowerCase()}</b></div>${actions}</div>`;
+    }).join('') : '<div class="tr-empty">No open requests.</div>';
+
+    const active = g.tradeShipments.filter(tradeShipmentActive);
+    $('tradeShipments').innerHTML = active.length ? active.map(s => {
+      const outgoing = s.from === local;
+      const dir = outgoing ? '→ to your ally' : '← from your ally';
+      const remaining = Math.max(0, Math.round(s.at + tradeLoadTime(s.amount) + s.eta - g.elapsed));
+      const status = s.phase === 'loading' ? 'loading the cart'
+        : s.phase === 'returning' ? 'recalled — heading home'
+        : `on the road · ~${fmtTime(remaining)}`;
+      const cancel = outgoing && s.phase !== 'returning'
+        ? `<button data-act="cancelShip" data-id="${s.id}">${s.phase === 'loading' ? 'Cancel' : 'Recall'}</button>` : '';
+      return `<div class="tr-line">${itemIconSVG(s.item, 13)}<div class="grow"><b>${s.amount} ${ITEMS[s.item].name.toLowerCase()}</b> ${dir}<small>${status}</small></div>${cancel}</div>`;
+    }).join('') : '<div class="tr-empty">No carts on the road.</div>';
+
+    $('tradeHistory').innerHTML = g.tradeHistory.length ? g.tradeHistory.slice(0, 8).map(h =>
+      `<div class="tr-line"><div class="grow">${h.text}<small>${fmtTime(h.at)} · ${h.kind}</small></div></div>`,
+    ).join('') : '<div class="tr-empty">Nothing traded yet.</div>';
   }
 
   // ---------- resource bar & objective ----------
@@ -495,5 +622,6 @@ export class UI {
     this.refreshResbar();
     this.renderUnits();
     if (this.game.selected) this.renderInspector();
+    if (this.tradeOpen) this.renderTrade();
   }
 }

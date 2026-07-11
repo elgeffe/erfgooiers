@@ -25,6 +25,7 @@
     <button id="btnSound" title="Toggle sound">🔊</button>
   </div>
   <div id="runctl">
+    <button id="btnTrade" title="Send and request goods with your ally — carts haul them physically">⇄ Trade</button>
     <button id="btnMultiplayer" title="Connection, invites, and players"><span id="coopStatusDot">●</span> Multiplayer</button>
     <button id="btnPerks" title="Heritage cards & active power-ups">🃏 Cards</button>
     <button id="btnDebugWin" title="Debug: instantly clear this level">✓ Win</button>
@@ -59,6 +60,31 @@
   <h3 class="serif">Heritage &amp; Power-ups</h3>
   <div id="perklist"></div>
   <div class="hnote">Cards you carry this run — permanent Heritage unlocks and power-ups bought in the shop.</div>
+</div>
+
+<div id="tradepanel" class="panel">
+  <button id="closeTrade">✕</button>
+  <h3 class="serif">Trade</h3>
+  <div class="sub">Goods move by cart between storehouses — distance, roads and raiders apply.</div>
+  <div class="sect">Send to your ally</div>
+  <div class="traderow">
+    <select id="tradeSendItem"></select>
+    <input id="tradeSendAmt" type="number" min="1" max="999" value="10">
+    <button id="btnTradeSend" class="inspbtn">Send</button>
+  </div>
+  <div id="tradeSendNote" class="hnote"></div>
+  <div class="sect">Ask your ally</div>
+  <div class="traderow">
+    <select id="tradeReqItem"></select>
+    <input id="tradeReqAmt" type="number" min="1" max="999" value="10">
+    <button id="btnTradeRequest" class="inspbtn">Request</button>
+  </div>
+  <div class="sect">Requests</div>
+  <div id="tradeRequests"></div>
+  <div class="sect">Shipments</div>
+  <div id="tradeShipments"></div>
+  <div class="sect">History</div>
+  <div id="tradeHistory"></div>
 </div>
 
 <div id="multiplayerpanel" class="panel">
