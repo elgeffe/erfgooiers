@@ -1124,7 +1124,12 @@ export class Game {
       }
       if (!u.path) {
         if (u.tx === u.order.x && u.ty === u.order.y) { u.order = null; }
-        else if (!this.sendTo(u, u.order.x, u.order.y)) { u.order = null; }
+        // pathfinding is budgeted per tick: a freshly ordered horde sets off
+        // staggered over a few ticks instead of freezing the sim on one
+        else if (this.pathBudget > 0) {
+          this.pathBudget--;
+          if (!this.sendTo(u, u.order.x, u.order.y)) u.order = null;
+        }
       }
       if (u.path) this.moveUnit(u, dt); else this.groundPose(u, flying);
     } else if (def.wander) {
@@ -1886,8 +1891,14 @@ export class Game {
   // =====================================================================
   private taxT = 0;
 
+  /** Order-following A* searches allowed this tick (see combatUpdate). At 20
+   *  ticks/s this streams ~560 fresh paths a second — a thousand-strong army
+   *  is fully under way within two seconds, with no single-tick freeze. */
+  private pathBudget = 0;
+
   update(sdt: number): void {
     this.elapsed += sdt;
+    this.pathBudget = 28;
     this.buildUnitHash(); // shared by all proximity queries this tick
     this.dispatchT += sdt;
     if (this.dispatchT > 0.45) { this.dispatchT = 0; this.dispatch(); }
