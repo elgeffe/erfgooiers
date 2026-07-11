@@ -8,7 +8,7 @@ import { Shop } from './ui/Shop';
 import { logoSVG } from './ui/logo';
 import { randomSeed, simRng, uiRng } from './engine/rng';
 import { Modifiers } from './game/Modifiers';
-import { Objective } from './game/Objectives';
+import { Objective, ascendObjective } from './game/Objectives';
 import { UPGRADES, cardUnlocked, specsFor } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
@@ -101,7 +101,8 @@ function startLevel(): void {
     game.objective = null;
   } else {
     const idx = run.objectiveIdx ?? baseObjectiveIdx(run.runSeed, run.levelIndex, level.objectives.length);
-    game.objective = new Objective(level.objectives[idx % level.objectives.length]);
+    // higher ascensions reshape the goal itself (harder openings, swollen asks)
+    game.objective = new Objective(ascendObjective(level.objectives[idx % level.objectives.length], run.ascension, run.levelIndex));
   }
   game.init(level.kit);
   ui.setGame(game);

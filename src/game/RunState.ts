@@ -28,9 +28,9 @@ export const ASCENSION_NAMES = [
 export const ASCENSION_DESCS = [
   'The base game, at home in Het Gooi',
   'Hard · One fewer shop ware — and the march leaves home: the Polder at level 5, the Ardennes beyond',
-  'Very Hard · Timers 15% shorter — level 7 follows the Delta coast (clams!), and the Black Forest swallows 8+ (no farmland under the canopy)',
-  'Absurd · Every level cursed — the hunt crosses to Texel, and the run ends among the peaks of the Alps',
-  'Grim · Armies thinner still — and winter freezes level 9 (no farmland under the snow)',
+  'Very Hard · Timers 15% shorter, and the opening level demands a whole economy (timber + bread) — level 7 follows the Delta coast (clams!), and the Black Forest swallows 8+ (no farmland under the canopy)',
+  'Absurd · Every level cursed and every economy goal swells by half — the hunt crosses to Texel, and the run ends among the peaks of the Alps',
+  'Grim · Armies thinner still, and the opening level adds coin to its ledger — winter freezes level 9 (no farmland under the snow)',
   'Infernal · The thinnest muster of all — and the dragon waits at the gates of Hell (nothing grows, nothing swims)',
 ];
 

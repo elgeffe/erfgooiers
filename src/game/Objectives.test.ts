@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Objective } from './Objectives';
+import { Objective, ascendObjective } from './Objectives';
 import type { Game } from './Game';
 
 /** Objectives only touch the Game for `stock` counting. */
@@ -72,5 +72,27 @@ describe('Objective', () => {
     const o = new Objective({ kind: 'produce', item: 'bread', n: 2 });
     for (let i = 0; i < 5; i++) o.onProduce('bread');
     expect(o.evaluate(gameWith({})).ratio).toBe(1);
+  });
+});
+
+describe('ascendObjective', () => {
+  const timber8 = { kind: 'produce', item: 'timber', n: 8 } as const;
+
+  it('leaves the base game untouched', () => {
+    expect(ascendObjective(timber8, 0, 1)).toEqual(timber8);
+    expect(ascendObjective(timber8, 1, 1)).toEqual(timber8);
+  });
+
+  it('turns the opening level into a whole-economy goal from Very Hard', () => {
+    const d = ascendObjective(timber8, 2, 1);
+    expect(d.kind).toBe('produceMulti');
+    const grim = ascendObjective(timber8, 4, 1);
+    expect(grim.kind === 'produceMulti' && grim.reqs.some(r => r.item === 'coin')).toBe(true);
+  });
+
+  it('swells economy quantities by half from Absurd, leaving combat alone', () => {
+    expect(ascendObjective(timber8, 3, 2)).toEqual({ kind: 'produce', item: 'timber', n: 12 });
+    const slay = { kind: 'slay', unit: 'dragon', n: 1 } as const;
+    expect(ascendObjective(slay, 5, 10)).toEqual(slay);
   });
 });
