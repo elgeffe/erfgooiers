@@ -15,6 +15,8 @@ import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, ownerForFaction } from './ownership';
 import { TRADE, tradeEta, tradeLoadTime, tradePartner, tradeShipmentActive, type TradeHistoryEntry, type TradeRequest, type TradeShipment } from './trade';
+import { applyGameCommand } from './commands';
+import type { GameCommand } from '../net/protocol';
 
 // Gameplay events use the sim stream (reseeded per level), never worldgen/cosmetic.
 const rnd = () => simRng.next();
@@ -99,6 +101,16 @@ export class Game {
       ?? this.units.find(entity => entity.id === id)
       ?? null;
   }
+
+  /**
+   * Input-side boundary: UI and Controls submit gameplay intents here rather
+   * than mutating the sim directly. Singleplayer applies immediately; co-op
+   * (main.ts) swaps this sink for the host-ordered relay so both peers apply
+   * the same accepted command stream.
+   */
+  submitCommand: (command: GameCommand) => void = command => {
+    applyGameCommand(this, this.localPlayerId, command);
+  };
 
   ownedByLocal(entity: { owner: OwnerId }): boolean {
     return canControl(this.localPlayerId, entity.owner);
@@ -827,6 +839,28 @@ export class Game {
     return { store: this.storeTotal(item, owner), buildings, carried };
   }
 
+  /** Read-only precheck used by Controls to batch road cells worth sending. */
+  canPaintRoadAt(tx: number, ty: number): boolean {
+    const t = this.world.T(tx, ty);
+    return !!t && t.type === 'grass' && !t.b && !t.site && !t.road && !t.field && !t.dep && !t.tree?.dense;
+  }
+
+  /** Read-only precheck used by Controls to batch plot cells worth sending. */
+  canPlotAt(tx: number, ty: number): boolean {
+    const t = this.world.T(tx, ty);
+    return !!t && t.type === 'grass' && !t.b && !t.site && !t.road && !t.field && !t.dep && !t.tree?.dense;
+  }
+
+  /** Would a demolish command at this tile do anything for this player? */
+  demolishableAt(tx: number, ty: number, dragOnly: boolean, owner: PlayerId = this.localPlayerId): boolean {
+    const t = this.world.T(tx, ty);
+    if (!t) return false;
+    if (t.road) return t.roadOwner === owner;
+    if (t.field) return t.field.farm.owner === owner;
+    if (dragOnly) return false;
+    return !!t.b || !!t.site; // clicks go through so the sim can toast the reason
+  }
+
   canPlace(key: BuildingKey, tx: number, ty: number, rot: number): boolean {
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) {
       const t = this.world.T(x, y);
@@ -983,14 +1017,14 @@ export class Game {
   /** Click-select a building/site at a tile, or collect a gold pile (used by Controls). */
   selectAt(tx: number, ty: number): void {
     const t = this.world.tiles[ty][tx];
-    if (t.pickup) { this.collectGoldAt(tx, ty); return; }
+    if (t.pickup) { this.submitCommand({ type: 'collectPickup', x: tx, y: ty }); return; }
     if (t.b) this.select(t.b);
     else if (t.site) this.select(t.site);
     else this.select(null);
   }
 
-  /** The player clicked a gold pile on the map — collect it instantly. */
-  collectGoldAt(tx: number, ty: number): void {
+  /** A player collects a gold pile; only the collector banks the gold. */
+  collectGoldAt(tx: number, ty: number, owner: PlayerId = this.localPlayerId): void {
     const t = this.world.T(tx, ty);
     if (!t || !t.pickup) return;
     const gain = Math.max(1, Math.round(t.pickup.gold * this.mods.goldMult()));
@@ -998,9 +1032,10 @@ export class Game {
     t.pickup = null;
     const i = this.pickups.findIndex(p => p.x === tx && p.y === ty);
     if (i >= 0) this.pickups.splice(i, 1);
+    this.objective?.onCollect();
+    if (owner !== this.localPlayerId) return; // gold and fanfare are personal
     this.onGold(gain);
     this.sfx('coin');
-    this.objective?.onCollect();
     this.toast('Collected a gold pile (+' + gain + ' gold)');
   }
 
@@ -1515,6 +1550,11 @@ export class Game {
   // =====================================================================
   private readonly bells = new Set<PlayerId>();
   get bell(): boolean { return this.bells.has(this.localPlayerId); }
+
+  /** Command-path bell control: apply the requested state if it differs. */
+  setBell(owner: PlayerId, active: boolean): void {
+    if (this.bells.has(owner) !== active) this.toggleBell(owner);
+  }
 
   toggleBell(owner: PlayerId = this.localPlayerId): void {
     if (this.bells.has(owner)) this.bells.delete(owner); else this.bells.add(owner);

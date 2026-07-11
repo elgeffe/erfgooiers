@@ -239,6 +239,12 @@ export class RoomStore {
   acceptCommand(roomId: string, playerId: PlayerId, commandId: string, command: GameCommand): AcceptedCommand {
     const room = this.roomById(roomId);
     if (!room.seats[playerId]) throw new RoomError('seat_missing', 'Reserved seat no longer exists', 409);
+    if (command.type === 'startExpedition') {
+      if (!room.seats[playerId].player.host) throw new RoomError('host_only', 'Only the host may start a level', 403);
+      room.state.phase = 'playing';
+      room.state.level = command.level;
+      room.updatedAt = this.now();
+    }
     return { commandId, playerId, command, sequence: ++room.sequence, applyTick: room.hostTick + 2 };
   }
 

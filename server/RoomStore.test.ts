@@ -55,7 +55,7 @@ describe('RoomStore', () => {
     const guest = store.join(host.room.inviteCode, 'Bram');
     store.updateHostTick(host.room.id, 'p1', 40);
     const a = store.acceptCommand(host.room.id, 'p2', 'g-1', { type: 'setBell', active: true });
-    const b = store.acceptCommand(host.room.id, 'p1', 'h-1', { type: 'demolish', x: 2, y: 3 });
+    const b = store.acceptCommand(host.room.id, 'p1', 'h-1', { type: 'demolish', x: 2, y: 3, drag: false });
     expect(a).toMatchObject({ playerId: 'p2', sequence: 1, applyTick: 42 });
     expect(b).toMatchObject({ playerId: 'p1', sequence: 2, applyTick: 42 });
     expect(() => store.updateHostTick(host.room.id, guest.playerId, 41)).toThrowError(RoomError);

@@ -245,22 +245,22 @@ export class UI {
         return;
       }
       if (t && t.closest('#bellBtn')) {
-        if (o && o.def && o.def.store) { this.game!.toggleBell(); this.renderInspector(); }
+        if (o && o.def && o.def.store) { this.game!.submitCommand({ type: 'setBell', active: !this.game!.bell }); this.renderInspector(); }
         return;
       }
       if (t && t.closest('#prioBtn')) {
-        if (o && o.isSite) { this.game!.togglePriority(o); this.renderInspector(); }
+        if (o && o.isSite) { this.game!.submitCommand({ type: 'setPriority', siteId: o.id, priority: !o.priority }); this.renderInspector(); }
         return;
       }
       const trainBtn = t && t.closest('[data-train]') as HTMLElement | null;
       if (trainBtn && o && o.def && (o.def.military || o.def.trainer)) {
-        this.game!.trainUnit(o, trainBtn.dataset.train!);
+        this.game!.submitCommand({ type: 'queueTraining', buildingId: o.id, unit: trainBtn.dataset.train! });
         this.renderInspector();
         return;
       }
       const cancelBtn = t && t.closest('[data-cancel]') as HTMLElement | null;
       if (cancelBtn && o && o.def && (o.def.military || o.def.trainer)) {
-        this.game!.cancelTrain(o, parseInt(cancelBtn.dataset.cancel!, 10));
+        this.game!.submitCommand({ type: 'cancelTraining', buildingId: o.id, index: parseInt(cancelBtn.dataset.cancel!, 10) });
         this.renderInspector();
       }
     });

@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { DEFS } from '../data/buildings';
+import { MAX_BATCH_CELLS } from '../net/protocol';
 import type { Game } from '../game/Game';
 import type { View } from '../render/View';
 import type { UI } from '../ui/UI';
-import type { Formation, Mode, Unit } from '../types';
+import type { Coord, Formation, Mode, Unit } from '../types';
 
 // Isometric screen-space basis vectors for panning.
 const RIGHT = new THREE.Vector3(1, 0, -1).normalize();
@@ -26,6 +27,12 @@ export class Controls {
   private roadPainting = false;
   private plotPainting = false;
   private demoDragging = false;
+
+  // drag paints are batched into bounded cell lists (one command per flush,
+  // not one per pointer move) so co-op relays don't drown in messages
+  private paintCells: Coord[] = [];
+  private paintFlushT = 0;
+  private lastDemoTile: Coord | null = null;
 
   // army selection (left-drag box; right-click orders; 1–5 recall control groups)
   private selUnits: Unit[] = [];
@@ -117,18 +124,18 @@ export class Controls {
     // right-click with an army selected = issue an order (no camera pan)
     if (e.button === 2 && this.game && this.selUnits.length) { this.orderSelection(e); return; }
     // right-click with a barracks selected = plant its rally flag
-    if (e.button === 2 && this.game && this.game.selected && this.game.selected.def?.military) {
+    if (e.button === 2 && this.game && this.game.selected && this.game.selected.def?.military && this.game.ownedByLocal(this.game.selected)) {
       const rt = this.view.tileAt(e.clientX, e.clientY);
-      if (rt) { this.game.setRally(this.game.selected, rt.x, rt.y); return; }
+      if (rt) { this.game.submitCommand({ type: 'setRally', buildingId: this.game.selected.id, x: rt.x, y: rt.y }); return; }
     }
     if (e.button === 2 || e.button === 1) { this.dragging = true; return; }
     if (e.button !== 0 || !this.game) return;
     const t = this.view.tileAt(e.clientX, e.clientY);
     const m = this.mode;
-    if (m && m.type === 'road') { this.roadPainting = true; if (t) this.game.paintRoad(t.x, t.y); return; }
-    if (m && m.type === 'plot') { this.plotPainting = true; if (t) this.game.placePlot(t.x, t.y, m.building); return; }
-    if (m && m.type === 'demolish') { this.demoDragging = true; if (t) this.game.demolishAt(t.x, t.y, false); return; }
-    if (m && m.type === 'build') { if (t) { this.game.tryPlace(m.key, t.x, t.y, this.buildRot); if (!this.keys['shift']) this.setMode(null); } return; }
+    if (m && m.type === 'road') { this.roadPainting = true; if (t) this.bufferPaint(t); return; }
+    if (m && m.type === 'plot') { this.plotPainting = true; if (t) this.bufferPaint(t); return; }
+    if (m && m.type === 'demolish') { this.demoDragging = true; this.lastDemoTile = null; if (t) this.submitDemolish(t, false); return; }
+    if (m && m.type === 'build') { if (t) { this.game.submitCommand({ type: 'placeBuilding', key: m.key, x: t.x, y: t.y, rot: this.buildRot }); if (!this.keys['shift']) this.setMode(null); } return; }
     // no mode: begin a potential selection box (resolved on pointerup)
     this.boxStart = { x: e.clientX, y: e.clientY };
     this.boxing = false;
@@ -148,21 +155,57 @@ export class Controls {
     }
     this.lastMouse = { x: e.clientX, y: e.clientY };
     const m = this.mode;
-    if (this.game && this.roadPainting) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.game.paintRoad(t.x, t.y); }
-    if (this.game && this.plotPainting && m && m.type === 'plot') { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.game.placePlot(t.x, t.y, m.building); }
-    if (this.game && this.demoDragging) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.game.demolishAt(t.x, t.y, true); }
+    if (this.game && this.roadPainting) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.bufferPaint(t); }
+    if (this.game && this.plotPainting && m && m.type === 'plot') { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.bufferPaint(t); }
+    if (this.game && this.demoDragging) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.submitDemolish(t, true); }
     if (m && (m.type === 'road' || m.type === 'demolish' || m.type === 'plot')) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.view.showRoadCursor(t.x, t.y, m.type); else this.view.hideRoadCursor(); }
     if (m && m.type === 'build') { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.refreshGhost(t.x, t.y); }
   }
 
   private onUp(e: PointerEvent): void {
     this.dragging = false; this.roadPainting = false; this.plotPainting = false; this.demoDragging = false;
+    this.lastDemoTile = null;
+    this.flushPaint();
     if (this.boxStart && this.game) {
       if (this.boxing) this.selectBox(this.boxStart.x, this.boxStart.y, e.clientX, e.clientY);
       else this.clickSelect(e);
     }
     this.boxStart = null; this.boxing = false;
     if (this.selbox) this.selbox.style.display = 'none';
+  }
+
+  /** Queue a road/plot cell for the next batched paint command. */
+  private bufferPaint(t: Coord): void {
+    if (!this.game || !this.mode) return;
+    const paintable = this.mode.type === 'road' ? this.game.canPaintRoadAt(t.x, t.y)
+      : this.mode.type === 'plot' ? this.game.canPlotAt(t.x, t.y)
+      : false;
+    if (!paintable) return;
+    if (this.paintCells.some(c => c.x === t.x && c.y === t.y)) return;
+    this.paintCells.push({ x: t.x, y: t.y });
+    if (this.paintCells.length >= MAX_BATCH_CELLS) this.flushPaint();
+  }
+
+  /** Send the buffered cells as one bounded command. */
+  private flushPaint(): void {
+    if (!this.game || !this.paintCells.length) { this.paintCells = []; return; }
+    const cells = this.paintCells;
+    this.paintCells = [];
+    this.paintFlushT = 0;
+    const m = this.mode;
+    if (m && m.type === 'road') this.game.submitCommand({ type: 'paintRoad', cells });
+    else if (m && m.type === 'plot') this.game.submitCommand({ type: 'placePlots', buildingId: m.building.id, cells });
+  }
+
+  /** Submit a demolish at a tile, deduplicated while dragging. */
+  private submitDemolish(t: Coord, drag: boolean): void {
+    if (!this.game) return;
+    if (drag) {
+      if (this.lastDemoTile && this.lastDemoTile.x === t.x && this.lastDemoTile.y === t.y) return;
+      if (!this.game.demolishableAt(t.x, t.y, true)) return;
+    }
+    this.lastDemoTile = { x: t.x, y: t.y };
+    this.game.submitCommand({ type: 'demolish', x: t.x, y: t.y, drag });
   }
 
   /** A plain left-click with no drag: pick a single unit/building or clear. */
@@ -223,11 +266,12 @@ export class Controls {
     // ground-only picking can land behind a tall unit when its torso is clicked.
     const foe = this.pickUnitAtPointer(e, true) ?? this.game.pickUnit(gp.x, gp.z);
     const t = this.view.tileAt(e.clientX, e.clientY);
+    const unitIds = this.selUnits.map(u => u.id);
     if (foe && foe.faction !== 'player') {
-      this.game.orderGroup(this.selUnits, 'attack', foe.tx, foe.ty, foe, this.formation);
+      this.game.submitCommand({ type: 'orderUnits', unitIds, order: { type: 'attack', targetId: foe.id }, formation: this.formation });
       this.view.showOrderMarker(foe.mesh.position.x, foe.mesh.position.z, true);
     } else if (t) {
-      this.game.orderGroup(this.selUnits, 'attackMove', t.x, t.y, null, this.formation);
+      this.game.submitCommand({ type: 'orderUnits', unitIds, order: { type: 'attackMove', x: t.x, y: t.y }, formation: this.formation });
       this.view.showOrderMarker(gp.x, gp.z);
     }
   }
@@ -262,7 +306,7 @@ export class Controls {
     this.keys[e.key.toLowerCase()] = true;
     if (e.key === 'Escape') { this.setMode(null); this.game?.select(null); }
     if (e.key === 'r' || e.key === 'R') this.rotateBuild();
-    if (e.key === 'b' || e.key === 'B') this.game?.toggleBell();
+    if (e.key === 'b' || e.key === 'B') this.game?.submitCommand({ type: 'setBell', active: !this.game.bell });
     if (e.key === ' ') { e.preventDefault(); this.ui.togglePause(); }
     // control groups: Shift+1..5 assigns the current selection, 1..5 recalls it
     const dg = /^Digit([1-5])$/.exec(e.code);
@@ -287,6 +331,11 @@ export class Controls {
 
   /** Per-frame keyboard camera panning (called from the game loop). */
   update(dt: number): void {
+    // flush pending paint batches a few times a second while dragging
+    if (this.paintCells.length) {
+      this.paintFlushT += dt;
+      if (this.paintFlushT >= 0.15) this.flushPaint();
+    }
     const pan = dt * 14 * (this.view.viewSize / 13);
     let v: THREE.Vector3 | null = null;
     const add = (dir: THREE.Vector3, s: number) => { v = (v || new THREE.Vector3()).add(dir.clone().multiplyScalar(s)); };

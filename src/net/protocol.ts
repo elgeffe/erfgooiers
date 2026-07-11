@@ -1,4 +1,3 @@
-import type { UnitKind } from '../data/units';
 import { isPlayerId } from '../game/ownership';
 import type { BuildingKey, Coord, Formation, ItemKey, PlayerId } from '../types';
 
@@ -73,19 +72,23 @@ export type GameCommand =
   | { type: 'placeBuilding'; key: BuildingKey; x: number; y: number; rot: number }
   | { type: 'paintRoad'; cells: Coord[] }
   | { type: 'placePlots'; buildingId: EntityId; cells: Coord[] }
-  | { type: 'demolish'; x: number; y: number }
+  | { type: 'demolish'; x: number; y: number; drag: boolean }
   | { type: 'setPriority'; siteId: EntityId; priority: boolean }
-  | { type: 'queueTraining'; buildingId: EntityId; unit: UnitKind }
+  // trainable kinds span combat UnitKinds and civilian roles (serf/laborer/…);
+  // the sim validates the kind against the building's own training table
+  | { type: 'queueTraining'; buildingId: EntityId; unit: string }
   | { type: 'cancelTraining'; buildingId: EntityId; index: number }
   | { type: 'setRally'; buildingId: EntityId; x: number; y: number }
   | { type: 'orderUnits'; unitIds: EntityId[]; order: NetUnitOrder; formation: Formation }
-  | { type: 'collectPickup'; pickupId: EntityId }
+  | { type: 'collectPickup'; x: number; y: number }
   | { type: 'setBell'; active: boolean }
   | { type: 'requestTrade'; item: ItemKey; amount: number; destinationId: EntityId }
   | { type: 'cancelTradeRequest'; requestId: TradeRequestId }
   | { type: 'sendTrade'; item: ItemKey; amount: number; sourceId: EntityId;
       destinationId: EntityId; requestId?: TradeRequestId }
-  | { type: 'cancelTradeShipment'; shipmentId: TradeShipmentId };
+  | { type: 'cancelTradeShipment'; shipmentId: TradeShipmentId }
+  // host-only lifecycle: both peers build the same level from the shared seed
+  | { type: 'startExpedition'; seed: number; level: number };
 
 export interface AcceptedCommand {
   commandId: string;
@@ -130,7 +133,7 @@ function validCommand(value: unknown): value is GameCommand {
     case 'placeBuilding': return shortString(value.key, 32) && integer(value.x) && integer(value.y) && integer(value.rot);
     case 'paintRoad': return Array.isArray(value.cells) && value.cells.length <= MAX_BATCH_CELLS && value.cells.every(coord);
     case 'placePlots': return integer(value.buildingId) && Array.isArray(value.cells) && value.cells.length <= MAX_BATCH_CELLS && value.cells.every(coord);
-    case 'demolish': return integer(value.x) && integer(value.y);
+    case 'demolish': return integer(value.x) && integer(value.y) && typeof value.drag === 'boolean';
     case 'setPriority': return integer(value.siteId) && typeof value.priority === 'boolean';
     case 'queueTraining': return integer(value.buildingId) && shortString(value.unit, 32);
     case 'cancelTraining': return integer(value.buildingId) && integer(value.index) && value.index >= 0;
@@ -142,12 +145,13 @@ function validCommand(value: unknown): value is GameCommand {
         ? integer(value.order.targetId)
         : (value.order.type === 'move' || value.order.type === 'attackMove') && integer(value.order.x) && integer(value.order.y);
     }
-    case 'collectPickup': return integer(value.pickupId);
+    case 'collectPickup': return integer(value.x) && integer(value.y);
     case 'setBell': return typeof value.active === 'boolean';
     case 'requestTrade': return shortString(value.item, 32) && integer(value.amount) && value.amount > 0 && value.amount <= MAX_TRADE_AMOUNT && integer(value.destinationId);
     case 'cancelTradeRequest': return shortString(value.requestId, 64);
     case 'sendTrade': return shortString(value.item, 32) && integer(value.amount) && value.amount > 0 && value.amount <= MAX_TRADE_AMOUNT && integer(value.sourceId) && integer(value.destinationId) && (value.requestId === undefined || shortString(value.requestId, 64));
     case 'cancelTradeShipment': return shortString(value.shipmentId, 64);
+    case 'startExpedition': return integer(value.seed) && value.seed > 0 && integer(value.level) && value.level >= 1 && value.level <= 32;
     default: return false;
   }
 }

@@ -80,6 +80,7 @@ export function createCoOpServer(options: CoOpServerOptions = {}) {
           case 'command': {
             const accepted = store.acceptCommand(roomId, playerId, message.commandId, message.command);
             broadcast(roomId, { type: 'commandAccepted', accepted });
+            if (message.command.type === 'startExpedition') broadcastRoom(roomId);
             break;
           }
           case 'ready':
