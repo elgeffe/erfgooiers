@@ -5,7 +5,7 @@ import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, BuildingKey, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeHero, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, setActiveBiome, sphere, stdMat, withSeededScatter, type CritterKind } from './models';
+import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeHero, makeRock, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, setActiveBiome, sphere, stdMat, withSeededScatter, type CritterKind } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -449,6 +449,7 @@ this.skyBirds.length = 0;
 
   /** Combat effect meshes, owned & positioned by the sim (removed via `remove`). */
   createArrow(): THREE.Group { const m = makeArrow(); this.worldGroup.add(m); return m; }
+  createRock(): THREE.Group { const m = makeRock(); this.worldGroup.add(m); return m; }
   createFireball(): THREE.Group { const m = makeFireball(); this.worldGroup.add(m); return m; }
   createFlame(): THREE.Group { const m = makeFlame(); this.worldGroup.add(m); return m; }
   createFlag(): THREE.Group { const m = makeFlag(); this.worldGroup.add(m); return m; }

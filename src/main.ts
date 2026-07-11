@@ -15,7 +15,7 @@ import { META_UPGRADES, META_BY_ID, metaSpecsFor, hasMetaSpecial } from './data/
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
 import { DEFAULT_SANDBOX, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
 import { BIOMES, campaignBiome } from './data/biomes';
-import type { UnitKind } from './data/units';
+import { UNITS, type UnitKind } from './data/units';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionArmyMult, ascensionForcesCurse, ascensionPrepMult, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
@@ -492,49 +492,67 @@ $('heroChip').onclick = () => {
 ($('btnSbxStart') as HTMLButtonElement).onclick = startSandbox;
 
 // ---------- sandbox spawn toolbar ----------
+/** One spawn button: what to spawn per click (and per hold-tick), and how it looks. */
+type SandboxSpawnDef = { kind: UnitKind; count: number; icon: string; label: string };
+
+const SANDBOX_FRIENDLY: SandboxSpawnDef[] = [
+  { kind: 'soldier', count: 12, icon: '⚔️', label: 'Soldiers' },
+  { kind: 'archer', count: 8, icon: '🏹', label: 'Archers' },
+  { kind: 'knight', count: 6, icon: '🛡️', label: 'Knights' },
+  { kind: 'lancer', count: 8, icon: '🐎', label: 'Lancers' },
+  { kind: 'horseknight', count: 6, icon: '🏇', label: 'Horse Knights' },
+  { kind: 'horsearcher', count: 8, icon: '🎯', label: 'Horse Archers' },
+  { kind: 'ballista', count: 3, icon: '⚙️', label: 'Ballistas' },
+  { kind: 'onager', count: 3, icon: '💥', label: 'Onagers' },
+  { kind: 'trebuchet', count: 2, icon: '🪨', label: 'Trebuchets' },
+];
+
+const SANDBOX_ENEMY: SandboxSpawnDef[] = [
+  { kind: 'bandit', count: 12, icon: '🗡️', label: 'Bandits' },
+  { kind: 'boar', count: 6, icon: '🐗', label: 'Boars' },
+  { kind: 'wolf', count: 8, icon: '🐺', label: 'Wolves' },
+  { kind: 'orc', count: 8, icon: '🪓', label: 'Orcs' },
+  { kind: 'troll', count: 3, icon: '🪨', label: 'Trolls' },
+  { kind: 'demon', count: 1, icon: '🔥', label: 'Demon' },
+  { kind: 'dragon', count: 1, icon: '🐉', label: 'Dragon' },
+];
+
 function sandboxSpawn(kind: UnitKind, count: number): void {
   if (!game) return;
   const c = view.camTarget;
   const squad = game.spawnSquad(kind, count, c.x, c.z);
-  if (squad.length) ui.toast(`Spawned ${squad.length} ${kind}${squad.length > 1 ? 's' : ''}`);
+  if (squad.length) ui.toast(`Spawned ${squad.length} ${UNITS[kind].name}${squad.length > 1 ? 's' : ''}`);
 }
 let sandboxSpawnTimer: number | null = null;
-function bindSandboxSpawn(id: string, kind: UnitKind, count: number): void {
-  const btn = $(id) as HTMLButtonElement;
-  const stop = (): void => {
-    if (sandboxSpawnTimer !== null) {
-      clearInterval(sandboxSpawnTimer);
-      sandboxSpawnTimer = null;
-    }
-  };
+function stopSandboxSpawn(): void {
+  if (sandboxSpawnTimer !== null) {
+    clearInterval(sandboxSpawnTimer);
+    sandboxSpawnTimer = null;
+  }
+}
+addEventListener('pointerup', stopSandboxSpawn);
+addEventListener('pointercancel', stopSandboxSpawn);
+addEventListener('blur', stopSandboxSpawn);
+function makeSandboxSpawnBtn(def: SandboxSpawnDef, side: 'player' | 'enemy'): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.textContent = `${def.icon} ${def.label}`;
+  btn.title = `Spawn ${side} ${def.label.toLowerCase()} at the camera`;
   btn.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     e.preventDefault();
-    stop();
-    sandboxSpawn(kind, count);
-    sandboxSpawnTimer = window.setInterval(() => sandboxSpawn(kind, count), 180);
+    stopSandboxSpawn();
+    sandboxSpawn(def.kind, def.count);
+    sandboxSpawnTimer = window.setInterval(() => sandboxSpawn(def.kind, def.count), 180);
   });
-  addEventListener('pointerup', stop);
-  addEventListener('pointercancel', stop);
-  addEventListener('blur', stop);
+  return btn;
 }
+for (const def of SANDBOX_FRIENDLY) $('sbFriendly').appendChild(makeSandboxSpawnBtn(def, 'player'));
+for (const def of SANDBOX_ENEMY) $('sbEnemy').appendChild(makeSandboxSpawnBtn(def, 'enemy'));
 ($('sbToggle') as HTMLButtonElement).onclick = () => {
   const bar = $('sandboxbar');
   const collapsed = bar.classList.toggle('collapsed');
   $('sbToggle').textContent = collapsed ? 'Sandbox ▸' : 'Sandbox ▾';
 };
-bindSandboxSpawn('sbSoldier', 'soldier', 12);
-bindSandboxSpawn('sbArcher', 'archer', 8);
-bindSandboxSpawn('sbKnight', 'knight', 6);
-bindSandboxSpawn('sbLancer', 'lancer', 8);
-bindSandboxSpawn('sbTrebuchet', 'trebuchet', 2);
-bindSandboxSpawn('sbBandit', 'bandit', 12);
-bindSandboxSpawn('sbBoar', 'boar', 6);
-bindSandboxSpawn('sbWolf', 'wolf', 8);
-bindSandboxSpawn('sbOrc', 'orc', 8);
-bindSandboxSpawn('sbTroll', 'troll', 3);
-bindSandboxSpawn('sbDemon', 'demon', 1);
-bindSandboxSpawn('sbDragon', 'dragon', 1);
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
 ($('btnHelp') as HTMLButtonElement).onclick = () => $('intro').style.display = 'flex';
 ($('startBtn') as HTMLButtonElement).onclick = () => $('intro').style.display = 'none';

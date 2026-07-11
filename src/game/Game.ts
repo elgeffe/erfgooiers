@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ROAD_STONE_COST, PLOT_RANGE, BASE_SPEED } from '../constants';
 import { DEFS } from '../data/buildings';
 import { ITEMS } from '../data/items';
-import { UNITS, type UnitKind } from '../data/units';
+import { UNITS, formationRank, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
@@ -1072,7 +1072,8 @@ export class Game {
         this.groundPose(u, flying);
         if (u.atkTimer <= 0) {
           u.atkTimer = u.atkCd;
-          if (def.arrows) this.fireArrow(u, u.faction, u.mesh.position.x, 0.6, u.mesh.position.z, foe, u.dmg);
+          if (def.splash) this.fireRock(u, u.faction, u.mesh.position.x, 0.6, u.mesh.position.z, foe.mesh.position.x, foe.mesh.position.z, u.dmg, def.splash);
+          else if (def.arrows) this.fireArrow(u, u.faction, u.mesh.position.x, 0.6, u.mesh.position.z, foe, u.dmg);
           else this.attack(u, foe);
         }
       } else if (flying) {
@@ -1239,7 +1240,7 @@ export class Game {
     ex: number; ey: number; ez: number;
     t: number; dur: number; arc: number;
     from: Faction; shooter: Unit | null; target: Unit | null;
-    dmg: number; kind: 'arrow' | 'fire';
+    dmg: number; kind: 'arrow' | 'fire' | 'rock'; radius?: number;
   }[] = [];
   private readonly flames: { mesh: THREE.Object3D; life: number; max: number }[] = [];
 
@@ -1254,6 +1255,21 @@ export class Game {
       mesh, sx: x, sy: y, sz: z, ex: tx, ey: 0.35, ez: tz,
       t: 0, dur: Math.max(0.16, dist / 11), arc: Math.min(1.3, 0.15 + dist * 0.08),
       from, shooter, target, dmg, kind: 'arrow',
+    });
+  }
+
+  /** Heave an onager rock at a ground point; it splashes over `radius` tiles
+   *  where it lands. Unlike an arrow it does not home — it batters whatever is
+   *  still standing in the target cluster when it comes down. */
+  private fireRock(shooter: Unit | null, from: Faction, x: number, y: number, z: number, ex: number, ez: number, dmg: number, radius: number): void {
+    const dist = Math.hypot(ex - x, ez - z);
+    const mesh = this.view.createRock();
+    mesh.position.set(x, y, z);
+    this.sfx('arrow');
+    this.projectiles.push({
+      mesh, sx: x, sy: y, sz: z, ex, ey: 0.1, ez,
+      t: 0, dur: Math.max(0.3, dist / 9), arc: Math.min(2.2, 0.6 + dist * 0.12),
+      from, shooter, target: null, dmg, kind: 'rock', radius,
     });
   }
 
@@ -1289,10 +1305,27 @@ export class Game {
     }
   }
 
-  private impact(p: { ex: number; ez: number; from: Faction; shooter: Unit | null; target: Unit | null; dmg: number; kind: 'arrow' | 'fire' }): void {
+  private impact(p: { ex: number; ez: number; from: Faction; shooter: Unit | null; target: Unit | null; dmg: number; kind: 'arrow' | 'fire' | 'rock'; radius?: number }): void {
     const W = this.world.W, H = this.world.H;
     const itx = Math.max(0, Math.min(W - 1, Math.round(p.ex + W / 2 - 0.5)));
     const ity = Math.max(0, Math.min(H - 1, Math.round(p.ez + H / 2 - 0.5)));
+    if (p.kind === 'rock') {
+      // splash: batter hostile units & buildings within the blast radius (no fire)
+      const rad = p.radius ?? 1.6, rad2 = rad * rad, cells = Math.ceil(rad) + 2;
+      this.forUnitsNear(itx, ity, cells, o => {
+        if (o.dead || !this.hostile(p.from, o.faction)) return;
+        const dx = o.mesh.position.x - p.ex, dz = o.mesh.position.z - p.ez;
+        if (dx * dx + dz * dz <= rad2) this.hurtUnit(p.shooter, o, p.dmg);
+      });
+      for (const b of this.buildings) {
+        if (b.removed || !this.hostile(p.from, b.faction)) continue;
+        const c = this.buildingCenter(b);
+        const dx = c.x - p.ex, dz = c.z - p.ez;
+        if (dx * dx + dz * dz <= (rad + 0.4) * (rad + 0.4)) { b.hp -= p.dmg; this.onHurt(c.x, c.z, b.faction); if (b.hp <= 0) this.destroyBuilding(b); }
+      }
+      this.onHurt(p.ex, p.ez, p.from === 'player' ? 'enemy' : 'player');
+      return;
+    }
     if (p.kind === 'fire') {
       // splash: scorch hostile units & buildings around the landing point
       this.forUnitsNear(itx, ity, 4, o => {
@@ -1474,9 +1507,15 @@ export class Game {
       const t = this.world.T(tx, ty);
       return !!t && t.type === 'grass' && !t.b && !t.site && !t.dep;
     });
-    for (let i = 0; i < units.length; i++) {
+    // spots come back front rank first; march the army in battle order so
+    // melee take the leading tiles and ranged/cavalry/siege fall in behind.
+    // Stable sort keeps each rank's own order (and same-rank kinds together).
+    const ordered = units
+      .map((u, i) => ({ u, i, r: formationRank(u.role) }))
+      .sort((a, b) => a.r - b.r || a.i - b.i);
+    for (let i = 0; i < ordered.length; i++) {
       const s = spots[Math.min(i, spots.length - 1)];
-      this.orderUnit(units[i], type, s.x, s.y);
+      this.orderUnit(ordered[i].u, type, s.x, s.y);
     }
   }
 

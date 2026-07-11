@@ -94,7 +94,7 @@ export const UPGRADES: UpgradeDef[] = [
       { stat: 'combat:damage', mult: 1.15, filter: 'horseknight' },
       { stat: 'combat:damage', mult: 1.15, filter: 'horsearcher' },
       { stat: 'combat:damage', mult: 1.15, filter: 'ballista' },
-      { stat: 'combat:damage', mult: 1.15, filter: 'scorpion' },
+      { stat: 'combat:damage', mult: 1.15, filter: 'onager' },
       { stat: 'combat:damage', mult: 1.15, filter: 'trebuchet' },
     ] },
 
@@ -117,7 +117,7 @@ export const UPGRADES: UpgradeDef[] = [
       { stat: 'trainTime', mult: 0.75, filter: 'horseknight' },
       { stat: 'trainTime', mult: 0.75, filter: 'horsearcher' },
       { stat: 'trainTime', mult: 0.75, filter: 'ballista' },
-      { stat: 'trainTime', mult: 0.75, filter: 'scorpion' },
+      { stat: 'trainTime', mult: 0.75, filter: 'onager' },
       { stat: 'trainTime', mult: 0.75, filter: 'trebuchet' },
     ] },
 

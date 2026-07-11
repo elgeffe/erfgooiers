@@ -156,10 +156,13 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 #formationbar button{width:29px;height:27px;background:var(--panel2);color:var(--ink-dim);border:1px solid rgba(255,255,255,.1);border-radius:5px;cursor:pointer;font-size:15px;line-height:1;}
 #formationbar button:hover{border-color:var(--accent);color:var(--ink);}
 #formationbar button.on{border-color:var(--good);color:#bce8af;background:rgba(70,194,86,.16);}
-#sandboxbar{position:absolute;left:12px;bottom:12px;display:none;align-items:center;gap:6px;background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:10px;padding:7px 10px;z-index:12;}
+#sandboxbar{position:absolute;left:12px;bottom:12px;display:none;align-items:center;flex-wrap:wrap;gap:6px;max-width:calc(100vw - 210px);background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:10px;padding:7px 10px;z-index:12;}
 #sandboxbar .sb-title{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);margin-right:2px;background:none;border:none;cursor:pointer;padding:6px 2px;}
 #sandboxbar .sb-title:hover{color:var(--accent);}
-#sandboxbar.collapsed button:not(.sb-title){display:none;}
+#sandboxbar .sb-group{display:flex;align-items:center;flex-wrap:wrap;gap:6px;}
+#sandboxbar .sb-group+.sb-group{border-left:1px solid rgba(255,255,255,.12);padding-left:8px;}
+#sandboxbar .sb-label{color:var(--ink-dim);font-size:9px;text-transform:uppercase;letter-spacing:.7px;margin:0 2px;}
+#sandboxbar.collapsed .sb-group{display:none;}
 #sandboxbar button{background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 9px;font-size:12px;cursor:pointer;}
 #sandboxbar button:hover{background:#4a3823;border-color:var(--accent);}
 /* ---------- intro ---------- */

@@ -18,6 +18,12 @@ export interface FormationOrigin { x: number; y: number; }
  *  - box:   a solid block, ~1.8× wider than deep
  *  - line:  a broad wall at most 3 ranks deep
  *  - split: two half-strength boxes flanking a gap (envelopment / pincer)
+ *
+ * The returned spots are ordered front rank first (nearest the foe, furthest
+ * from the group's origin), so a caller that sorts its units by battle order
+ * puts the melee on the leading spots and the rear guard on the trailing ones.
+ * In a split, both wings interleave rank by rank, so each wing keeps the
+ * same front-to-back composition.
  */
 export function formationSpots(
   cx: number,
@@ -98,5 +104,10 @@ export function formationSpots(
         claim(cx + ox, cy + oy);
       }
   if (!out.length) out.push({ x: cx, y: cy });
+  // sort front rank first: claimNear dents and the fallback spiral can emit
+  // spots out of order, and split lays one whole wing before the other
+  out.sort((a, b) =>
+    (fx * (b.x - a.x) + fy * (b.y - a.y)) ||        // depth along the facing
+    (rxv * (a.x - b.x) + ryv * (a.y - b.y)));       // then across the rank
   return out;
 }
