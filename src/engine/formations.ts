@@ -32,6 +32,7 @@ export function formationSpots(
   formation: Formation,
   origins: FormationOrigin[],
   canUse: (x: number, y: number) => boolean,
+  facing?: FormationOrigin,
 ): Coord[] {
   if (count <= 0) return [];
   const out: Coord[] = [];
@@ -58,12 +59,19 @@ export function formationSpots(
         }
   };
 
-  // face away from the group's average origin, snapped to the nearest
-  // cardinal so (col, row) offsets stay exact integer lattice vectors
-  let ax = 0, ay = 0;
-  for (const p of origins) { ax += p.x; ay += p.y; }
-  ax /= Math.max(1, origins.length); ay /= Math.max(1, origins.length);
-  const dx = cx - ax, dy = cy - ay;
+  // face along an explicit direction when one is given (the drag-to-aim
+  // preview), else away from the group's average origin — snapped to the
+  // nearest cardinal either way so (col, row) offsets stay exact integer
+  // lattice vectors
+  let dx: number, dy: number;
+  if (facing && (facing.x || facing.y)) {
+    dx = facing.x; dy = facing.y;
+  } else {
+    let ax = 0, ay = 0;
+    for (const p of origins) { ax += p.x; ay += p.y; }
+    ax /= Math.max(1, origins.length); ay /= Math.max(1, origins.length);
+    dx = cx - ax; dy = cy - ay;
+  }
   const fx = Math.abs(dx) >= Math.abs(dy) ? (Math.sign(dx) || 1) : 0;
   const fy = fx === 0 ? (Math.sign(dy) || 1) : 0;
   const rxv = -fy, ryv = fx; // the rank axis (perpendicular to facing)

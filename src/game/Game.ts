@@ -1505,17 +1505,27 @@ export class Game {
     u.obeyT = type === 'attack' ? 0 : 2.5;
   }
 
+  /** Ground a formation may stand on (shared by orders and the drag preview). */
+  private readonly formationGround = (tx: number, ty: number): boolean => {
+    const t = this.world.T(tx, ty);
+    return !!t && t.type === 'grass' && !t.b && !t.site && !t.dep;
+  };
+
+  /** The tiles a selection would occupy — the right-drag aim preview. `facing`
+   *  is the drag direction; the layout snaps it to the nearest cardinal. */
+  formationPreview(units: Unit[], x: number, y: number, formation: Formation, facing: { x: number; y: number }): Coord[] {
+    return formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), this.formationGround, facing);
+  }
+
   /** Order a whole selection: attacks converge on the foe, moves fan out into a
-   *  loose formation so the squad doesn't pile onto a single tile. */
-  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'box'): void {
+   *  loose formation so the squad doesn't pile onto a single tile. An explicit
+   *  `facing` (from the drag-to-aim gesture) overrides the marching direction. */
+  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'box', facing?: { x: number; y: number }): void {
     if (type === 'attack' && foe) {
       for (const u of units) this.orderUnit(u, 'attack', foe.tx, foe.ty, foe);
       return;
     }
-    const spots = formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), (tx, ty) => {
-      const t = this.world.T(tx, ty);
-      return !!t && t.type === 'grass' && !t.b && !t.site && !t.dep;
-    });
+    const spots = formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), this.formationGround, facing);
     // spots come back front rank first; march the army in battle order so
     // melee take the leading tiles and ranged/cavalry/siege fall in behind.
     // Stable sort keeps each rank's own order (and same-rank kinds together).

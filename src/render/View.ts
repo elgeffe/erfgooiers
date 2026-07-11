@@ -86,6 +86,10 @@ export class View {
   private nextBirdT = 0;
   // the horizon whale (island seas only), cruising in real time
   private whale: THREE.Group | null = null;
+  // right-drag formation draft: pooled tile discs + a facing chevron
+  private formPreview: THREE.Group | null = null;
+  private formPreviewMarks: THREE.Mesh[] = [];
+  private formPreviewArrow: THREE.Group | null = null;
 
   // short-lived flags marking where the player just ordered units to go
   private readonly orderPings: { mesh: THREE.Group; life: number; max: number; mats: THREE.Material[] }[] = [];
@@ -236,6 +240,9 @@ this.skyBirds.length = 0;
     this.millSails.length = 0;
     this.beacons.length = 0;
     this.whale = null;
+    this.formPreview = null;           // its meshes died with the worldGroup
+    this.formPreviewMarks.length = 0;
+    this.formPreviewArrow = null;
     this.ghostKey = null;
     this.clearGore();
   }
@@ -461,6 +468,52 @@ this.skyBirds.length = 0;
 
   /** Plant a short-lived flag for a unit order. Focus-fire uses red; movement
    *  uses blue. Both fade in and out without touching shared scene materials. */
+  /** Draft positioning: ghost discs on every tile the formation would take,
+   *  plus a chevron showing which way the ranks face. Meshes are pooled and
+   *  reused across drags; the whole group hides when the drag ends. */
+  showFormationPreview(spots: Coord[], fx: number, fz: number): void {
+    if (!this.formPreview) {
+      this.formPreview = new THREE.Group();
+      this.formPreview.userData.dynamic = true;
+      this.worldGroup.add(this.formPreview);
+      const arrow = new THREE.Group();
+      const head = new THREE.Mesh(cone(0.34, 0.8, 4), stdMat({ color: 0xffd24a, transparent: true, opacity: 0.85 }, false));
+      head.rotation.x = Math.PI / 2;   // apex forward along the group's +z
+      head.position.y = 0.1;
+      arrow.add(head);
+      this.formPreview.add(arrow);
+      this.formPreviewArrow = arrow;
+    }
+    this.formPreview.visible = true;
+    const discMat = stdMat({ color: 0xffd24a, transparent: true, opacity: 0.4 }, false);
+    const n = Math.min(spots.length, 600); // pool cap — plenty to read the shape
+    while (this.formPreviewMarks.length < n) {
+      const m = new THREE.Mesh(circle(0.3, 10), discMat);
+      m.rotation.x = -Math.PI / 2;
+      this.formPreview.add(m);
+      this.formPreviewMarks.push(m);
+    }
+    let cx = 0, cz = 0;
+    for (let i = 0; i < this.formPreviewMarks.length; i++) {
+      const m = this.formPreviewMarks[i];
+      m.visible = i < n;
+      if (i >= n) continue;
+      const wx = this.world.wx(spots[i].x), wz = this.world.wz(spots[i].y);
+      m.position.set(wx, 0.06, wz);
+      cx += wx; cz += wz;
+    }
+    if (this.formPreviewArrow && n) {
+      const len = Math.hypot(fx, fz) || 1;
+      const ux = fx / len, uz = fz / len;
+      this.formPreviewArrow.position.set(cx / n + ux * 1.6, 0, cz / n + uz * 1.6);
+      this.formPreviewArrow.rotation.y = Math.atan2(ux, uz);
+    }
+  }
+
+  hideFormationPreview(): void {
+    if (this.formPreview) this.formPreview.visible = false;
+  }
+
   showOrderMarker(wx: number, wz: number, attack = false): void {
     const m = makeFlag(attack ? 0xc83232 : 0x3f5aa0, true);
     m.userData.dynamic = true;
