@@ -219,6 +219,19 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 .screen .btns button.danger:hover{background:rgba(201,107,74,.15);}
 .screen .btns.row{flex-direction:row;gap:8px;}
 .screen .btns.row button{flex:1;}
+/* ---------- settings ---------- */
+.setcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:8px 28px;}
+.setrow{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ink);margin:7px 0;}
+.setrow input[type=range]{flex:1;accent-color:var(--accent);min-width:80px;}
+.setrow b{width:44px;text-align:right;color:var(--accent);font-variant-numeric:tabular-nums;}
+.setrow.chk{cursor:pointer;}
+.setrow.chk input{accent-color:var(--accent);width:15px;height:15px;flex:none;}
+.setrow select{flex:1;background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:6px 8px;font-size:12px;font-family:inherit;}
+#keytable{width:100%;border-collapse:collapse;font-size:12px;color:var(--ink-dim);}
+#keytable td{padding:4px 8px;border-bottom:1px solid rgba(255,255,255,.06);}
+#keytable td:first-child{white-space:nowrap;color:var(--ink);}
+#keytable b{color:var(--accent);font-weight:700;}
+
 /* ---------- shop ---------- */
 /* wide screens get a wide shop/hero picker; small screens adapt down and scroll */
 .shopcard{width:min(1500px,96vw);text-align:left;max-height:94vh;overflow-y:auto;}

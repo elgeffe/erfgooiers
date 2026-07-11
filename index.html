@@ -105,7 +105,63 @@
       <button id="btnHeritage" class="ghost">Heritage — spend Erfgoed</button>
       <button id="btnSandbox" class="ghost">Sandbox — free build</button>
       <button id="btnHelp" class="ghost">How to play</button>
+      <button id="btnSettings" class="ghost">Settings</button>
       <button id="btnClearSave" class="danger" title="Wipe the saved run and all meta-progress">Clear save data</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- settings (main menu & pause menu) ---------- -->
+<div id="settings" class="screen">
+  <div class="card shopcard">
+    <h1 class="serif">Settings</h1>
+    <div class="setcols">
+      <div class="setcol">
+        <div class="shopsect">Audio</div>
+        <label class="setrow">Music volume<input id="setMusic" type="range" min="0" max="100" step="5"><b id="setMusicVal"></b></label>
+        <label class="setrow">Effects volume<input id="setSfx" type="range" min="0" max="100" step="5"><b id="setSfxVal"></b></label>
+        <div class="shopsect">Camera &amp; graphics</div>
+        <label class="setrow">Camera pan speed<input id="setPan" type="range" min="50" max="200" step="10"><b id="setPanVal"></b></label>
+        <label class="setrow chk"><input id="setInvZoom" type="checkbox">Invert scroll zoom</label>
+        <label class="setrow chk"><input id="setEdgePan" type="checkbox">Edge panning — the pointer at a screen edge pans the camera</label>
+        <label class="setrow chk"><input id="setAutoPause" type="checkbox">Pause when the window loses focus</label>
+        <label class="setrow">Render quality<select id="setQuality">
+          <option value="auto">Auto — adapts to your frame rate</option>
+          <option value="high">High — full resolution, always</option>
+          <option value="low">Low — saves battery &amp; old GPUs</option>
+        </select></label>
+        <div class="shopsect">Save data</div>
+        <div class="btns">
+          <button id="btnExportSave" class="ghost" title="Download your run and Heritage progress as a file">Export save to file</button>
+          <button id="btnImportSave" class="ghost" title="Restore a previously exported save file">Import save from file</button>
+          <input id="importFile" type="file" accept="application/json,.json" style="display:none">
+          <button id="btnSettingsClear" class="danger" title="Wipe the saved run and all meta-progress">Clear save data</button>
+        </div>
+      </div>
+      <div class="setcol">
+        <div class="shopsect">Keybindings</div>
+        <table id="keytable">
+          <tr><td><b>W A S D</b> / <b>arrows</b></td><td>pan the camera</td></tr>
+          <tr><td><b>right-drag</b> (nothing selected)</td><td>pan the camera</td></tr>
+          <tr><td><b>mouse wheel</b></td><td>zoom</td></tr>
+          <tr><td><b>left-click</b></td><td>select a unit or building</td></tr>
+          <tr><td><b>left-drag</b></td><td>box-select fighters</td></tr>
+          <tr><td><b>double-click</b> a fighter</td><td>select every visible fighter of that type</td></tr>
+          <tr><td><b>right-click</b></td><td>order the selected army (attack / move)</td></tr>
+          <tr><td><b>hold right-click + drag</b></td><td>preview the formation and aim its facing</td></tr>
+          <tr><td><b>Shift + 1–5</b></td><td>assign the selection to a squad</td></tr>
+          <tr><td><b>1–5</b></td><td>recall a squad (again: centre the camera on it)</td></tr>
+          <tr><td><b>R</b></td><td>rotate the building being placed</td></tr>
+          <tr><td><b>Shift</b> while placing</td><td>keep placing more of the same</td></tr>
+          <tr><td><b>B</b></td><td>ring the castle bell — workers take refuge</td></tr>
+          <tr><td><b>U</b></td><td>open / close the workers panel</td></tr>
+          <tr><td><b>Space</b></td><td>pause / resume</td></tr>
+          <tr><td><b>Esc</b></td><td>cancel placement · deselect</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="btns row">
+      <button id="btnSettingsBack">Back</button>
     </div>
   </div>
 </div>
@@ -186,6 +242,7 @@
     <div class="tag">The game is paused. Resume when you are ready, or abandon this run to return to the main menu.</div>
     <div class="btns">
       <button id="btnResume">Resume game</button>
+      <button id="btnPauseSettings" class="ghost">Settings</button>
       <button id="btnAbandon" class="danger" title="Abandon this run and return to the menu">Abandon run</button>
     </div>
   </div>

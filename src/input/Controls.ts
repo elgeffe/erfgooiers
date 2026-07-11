@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { DEFS } from '../data/buildings';
 import type { Game } from '../game/Game';
+import { DEFAULT_SETTINGS, type GameSettings } from '../game/Settings';
 import type { View } from '../render/View';
 import type { UI } from '../ui/UI';
 import type { Formation, Mode, Unit } from '../types';
@@ -17,6 +18,8 @@ const FWD = new THREE.Vector3(-1, 0, -1).normalize();
 export class Controls {
   private game: Game | null = null;
   private mode: Mode = null;
+  /** Player preferences (main assigns the loaded object; edits apply live). */
+  settings: GameSettings = { ...DEFAULT_SETTINGS };
   private buildRot = 0;
   private ghostTile: { x: number; y: number } | null = null;
 
@@ -43,7 +46,7 @@ export class Controls {
     canvas.addEventListener('dblclick', e => this.doubleClickSelect(e));
     addEventListener('pointermove', e => this.onMove(e));
     addEventListener('pointerup', e => this.onUp(e));
-    canvas.addEventListener('wheel', e => { e.preventDefault(); this.view.zoom(e.deltaY > 0 ? 1.1 : 0.9); }, { passive: false });
+    canvas.addEventListener('wheel', e => { e.preventDefault(); this.view.zoom((e.deltaY > 0) !== this.settings.invertZoom ? 1.1 : 0.9); }, { passive: false });
     addEventListener('keydown', e => this.onKey(e));
     addEventListener('keyup', e => { this.keys[e.key.toLowerCase()] = false; });
     this.formationBar?.querySelectorAll<HTMLButtonElement>('button[data-formation]').forEach(button => {
@@ -139,7 +142,7 @@ export class Controls {
   private onMove(e: PointerEvent): void {
     if (this.dragging && this.lastMouse) {
       const dx = e.clientX - this.lastMouse.x, dy = e.clientY - this.lastMouse.y;
-      const scale = this.view.viewSize * 2 / innerHeight;
+      const scale = this.view.viewSize * 2 / innerHeight * this.settings.panSpeed;
       const v = RIGHT.clone().multiplyScalar(-dx * scale * 0.72).add(FWD.clone().multiplyScalar(dy * scale));
       this.view.pan(v);
     }
@@ -328,13 +331,21 @@ export class Controls {
 
   /** Per-frame keyboard camera panning (called from the game loop). */
   update(dt: number): void {
-    const pan = dt * 14 * (this.view.viewSize / 13);
+    const pan = dt * 14 * (this.view.viewSize / 13) * this.settings.panSpeed;
     let v: THREE.Vector3 | null = null;
     const add = (dir: THREE.Vector3, s: number) => { v = (v || new THREE.Vector3()).add(dir.clone().multiplyScalar(s)); };
     if (this.keys['w'] || this.keys['arrowup']) add(FWD, pan);
     if (this.keys['s'] || this.keys['arrowdown']) add(FWD, -pan);
     if (this.keys['a'] || this.keys['arrowleft']) add(RIGHT, -pan);
     if (this.keys['d'] || this.keys['arrowright']) add(RIGHT, pan);
+    // optional edge panning: the pointer resting at a window edge pans too
+    if (this.settings.edgePan && this.lastMouse && !this.dragging && !this.boxing) {
+      const m = this.lastMouse, edge = 18;
+      if (m.x <= edge) add(RIGHT, -pan);
+      else if (m.x >= innerWidth - edge) add(RIGHT, pan);
+      if (m.y <= edge) add(FWD, pan);
+      else if (m.y >= innerHeight - edge) add(FWD, -pan);
+    }
     if (v) this.view.pan(v);
 
     // keep the selection live: drop any fighters that have died, then draw rings

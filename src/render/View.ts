@@ -1620,7 +1620,20 @@ this.updateSkyBirds(dt);
   /** MSAA + pixelRatio 2 is expensive on 4K laptops: when frames sustain over
    *  ~20 ms, step the pixel ratio down (never below 1); step back up once
    *  frames run comfortably fast again. Re-evaluated at most every 2 s. */
+  /** Settings: pin the pixel ratio high or low, or let adaptQuality steer it. */
+  setQualityMode(mode: 'auto' | 'high' | 'low'): void {
+    this.qualityMode = mode;
+    if (mode === 'auto') return; // adaptQuality resumes from wherever it stands
+    const pr = mode === 'high' ? this.maxPixelRatio : 1;
+    if (this.renderer.getPixelRatio() !== pr) {
+      this.renderer.setPixelRatio(pr);
+      this.renderer.setSize(innerWidth, innerHeight);
+    }
+  }
+  private qualityMode: 'auto' | 'high' | 'low' = 'auto';
+
   private adaptQuality(): void {
+    if (this.qualityMode !== 'auto') return; // pinned from the settings screen
     const now = performance.now();
     if (this.qLastT) this.qFrameMs += (Math.min(100, now - this.qLastT) - this.qFrameMs) * 0.04;
     this.qLastT = now;

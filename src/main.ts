@@ -18,6 +18,7 @@ import { BIOMES, campaignBiome } from './data/biomes';
 import { UNITS, type UnitKind } from './data/units';
 import { unitLabel } from './game/util';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionArmyMult, ascensionForcesCurse, ascensionPrepMult, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
+import { loadSettings, saveSettings } from './game/Settings';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
 
@@ -625,6 +626,100 @@ for (const def of SANDBOX_ENEMY) $('sbEnemy').appendChild(makeSandboxSpawnBtn(de
   countInp.addEventListener('keydown', e => { if (e.key === 'Enter') summon(); });
 }
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
+
+// ---------- settings screen ----------
+const settings = loadSettings();
+audio.setMusicVolume(settings.musicVol);
+audio.setSfxVolume(settings.sfxVol);
+view.setQualityMode(settings.quality);
+controls.settings = settings;
+
+let settingsReturn: 'menu' | 'pause' = 'menu';
+function openSettings(from: 'menu' | 'pause'): void {
+  settingsReturn = from;
+  if (from === 'menu') $('menu').style.display = 'none';
+  else $('pausemenu').style.display = 'none';
+  renderSettings();
+  $('settings').style.display = 'flex';
+}
+function closeSettings(): void {
+  $('settings').style.display = 'none';
+  if (settingsReturn === 'menu') $('menu').style.display = 'flex';
+  else $('pausemenu').style.display = 'flex';
+}
+($('btnSettings') as HTMLButtonElement).onclick = () => openSettings('menu');
+($('btnPauseSettings') as HTMLButtonElement).onclick = () => openSettings('pause');
+($('btnSettingsBack') as HTMLButtonElement).onclick = closeSettings;
+
+/** Push the stored values into the controls (called every time it opens). */
+function renderSettings(): void {
+  ($('setMusic') as HTMLInputElement).value = String(Math.round(settings.musicVol * 100));
+  ($('setSfx') as HTMLInputElement).value = String(Math.round(settings.sfxVol * 100));
+  ($('setPan') as HTMLInputElement).value = String(Math.round(settings.panSpeed * 100));
+  ($('setInvZoom') as HTMLInputElement).checked = settings.invertZoom;
+  ($('setEdgePan') as HTMLInputElement).checked = settings.edgePan;
+  ($('setAutoPause') as HTMLInputElement).checked = settings.autoPauseOnBlur;
+  ($('setQuality') as HTMLSelectElement).value = settings.quality;
+  $('setMusicVal').textContent = `${Math.round(settings.musicVol * 100)}%`;
+  $('setSfxVal').textContent = `${Math.round(settings.sfxVol * 100)}%`;
+  $('setPanVal').textContent = `${settings.panSpeed.toFixed(1)}×`;
+}
+/** Every control applies live and persists immediately. */
+($('setMusic') as HTMLInputElement).oninput = e => {
+  settings.musicVol = Number((e.target as HTMLInputElement).value) / 100;
+  audio.setMusicVolume(settings.musicVol); saveSettings(settings);
+  $('setMusicVal').textContent = `${Math.round(settings.musicVol * 100)}%`;
+};
+($('setSfx') as HTMLInputElement).oninput = e => {
+  settings.sfxVol = Number((e.target as HTMLInputElement).value) / 100;
+  audio.setSfxVolume(settings.sfxVol); saveSettings(settings);
+  $('setSfxVal').textContent = `${Math.round(settings.sfxVol * 100)}%`;
+  audio.play('click');
+};
+($('setPan') as HTMLInputElement).oninput = e => {
+  settings.panSpeed = Number((e.target as HTMLInputElement).value) / 100;
+  saveSettings(settings);
+  $('setPanVal').textContent = `${settings.panSpeed.toFixed(1)}×`;
+};
+($('setInvZoom') as HTMLInputElement).onchange = e => { settings.invertZoom = (e.target as HTMLInputElement).checked; saveSettings(settings); };
+($('setEdgePan') as HTMLInputElement).onchange = e => { settings.edgePan = (e.target as HTMLInputElement).checked; saveSettings(settings); };
+($('setAutoPause') as HTMLInputElement).onchange = e => { settings.autoPauseOnBlur = (e.target as HTMLInputElement).checked; saveSettings(settings); };
+($('setQuality') as HTMLSelectElement).onchange = e => {
+  settings.quality = (e.target as HTMLSelectElement).value as typeof settings.quality;
+  view.setQualityMode(settings.quality); saveSettings(settings);
+};
+addEventListener('blur', () => { if (settings.autoPauseOnBlur) openPauseMenu(); });
+
+// save export / import: a downloadable JSON bundle of run + Heritage progress
+($('btnExportSave') as HTMLButtonElement).onclick = () => {
+  const blob = new Blob([Save.exportAll()], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `erfgooiers-save-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  ui.toast('Save exported — keep the file somewhere safe');
+};
+($('btnImportSave') as HTMLButtonElement).onclick = () => ($('importFile') as HTMLInputElement).click();
+($('importFile') as HTMLInputElement).onchange = async e => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = ''; // allow re-picking the same file later
+  if (!file) return;
+  const res = Save.importAll(await file.text());
+  if (!res.ok) { ui.toast(res.error ?? 'That save could not be read', 'err'); return; }
+  // reload from storage so every screen reflects the imported progress
+  if (phase === 'playing') disposeLevel();
+  meta = Save.loadMeta();
+  run = null;
+  goMenu();
+  ui.toast('Save imported');
+};
+($('btnSettingsClear') as HTMLButtonElement).onclick = () => {
+  $('settings').style.display = 'none';
+  clearSaveData();
+};
+
 ($('btnHelp') as HTMLButtonElement).onclick = () => $('intro').style.display = 'flex';
 ($('startBtn') as HTMLButtonElement).onclick = () => $('intro').style.display = 'none';
 ($('btnSumMenu') as HTMLButtonElement).onclick = goMenu;
