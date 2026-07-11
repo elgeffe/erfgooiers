@@ -116,4 +116,29 @@ describe('Biome worldgen', () => {
     const w = new World({ seed: 7, ...PARAMS, biome: 'gooi' });
     expect(w.coastDir).toBeNull();
   });
+
+  it('keeps the enemy quarter reachable on delta frontier maps', () => {
+    // level 7 plays in the Zeeland Delta with a frontier arc from Very Hard up:
+    // the sea and river must never seal the pass into the enemy's corner
+    for (const seed of [1, 7, 42, 31337, 987654]) {
+      const w = new World({ seed, w: 64, h: 64, treeStands: 11, oreVeins: 9, waterScale: 1.0, meadows: 6, mountains: 2, ruins: 2, frontier: true, biome: 'seaside' });
+      expect(w.enemyZone).not.toBeNull();
+      const ez = w.enemyZone!;
+      // BFS over passable tiles from the map centre
+      const seen = new Set<number>();
+      const queue: [number, number][] = [[Math.floor(w.W / 2), Math.floor(w.H / 2)]];
+      seen.add(queue[0][1] * w.W + queue[0][0]);
+      let reached = false;
+      while (queue.length && !reached) {
+        const [x, y] = queue.shift()!;
+        if (Math.hypot(x - ez.x, y - ez.y) <= ez.r) { reached = true; break; }
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy, id = ny * w.W + nx;
+          if (seen.has(id) || !w.passable(nx, ny)) continue;
+          seen.add(id); queue.push([nx, ny]);
+        }
+      }
+      expect(reached, `seed ${seed}`).toBe(true);
+    }
+  });
 });

@@ -3,13 +3,13 @@ import type * as THREE from 'three';
 export type ItemKey =
   | 'trunk' | 'timber' | 'stone' | 'wheat' | 'flour'
   | 'bread' | 'goldore' | 'coal' | 'coin'
-  | 'grape' | 'wine' | 'meat' | 'sausage' | 'fish'
+  | 'grape' | 'wine' | 'meat' | 'sausage' | 'fish' | 'clam'
   | 'iron' | 'weapon' | 'armor';
 
 export type BuildingKey =
   | 'storehouse' | 'guildhall' | 'woodcutter' | 'forester' | 'sawmill' | 'quarry'
   | 'farm' | 'mill' | 'bakery' | 'goldmine' | 'coalmine' | 'mint'
-  | 'vineyard' | 'winery' | 'pigfarm' | 'butcher' | 'tavern' | 'fishery'
+  | 'vineyard' | 'winery' | 'pigfarm' | 'butcher' | 'tavern' | 'fishery' | 'clamdigger'
   | 'barracks' | 'stable' | 'engineer' | 'ironmine' | 'smithy' | 'armory' | 'watchtower'
   | 'banditcamp' | 'enemywatchtower' | 'enemycastle';
 
@@ -66,6 +66,7 @@ export interface BuildingDef {
   worker?: string;
   wcolor?: number;
   hp?: number;                 // max structure HP (combat); defaults to 100
+  coastal?: boolean;           // only exists where the map has a sea coast (biome gen)
   military?: MilitaryDef;      // barracks: trainable military units
   trainer?: MilitaryDef;       // guild hall: trainable civilian workers
   tower?: TowerDef;            // watchtowers/keeps: automatic arrow fire

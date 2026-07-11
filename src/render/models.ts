@@ -1355,6 +1355,7 @@ export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean)
     case 'pigfarm': return pigBarn(def, ghost);
     case 'butcher': return butcherShop(def, ghost);
     case 'fishery': return fisheryHut(def, ghost);
+    case 'clamdigger': return fisheryHut(def, ghost); // same shorefront hut, its own palette
     case 'smithy': return smithyBuilding(def, ghost);
     case 'armory': return armoryBuilding(def, ghost);
     case 'barracks': return barracksBuilding(def, ghost);

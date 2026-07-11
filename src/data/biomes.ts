@@ -275,17 +275,31 @@ export const BIOMES: Record<BiomeKey, BiomeDef> = {
 
 /**
  * The campaign's ascension journey: climbing the ladder marches the run into
- * harsher lands. The economy arc (levels 1-4) always stays in Het Gooi so
- * production objectives remain honest; the combat arc migrates.
- *   Hard      → levels 5-6 cross into the Ardennes
- *   Very Hard → …and the Black Forest swallows levels 7-8
- *   Absurd    → …and the run ends among the peaks of the Alps (9-10)
+ * stranger and harsher lands. The economy arc (levels 1-4) always stays in
+ * Het Gooi so production objectives remain honest; the combat arc migrates —
+ * every combat level's goal (survive/slay/destroy) is biome-proof, so no
+ * land's building bans can strand an objective.
+ *   Hard      → the march leaves home: the Polder (5), then the Ardennes
+ *   Very Hard → level 7 follows the Delta coast; the Black Forest swallows 8+
+ *   Absurd    → the hunt crosses to Texel (6), and the run ends in the Alps
+ *   Grim      → winter falls on the high march (level 9 freezes over)
+ *   Infernal  → the dragon's hoard lies at the gates of Hell (level 10)
  */
 export function campaignBiome(ascension: number, levelIndex: number): BiomeKey {
   if (levelIndex <= 4 || ascension <= 0) return 'gooi';
-  if (ascension >= 3 && levelIndex >= 9) return 'alps';
-  if (ascension >= 2 && levelIndex >= 7) return 'blackforest';
-  return 'ardennes';
+  if (levelIndex === 5) return 'polder';
+  if (levelIndex === 6) return ascension >= 3 ? 'island' : 'ardennes';
+  if (levelIndex === 7) return ascension >= 2 ? 'seaside' : 'ardennes';
+  if (levelIndex === 8) return ascension >= 2 ? 'blackforest' : 'ardennes';
+  if (levelIndex === 9) {
+    if (ascension >= 4) return 'winter';
+    if (ascension >= 3) return 'alps';
+    return ascension >= 2 ? 'blackforest' : 'ardennes';
+  }
+  // level 10 — the run's last stand
+  if (ascension >= 5) return 'hell';
+  if (ascension >= 3) return 'alps';
+  return ascension >= 2 ? 'blackforest' : 'ardennes';
 }
 
 /** Pick a tree species index (0..3) by this biome's weights. */

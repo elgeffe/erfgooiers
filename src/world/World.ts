@@ -253,7 +253,14 @@ export class World {
     // one clear pass (plus any lake gaps) — the only ways in on foot. The
     // enclosed quarter is exposed as `enemyZone` for stronghold placement.
     if (this.p.frontier) {
-      const corner = [[0, 0], [W - 1, 0], [0, H - 1], [W - 1, H - 1]][Math.floor(rnd() * 4)];
+      // on a single-coast map the enemy quarter keeps to the landward corners,
+      // so its arc (and pass) never drowns in the sea
+      let corners = [[0, 0], [W - 1, 0], [0, H - 1], [W - 1, H - 1]];
+      if (this.coastDir) {
+        const cd = this.coastDir;
+        corners = corners.filter(([cx, cy]) => (cx - W / 2) * cd.x + (cy - H / 2) * cd.y < 0);
+      }
+      const corner = corners[Math.floor(rnd() * corners.length)];
       const [cx0, cy0] = corner;
       const R = Math.round(Math.min(W, H) * 0.42);
       const sgnX = cx0 === 0 ? 1 : -1, sgnY = cy0 === 0 ? 1 : -1;
@@ -308,6 +315,45 @@ export class World {
         // crumbled gaps let units (and armies) slip through the old line
         if (rnd() > 0.25) rockTile(Math.round(wx), Math.round(wy), 'wall');
         wx += Math.cos(dir); wy += Math.sin(dir);
+      }
+    }
+
+    // ---- guarantee the frontier's pass: water (a delta arm, the wandering
+    // lake) can conspire with the arc and the ridges to seal the enemy
+    // quarter. If the zone can't be walked to from the centre, carve a
+    // causeway to it so the assault is always possible on foot.
+    if (this.p.frontier && this.enemyZone) {
+      const ez = this.enemyZone;
+      const seen = new Uint8Array(W * H);
+      const qx = [Math.floor(W / 2)], qy = [Math.floor(H / 2)];
+      seen[qy[0] * W + qx[0]] = 1;
+      let nearest = { x: qx[0], y: qy[0], d: Math.hypot(qx[0] - ez.x, qy[0] - ez.y) };
+      let reached = false;
+      for (let i = 0; i < qx.length && !reached; i++) {
+        const x = qx[i], y = qy[i];
+        const d = Math.hypot(x - ez.x, y - ez.y);
+        if (d < nearest.d) nearest = { x, y, d };
+        if (d <= ez.r) { reached = true; break; }
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H || seen[ny * W + nx]) continue;
+          if (this.tiles[ny][nx].type !== 'grass') continue;
+          seen[ny * W + nx] = 1; qx.push(nx); qy.push(ny);
+        }
+      }
+      if (!reached) {
+        // a straight two-tile-wide causeway from the nearest reachable ground
+        // to the zone's heart, filling water and breaking rock as it goes
+        const { x: sx, y: sy } = nearest;
+        const steps = Math.max(1, Math.ceil(Math.hypot(ez.x - sx, ez.y - sy)) * 2);
+        for (let s = 0; s <= steps; s++) {
+          const px = Math.round(sx + (ez.x - sx) * s / steps);
+          const py = Math.round(sy + (ez.y - sy) * s / steps);
+          for (const [ox, oy] of [[0, 0], [1, 0], [0, 1]]) {
+            const t = this.T(px + ox, py + oy);
+            if (t && t.type !== 'grass') { t.type = 'grass'; t.lake = false; t.rock = undefined; t.deco = null; }
+          }
+        }
       }
     }
 

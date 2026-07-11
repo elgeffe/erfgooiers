@@ -74,11 +74,17 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
 
   tavern: { name: 'Tavern', desc: 'Serves any food (bread, sausage, wine, fish…) to keep workers fed & fast', model: 'tavern',
     cost: { timber: 4, stone: 3 }, roof: 0x8a5a2b, wall: 0xcaa46e, accent: 0xffb060,
-    tavern: { foods: ['bread', 'sausage', 'wine', 'fish'], capacity: 6, time: 4 }, worker: 'Taverner', wcolor: 0xb5763a },
+    tavern: { foods: ['bread', 'sausage', 'wine', 'fish', 'clam'], capacity: 6, time: 4 }, worker: 'Taverner', wcolor: 0xb5763a },
 
   fishery: { name: 'Fishery', desc: 'Nets fish from the lake — build on the shore', model: 'cottage',
     cost: { timber: 3, stone: 1 }, roof: 0x3f6f7a, wall: 0xbfae8e, accent: 0x7fb0c4,
     gather: { node: 'fish', out: 'fish', time: 4, range: 6 }, worker: 'Fisher', wcolor: 0x4f93a8 },
+
+  // Coastal lands only (the Zeeland Delta, Texel): the tidal flats are a food
+  // chain that asks for no farmland, no plots and no second building.
+  clamdigger: { name: 'Clam Digger', desc: 'Rakes clams from the tidal flats — build on the sea shore (coastal lands only)', model: 'cottage',
+    cost: { timber: 2, stone: 1 }, roof: 0x8a7c5e, wall: 0xcbbd97, accent: 0xd8bb8c, coastal: true,
+    gather: { node: 'fish', out: 'clam', time: 3.2, range: 6 }, worker: 'Clam raker', wcolor: 0xb9a97e },
 
   ironmine: { name: 'Iron Mine', desc: 'Mines iron deposits — the raw metal for weapons & armor', model: 'mine',
     cost: { timber: 2, stone: 1 }, roof: 0x8a4a30, wall: 0x8f8a80, accent: 0xa86a4a,
@@ -146,7 +152,7 @@ export interface BuildCategory { id: string; name: string; keys: BuildingKey[]; 
 
 export const MENU_CATEGORIES: BuildCategory[] = [
   { id: 'materials', name: 'Materials', keys: ['guildhall', 'woodcutter', 'sawmill', 'forester', 'quarry', 'storehouse'] },
-  { id: 'food', name: 'Food', keys: ['farm', 'mill', 'bakery', 'pigfarm', 'butcher', 'vineyard', 'winery', 'fishery', 'tavern'] },
+  { id: 'food', name: 'Food', keys: ['farm', 'mill', 'bakery', 'pigfarm', 'butcher', 'vineyard', 'winery', 'fishery', 'clamdigger', 'tavern'] },
   { id: 'coin', name: 'Coin', keys: ['goldmine', 'coalmine', 'mint'] },
   { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'ironmine', 'smithy', 'armory', 'watchtower'] },
 ];

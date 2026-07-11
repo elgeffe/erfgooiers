@@ -17,6 +17,7 @@ function itemShapes(key: ItemKey): string {
     case 'meat': return '<path d="M4 13c0-5 4-9 9-9 4 0 7 3 7 7 0 5-5 9-10 9-4 0-6-3-6-7z"/><circle cx="13" cy="11" r="3" fill="#f0b8a5"/><circle cx="13" cy="11" r="1.2" fill="#fff0df"/>';
     case 'sausage': return '<path d="M5 7c3-3 6 0 7 3s4 6 7 3" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M3 5l3 3M18 12l3 3" fill="none" stroke="#5f2a1d" stroke-width="1.2"/>';
     case 'fish': return '<path d="M3 12l-3-5v10zM3 12c4-6 12-7 18 0-6 7-14 6-18 0z"/><circle cx="16" cy="10.5" r="1.2" fill="#26343b"/><path d="M9 8l3-4 2 5"/>';
+    case 'clam': return '<path d="M12 21C5.5 21 2 15 2 8c3 2.5 6.5 4 10 4s7-1.5 10-4c0 7-3.5 13-10 13z"/><path d="M12 12v9M7 11.5l2.5 8M17 11.5l-2.5 8M3.5 10l4 8.5M20.5 10l-4 8.5" fill="none" stroke="#8a7248" stroke-width="1.2"/><circle cx="12" cy="6" r="2.4"/>';
     case 'iron': return '<path d="M5 7h14l3 9-4 3H6l-4-3z"/><path d="M5 7l3 6h11M8 13l-2 6" fill="none" stroke="#633c2c" stroke-width="1.2"/>';
     case 'weapon': return '<path d="M5 20l3-5 8-11 3 1-1 3L9 16z"/><path d="M5 14l5 5M3 20l2-2 2 2-2 2z" fill="none" stroke="#59616a" stroke-width="1.8"/>';
     case 'armor': return '<path d="M12 2l8 3v6c0 5-3 9-8 11-5-2-8-6-8-11V5z"/><path d="M12 5v13M7 9h10" fill="none" stroke="#4f5864" stroke-width="1.3"/>';
@@ -30,7 +31,7 @@ export function itemIconSVG(key: ItemKey, size = 14, className = 'resicon'): str
 const OUTPUT_ICON: Partial<Record<BuildingKey, ItemKey>> = {
   woodcutter: 'trunk', sawmill: 'timber', quarry: 'stone', farm: 'wheat', mill: 'flour', bakery: 'bread',
   goldmine: 'goldore', coalmine: 'coal', mint: 'coin', vineyard: 'grape', winery: 'wine', pigfarm: 'meat',
-  butcher: 'sausage', fishery: 'fish', ironmine: 'iron', smithy: 'weapon', armory: 'armor',
+  butcher: 'sausage', fishery: 'fish', clamdigger: 'clam', ironmine: 'iron', smithy: 'weapon', armory: 'armor',
 };
 
 function specialMark(key: BuildingKey): string {
