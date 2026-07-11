@@ -113,10 +113,11 @@ export const UNITS: Record<UnitKind, UnitDef> = {
     flying: true, fire: true },
 };
 
-/** Counter multiplier encoded on the attacker definition (identity by default). */
+/** Counter multiplier encoded on the attacker definition (identity by default).
+ *  Roles outside UNITS (serfs, builders, specialists) carry no tags or bonuses. */
 export function damageMultiplier(attacker: UnitKind, target: UnitKind): number {
-  const tags = UNITS[target].tags ?? [];
+  const tags = UNITS[target]?.tags ?? [];
   let mult = 1;
-  for (const bonus of UNITS[attacker].bonusVs ?? []) if (tags.includes(bonus.tag)) mult *= bonus.mult;
+  for (const bonus of UNITS[attacker]?.bonusVs ?? []) if (tags.includes(bonus.tag)) mult *= bonus.mult;
   return mult;
 }

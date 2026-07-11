@@ -9,4 +9,9 @@ describe('unit counters', () => {
     expect(damageMultiplier('pikeman', 'soldier')).toBe(1);
     expect(damageMultiplier('soldier', 'horseknight')).toBe(1);
   });
+
+  it('treats economy roles outside UNITS as untagged instead of crashing', () => {
+    expect(damageMultiplier('pikeman', 'serf' as never)).toBe(1);
+    expect(damageMultiplier('serf' as never, 'horseknight')).toBe(1);
+  });
 });
