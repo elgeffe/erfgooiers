@@ -1971,13 +1971,21 @@ export class Game {
     }
   }
 
-  /** A raid squad from a map edge (or a camp), ordered to march on the castle. */
+  /** In co-op, raids pick one of the two standing castles (deterministically). */
+  private raidTarget(): Building | null {
+    const targets: Building[] = [];
+    for (const id of PLAYER_IDS) { const b = this.playerStores.get(id); if (b && !b.removed) targets.push(b); }
+    if (!targets.length) return this.store ?? null;
+    return targets.length === 1 ? targets[0] : targets[Math.floor(rnd() * targets.length)];
+  }
+
+  /** A raid squad from a map edge (or a camp), ordered to march on a castle. */
   private spawnRaid(kind: UnitKind, count: number, from: 'edge' | 'camp'): Unit[] {
     let ox: number, oz: number;
     if (from === 'camp' && this.camps.length) { const c = this.camps[Math.floor(rnd() * this.camps.length)]; ox = this.world.wx(c.x); oz = this.world.wz(c.y); }
     else { const e = this.randomEdge(); ox = e.x; oz = e.z; }
     const squad = this.spawnSquad(kind, count, ox, oz, 'enemy');
-    const castle = this.store;
+    const castle = this.raidTarget();
     for (const u of squad) { u.raider = true; if (castle) this.orderUnit(u, 'attackMove', castle.x + 1, castle.y + 1); }
     return squad;
   }
@@ -2043,7 +2051,7 @@ export class Game {
     }
     const e = this.randomEdge();
     const squad = this.spawnSquad(kind, 1, e.x, e.z, UNITS[kind].faction);
-    const castle = this.store;
+    const castle = this.raidTarget();
     for (const u of squad) { u.raider = true; if (castle) this.orderUnit(u, 'attackMove', castle.x + 1, castle.y + 1); }
     this.toast(`The ${UNITS[kind].name} descends upon Het Gooi!`, 'err');
   }

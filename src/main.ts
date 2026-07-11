@@ -20,7 +20,9 @@ import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionA
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
 import { CoOpClient, type ConnectionSnapshot } from './net/CoOpClient';
-import type { ExpeditionDifficulty, RoomState, ServerMessage } from './net/protocol';
+import type { AcceptedCommand, ExpeditionDifficulty, GameCommand, RoomState, ServerMessage } from './net/protocol';
+import { applyGameCommand } from './game/commands';
+import { EXPEDITION_DIFFICULTY, EXPEDITION_LEVEL_COUNT, expeditionLevelFor } from './data/coOpLevels';
 
 /* =====================================================================
    Erfgooiers — roguelite economy builder set in Het Gooi.
@@ -49,6 +51,13 @@ let game: Game | null = null;
 let phase: Phase = 'menu';
 let currentLevel: LevelDef | null = null;
 let sandbox = false;             // free-build mode: no objective, no timer, no save
+
+// ---------- co-op expedition state ----------
+let coopRun: { level: number; difficulty: ExpeditionDifficulty } | null = null;
+let expeditionStartSent = false; // host guard: fire one start per both-ready lobby
+let coopCmdSeq = 0;
+let coopConnected = false;       // frame loop freezes the co-op sim while offline
+let coopAdvanceTimer: number | null = null;
 
 // per-run tallies for the summary screen (reset when a run starts)
 let clearedThisRun = 0;
@@ -129,6 +138,7 @@ function startLevel(): void {
   } else heroChip.style.display = 'none';
   ui.setGold(run.gold);
   ui.setSandbox(sandbox);
+  ui.setCoOp(false);
   ($('sandboxbar') as HTMLElement).style.display = sandbox ? 'flex' : 'none';
   levelHardTimer = Math.round(level.hardTimer * ascensionTimerMult(sandbox ? 0 : run.ascension));
   if (game.objective) {
@@ -151,6 +161,165 @@ function disposeLevel(): void {
   view.clearWorld();
   game = null;
   currentLevel = null;
+}
+
+// ---------- co-op expedition lifecycle ----------
+/** Wrap a gameplay intent in a relay command; the accepted broadcast applies it. */
+function sendCoopCommand(command: GameCommand): boolean {
+  const snapshot = coop.snapshot();
+  const sent = coop.send({ type: 'command', commandId: `${snapshot.playerId ?? 'p'}-${++coopCmdSeq}`, command });
+  if (!sent) ui.toast('Not connected — action dropped', 'err');
+  return sent;
+}
+
+/** Host auto-start: both seats ready in the lobby fires exactly one launch. */
+function maybeStartExpedition(snapshot: ConnectionSnapshot): void {
+  const room = snapshot.room;
+  if (!room || room.phase !== 'lobby' || expeditionStartSent) return;
+  if (snapshot.status !== 'connected') return;
+  const local = room.players.find(p => p.id === snapshot.playerId);
+  if (!local?.host) return;
+  if (room.players.length !== 2 || !room.players.every(p => p.ready)) return;
+  expeditionStartSent = true;
+  sendCoopCommand({ type: 'startExpedition', seed: randomSeed(), level: 1 });
+}
+
+/** Every accepted command (both players', in server order) lands here. */
+function applyAcceptedCommand(accepted: AcceptedCommand): void {
+  const command = accepted.command;
+  if (command.type === 'startExpedition') {
+    if (coop.snapshot().room) startCoopLevel(command.seed, command.level);
+    return;
+  }
+  if (!game || !coopRun) return;
+  applyGameCommand(game, accepted.playerId, command);
+}
+
+/** Build one Expedition level for both peers from the shared seed. */
+function startCoopLevel(seed: number, levelIndex: number): void {
+  const snapshot = coop.snapshot();
+  const playerId = snapshot.playerId;
+  if (!playerId) return;
+  if (coopAdvanceTimer !== null) { clearTimeout(coopAdvanceTimer); coopAdvanceTimer = null; }
+  if (game) disposeLevel();
+  sandbox = false;
+  const difficulty = snapshot.room?.settings.difficulty ?? 'erfgooiers';
+  const diff = EXPEDITION_DIFFICULTY[difficulty];
+  if (!coopRun || levelIndex === 1) {
+    coopRun = { level: levelIndex, difficulty };
+    run = newRun(seed);          // local gold container — never saved, never shopped (yet)
+    clearedThisRun = 0;
+    goldEarnedThisRun = 0;
+  } else {
+    coopRun.level = levelIndex;
+    run!.levelIndex = levelIndex;
+  }
+  const level = expeditionLevelFor(levelIndex);
+  currentLevel = level;
+  simRng.reseed(seed ^ 0x5bd1e995);
+  uiRng.reseed(seed ^ 0x27d4eb2f);
+  const world = new World({ seed, ...level.world, biome: 'gooi' });
+  view.loadWorld(world);
+  game = new Game(world, view, new Modifiers([...diff.specs]), playerId);
+  game.toast = (m, c) => ui.toast(m, c);
+  game.onSelect = o => ui.showInspector(o);
+  game.sfx = name => audio.play(name as any);
+  audio.setBiome('gooi');
+  audio.setLevel(level.index);
+  audio.setDynamic(false);
+  game.onGold = amt => { if (run) { run.gold = Math.max(0, run.gold + amt); if (amt > 0) goldEarnedThisRun += amt; ui.setGold(run.gold); } };
+  game.onHurt = (x, z) => view.spawnHurt(x, z);
+  game.onDeath = (x, z, _fac, color, role, scale) => view.spawnCorpse(x, z, color, role, scale);
+  game.objective = new Objective(level.objectives[0]);
+  game.initCoOp(level.kit, level.kit);
+  // in co-op every gameplay intent goes through the host-ordered relay;
+  // the accepted broadcast (applyAcceptedCommand) mutates the sim on both peers
+  game.submitCommand = command => { sendCoopCommand(command); };
+  ui.setGame(game);
+  ui.setPerks([], []);
+  controls.setGame(game);
+  game.setEnemies(level.enemies ?? null);
+  ui.setMutators([]);
+  // both settlements get the same starting garrison, each owned by its player
+  if (level.startArmy) {
+    for (const pid of ['p1', 'p2'] as const) {
+      const st = game.storeFor(pid);
+      const sx = world.wx(st.x) + 0.5, sz = world.wz(st.y) + 0.5;
+      for (const a of level.startArmy) {
+        for (const u of game.spawnSquad(a.kind, a.count, sx, sz, 'player')) u.owner = pid;
+      }
+    }
+  }
+  ($('heroChip') as HTMLElement).style.display = 'none'; // no mounted hero in co-op v1
+  ui.setGold(run!.gold);
+  ui.setSandbox(false);
+  ui.setCoOp(true);
+  ($('btnDebugWin') as HTMLElement).style.display = 'none'; // a local-only win would desync
+  ($('sandboxbar') as HTMLElement).style.display = 'none';
+  levelHardTimer = Math.round(level.hardTimer * diff.timerMult);
+  ui.setLevel(level.index, level.name);
+  ui.setObjective(game.objective.brief());
+  ui.updateObjective(game.objective.evaluate(game).label, 0, levelHardTimer);
+  const home = game.storeFor(playerId);
+  view.centerOn(world.wx(home.x) + 0.5, world.wz(home.y) + 2);
+  view.drawMinimap(game.units);
+  simAcc = 0;
+  phase = 'playing';
+  if ((import.meta as any).env?.DEV) (window as any).game = game;
+  showScreen(null);
+  ui.toast(`Expedition level ${level.index} — ${level.name}`);
+}
+
+/** Team objective met: interlude, then the host launches the next level. */
+function onCoopLevelClear(): void {
+  if (phase !== 'playing' || !coopRun || !currentLevel) return;
+  clearedThisRun++;
+  audio.play('coin');
+  const cleared = coopRun.level;
+  const last = cleared >= EXPEDITION_LEVEL_COUNT;
+  disposeLevel();
+  if (last) {
+    phase = 'summary';
+    renderCoopSummary(true);
+    showScreen('summary');
+    endCoopSession();
+    return;
+  }
+  phase = 'shop'; // a non-playing beat while both peers wait for the next launch
+  renderCoopLobby();
+  showScreen('cooplobby');
+  const snapshot = coop.snapshot();
+  const isHost = snapshot.room?.players.find(p => p.id === snapshot.playerId)?.host;
+  if (isHost) {
+    coopAdvanceTimer = window.setTimeout(() => {
+      coopAdvanceTimer = null;
+      sendCoopCommand({ type: 'startExpedition', seed: randomSeed(), level: cleared + 1 });
+    }, 4000);
+  }
+}
+
+function renderCoopSummary(victory: boolean, reason: 'timeout' | 'castle' = 'timeout'): void {
+  $('sumTitle').textContent = victory ? 'Expedition complete — victory!' : 'Expedition over';
+  $('sumSub').textContent = victory
+    ? `You and your ally cleared all ${EXPEDITION_LEVEL_COUNT} Expedition levels.`
+    : reason === 'castle'
+      ? 'A castle has fallen — the Expedition ends for both of you.'
+      : 'The clock beat the Expedition — it ends for both of you.';
+  $('sumBody').innerHTML =
+    `Cleared <b>${clearedThisRun}</b> Expedition level(s) together · gold earned <b>${goldEarnedThisRun}</b>` +
+    '<br>Co-op runs bank no Heritage yet — rewards arrive with a later update.';
+}
+
+/** Tear down the co-op session state and release the seat. */
+function endCoopSession(): void {
+  if (coopAdvanceTimer !== null) { clearTimeout(coopAdvanceTimer); coopAdvanceTimer = null; }
+  coopRun = null;
+  run = null;
+  expeditionStartSent = false;
+  ui.setCoOp(false);
+  coop.leave();
+  pendingReclaims.clear();
+  $('multiplayerpanel').style.display = 'none';
 }
 
 // ---------- transitions ----------
@@ -374,7 +543,14 @@ function onDefeat(reason: 'timeout' | 'castle' = 'timeout'): void {
   ui.toast(reason === 'castle' ? 'The castle has fallen — the run ends here' : 'Out of time — the run ends here', 'err');
   summaryNote = '';
   disposeLevel();
-  phase = 'summary'; renderSummary(false, reason); showScreen('summary');
+  phase = 'summary';
+  if (coopRun) {
+    renderCoopSummary(false, reason);
+    showScreen('summary');
+    endCoopSession();
+    return;
+  }
+  renderSummary(false, reason); showScreen('summary');
   Save.clearRun();
   run = null;
 }
@@ -393,6 +569,7 @@ function shopContinue(contract: Contract): void {
 }
 
 function abandonRun(): void {
+  if (coopRun) { leaveCoop(); return; }
   if (phase === 'playing') disposeLevel();
   if (!sandbox) Save.clearRun();
   sandbox = false;
@@ -400,10 +577,10 @@ function abandonRun(): void {
   goMenu();
 }
 
-/** Open the in-game pause menu, freezing the sim until the player resumes. */
+/** Open the in-game pause menu; in co-op the shared sim keeps running. */
 function openPauseMenu(): void {
   if (phase !== 'playing') return;
-  ui.setSpeed(0);
+  if (!coopRun) ui.setSpeed(0);
   $('pausemenu').style.display = 'flex';
 }
 
@@ -509,15 +686,19 @@ function renderCoopLobby(): void {
   $('coopLobbyPlayers').innerHTML = playerRows(room, snapshot.playerId, 'coopplayer');
   const local = room.players.find(player => player.id === snapshot.playerId);
   const bothReady = room.players.length === 2 && room.players.every(player => player.ready);
-  $('coopLobbyStatus').textContent = room.players.length < 2
-    ? 'Waiting for the other player — share the invite code.'
-    : bothReady ? 'Both players ready. Expedition setup will start.' : 'Choose Ready when your connection is stable.';
+  $('coopLobbyStatus').textContent = coopRun && phase === 'shop'
+    ? `Level cleared — the Expedition marches on shortly…`
+    : room.players.length < 2
+      ? 'Waiting for the other player — share the invite code.'
+      : bothReady ? 'Both players ready — the Expedition is starting.' : 'Choose Ready when your connection is stable.';
   const ready = $('btnCoopReady') as HTMLButtonElement;
   ready.textContent = local?.ready ? 'Not ready' : 'Ready';
   ready.classList.toggle('ghost', !!local?.ready);
 }
 
 function renderMultiplayer(snapshot: ConnectionSnapshot): void {
+  coopConnected = snapshot.status === 'connected';
+  maybeStartExpedition(snapshot);
   const dot = $('coopStatusDot');
   dot.className = snapshot.status;
   const button = $('btnMultiplayer') as HTMLButtonElement;
@@ -555,6 +736,8 @@ function renderReclaims(): void {
 }
 
 function handleCoopMessage(message: ServerMessage): void {
+  if (message.type === 'commandAccepted') { applyAcceptedCommand(message.accepted); return; }
+  if (message.type === 'commandRejected') { ui.toast(`Command rejected: ${message.reason}`, 'err'); return; }
   if (message.type === 'reclaimRequested') {
     pendingReclaims.set(message.requestId, { playerName: message.playerName, seat: message.seat });
     renderReclaims();
@@ -576,9 +759,8 @@ async function copyCoopInvite(): Promise<void> {
 }
 
 function leaveCoop(): void {
-  coop.leave();
-  pendingReclaims.clear();
-  $('multiplayerpanel').style.display = 'none';
+  if (coopRun && phase === 'playing') disposeLevel();
+  endCoopSession();
   goMenu();
 }
 
@@ -852,7 +1034,9 @@ function frame(now: number): void {
   if (phase === 'playing' && game) view.updateHealthBars(game.units, game.buildings);
 
   if (phase === 'playing' && game && currentLevel && game.objective) {
-    simAcc += dt * game.simSpeed;
+    // a disconnected co-op peer freezes rather than drifting from its ally
+    const simDt = coopRun && !coopConnected ? 0 : dt;
+    simAcc += simDt * game.simSpeed;
     let steps = 0;
     const t0 = performance.now();
     while (simAcc >= TICK && steps < MAX_STEPS) { game.update(TICK); simAcc -= TICK; steps++; }
@@ -865,7 +1049,7 @@ function frame(now: number): void {
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
 
     // resolve the level last: win, castle lost, or timeout tears the level down
-    if (st.done) onLevelClear();
+    if (st.done) { if (coopRun) onCoopLevelClear(); else onLevelClear(); }
     else if (game.defeat) onDefeat('castle');
     else if (remaining <= 0) onDefeat('timeout');
   } else if (phase === 'playing' && game && currentLevel) {

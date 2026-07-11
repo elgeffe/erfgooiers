@@ -42,6 +42,7 @@ export class UI {
   private perkUnlocks: string[] = [];
   private tradeOpen = false;
   private pendingRequestId: string | null = null;
+  private speedLocked = false;   // co-op runs at a fixed 1× — a local pause would desync
 
   constructor() {
     $('logo').innerHTML = logoSVG(30);
@@ -140,6 +141,7 @@ export class UI {
 
   /** Toggle the co-op HUD: the Trade tab appears, the speed stays locked at 1×. */
   setCoOp(on: boolean): void {
+    this.speedLocked = on;
     ($('btnTrade') as HTMLElement).style.display = on ? 'block' : 'none';
     ($('sp0') as HTMLElement).style.display = on ? 'none' : '';
     ($('sp3') as HTMLElement).style.display = on ? 'none' : '';
@@ -351,12 +353,13 @@ export class UI {
     $('sp3').onclick = () => this.setSpeed(3);
   }
   setSpeed(s: number): void {
+    if (this.speedLocked && s !== 1) return;
     if (this.game) this.game.simSpeed = s;
     $('sp0').classList.toggle('on', s === 0);
     $('sp1').classList.toggle('on', s === 1);
     $('sp3').classList.toggle('on', s === 3);
   }
-  togglePause(): void { if (this.game) this.setSpeed(this.game.simSpeed === 0 ? 1 : 0); }
+  togglePause(): void { if (this.game && !this.speedLocked) this.setSpeed(this.game.simSpeed === 0 ? 1 : 0); }
 
   // ---------- inspector ----------
   private wireInspector(): void {
