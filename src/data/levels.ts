@@ -139,7 +139,7 @@ export const LEVELS: LevelDef[] = [
 
   { index: 9, name: 'The Enemy Keep', type: 'Military',
     objectives: [{ kind: 'destroy', n: 5 }],
-    world: { w: 72, h: 72, treeStands: 13, oreVeins: 11, waterScale: 1.1, meadows: 6, goldPiles: 7, mountains: 3, ruins: 2, frontier: true },
+    world: { w: 80, h: 80, treeStands: 14, oreVeins: 12, waterScale: 1.1, meadows: 6, goldPiles: 7, mountains: 3, ruins: 2, frontier: true, frontiers: 2 },
     kit: { stock: { timber: 22, stone: 18, bread: 16, coin: 20, weapon: 4, armor: 2 }, serfs: 3, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 13 }, { kind: 'archer', count: 10 }, { kind: 'knight', count: 4 }],
     // the demon broods over the keep's quarter instead of raiding your town;
@@ -152,7 +152,7 @@ export const LEVELS: LevelDef[] = [
 
   { index: 10, name: 'Dragon\u2019s Hoard', type: 'Boss',
     objectives: [{ kind: 'slay', unit: 'dragon', n: 1 }],
-    world: { w: 76, h: 76, treeStands: 14, oreVeins: 12, waterScale: 1.1, meadows: 7, goldPiles: 9, mountains: 4, frontier: true },
+    world: { w: 86, h: 86, treeStands: 16, oreVeins: 13, waterScale: 1.1, meadows: 7, goldPiles: 9, mountains: 4, frontier: true, frontiers: 2 },
     kit: { stock: { timber: 24, stone: 18, bread: 20, coin: 28, weapon: 5, armor: 2 }, serfs: 3, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 17 }, { kind: 'archer', count: 12 }, { kind: 'knight', count: 6 }],
     // the dragon sleeps in its walled cul-de-sac behind undead vanguard camps;

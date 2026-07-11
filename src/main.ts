@@ -68,7 +68,20 @@ function startLevel(): void {
   // ascension journey: higher tiers march the run's later levels into
   // harsher biomes (sandbox picks its own on the setup screen)
   const biomeKey = sandbox ? sandboxCfg.biome : campaignBiome(run.ascension, run.levelIndex);
-  const world = new World({ seed, ...level.world, biome: biomeKey });
+  // The Infernal finale: Hell is a vast, thrice-walled battlefield. Great
+  // undead strongholds stand between you and the dragon, with the resources
+  // (and the clock, below) to raise the army that can break them.
+  const hellFinale = !sandbox && biomeKey === 'hell';
+  const worldParams = { seed, ...level.world, biome: biomeKey };
+  if (hellFinale) {
+    worldParams.w = (level.world.w ?? 48) + 24;
+    worldParams.h = (level.world.h ?? 48) + 24;
+    worldParams.frontiers = 3;
+    worldParams.treeStands = Math.round((level.world.treeStands ?? 8) * 1.7);
+    worldParams.oreVeins = Math.round((level.world.oreVeins ?? 6) * 1.8);
+    worldParams.goldPiles = (level.world.goldPiles ?? 4) + 8;
+  }
+  const world = new World(worldParams);
   view.loadWorld(world);
   const mutators = sandbox ? [] : run.mutators;
   const selectedHeroId = sandbox ? (sandboxCfg.hero === 'none' ? null : sandboxCfg.hero) : run.hero;
@@ -100,7 +113,12 @@ function startLevel(): void {
   // and breathe more life into their bosses
   game.garrisonMult = sandbox ? 1 : 1 + 0.35 * run.ascension;
   game.bossHpMult = sandbox ? 1 : 1 + 0.5 * run.ascension;
-  game.setEnemies(level.enemies ?? null);
+  // hell's extra strongholds: great undead hosts in every walled corner
+  // (a fresh object each time — the static LEVELS table stays untouched)
+  const enemies = hellFinale && level.enemies
+    ? { ...level.enemies, camps: [...(level.enemies.camps ?? []), { count: 4, guards: 14, kinds: ['skeleton', 'skelarcher', 'zombie', 'brute'] as UnitKind[] }] }
+    : level.enemies ?? null;
+  game.setEnemies(enemies);
   // mutator payloads beyond stat curses: extra wild packs on the map
   for (const id of mutators) {
     const def = MUTATOR_BY_ID[id];
@@ -130,7 +148,8 @@ function startLevel(): void {
   ui.setGold(run.gold);
   ui.setSandbox(sandbox);
   ($('sandboxbar') as HTMLElement).style.display = sandbox ? 'flex' : 'none';
-  levelHardTimer = Math.round(level.hardTimer * ascensionTimerMult(sandbox ? 0 : run.ascension));
+  // hell's siege is meant to be long and cumbersome: much more clock to match
+  levelHardTimer = Math.round(level.hardTimer * ascensionTimerMult(sandbox ? 0 : run.ascension) * (hellFinale ? 1.8 : 1));
   if (game.objective) {
     ui.setLevel(level.index, level.name);
     ui.setObjective(game.objective.brief());

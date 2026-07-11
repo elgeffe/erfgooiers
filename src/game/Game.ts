@@ -1782,6 +1782,8 @@ export class Game {
     return true;
   }
 
+  /** Deals strongholds round-robin across the map's walled enemy quarters. */
+  private zoneIdx = 0;
   /** Tiles an army can walk to from the town centre (lazy, one BFS per level). */
   private reachMask: Uint8Array | null = null;
   private reachable(x: number, y: number): boolean {
@@ -1819,9 +1821,11 @@ export class Game {
       }
       return false;
     };
-    // frontier maps: strongholds live inside the walled-off enemy quarter,
-    // crowning the deepest ground in the corner rather than lining the pass
-    const ez = this.world.enemyZone;
+    // frontier maps: strongholds live inside the walled-off enemy quarters
+    // (dealt round-robin when several corners are walled), crowning the
+    // deepest ground in the corner rather than lining the pass
+    const zones = this.world.enemyZones;
+    const ez = zones.length ? zones[this.zoneIdx++ % zones.length] : null;
     if (ez) {
       let best: { x: number; y: number } | null = null, bd = -1;
       for (let tries = 0; tries < 500; tries++) {
