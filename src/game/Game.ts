@@ -9,11 +9,12 @@ import { findPath } from '../engine/pathfinding';
 import { formationSpots } from '../engine/formations';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
-import { PLAYER_IDS, type Building, type BuildingKey, type Coord, type Faction, type Formation, type OwnerId, type PlayerId, type Site, type Unit } from '../types';
+import { PLAYER_IDS, type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit } from '../types';
 import { doorTile, unitLabel } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, ownerForFaction } from './ownership';
+import { TRADE, tradeEta, tradeLoadTime, tradePartner, tradeShipmentActive, type TradeHistoryEntry, type TradeRequest, type TradeShipment } from './trade';
 
 // Gameplay events use the sim stream (reseeded per level), never worldgen/cosmetic.
 const rnd = () => simRng.next();
@@ -1522,7 +1523,7 @@ export class Game {
     if (active) {
       this.toast('The bell tolls — workers run for the castle!', 'err');
       for (const u of this.units) {
-        if (u.dead || u.owner !== owner || u.faction !== 'player' || this.isFighter(u)) continue;
+        if (u.dead || u.owner !== owner || u.faction !== 'player' || this.isFighter(u) || u.role === 'carrier') continue;
         if (u.task) this.cancelTask(u);
         const site = u.target as Site | null;
         if (site && site.isSite && site.builder === u) site.builder = null;
@@ -1558,6 +1559,197 @@ export class Game {
     u.status = 'Running for the castle';
     if (!u.path) { if (!this.sendTo(u, d.x, d.y)) { u.mesh.position.y = 0; return; } }
     this.moveUnit(u, dt);
+  }
+
+  // =====================================================================
+  //  Trade — the only way goods cross between the two allied economies.
+  //  A confirmed send reserves the goods at once, loads a visible carrier
+  //  at the sender's storehouse and walks it to the ally's store. Goods
+  //  arrive only when the cart does; a slain cart's cargo is lost on the
+  //  road. Requests transfer nothing — they are a visible ask.
+  // =====================================================================
+  readonly tradeRequests: TradeRequest[] = [];
+  readonly tradeShipments: TradeShipment[] = [];
+  readonly tradeHistory: TradeHistoryEntry[] = [];
+  private tradeSeq = 0;
+
+  private tradeLog(kind: TradeHistoryEntry['kind'], text: string): void {
+    this.tradeHistory.unshift({ at: this.elapsed, kind, text });
+    if (this.tradeHistory.length > TRADE.historyCap) this.tradeHistory.length = TRADE.historyCap;
+  }
+
+  /** A standing storehouse by entity id owned by `owner`, or null. */
+  private storeById(id: number, owner: PlayerId): Building | null {
+    const b = this.entityById(id);
+    if (!b || !('def' in b) || b.isSite || !b.def.store || b.removed || b.owner !== owner) return null;
+    return b as Building;
+  }
+
+  /** Ask the ally for goods, delivered to one of your own storehouses. */
+  requestTrade(owner: PlayerId, item: string, amount: number, destinationId: number): boolean {
+    if (!Number.isInteger(amount) || amount <= 0 || !(item in ITEMS)) return false;
+    if (!this.storeById(destinationId, owner)) { if (owner === this.localPlayerId) this.toast('Choose one of your own storehouses for the delivery', 'err'); return false; }
+    const r: TradeRequest = {
+      id: `t${++this.tradeSeq}`, from: owner, item: item as ItemKey,
+      amount, destinationId, status: 'open', at: this.elapsed,
+    };
+    this.tradeRequests.unshift(r);
+    this.tradeLog('requested', `${owner === this.localPlayerId ? 'You' : 'Your ally'} requested ${amount} ${ITEMS[r.item].name.toLowerCase()}`);
+    if (owner !== this.localPlayerId) { this.toast(`Your ally asks for ${amount} ${ITEMS[r.item].name.toLowerCase()} — open the Trade tab`, 'err'); this.sfx('click'); }
+    return true;
+  }
+
+  /** The requester cancels their ask; the ally declines it. */
+  cancelTradeRequest(actor: PlayerId, requestId: string): boolean {
+    const r = this.tradeRequests.find(req => req.id === requestId && req.status === 'open');
+    if (!r) return false;
+    r.status = r.from === actor ? 'cancelled' : 'declined';
+    this.tradeLog(r.status, `Request for ${r.amount} ${ITEMS[r.item].name.toLowerCase()} ${r.status}`);
+    return true;
+  }
+
+  /** Confirm a send: reserve the goods and dispatch a cart to the ally. */
+  sendTrade(owner: PlayerId, item: string, amount: number, sourceId: number, destinationId: number, requestId?: string): boolean {
+    const local = owner === this.localPlayerId;
+    if (!Number.isInteger(amount) || amount <= 0 || !(item in ITEMS)) return false;
+    const source = this.storeById(sourceId, owner);
+    const dest = this.storeById(destinationId, tradePartner(owner));
+    if (!source || !dest) { if (local) this.toast('Trade needs your storehouse and a standing allied storehouse', 'err'); return false; }
+    const send = Math.min(amount, source.stock![item] || 0);
+    if (send <= 0) { if (local) { this.toast('Not enough ' + ITEMS[item as keyof typeof ITEMS].name.toLowerCase() + ' in that storehouse', 'err'); this.sfx('error'); } return false; }
+    const sd = doorTile(source), dd = doorTile(dest);
+    const path = findPath(this.world, sd.x, sd.y, dd.x, dd.y);
+    if (!path) { if (local) { this.toast("No land route to your ally's storehouse", 'err'); this.sfx('error'); } return false; }
+    source.stock![item] = (source.stock![item] || 0) - send;
+    const u = this.spawnUnit('carrier', 0x9a7b52, sd, owner);
+    u.roleName = 'Carrier';
+    u.status = 'Loading the cart';
+    u.hp = u.maxHp = TRADE.carrierHp;
+    u.spd = BASE_SPEED * TRADE.carrierSpeedMult;
+    this.setCarrying(u, item);
+    const s: TradeShipment = {
+      id: `t${++this.tradeSeq}`, from: owner, to: tradePartner(owner),
+      item: item as ItemKey, amount: send, sourceId, destinationId,
+      phase: 'loading', loadT: tradeLoadTime(send), eta: tradeEta(path.length, BASE_SPEED),
+      carrier: u, requestId, at: this.elapsed,
+    };
+    this.tradeShipments.unshift(s);
+    if (requestId) {
+      const r = this.tradeRequests.find(req => req.id === requestId && req.status === 'open' && req.from === s.to);
+      if (r) { r.status = 'fulfilled'; s.destinationId = this.storeById(r.destinationId, s.to) ? r.destinationId : s.destinationId; }
+    }
+    if (local) this.toast(`Cart loading — ${send} ${ITEMS[s.item].name.toLowerCase()} bound for your ally`);
+    else this.toast(`Your ally is sending ${send} ${ITEMS[s.item].name.toLowerCase()}`);
+    this.sfx('place');
+    return true;
+  }
+
+  /** Cancel before dispatch; a moving cart is recalled physically. */
+  cancelTradeShipment(actor: PlayerId, shipmentId: string): boolean {
+    const s = this.tradeShipments.find(sh => sh.id === shipmentId && sh.from === actor);
+    if (!s || !tradeShipmentActive(s)) return false;
+    if (s.phase === 'loading') {
+      this.refundShipment(s);
+      s.phase = 'recalled';
+      this.despawnCarrier(s);
+      this.tradeLog('recalled', `Shipment of ${s.amount} ${ITEMS[s.item].name.toLowerCase()} cancelled before departure`);
+      return true;
+    }
+    if (s.phase === 'enroute') {
+      s.phase = 'returning';
+      if (s.carrier) { s.carrier.path = null; s.carrier.status = 'Recalled — turning the cart around'; }
+      if (actor === this.localPlayerId) this.toast('Shipment recalled — the cart turns for home');
+      return true;
+    }
+    return false;
+  }
+
+  /** Return a shipment's cargo to the sender's stores (source first). */
+  private refundShipment(s: TradeShipment): void {
+    const source = this.storeById(s.sourceId, s.from) ?? this.stores(s.from)[0] ?? null;
+    if (!source) { this.tradeLog('lost', `${s.amount} ${ITEMS[s.item].name.toLowerCase()} had nowhere to return to`); return; }
+    source.stock![s.item] = (source.stock![s.item] || 0) + s.amount;
+  }
+
+  private despawnCarrier(s: TradeShipment): void {
+    const u = s.carrier;
+    s.carrier = null;
+    if (!u) return;
+    const i = this.units.indexOf(u);
+    if (i >= 0) { this.view.remove(u.mesh); this.units.splice(i, 1); }
+    if (this.selected === u) this.select(null);
+  }
+
+  /** Advance every active shipment: loading, the outward haul, or the recall. */
+  private updateTrade(sdt: number): void {
+    for (const s of this.tradeShipments) {
+      if (!tradeShipmentActive(s)) continue;
+      const u = s.carrier;
+      if (!u || u.dead) {
+        s.phase = 'lost';
+        s.carrier = null;
+        this.tradeLog('lost', `A caravan was lost with ${s.amount} ${ITEMS[s.item].name.toLowerCase()}`);
+        this.toast(`A trade caravan was ambushed — ${s.amount} ${ITEMS[s.item].name.toLowerCase()} lost`, 'err');
+        continue;
+      }
+      if (s.phase === 'loading') {
+        s.loadT -= sdt;
+        u.mesh.position.y = 0;
+        if (s.loadT <= 0) { s.phase = 'enroute'; u.status = `Hauling ${ITEMS[s.item].name.toLowerCase()} to the ally`; }
+        continue;
+      }
+      if (s.phase === 'enroute') {
+        const dest = this.storeById(s.destinationId, s.to);
+        if (!dest) {
+          // the destination fell or was demolished mid-haul — turn for home
+          s.phase = 'returning';
+          u.path = null;
+          u.status = 'Destination gone — returning';
+          continue;
+        }
+        const d = doorTile(dest);
+        if (u.tx === d.x && u.ty === d.y && !u.path) {
+          dest.stock![s.item] = (dest.stock![s.item] || 0) + s.amount;
+          s.phase = 'delivered';
+          this.tradeLog('delivered', `${s.amount} ${ITEMS[s.item].name.toLowerCase()} delivered to ${s.to === this.localPlayerId ? 'you' : 'your ally'}`);
+          this.toast(s.to === this.localPlayerId
+            ? `Trade arrived: ${s.amount} ${ITEMS[s.item].name.toLowerCase()} from your ally`
+            : `Your shipment of ${s.amount} ${ITEMS[s.item].name.toLowerCase()} was delivered`);
+          this.sfx('coin');
+          this.despawnCarrier(s);
+          continue;
+        }
+        this.walkCarrier(u, d, sdt);
+        continue;
+      }
+      // returning: walk back to the source (or any surviving own store) and unload
+      const home = this.storeById(s.sourceId, s.from) ?? this.stores(s.from)[0] ?? null;
+      if (!home) {
+        s.phase = 'lost';
+        this.tradeLog('lost', `${s.amount} ${ITEMS[s.item].name.toLowerCase()} had nowhere to return to`);
+        this.despawnCarrier(s);
+        continue;
+      }
+      const hd = doorTile(home);
+      if (u.tx === hd.x && u.ty === hd.y && !u.path) {
+        home.stock![s.item] = (home.stock![s.item] || 0) + s.amount;
+        s.phase = 'recalled';
+        this.tradeLog('recalled', `${s.amount} ${ITEMS[s.item].name.toLowerCase()} returned to the storehouse`);
+        if (s.from === this.localPlayerId) this.toast('Recalled shipment unloaded back into your storehouse');
+        this.despawnCarrier(s);
+        continue;
+      }
+      this.walkCarrier(u, hd, sdt);
+    }
+  }
+
+  /** Carrier movement: re-path on a throttle when blocked, then walk. */
+  private walkCarrier(u: Unit, d: Coord, sdt: number): void {
+    if (!u.path) {
+      u.timer -= sdt;
+      if (u.timer <= 0) { u.timer = 1; this.sendTo(u, d.x, d.y); }
+    }
+    if (u.path) this.moveUnit(u, sdt); else u.mesh.position.y = 0;
   }
 
   /** Toggle a construction site's priority (materials & builders go there first). */
@@ -1901,12 +2093,14 @@ export class Game {
       if (u.dead) continue;
       u.hunger = Math.max(0, u.hunger - sdt * 100 / 600 * hungerRate);
       if (this.isFighter(u)) this.combatUpdate(u, sdt);
+      else if (u.role === 'carrier') continue; // trade carts are driven by updateTrade
       else if ((u.owner === 'p1' || u.owner === 'p2') && this.bells.has(u.owner) && u.faction === 'player') this.refugeUpdate(u, sdt);
       else if (u.role === 'serf') this.serfUpdate(u, sdt);
       else if (u.role === 'laborer') this.laborerUpdate(u, sdt);
       else if (u.role === 'villager' && !u.home) this.villagerStroll(u, sdt);
       else this.workerUpdate(u, sdt);
     }
+    this.updateTrade(sdt);
     this.separate(sdt);
     this.updateProjectiles(sdt);
     this.updateFlames(sdt);
