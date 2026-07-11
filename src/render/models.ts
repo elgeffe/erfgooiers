@@ -948,6 +948,16 @@ function dressUnit(g: THREE.Group, role: string): void {
       add(sword());
       break;
     }
+    case 'pikeman': { // open helm, breastplate and a conspicuously long ash pike
+      add(dome(0x858b93, 0.17, 0.66));
+      add(plate(0x7d8794));
+      const pike = new THREE.Group();
+      const shaft = new THREE.Mesh(box(0.045, 1.25, 0.045), mat(0x76512f)); shaft.position.y = 0.48;
+      const head = new THREE.Mesh(cone(0.07, 0.25, 5), mat(0xd8dde2)); head.position.y = 1.22;
+      pike.add(shaft, head); pike.position.set(0.27, 0.05, 0.08); pike.rotation.z = -0.28; pike.userData.marker = true; add(pike);
+      add(shield(0x6b568f));
+      break;
+    }
     case 'knight': { // full helm with plume, heavy plate, sword & kite shield
       add(dome(0x7d8794, 0.185, 0.64));
       const plume = hatCone(0xd9a441, 0.05, 0.22, 6); plume.position.set(0, 0.86, -0.02); plume.userData.marker = true; add(plume);
@@ -1273,12 +1283,14 @@ export function makePlotMarker(): THREE.Group {
   return g;
 }
 
-/** The rally flag planted where a barracks sends its freshly trained fighters. */
-export function makeFlag(): THREE.Group {
+/** A rally/order flag. Transient variants own transparent materials so their
+ *  opacity can animate without fading every cached flag in the scene. */
+export function makeFlag(pennantHex = 0x3f5aa0, transient = false): THREE.Group {
   const g = new THREE.Group();
-  const pole = new THREE.Mesh(cyl(0.025, 0.03, 0.9, 6), mat(0x5b4433));
+  const flagMat = (hex: number) => transient ? stdMat({ color: hex, transparent: true, opacity: 0 }) : mat(hex);
+  const pole = new THREE.Mesh(cyl(0.025, 0.03, 0.9, 6), flagMat(0x5b4433));
   pole.position.y = 0.45; pole.castShadow = true; g.add(pole);
-  const pennant = new THREE.Mesh(cone(0.13, 0.4, 3), mat(0x3f5aa0));
+  const pennant = new THREE.Mesh(cone(0.13, 0.4, 3), flagMat(pennantHex));
   pennant.rotation.z = -Math.PI / 2; pennant.position.set(0.22, 0.78, 0); g.add(pennant);
   return g;
 }

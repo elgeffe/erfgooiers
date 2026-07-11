@@ -86,7 +86,7 @@ export class View {
   private nextBirdT = 0;
 
   // short-lived flags marking where the player just ordered units to go
-  private readonly orderPings: { mesh: THREE.Group; life: number; max: number }[] = [];
+  private readonly orderPings: { mesh: THREE.Group; life: number; max: number; mats: THREE.Material[] }[] = [];
 
   // minimap
   private readonly mm: HTMLCanvasElement;
@@ -456,27 +456,33 @@ this.skyBirds.length = 0;
   /** Marker parented onto a building mesh (not the world) so it follows it. */
   createPlotMarker(): THREE.Group { return makePlotMarker(); }
 
-  /** Plant a short-lived flag where the player just ordered units to move —
-   *  it pops in, stands a moment, then shrinks away (see animate). */
-  showOrderMarker(wx: number, wz: number): void {
-    const m = makeFlag();
+  /** Plant a short-lived flag for a unit order. Focus-fire uses red; movement
+   *  uses blue. Both fade in and out without touching shared scene materials. */
+  showOrderMarker(wx: number, wz: number, attack = false): void {
+    const m = makeFlag(attack ? 0xc83232 : 0x3f5aa0, true);
     m.userData.dynamic = true;
     m.position.set(wx, 0, wz);
-    m.scale.setScalar(0.1);
     this.worldGroup.add(m);
     this.freeze(m, false);
-    this.orderPings.push({ mesh: m, life: 1.5, max: 1.5 });
+    const mats: THREE.Material[] = [];
+    m.traverse(o => { const x = o as THREE.Mesh; if (x.material && !Array.isArray(x.material)) mats.push(x.material); });
+    this.orderPings.push({ mesh: m, life: 1.6, max: 1.6, mats });
   }
 
   private updateOrderPings(dt: number): void {
     for (let i = this.orderPings.length - 1; i >= 0; i--) {
       const p = this.orderPings[i];
       p.life -= dt;
-      if (p.life <= 0) { this.worldGroup.remove(p.mesh); this.orderPings.splice(i, 1); continue; }
+      if (p.life <= 0) {
+        this.worldGroup.remove(p.mesh);
+        for (const m of p.mats) m.dispose();
+        this.orderPings.splice(i, 1);
+        continue;
+      }
       const age = p.max - p.life;
-      // quick pop up, hold, then shrink out at the end
-      const s = p.life < 0.3 ? p.life / 0.3 : Math.min(1, age * 6);
-      p.mesh.scale.setScalar(Math.max(0.05, s));
+      const alpha = Math.min(1, age / 0.18, p.life / 0.38);
+      for (const m of p.mats) m.opacity = alpha;
+      p.mesh.scale.setScalar(0.9 + Math.min(0.1, age * 0.6));
     }
   }
 
@@ -913,23 +919,9 @@ this.skyBirds.length = 0;
       }
     }
 
-    // Patchwork countryside beyond the playable board: irregular field strips,
-    // dark hedges and glints of distant water break up the old flat green disc.
-    // (The open-sea side of the horizon stays clear of them.)
-    const fieldMats = pal.fieldTones.map(c => stdMat({ color: c }, false));
-    const hedgeMat = stdMat({ color: 0x456842 }, false);
-    for (let i = 0; i < 26; i++) {
-      const ang = rnd() * Math.PI * 2, rad = boardR + GAP + 7 + rnd() * 34;
-      if (seaward(ang)) continue;
-      const w = 4 + rnd() * 8, d = 2.5 + rnd() * 5;
-      const field = new THREE.Mesh(box(w, 0.035, d), fieldMats[i % fieldMats.length]);
-      field.position.set(Math.cos(ang) * rad, -2.055, Math.sin(ang) * rad); field.rotation.y = ang + (rnd() - 0.5) * 1.2;
-      this.worldGroup.add(field); this.freeze(field);
-      if (i % 2 === 0) {
-        const hedge = new THREE.Mesh(box(w + 0.4, 0.13, 0.12), hedgeMat);
-        hedge.position.set(field.position.x, -1.98, field.position.z); hedge.rotation.y = field.rotation.y; this.worldGroup.add(hedge); this.freeze(hedge);
-      }
-    }
+    // Keep the near horizon as an uninterrupted plain. Earlier builds placed
+    // large rectangular "field strips" and hedge bars here; from the game
+    // camera they read as unexplained floating panels rather than farmland.
     if (!seaAmb) {
       const waterMat = stdMat({ color: 0x72a9bd, transparent: true, opacity: 0.75 }, false);
       for (let i = 0; i < 3; i++) {

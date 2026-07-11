@@ -2,7 +2,7 @@ import { BASE_SPEED } from '../constants';
 import type { Faction } from '../types';
 
 /** Combat unit archetypes. Economy workers (serf/laborer/specialists) are not here. */
-export type UnitKind = 'soldier' | 'archer' | 'knight' | 'bandit' | 'boar' | 'dragon'
+export type UnitKind = 'soldier' | 'pikeman' | 'archer' | 'knight' | 'bandit' | 'boar' | 'dragon'
   | 'wolf' | 'orc' | 'troll' | 'demon' | 'hero'
   | 'lancer' | 'horseknight' | 'horsearcher'
   | 'ballista' | 'onager' | 'trebuchet';
@@ -31,7 +31,11 @@ export interface UnitDef {
   fire?: boolean;       // periodically hurls a fiery volley (dragon breath, demon magic)
   rank?: number;        // battle order for group moves: 0 = front line, higher = further back
   splash?: number;      // lobs an arcing rock that damages everything within this tile radius (onager)
+  tags?: UnitTag[];      // target traits used by data-driven counters (mounted, etc.)
+  bonusVs?: { tag: UnitTag; mult: number }[]; // damage multipliers against matching targets
 }
+
+export type UnitTag = 'mounted';
 
 /** Front-to-back battle order when a mixed group moves in formation:
  *  soldiers screen, knights back them, archers shoot over, cavalry waits
@@ -44,6 +48,10 @@ export function formationRank(role: string): number {
 export const UNITS: Record<UnitKind, UnitDef> = {
   soldier: { kind: 'soldier', name: 'Soldier', faction: 'player', color: 0x3f5aa0, model: 'human',
     hp: 60, dmg: 8, range: 1.3, atkCd: 1.0, speed: BASE_SPEED, scale: 1, aggro: 9, rank: 0 },
+
+  pikeman: { kind: 'pikeman', name: 'Pikeman', faction: 'player', color: 0x6b568f, model: 'human',
+    hp: 70, dmg: 7, range: 1.55, atkCd: 1.1, speed: BASE_SPEED * 0.95, scale: 1, aggro: 9, rank: 0,
+    bonusVs: [{ tag: 'mounted', mult: 2.5 }] },
 
   archer: { kind: 'archer', name: 'Archer', faction: 'player', color: 0x3f8a55, model: 'human',
     hp: 40, dmg: 6, range: 5.0, atkCd: 1.4, speed: BASE_SPEED, scale: 0.95, aggro: 10, arrows: true, rank: 2 },
@@ -75,13 +83,13 @@ export const UNITS: Record<UnitKind, UnitDef> = {
 
   // ---- cavalry (trained at the Stable): speed is their armour ----
   lancer: { kind: 'lancer', name: 'Lancer', faction: 'player', color: 0x4a7ab0, model: 'cavalry',
-    hp: 80, dmg: 12, range: 1.5, atkCd: 1.0, speed: BASE_SPEED * 1.5, scale: 1.02, aggro: 9, charge: 1.5, rank: 3 },
+    hp: 80, dmg: 12, range: 1.5, atkCd: 1.0, speed: BASE_SPEED * 1.5, scale: 1.02, aggro: 9, charge: 1.5, rank: 3, tags: ['mounted'] },
 
   horseknight: { kind: 'horseknight', name: 'Horse Knight', faction: 'player', color: 0x8f97a6, model: 'cavalry',
-    hp: 170, dmg: 16, range: 1.5, atkCd: 1.1, speed: BASE_SPEED * 1.25, scale: 1.1, aggro: 9, rank: 3 },
+    hp: 170, dmg: 16, range: 1.5, atkCd: 1.1, speed: BASE_SPEED * 1.25, scale: 1.1, aggro: 9, rank: 3, tags: ['mounted'] },
 
   horsearcher: { kind: 'horsearcher', name: 'Horse Archer', faction: 'player', color: 0x3f8a55, model: 'cavalry',
-    hp: 55, dmg: 6, range: 4.5, atkCd: 1.3, speed: BASE_SPEED * 1.45, scale: 1.0, aggro: 10, arrows: true, rank: 3 },
+    hp: 55, dmg: 6, range: 4.5, atkCd: 1.3, speed: BASE_SPEED * 1.45, scale: 1.0, aggro: 10, arrows: true, rank: 3, tags: ['mounted'] },
 
   // ---- siege engines (built at the Engineer's Workshop): slow, devastating ----
   // ballista: a heavy single bolt that spikes one tough target
@@ -98,9 +106,17 @@ export const UNITS: Record<UnitKind, UnitDef> = {
 
   // the run's mounted hero: sturdy and fast, but one per run — losing them stings
   hero: { kind: 'hero', name: 'Hero', faction: 'player', color: 0xd9a441, model: 'hero',
-    hp: 220, dmg: 14, range: 1.5, atkCd: 1.0, speed: BASE_SPEED * 1.35, scale: 1, aggro: 8, rank: 0 },
+    hp: 220, dmg: 14, range: 1.5, atkCd: 1.0, speed: BASE_SPEED * 1.35, scale: 1, aggro: 8, rank: 0, tags: ['mounted'] },
 
   demon: { kind: 'demon', name: 'Demon', faction: 'enemy', color: 0x3a1626, model: 'demon',
     hp: 1600, dmg: 26, range: 2.2, atkCd: 1.6, speed: BASE_SPEED * 0.9, scale: 1.8, aggro: 13,
     flying: true, fire: true },
 };
+
+/** Counter multiplier encoded on the attacker definition (identity by default). */
+export function damageMultiplier(attacker: UnitKind, target: UnitKind): number {
+  const tags = UNITS[target].tags ?? [];
+  let mult = 1;
+  for (const bonus of UNITS[attacker].bonusVs ?? []) if (tags.includes(bonus.tag)) mult *= bonus.mult;
+  return mult;
+}

@@ -90,7 +90,7 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: { timber: 2, stone: 1 }, roof: 0x8a4a30, wall: 0x8f8a80, accent: 0xa86a4a,
     gather: { node: 'iron', out: 'iron', time: 5, range: 9 }, worker: 'Ironminer', wcolor: 0xa86a4a },
 
-  smithy: { name: 'Weaponsmith', desc: 'Iron + coal → weapons for training soldiers & knights', model: 'cottage',
+  smithy: { name: 'Weaponsmith', desc: 'Iron + coal → weapons for training infantry & knights', model: 'cottage',
     cost: { timber: 3, stone: 3 }, roof: 0x4a4a52, wall: 0x9c8a6a, accent: 0xd8dde2,
     recipe: { inp: { iron: 1, coal: 1 }, out: 'weapon', time: 7 }, worker: 'Smith', wcolor: 0x5a5f66 },
 
@@ -98,11 +98,13 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: { timber: 3, stone: 3 }, roof: 0x5a6470, wall: 0x9c8a6a, accent: 0x7d8794,
     recipe: { inp: { iron: 1, coal: 1 }, out: 'armor', time: 8 }, worker: 'Armorer', wcolor: 0x7d8794 },
 
-  barracks: { name: 'Barracks', desc: 'Trains soldiers, archers & knights — weapons come from the smithy', model: 'barn',
+  barracks: { name: 'Barracks', desc: 'Trains soldiers, pikemen, archers & knights — weapons come from the smithy', model: 'barn',
     cost: { timber: 4, stone: 3 }, roof: 0x5a4a6a, wall: 0xb0a48c, accent: 0x8a5a2b, hp: 200,
     military: { units: [
       { kind: 'soldier', cost: { weapon: 1, coin: 1 }, time: 6,
         desc: 'Steady melee line fighter — the backbone of any warband' },
+      { kind: 'pikeman', cost: { timber: 1, weapon: 1, coin: 1 }, time: 7,
+        desc: 'Long-pike infantry — deals 2.5× damage to mounted riders' },
       { kind: 'archer', cost: { timber: 1, coin: 1 }, time: 6,
         desc: 'Ranged fighter — fragile, but hits from five tiles away' },
       { kind: 'knight', cost: { weapon: 1, armor: 1, coin: 2 }, time: 9,

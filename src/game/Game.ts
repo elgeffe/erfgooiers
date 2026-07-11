@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ROAD_STONE_COST, PLOT_RANGE, BASE_SPEED } from '../constants';
 import { DEFS } from '../data/buildings';
 import { ITEMS } from '../data/items';
-import { UNITS, formationRank, type UnitKind } from '../data/units';
+import { UNITS, damageMultiplier, formationRank, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
@@ -1004,7 +1004,8 @@ export class Game {
   private attack(attacker: Unit, foe: Unit): void {
     attacker.lungeT = 0.22; // little hop into the swing
     if (this.swingsSteel(attacker)) this.sfx('sword');
-    this.hurtUnit(attacker, foe, attacker.dmg);
+    const mult = damageMultiplier(attacker.role as UnitKind, foe.role as UnitKind);
+    this.hurtUnit(attacker, foe, attacker.dmg * mult);
   }
 
   /** Melee humans (soldiers, knights, bandits) clash steel; beasts stay mute. */

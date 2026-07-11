@@ -64,7 +64,7 @@ Menu → hero rule-set selection → level → shop + next contract → … → 
 
 ### Combat and control
 
-- Player soldiers, archers, and knights; bandits, boars, wolves, orcs, trolls, demons,
+- Player soldiers, pikemen, archers, and knights; bandits, boars, wolves, orcs, trolls, demons,
   and a dragon.
 - Unit/building HP, melee and ranged combat, projectiles, towers, training queues,
   rallies, enemy waves, camps, commanders, strongholds, and boss behavior.

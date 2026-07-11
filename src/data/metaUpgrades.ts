@@ -11,35 +11,36 @@ export interface MetaUpgradeDef {
   desc: string;
   icon: string;
   cost: number;                       // Heritage cost
+  tier: number;                       // display/order: later tiers cost more and grant larger effects
   apply?: ModifierSpec[];             // permanent run modifiers
   special?: 'startGold' | 'freeReroll';
+  specialValue?: number;
 }
 
 export const META_UPGRADES: MetaUpgradeDef[] = [
-  { id: 'willing-hands', name: 'Willing Hands', desc: 'Start every level with +1 serf', icon: '🧺', cost: 15,
-    apply: [{ stat: 'extraSerf', add: 1 }] },
-  { id: 'seasoned-hands', name: 'Seasoned Hands', desc: 'Start every level with +1 builder', icon: '🧑\u200d🔧', cost: 15,
-    apply: [{ stat: 'extraLaborer', add: 1 }] },
-  { id: 'quartermaster', name: 'Quartermaster', desc: 'Start every level with +4 timber & +4 stone', icon: '📦', cost: 18,
-    apply: [{ stat: 'startTimber', add: 4 }, { stat: 'startStone', add: 4 }] },
-  { id: 'full-larder', name: 'Full Larder', desc: 'Start every level with +6 bread', icon: '🍞', cost: 12,
-    apply: [{ stat: 'startBread', add: 6 }] },
-  { id: 'stout-castle', name: 'Stout Castle', desc: 'Your castle has +40% HP', icon: '🏰', cost: 30,
-    apply: [{ stat: 'castleHp', mult: 1.4 }] },
-  { id: 'war-chest', name: 'War Chest', desc: 'Begin each run with +25 gold', icon: '💰', cost: 20, special: 'startGold' },
-  { id: 'merchant-ties', name: 'Merchant Ties', desc: 'One free shop reroll each visit', icon: '🔄', cost: 25, special: 'freeReroll' },
+  { id: 'full-larder', name: 'Full Larder', desc: 'Start every level with +8 bread', icon: '🍞', cost: 15, tier: 1,
+    apply: [{ stat: 'startBread', add: 8 }] },
+  { id: 'willing-hands', name: 'Willing Hands', desc: 'Start every level with +2 serfs', icon: '🧺', cost: 25, tier: 2,
+    apply: [{ stat: 'extraSerf', add: 2 }] },
+  { id: 'seasoned-hands', name: 'Seasoned Hands', desc: 'Start every level with +2 builders', icon: '🧑\u200d🔧', cost: 40, tier: 3,
+    apply: [{ stat: 'extraLaborer', add: 2 }] },
+  { id: 'quartermaster', name: 'Quartermaster', desc: 'Start every level with +12 timber & +12 stone', icon: '📦', cost: 60, tier: 4,
+    apply: [{ stat: 'startTimber', add: 12 }, { stat: 'startStone', add: 12 }] },
+  { id: 'merchant-ties', name: 'Merchant Ties', desc: 'One free shop reroll each visit', icon: '🔄', cost: 85, tier: 5, special: 'freeReroll', specialValue: 1 },
+  { id: 'stout-castle', name: 'Stout Castle', desc: 'Your castle has +75% HP', icon: '🏰', cost: 115, tier: 6,
+    apply: [{ stat: 'castleHp', mult: 1.75 }] },
+  { id: 'war-chest', name: 'War Chest', desc: 'Begin each run with +75 gold', icon: '💰', cost: 150, tier: 7, special: 'startGold', specialValue: 75 },
 ];
 
 export const META_BY_ID: Record<string, MetaUpgradeDef> = Object.fromEntries(META_UPGRADES.map(u => [u.id, u]));
 
 /** Flatten owned unlock ids into the ModifierSpecs the run's Modifiers consume. */
-export function metaSpecsFor(unlocks: string[]): ModifierSpec[] {
-  const out: ModifierSpec[] = [];
-  for (const id of unlocks) { const d = META_BY_ID[id]; if (d?.apply) out.push(...d.apply); }
-  return out;
+export function metaSpecsFor(activeId: string | null): ModifierSpec[] {
+  return (activeId && META_BY_ID[activeId]?.apply) || [];
 }
 
-/** Does the player own an unlock with the given special effect? */
-export function hasMetaSpecial(unlocks: string[], special: 'startGold' | 'freeReroll'): boolean {
-  return unlocks.some(id => META_BY_ID[id]?.special === special);
+/** Value of the one active global blessing's special effect (zero if different/none). */
+export function metaSpecialValue(activeId: string | null, special: 'startGold' | 'freeReroll'): number {
+  const d = activeId ? META_BY_ID[activeId] : undefined;
+  return d?.special === special ? (d.specialValue ?? 1) : 0;
 }

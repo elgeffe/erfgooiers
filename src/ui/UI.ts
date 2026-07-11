@@ -399,7 +399,7 @@ export class UI {
     if (role === 'serf') return 'serf';
     if (role === 'villager') return 'villager';
     if (role === 'laborer') return 'laborer';
-    if (['soldier', 'archer', 'knight', 'lancer', 'horseknight', 'horsearcher', 'ballista', 'onager', 'trebuchet', 'hero'].includes(role)) return 'military';
+    if (['soldier', 'pikeman', 'archer', 'knight', 'lancer', 'horseknight', 'horsearcher', 'ballista', 'onager', 'trebuchet', 'hero'].includes(role)) return 'military';
     return 'specialist';
   }
 

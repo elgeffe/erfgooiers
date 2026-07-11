@@ -66,6 +66,7 @@ export interface RunState {
 export interface MetaState {
   heritage: number;             // meta currency ("Erfgoed")
   unlocks: string[];            // global unlock ids
+  activeGlobalBuff: string | null; // at most one owned META_UPGRADE affects runs
   ascension: number;            // highest ascension tier unlocked (0..MAX_ASCENSION)
   stats: { runs: number; levelsCleared: number; bestLevel: number; wins: number };
 }
@@ -75,7 +76,7 @@ export function newRun(seed: number, ascension = 0): RunState {
 }
 
 export function newMeta(): MetaState {
-  return { heritage: 0, unlocks: [], ascension: 0, stats: { runs: 0, levelsCleared: 0, bestLevel: 0, wins: 0 } };
+  return { heritage: 0, unlocks: [], activeGlobalBuff: null, ascension: 0, stats: { runs: 0, levelsCleared: 0, bestLevel: 0, wins: 0 } };
 }
 
 /** The deterministic map seed for the run's current level. */

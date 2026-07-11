@@ -1,4 +1,5 @@
 import { newMeta, type MetaState, type RunState } from './RunState';
+import { META_BY_ID } from '../data/metaUpgrades';
 
 /**
  * Versioned localStorage persistence. Two independent documents:
@@ -40,6 +41,11 @@ export function loadMeta(): MetaState {
   // fields added after v2 shipped — normalize older documents in place
   m.ascension ??= 0;
   m.stats.wins ??= 0;
+  // Pre-single-blessing v2 saves stacked every permanent unlock. Preserve the
+  // first owned blessing as active, while hero unlock ids remain unaffected.
+  if (!m.activeGlobalBuff || !m.unlocks.includes(m.activeGlobalBuff) || !META_BY_ID[m.activeGlobalBuff]) {
+    m.activeGlobalBuff = m.unlocks.find(id => !!META_BY_ID[id]) ?? null;
+  }
   return m;
 }
 export function saveMeta(meta: MetaState): void { write(META_KEY, meta); }

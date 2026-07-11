@@ -11,7 +11,7 @@ import { Modifiers } from './game/Modifiers';
 import { Objective } from './game/Objectives';
 import { UPGRADES, cardUnlocked, specsFor } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
-import { META_UPGRADES, META_BY_ID, metaSpecsFor, hasMetaSpecial } from './data/metaUpgrades';
+import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
 import { DEFAULT_SANDBOX, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
 import { BIOMES, campaignBiome } from './data/biomes';
@@ -71,7 +71,8 @@ function startLevel(): void {
   const world = new World({ seed, ...level.world, biome: biomeKey });
   view.loadWorld(world);
   const mutators = sandbox ? [] : run.mutators;
-  const mods = new Modifiers([...heroSpecsFor(sandbox ? null : run.hero), ...specsFor(run.upgrades), ...metaSpecsFor(meta.unlocks), ...mutatorSpecsFor(mutators)]);
+  const selectedHeroId = sandbox ? (sandboxCfg.hero === 'none' ? null : sandboxCfg.hero) : run.hero;
+  const mods = new Modifiers([...heroSpecsFor(selectedHeroId), ...specsFor(run.upgrades), ...metaSpecsFor(meta.activeGlobalBuff), ...mutatorSpecsFor(mutators)]);
   game = new Game(world, view, mods);
   game.toast = (m, c) => ui.toast(m, c);
   game.onSelect = o => ui.showInspector(o);
@@ -91,7 +92,7 @@ function startLevel(): void {
   }
   game.init(level.kit);
   ui.setGame(game);
-  ui.setPerks(run.upgrades, meta.unlocks);
+  ui.setPerks(run.upgrades, meta.activeGlobalBuff ? [meta.activeGlobalBuff] : []);
   controls.setGame(game);
   // sandbox trouble is configured on the setup screen; runs use the level table
   game.prepMult = sandbox ? 1 : ascensionPrepMult(run.ascension);
@@ -110,7 +111,7 @@ function startLevel(): void {
     for (const a of level.startArmy) game.spawnSquad(a.kind, Math.max(1, Math.round(a.count * armyMult)), sx, sz, 'player');
   }
   // the hero rides out of the castle gate at every level's start, with any warband
-  const heroDef = !sandbox && run.hero ? HERO_BY_ID[run.hero] : null;
+  const heroDef = selectedHeroId ? HERO_BY_ID[selectedHeroId] : null;
   if (heroDef?.startArmy) {
     const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
     for (const a of heroDef.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
@@ -214,7 +215,7 @@ function startRunWithHero(heroId: string): void {
   sandbox = false;
   run = newRun(randomSeed(), Math.min(pickedAscension, meta.ascension));
   run.hero = heroId;
-  if (hasMetaSpecial(meta.unlocks, 'startGold')) run.gold = 25;
+  run.gold = metaSpecialValue(meta.activeGlobalBuff, 'startGold');
   stampContract(run);
   meta.stats.runs++;
   Save.saveMeta(meta);
@@ -235,6 +236,7 @@ const SBX_GROUPS: { key: keyof SandboxConfig; label: string; opts: [string, stri
   { key: 'mapRes', label: 'Map resources', opts: [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']] },
   { key: 'startRes', label: 'Starting stock', opts: [['modest', 'Modest'], ['plentiful', 'Plentiful'], ['cornucopia', 'Cornucopia']] },
   { key: 'enemies', label: 'Enemies', opts: [['none', 'None — peaceful'], ['wilds', 'Wild beasts'], ['camps', 'Bandit camps'], ['warzone', 'Warzone']] },
+  { key: 'hero', label: 'Hero', opts: [['none', 'No hero'], ...HEROES.map(h => [h.id, `${h.icon} ${h.name}`] as [string, string])] },
 ];
 
 function openSandboxSetup(): void {
@@ -266,6 +268,7 @@ function renderSandboxSetup(): void {
 function startSandbox(): void {
   sandbox = true;
   run = newRun(randomSeed());
+  run.hero = sandboxCfg.hero === 'none' ? null : sandboxCfg.hero;
   clearedThisRun = 0;
   goldEarnedThisRun = 0;
   startLevel();
@@ -353,7 +356,7 @@ function onLevelClear(): void {
     const next = run.levelIndex + 1;
     const contracts = contractsFor(run.runSeed, next, levelFor(next).objectives.length, levelFor(next).reward, ascensionForcesCurse(run.ascension));
     phase = 'shop';
-    shop.open(run, contracts, hasMetaSpecial(meta.unlocks, 'freeReroll'), tally.rows,
+    shop.open(run, contracts, metaSpecialValue(meta.activeGlobalBuff, 'freeReroll') > 0, tally.rows,
       { slots: ascensionShopSlots(run.ascension), lifetime: { levelsCleared: meta.stats.levelsCleared, wins: meta.stats.wins } });
     showScreen('shop');
     Save.saveRun(run);
@@ -449,17 +452,19 @@ function renderSummary(victory: boolean, reason: 'timeout' | 'castle' = 'timeout
 function openHeritage(): void { renderHeritage(); showScreen('heritage'); }
 
 function renderHeritage(): void {
-  $('heritageMeta').innerHTML = `<b>${meta.heritage}</b> Heritage to spend`;
+  $('heritageMeta').innerHTML = `<b>${meta.heritage}</b> Heritage to spend · own any number, activate one global blessing`;
   const grid = $('heritageGrid'); grid.innerHTML = '';
   for (const def of META_UPGRADES) {
     const owned = meta.unlocks.includes(def.id);
+    const active = meta.activeGlobalBuff === def.id;
     const afford = meta.heritage >= def.cost;
-    const cls = owned ? 'picked' : afford ? '' : 'cant disabled';
-    const price = owned ? 'owned ✓' : `${def.cost} Heritage`;
+    const cls = active ? 'picked' : owned ? '' : afford ? '' : 'cant disabled';
+    const price = active ? 'active ✓' : owned ? 'Activate' : `Tier ${def.tier} · ${def.cost} Heritage`;
     const el = document.createElement('div');
     el.className = 'scard' + (cls ? ' ' + cls : '');
     el.innerHTML = `<div class="sc-icon">${def.icon}</div><div class="sc-body"><div class="sc-name">${def.name}</div><div class="sc-desc">${def.desc}</div><div class="sc-price ${cls}">${price}</div></div>`;
-    if (!owned && afford) el.onclick = () => buyMeta(def.id);
+    if (owned && !active) el.onclick = () => activateMeta(def.id);
+    else if (!owned && afford) el.onclick = () => buyMeta(def.id);
     grid.appendChild(el);
   }
 }
@@ -469,8 +474,17 @@ function buyMeta(id: string): void {
   if (!def || meta.unlocks.includes(id) || meta.heritage < def.cost) return;
   meta.heritage -= def.cost;
   meta.unlocks.push(id);
+  meta.activeGlobalBuff = id;
   Save.saveMeta(meta);
   audio.play('coin');
+  renderHeritage();
+}
+
+function activateMeta(id: string): void {
+  if (!META_BY_ID[id] || !meta.unlocks.includes(id)) return;
+  meta.activeGlobalBuff = id;
+  Save.saveMeta(meta);
+  audio.play('click');
   renderHeritage();
 }
 
@@ -497,6 +511,7 @@ type SandboxSpawnDef = { kind: UnitKind; count: number; icon: string; label: str
 
 const SANDBOX_FRIENDLY: SandboxSpawnDef[] = [
   { kind: 'soldier', count: 12, icon: '⚔️', label: 'Soldiers' },
+  { kind: 'pikeman', count: 10, icon: '🔱', label: 'Pikemen' },
   { kind: 'archer', count: 8, icon: '🏹', label: 'Archers' },
   { kind: 'knight', count: 6, icon: '🛡️', label: 'Knights' },
   { kind: 'lancer', count: 8, icon: '🐎', label: 'Lancers' },
@@ -509,6 +524,9 @@ const SANDBOX_FRIENDLY: SandboxSpawnDef[] = [
 
 const SANDBOX_ENEMY: SandboxSpawnDef[] = [
   { kind: 'bandit', count: 12, icon: '🗡️', label: 'Bandits' },
+  { kind: 'lancer', count: 8, icon: '🐎', label: 'Enemy Lancers' },
+  { kind: 'horseknight', count: 6, icon: '🏇', label: 'Enemy Horse Knights' },
+  { kind: 'horsearcher', count: 8, icon: '🎯', label: 'Enemy Horse Archers' },
   { kind: 'boar', count: 6, icon: '🐗', label: 'Boars' },
   { kind: 'wolf', count: 8, icon: '🐺', label: 'Wolves' },
   { kind: 'orc', count: 8, icon: '🪓', label: 'Orcs' },
@@ -517,11 +535,12 @@ const SANDBOX_ENEMY: SandboxSpawnDef[] = [
   { kind: 'dragon', count: 1, icon: '🐉', label: 'Dragon' },
 ];
 
-function sandboxSpawn(kind: UnitKind, count: number): void {
+function sandboxSpawn(kind: UnitKind, count: number, faction: 'player' | 'enemy'): void {
   if (!game) return;
   const c = view.camTarget;
-  const squad = game.spawnSquad(kind, count, c.x, c.z);
-  if (squad.length) ui.toast(`Spawned ${squad.length} ${UNITS[kind].name}${squad.length > 1 ? 's' : ''}`);
+  const squad = game.spawnSquad(kind, count, c.x, c.z, faction);
+  const label = kind === 'pikeman' && squad.length > 1 ? 'Pikemen' : UNITS[kind].name + (squad.length > 1 ? 's' : '');
+  if (squad.length) ui.toast(`Spawned ${squad.length} ${label}`);
 }
 let sandboxSpawnTimer: number | null = null;
 function stopSandboxSpawn(): void {
@@ -541,8 +560,9 @@ function makeSandboxSpawnBtn(def: SandboxSpawnDef, side: 'player' | 'enemy'): HT
     if (e.button !== 0) return;
     e.preventDefault();
     stopSandboxSpawn();
-    sandboxSpawn(def.kind, def.count);
-    sandboxSpawnTimer = window.setInterval(() => sandboxSpawn(def.kind, def.count), 180);
+    const faction = side === 'player' ? 'player' : 'enemy';
+    sandboxSpawn(def.kind, def.count, faction);
+    sandboxSpawnTimer = window.setInterval(() => sandboxSpawn(def.kind, def.count, faction), 180);
   });
   return btn;
 }

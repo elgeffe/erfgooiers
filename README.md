@@ -12,7 +12,7 @@ unlocks persist.
   assaults, and a dragon boss.
 - Physical logistics: serfs carry every input, output, and construction material.
 - Food, timber, stone, coin, wine, meat, fish, and iron/weapon/armor production chains.
-- Soldier, archer, and knight training; enemy camps, keeps, towers, waves, wildlife,
+- Soldier, pikeman, archer, and knight training; anti-cavalry counters; enemy camps, keeps, towers, waves, wildlife,
   demons, and a dragon.
 - Box selection, double-click type selection, control groups, attack-move, rally points,
   and grid/line/column/wedge formations.

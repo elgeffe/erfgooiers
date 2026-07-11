@@ -171,10 +171,11 @@ export interface SandboxConfig {
   mapRes: 'sparse' | 'normal' | 'rich';
   startRes: 'modest' | 'plentiful' | 'cornucopia';
   enemies: 'none' | 'wilds' | 'camps' | 'warzone';
+  hero: string; // 'none' or a HeroDef id; sandbox exposes every hero for testing
 }
 
 export const DEFAULT_SANDBOX: SandboxConfig = {
-  size: 'large', biome: 'gooi', water: 'normal', mapRes: 'rich', startRes: 'plentiful', enemies: 'none',
+  size: 'large', biome: 'gooi', water: 'normal', mapRes: 'rich', startRes: 'plentiful', enemies: 'none', hero: 'none',
 };
 
 const SBX_SIZE: Record<SandboxConfig['size'], number> = { small: 48, medium: 64, large: 84, huge: 100 };

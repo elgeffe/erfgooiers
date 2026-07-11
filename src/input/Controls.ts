@@ -219,15 +219,32 @@ export class Controls {
   private orderSelection(e: PointerEvent): void {
     if (!this.game) return;
     const gp = this.view.groundPoint(e.clientX, e.clientY);
-    const foe = this.game.pickUnit(gp.x, gp.z);
+    // Screen-space picking matches the visible body in the isometric view;
+    // ground-only picking can land behind a tall unit when its torso is clicked.
+    const foe = this.pickUnitAtPointer(e, true) ?? this.game.pickUnit(gp.x, gp.z);
     const t = this.view.tileAt(e.clientX, e.clientY);
     if (foe && foe.faction !== 'player') {
       this.game.orderGroup(this.selUnits, 'attack', foe.tx, foe.ty, foe, this.formation);
-      this.view.showOrderMarker(foe.mesh.position.x, foe.mesh.position.z);
+      this.view.showOrderMarker(foe.mesh.position.x, foe.mesh.position.z, true);
     } else if (t) {
       this.game.orderGroup(this.selUnits, 'attackMove', t.x, t.y, null, this.formation);
       this.view.showOrderMarker(gp.x, gp.z);
     }
+  }
+
+  /** Nearest unit body under a pointer, measured in pixels rather than tiles. */
+  private pickUnitAtPointer(e: { clientX: number; clientY: number }, hostileOnly = false): Unit | null {
+    if (!this.game) return null;
+    let best: Unit | null = null, bestD2 = Infinity;
+    for (const u of this.game.units) {
+      if (u.dead || (hostileOnly && u.faction === 'player')) continue;
+      const scale = u.mesh.scale.y || 1;
+      const p = this.view.worldToScreen(u.mesh.position.x, u.mesh.position.y + 0.45 * scale, u.mesh.position.z);
+      const dx = p.x - e.clientX, dy = p.y - e.clientY, d2 = dx * dx + dy * dy;
+      const radius = 25 + Math.min(12, Math.max(0, scale - 1) * 10);
+      if (d2 <= radius * radius && d2 < bestD2) { best = u; bestD2 = d2; }
+    }
+    return best;
   }
 
   private drawSelBox(x: number, y: number): void {

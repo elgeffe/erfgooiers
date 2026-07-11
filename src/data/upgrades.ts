@@ -88,6 +88,7 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'forged-blades', name: 'Forged Blades', desc: 'Your fighters deal 15% more damage', icon: '⚔️', pool: 'military', rarity: 'uncommon', basePrice: 26,
     apply: [
       { stat: 'combat:damage', mult: 1.15, filter: 'soldier' },
+      { stat: 'combat:damage', mult: 1.15, filter: 'pikeman' },
       { stat: 'combat:damage', mult: 1.15, filter: 'archer' },
       { stat: 'combat:damage', mult: 1.15, filter: 'knight' },
       { stat: 'combat:damage', mult: 1.15, filter: 'lancer' },
@@ -101,6 +102,7 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'oak-shields', name: 'Oak Shields', desc: 'Your fighters have 20% more health', icon: '🛡️', pool: 'military', rarity: 'uncommon', basePrice: 26,
     apply: [
       { stat: 'combat:hp', mult: 1.2, filter: 'soldier' },
+      { stat: 'combat:hp', mult: 1.2, filter: 'pikeman' },
       { stat: 'combat:hp', mult: 1.2, filter: 'archer' },
       { stat: 'combat:hp', mult: 1.2, filter: 'knight' },
       { stat: 'combat:hp', mult: 1.2, filter: 'lancer' },
@@ -111,6 +113,7 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'drill-yard', name: 'Drill Yard', desc: 'Fighters train 25% faster', icon: '🥁', pool: 'military', rarity: 'uncommon', basePrice: 20,
     apply: [
       { stat: 'trainTime', mult: 0.75, filter: 'soldier' },
+      { stat: 'trainTime', mult: 0.75, filter: 'pikeman' },
       { stat: 'trainTime', mult: 0.75, filter: 'archer' },
       { stat: 'trainTime', mult: 0.75, filter: 'knight' },
       { stat: 'trainTime', mult: 0.75, filter: 'lancer' },
@@ -127,6 +130,7 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'forced-march', name: 'Forced March', desc: 'Your fighters move 15% faster', icon: '🎺', pool: 'military', rarity: 'uncommon', basePrice: 20,
     apply: [
       { stat: 'combat:speed', mult: 1.15, filter: 'soldier' },
+      { stat: 'combat:speed', mult: 1.15, filter: 'pikeman' },
       { stat: 'combat:speed', mult: 1.15, filter: 'archer' },
       { stat: 'combat:speed', mult: 1.15, filter: 'knight' },
       { stat: 'combat:speed', mult: 1.15, filter: 'lancer' },
@@ -168,9 +172,11 @@ export const UPGRADES: UpgradeDef[] = [
     pool: 'hero', hero: 'warlord', rarity: 'rare', unique: true, basePrice: 34,
     apply: [
       { stat: 'trainTime', mult: 0.6, filter: 'soldier' },
+      { stat: 'trainTime', mult: 0.6, filter: 'pikeman' },
       { stat: 'trainTime', mult: 0.6, filter: 'archer' },
       { stat: 'trainTime', mult: 0.6, filter: 'knight' },
       { stat: 'combat:hp', mult: 1.15, filter: 'soldier' },
+      { stat: 'combat:hp', mult: 1.15, filter: 'pikeman' },
       { stat: 'combat:hp', mult: 1.15, filter: 'archer' },
       { stat: 'combat:hp', mult: 1.15, filter: 'knight' },
     ] },
