@@ -104,7 +104,7 @@ export type ClientMessage =
   | { type: 'reclaimDecision'; requestId: string; approve: boolean };
 
 export type ServerMessage =
-  | { type: 'welcome'; room: RoomState; playerId: PlayerId; reconnectSecret: string }
+  | { type: 'welcome'; room: RoomState; playerId: PlayerId }
   | { type: 'roomState'; room: RoomState }
   | { type: 'commandAccepted'; accepted: AcceptedCommand }
   | { type: 'commandRejected'; commandId: string; reason: string }

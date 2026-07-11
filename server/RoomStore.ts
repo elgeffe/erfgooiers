@@ -88,7 +88,7 @@ export class RoomStore {
 
   createRoom(input: CreateRoomInput): SessionGrant {
     const playerName = cleanName(input.playerName, MAX_PLAYER_NAME, 'Player name');
-    const settings = validateSettings(input.settings);
+    const settings = { ...validateSettings(input.settings), passwordProtected: !!input.password };
     const id = randomToken(16);
     const inviteCode = this.uniqueInviteCode();
     const reconnectSecret = randomToken(24);
@@ -257,25 +257,16 @@ export class RoomStore {
 
   state(roomId: string): RoomState { return cloneRoom(this.roomById(roomId).state); }
 
+  summary(inviteCode: string): RoomSummary {
+    const room = this.roomByCode(inviteCode);
+    return this.summaryFor(room);
+  }
+
   listPublic(): RoomSummary[] {
     return [...this.roomsById.values()]
       .filter(room => room.state.settings.visibility === 'public')
       .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map(room => ({
-        inviteCode: room.state.inviteCode,
-        roomName: room.state.settings.roomName,
-        hostName: room.seats.p1?.player.name ?? 'Host',
-        region: room.state.settings.region,
-        difficulty: room.state.settings.difficulty,
-        mode: room.state.settings.mode,
-        phase: room.state.phase,
-        level: room.state.level,
-        players: room.state.players.length,
-        capacity: 2,
-        passwordProtected: !!room.passwordHash,
-        protocolVersion: room.state.protocolVersion,
-        contentVersion: room.state.contentVersion,
-      }));
+      .map(room => this.summaryFor(room));
   }
 
   pendingReclaims(roomId: string): Array<{ requestId: string; playerName: string; seat: PlayerId }> {
@@ -286,6 +277,24 @@ export class RoomStore {
 
   private grant(room: StoredRoom, playerId: PlayerId, reconnectSecret: string): SessionGrant {
     return { room: cloneRoom(room.state), playerId, reconnectSecret, ticket: this.issueTicket(room.state.id, playerId) };
+  }
+
+  private summaryFor(room: StoredRoom): RoomSummary {
+    return {
+      inviteCode: room.state.inviteCode,
+      roomName: room.state.settings.roomName,
+      hostName: room.seats.p1?.player.name ?? 'Host',
+      region: room.state.settings.region,
+      difficulty: room.state.settings.difficulty,
+      mode: room.state.settings.mode,
+      phase: room.state.phase,
+      level: room.state.level,
+      players: room.state.players.length,
+      capacity: 2,
+      passwordProtected: !!room.passwordHash,
+      protocolVersion: room.state.protocolVersion,
+      contentVersion: room.state.contentVersion,
+    };
   }
 
   private issueTicket(roomId: string, playerId: PlayerId): string {

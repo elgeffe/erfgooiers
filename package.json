@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:server": "tsx watch server/index.ts",
+    "start:server": "tsx server/index.ts",
     "build": "tsc --noEmit && npm run typecheck:server && vite build",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "preview": "vite preview",
