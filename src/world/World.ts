@@ -46,6 +46,9 @@ export class World {
   enemyZone: { x: number; y: number; r: number } | null = null;
   /** The biome this map was generated in (View/models read its palette). */
   readonly biome: BiomeDef;
+  /** On single-coast maps: unit vector from the map centre toward the open sea
+   *  (the View aligns its horizon sea and lighthouse to it). Null inland. */
+  coastDir: { x: number; y: number } | null = null;
 
   private readonly p: Required<WorldParams>;
 
@@ -124,6 +127,82 @@ export class World {
     // the big body's tiles are tagged as lake (fish live here; ponds stay bare)
     const lakeWater = (cx: number, cy: number, r: number) => blob(cx, cy, r, t => { t.type = 'water'; t.lake = true; });
 
+    // ---- the coast: the sea claims the map's edge(s) (fishable, like the lake) ----
+    const sea = (x: number, y: number): void => {
+      const t = this.T(x, y);
+      if (t && !central(x, y)) { t.type = 'water'; t.lake = true; }
+    };
+    if (this.biome.gen.coast === 'island') {
+      // sea all around: a wavy band eats every edge, leaving one irregular isle
+      const phase = rnd() * Math.PI * 2, phase2 = rnd() * Math.PI * 2;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const d = Math.min(x, y, W - 1 - x, H - 1 - y);
+        const a = Math.atan2(y - H / 2, x - W / 2);
+        const depth = 3.5 + Math.sin(a * 3 + phase) * 1.6 + Math.sin(a * 7 + phase2) * 1.1;
+        if (d < depth) sea(x, y);
+      }
+    } else if (this.biome.gen.coast === 'sea') {
+      // one coastline: the sea takes a whole edge, its surf line wandering
+      const side = Math.floor(rnd() * 4); // 0=E 1=W 2=S 3=N
+      this.coastDir = side === 0 ? { x: 1, y: 0 } : side === 1 ? { x: -1, y: 0 } : side === 2 ? { x: 0, y: 1 } : { x: 0, y: -1 };
+      const phase = rnd() * Math.PI * 2;
+      for (let i = 0; i < (side < 2 ? H : W); i++) {
+        const depth = Math.round(4 + Math.sin(i * 0.22 + phase) * 1.8 + Math.sin(i * 0.57 + phase * 2) * 1.2 + rnd() * 0.8);
+        for (let d = 0; d < depth; d++) {
+          const x = side === 0 ? W - 1 - d : side === 1 ? d : i;
+          const y = side < 2 ? i : side === 2 ? H - 1 - d : d;
+          sea(x, y);
+        }
+      }
+    }
+
+    // ---- the river delta: a stream rises inland and braids toward the sea,
+    // splitting into distributaries as it nears the mouth. It springs from a
+    // point (not the far edge) so both banks stay connected around the source.
+    if (this.biome.gen.riverDelta && this.coastDir) {
+      const cd = this.coastDir;
+      const toSea = Math.atan2(cd.y, cd.x);
+      const turn = (from: number, to: number): number => ((to - from + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      const carve = (x0: number, y0: number, width: number, forks: number): void => {
+        let x = x0, y = y0, dir = toSea + (rnd() - 0.5) * 0.9;
+        for (let step = 0; step < W + H; step++) {
+          // meander lazily, steer seaward, and bow away from the build zone
+          dir += (rnd() - 0.5) * 0.5 + turn(dir, toSea) * 0.18;
+          if (Math.hypot(x - W / 2, y - H / 2) < 14) {
+            dir += turn(dir, Math.atan2(y - H / 2, x - W / 2)) * 0.5;
+          }
+          x += Math.cos(dir); y += Math.sin(dir);
+          const cx = Math.round(x), cy = Math.round(y);
+          const at = this.T(cx, cy);
+          if (!at) return;
+          if (at.type === 'water' && at.lake) return; // found its mouth
+          for (let oy = -width; oy <= width; oy++) for (let ox = -width; ox <= width; ox++) {
+            if (Math.hypot(ox, oy) <= width + 0.2) sea(cx + ox, cy + oy);
+          }
+          if (forks > 0 && step > 8 && rnd() < 0.12) { carve(cx, cy, Math.max(0, width - 1), 0); forks--; }
+        }
+      };
+      const off = (rnd() < 0.5 ? -1 : 1) * (12 + rnd() * 6);
+      carve(W / 2 - cd.x * W * 0.24 + (cd.x === 0 ? off : 0),
+            H / 2 - cd.y * H * 0.24 + (cd.y === 0 ? off : 0), 1, 2);
+    }
+
+    // ---- polder ditches: straight drainage canals, with grassy crossings
+    // every few tiles so no line of water ever seals the map ----
+    for (let i = 0; i < (this.biome.gen.ditches ?? 0); i++) {
+      const vert = rnd() < 0.5;
+      const len = 10 + Math.floor(rnd() * 9);
+      let x = 4 + Math.floor(rnd() * Math.max(1, W - 8 - (vert ? 0 : len)));
+      let y = 4 + Math.floor(rnd() * Math.max(1, H - 8 - (vert ? len : 0)));
+      for (let j = 0; j < len; j++) {
+        if (j % 6 < 4) {
+          const t = this.T(x, y);
+          if (t && t.type === 'grass' && !nearCentre(x, y, 0)) t.type = 'water';
+        }
+        if (vert) y++; else x++;
+      }
+    }
+
     // the large body: a chain of overlapping blobs wandering along the map's
     // outer band, producing one big irregular lake with bays and headlands
     const wet = this.p.waterScale;
@@ -174,7 +253,14 @@ export class World {
     // one clear pass (plus any lake gaps) — the only ways in on foot. The
     // enclosed quarter is exposed as `enemyZone` for stronghold placement.
     if (this.p.frontier) {
-      const corner = [[0, 0], [W - 1, 0], [0, H - 1], [W - 1, H - 1]][Math.floor(rnd() * 4)];
+      // on a single-coast map the enemy quarter keeps to the landward corners,
+      // so its arc (and pass) never drowns in the sea
+      let corners = [[0, 0], [W - 1, 0], [0, H - 1], [W - 1, H - 1]];
+      if (this.coastDir) {
+        const cd = this.coastDir;
+        corners = corners.filter(([cx, cy]) => (cx - W / 2) * cd.x + (cy - H / 2) * cd.y < 0);
+      }
+      const corner = corners[Math.floor(rnd() * corners.length)];
       const [cx0, cy0] = corner;
       const R = Math.round(Math.min(W, H) * 0.42);
       const sgnX = cx0 === 0 ? 1 : -1, sgnY = cy0 === 0 ? 1 : -1;
@@ -229,6 +315,45 @@ export class World {
         // crumbled gaps let units (and armies) slip through the old line
         if (rnd() > 0.25) rockTile(Math.round(wx), Math.round(wy), 'wall');
         wx += Math.cos(dir); wy += Math.sin(dir);
+      }
+    }
+
+    // ---- guarantee the frontier's pass: water (a delta arm, the wandering
+    // lake) can conspire with the arc and the ridges to seal the enemy
+    // quarter. If the zone can't be walked to from the centre, carve a
+    // causeway to it so the assault is always possible on foot.
+    if (this.p.frontier && this.enemyZone) {
+      const ez = this.enemyZone;
+      const seen = new Uint8Array(W * H);
+      const qx = [Math.floor(W / 2)], qy = [Math.floor(H / 2)];
+      seen[qy[0] * W + qx[0]] = 1;
+      let nearest = { x: qx[0], y: qy[0], d: Math.hypot(qx[0] - ez.x, qy[0] - ez.y) };
+      let reached = false;
+      for (let i = 0; i < qx.length && !reached; i++) {
+        const x = qx[i], y = qy[i];
+        const d = Math.hypot(x - ez.x, y - ez.y);
+        if (d < nearest.d) nearest = { x, y, d };
+        if (d <= ez.r) { reached = true; break; }
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H || seen[ny * W + nx]) continue;
+          if (this.tiles[ny][nx].type !== 'grass') continue;
+          seen[ny * W + nx] = 1; qx.push(nx); qy.push(ny);
+        }
+      }
+      if (!reached) {
+        // a straight two-tile-wide causeway from the nearest reachable ground
+        // to the zone's heart, filling water and breaking rock as it goes
+        const { x: sx, y: sy } = nearest;
+        const steps = Math.max(1, Math.ceil(Math.hypot(ez.x - sx, ez.y - sy)) * 2);
+        for (let s = 0; s <= steps; s++) {
+          const px = Math.round(sx + (ez.x - sx) * s / steps);
+          const py = Math.round(sy + (ez.y - sy) * s / steps);
+          for (const [ox, oy] of [[0, 0], [1, 0], [0, 1]]) {
+            const t = this.T(px + ox, py + oy);
+            if (t && t.type !== 'grass') { t.type = 'grass'; t.lake = false; t.rock = undefined; t.deco = null; }
+          }
+        }
       }
     }
 
@@ -307,13 +432,14 @@ export class World {
       });
     }
 
-    // ---- reeds & lilies fringe / fill the water ----
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    // ---- reeds & lilies fringe / fill the water (nothing fringes lava) ----
+    if (!this.biome.gen.scorched) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const t = this.tiles[y][x];
       if (t.type !== 'water') continue;
       const land = this.landNeighbours(x, y);
       if (land > 0) { if (rnd() < 0.5) this.setDeco(t, 'reed'); }          // shoreline reeds
-      else if (rnd() < 0.28) this.setDeco(t, 'lily');                       // open-water lilies
+      // open-water lilies — freshwater only, nothing blooms on the salt sea
+      else if (rnd() < 0.28 && !this.biome.gen.coast) this.setDeco(t, 'lily');
     }
 
     // ---- loose greenery: wildflowers & bushes dotted across the meadow ----

@@ -792,11 +792,18 @@ export class Game {
     return false;
   }
 
-  /** Buildings this map's biome forbids (mirrored by the build menu). */
-  disabledBuildings(): BuildingKey[] { return this.world.biome.disabledBuildings; }
+  /** Buildings this map's biome forbids (mirrored by the build menu): the
+   *  biome's own bans, plus coastal-only chains anywhere without a sea. */
+  disabledBuildings(): BuildingKey[] {
+    const banned = [...this.world.biome.disabledBuildings];
+    if (!this.world.biome.gen.coast) {
+      for (const key in DEFS) if (DEFS[key as BuildingKey].coastal) banned.push(key as BuildingKey);
+    }
+    return banned;
+  }
 
   tryPlace(key: BuildingKey, tx: number, ty: number, rot: number): void {
-    if (this.world.biome.disabledBuildings.includes(key)) {
+    if (this.disabledBuildings().includes(key)) {
       this.sfx('error');
       this.toast(`No ${DEFS[key].name.toLowerCase()} can be raised in ${this.world.biome.name}`, 'err');
       return;
@@ -807,7 +814,7 @@ export class Game {
     if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.toast('No gold deposits in range', 'err'); return; }
     if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.toast('No coal deposits in range', 'err'); return; }
     if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.toast('No iron deposits in range — build near the rusty rocks', 'err'); return; }
-    if (key === 'fishery' && !this.lakeInRange(tx, ty, def.gather!.range)) { this.toast('No fishing water in range — build on the lake shore', 'err'); return; }
+    if (def.gather?.node === 'fish' && !this.lakeInRange(tx, ty, def.gather.range)) { this.toast('No open water in range — build on the shore', 'err'); return; }
     if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.toast('Warning: few trees nearby', 'err');
     const cost = this.mods.buildingCost(def);
     for (const k in cost) { if (this.countItem(k) < (cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name + ' in the world — site will wait', 'err'); break; } }

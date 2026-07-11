@@ -12,7 +12,7 @@ export const RUN_LEVELS = 10;
 //  top of the previous ones. Constraints pay nothing extra — the climb is
 //  the reward.
 // =====================================================================
-export const MAX_ASCENSION = 3;
+export const MAX_ASCENSION = 5;
 
 /** Tier display names: sensible at first, increasingly honest about the absurdity. */
 export const ASCENSION_NAMES = [
@@ -20,14 +20,18 @@ export const ASCENSION_NAMES = [
   'Hard',
   'Very Hard',
   'Absurd — the Erfgooiers Weep',
+  'Grim — the Long Winter',
+  'Infernal — the Gates of Hell',
 ];
 
 /** What each tier adds (cumulative), for the hero-select picker. */
 export const ASCENSION_DESCS = [
   'The base game, at home in Het Gooi',
-  'Hard · One fewer shop ware — and levels 5+ cross into the Ardennes (no vineyards this far north)',
-  'Very Hard · Timers 15% shorter — and the Black Forest swallows levels 7+ (no farmland under the canopy)',
-  'Absurd · Every level cursed — and the run ends among the peaks of the Alps',
+  'Hard · One fewer shop ware — and the march leaves home: the Polder at level 5, the Ardennes beyond',
+  'Very Hard · Timers 15% shorter — level 7 follows the Delta coast (clams!), and the Black Forest swallows 8+ (no farmland under the canopy)',
+  'Absurd · Every level cursed — the hunt crosses to Texel, and the run ends among the peaks of the Alps',
+  'Grim · Armies thinner still — and winter freezes level 9 (no farmland under the snow)',
+  'Infernal · The thinnest muster of all — and the dragon waits at the gates of Hell (nothing grows, nothing swims)',
 ];
 
 /** How many wares the between-level shop rolls at this tier. */
@@ -40,9 +44,9 @@ export function ascensionTimerMult(a: number): number { return a >= 2 ? 0.85 : 1
 export function ascensionForcesCurse(a: number): boolean { return a >= 3; }
 
 /** Higher tiers grant a smaller default army… */
-export function ascensionArmyMult(a: number): number { return [1, 0.65, 0.45, 0.3][Math.min(3, Math.max(0, a))]; }
+export function ascensionArmyMult(a: number): number { return [1, 0.65, 0.45, 0.3, 0.25, 0.2][Math.min(MAX_ASCENSION, Math.max(0, a))]; }
 /** …but more prep: enemy wave timers & grace delays stretch by this factor. */
-export function ascensionPrepMult(a: number): number { return [1, 1.5, 2, 2.5][Math.min(3, Math.max(0, a))]; }
+export function ascensionPrepMult(a: number): number { return [1, 1.5, 2, 2.5, 2.75, 3][Math.min(MAX_ASCENSION, Math.max(0, a))]; }
 
 /** Everything that carries across levels *within* a single run. */
 export interface RunState {
