@@ -1690,6 +1690,12 @@ export class Game {
   /** Extra wild presence from a level mutator (e.g. Wolf Country's packs). */
   spawnMutatorWild(kind: UnitKind, count: number): void { this.spawnWild(kind, count); }
 
+  /** Sandbox wave console: a raid of any size from the map edge, marching on
+   *  the castle. Returns how many actually spawned. */
+  summonWave(kind: UnitKind, count: number): number {
+    return this.spawnRaid(kind, count, 'edge').length;
+  }
+
   /** Scatter wild beasts across the map's OUTER band, far from the starting
    *  settlement — hunting them is a deliberate expedition, never an ambush. */
   private spawnWild(kind: UnitKind, count: number): void {

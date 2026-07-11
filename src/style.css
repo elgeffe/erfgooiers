@@ -171,6 +171,11 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 #sandboxbar.collapsed .sb-group{display:none;}
 #sandboxbar button{background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 9px;font-size:12px;cursor:pointer;}
 #sandboxbar button:hover{background:#4a3823;border-color:var(--accent);}
+/* the wave console: type a size, pick a kind, summon */
+#sandboxbar select,#sandboxbar input{background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:6px 7px;font-size:12px;font-family:inherit;}
+#sandboxbar select:focus,#sandboxbar input:focus{outline:none;border-color:var(--accent);}
+#sandboxbar input[type=number]{width:64px;font-variant-numeric:tabular-nums;}
+#sandboxbar .sb-x{color:var(--ink-dim);font-size:11px;}
 /* ---------- intro ---------- */
 #intro{position:absolute;inset:0;background:rgba(15,11,8,.72);display:none;align-items:center;justify-content:center;z-index:30;}
 #introCard{width:430px;background:var(--panel);border:1px solid rgba(217,164,65,.4);border-radius:14px;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.6);}

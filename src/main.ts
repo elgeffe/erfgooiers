@@ -16,6 +16,7 @@ import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from '.
 import { DEFAULT_SANDBOX, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
 import { BIOMES, campaignBiome } from './data/biomes';
 import { UNITS, type UnitKind } from './data/units';
+import { unitLabel } from './game/util';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionArmyMult, ascensionForcesCurse, ascensionPrepMult, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
@@ -254,7 +255,7 @@ let sandboxCfg: SandboxConfig = { ...DEFAULT_SANDBOX };
 /** The setup screen's option groups: key into SandboxConfig, label, choices.
  *  Stubs render greyed out — options that exist on the roadmap, not yet in code. */
 const SBX_GROUPS: { key: keyof SandboxConfig; label: string; opts: [string, string][]; stubs?: [string, string][] }[] = [
-  { key: 'size', label: 'Map size', opts: [['small', 'Small · 48'], ['medium', 'Medium · 64'], ['large', 'Large · 84'], ['huge', 'Huge · 100']] },
+  { key: 'size', label: 'Map size', opts: [['small', 'Small · 48'], ['medium', 'Medium · 64'], ['large', 'Large · 84'], ['huge', 'Huge · 112'], ['colossal', 'Colossal · 144']] },
   { key: 'biome', label: 'Biome', opts: [['gooi', 'Het Gooi'], ['ardennes', 'The Ardennes'], ['blackforest', 'The Black Forest'], ['alps', 'The Alps'], ['winter', 'Winter'], ['polder', 'The Polder'], ['seaside', 'Zeeland Delta'], ['island', 'Texel'], ['hell', 'Hell']] },
   { key: 'water', label: 'Water', opts: [['dry', 'Dry'], ['normal', 'Normal'], ['wet', 'Wetlands']] },
   { key: 'mapRes', label: 'Map resources', opts: [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']] },
@@ -555,6 +556,10 @@ const SANDBOX_ENEMY: SandboxSpawnDef[] = [
   { kind: 'wolf', count: 8, icon: '🐺', label: 'Wolves' },
   { kind: 'orc', count: 8, icon: '🪓', label: 'Orcs' },
   { kind: 'troll', count: 3, icon: '🪨', label: 'Trolls' },
+  { kind: 'skeleton', count: 10, icon: '💀', label: 'Skeletons' },
+  { kind: 'skelarcher', count: 8, icon: '🏹', label: 'Skeletal Archers' },
+  { kind: 'zombie', count: 10, icon: '🧟', label: 'Zombies' },
+  { kind: 'brute', count: 1, icon: '🧟‍♂️', label: 'Bloated Zombie' },
   { kind: 'demon', count: 1, icon: '🔥', label: 'Demon' },
   { kind: 'dragon', count: 1, icon: '🐉', label: 'Dragon' },
 ];
@@ -597,6 +602,28 @@ for (const def of SANDBOX_ENEMY) $('sbEnemy').appendChild(makeSandboxSpawnBtn(de
   const collapsed = bar.classList.toggle('collapsed');
   $('sbToggle').textContent = collapsed ? 'Sandbox ▸' : 'Sandbox ▾';
 };
+// ---------- sandbox wave console: type a size, pick a kind, summon a raid ----------
+{
+  const kindSel = $('sbWaveKind') as HTMLSelectElement;
+  for (const def of SANDBOX_ENEMY) {
+    const opt = document.createElement('option');
+    opt.value = def.kind; opt.textContent = `${def.icon} ${def.label}`;
+    kindSel.appendChild(opt);
+  }
+  const countInp = $('sbWaveCount') as HTMLInputElement;
+  // typing in the console must never fall through to game hotkeys
+  for (const el of [kindSel, countInp]) el.addEventListener('keydown', e => e.stopPropagation());
+  const summon = (): void => {
+    if (!game) return;
+    const count = Math.max(1, Math.min(1000, Math.round(Number(countInp.value) || 0)));
+    countInp.value = String(count);
+    const kind = kindSel.value as UnitKind;
+    const n = game.summonWave(kind, count);
+    ui.toast(n ? `A wave of ${n} ${unitLabel(kind).toLowerCase()}${n > 1 ? 's' : ''} marches on your castle!` : 'No room to muster that wave', n ? 'err' : undefined);
+  };
+  ($('sbWaveGo') as HTMLButtonElement).onclick = summon;
+  countInp.addEventListener('keydown', e => { if (e.key === 'Enter') summon(); });
+}
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
 ($('btnHelp') as HTMLButtonElement).onclick = () => $('intro').style.display = 'flex';
 ($('startBtn') as HTMLButtonElement).onclick = () => $('intro').style.display = 'none';

@@ -67,6 +67,12 @@
   <button id="sbToggle" class="sb-title" title="Collapse / expand the spawn bar">Sandbox ▾</button>
   <div class="sb-group" id="sbFriendly"><span class="sb-label">Friendly</span></div>
   <div class="sb-group" id="sbEnemy"><span class="sb-label">Enemy</span></div>
+  <div class="sb-group" id="sbWave"><span class="sb-label">Wave</span>
+    <select id="sbWaveKind" title="Which raiders the wave is made of"></select>
+    <span class="sb-x">×</span>
+    <input id="sbWaveCount" type="number" min="1" max="1000" step="1" value="50" title="How many raiders to summon (1–1000)">
+    <button id="sbWaveGo" title="March a raid of this size from the map edge onto your castle">⚔️ Summon</button>
+  </div>
 </div>
 <div id="minimapWrap"><canvas id="minimap" width="160" height="160"></canvas></div>
 </div><!-- /#hud -->

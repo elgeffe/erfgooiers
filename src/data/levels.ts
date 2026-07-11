@@ -174,7 +174,7 @@ export function levelFor(index: number): LevelDef {
 //  density on the map and in the storehouse, and how much trouble to invite.
 // =====================================================================
 export interface SandboxConfig {
-  size: 'small' | 'medium' | 'large' | 'huge';
+  size: 'small' | 'medium' | 'large' | 'huge' | 'colossal';
   biome: BiomeKey;
   water: 'dry' | 'normal' | 'wet';
   mapRes: 'sparse' | 'normal' | 'rich';
@@ -187,7 +187,7 @@ export const DEFAULT_SANDBOX: SandboxConfig = {
   size: 'large', biome: 'gooi', water: 'normal', mapRes: 'rich', startRes: 'plentiful', enemies: 'none', hero: 'none',
 };
 
-const SBX_SIZE: Record<SandboxConfig['size'], number> = { small: 48, medium: 64, large: 84, huge: 100 };
+const SBX_SIZE: Record<SandboxConfig['size'], number> = { small: 48, medium: 64, large: 84, huge: 112, colossal: 144 };
 const SBX_WATER: Record<SandboxConfig['water'], number> = { dry: 0.3, normal: 1, wet: 1.6 };
 const SBX_DENSITY: Record<SandboxConfig['mapRes'], number> = { sparse: 0.55, normal: 1, rich: 1.7 };
 
