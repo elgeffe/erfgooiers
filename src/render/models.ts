@@ -1422,8 +1422,10 @@ export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean)
     case 'armory': return armoryBuilding(def, ghost);
     case 'barracks': return barracksBuilding(def, ghost);
     case 'watchtower': return woodenWatchtower(def, ghost);
-    case 'enemywatchtower': return stoneWatchtower(def, ghost);
+    case 'enemywatchtower': case 'stonetower': return stoneWatchtower(def, ghost);
     case 'banditcamp': return banditCamp(def, ghost);
+    case 'wall': case 'enemywall': return wallSegment(def, ghost);
+    case 'gate': case 'enemygate': return gateArch(def, ghost);
   }
   switch (def.model) {
     case 'windmill': return windmill(def, ghost);
@@ -1435,6 +1437,41 @@ export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean)
     case 'guildhall': return guildhall(def, ghost);
     default: return cottage(def, ghost);
   }
+}
+
+// ---------- fortifications: a crenellated rampart block and a barred gate ----------
+function wallSegment(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const stone = mkMat(def.wall, ghost), cap = mkMat(def.roof, ghost);
+  const body = new THREE.Mesh(box(1.9, 1.1, 1.9), stone);
+  body.position.y = 0.55; body.castShadow = !ghost; body.receiveShadow = !ghost; g.add(body);
+  const walk = new THREE.Mesh(box(1.98, 0.12, 1.98), cap);
+  walk.position.y = 1.16; g.add(walk);
+  // merlons ring the parapet
+  for (const [x, z] of [[-0.75, -0.75], [0, -0.75], [0.75, -0.75], [-0.75, 0.75], [0, 0.75], [0.75, 0.75], [-0.75, 0], [0.75, 0]]) {
+    const m = new THREE.Mesh(box(0.28, 0.26, 0.28), stone);
+    m.position.set(x, 1.35, z); m.userData.marker = true; g.add(m);
+  }
+  return g;
+}
+
+function gateArch(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const stone = mkMat(def.wall, ghost), cap = mkMat(def.roof, ghost);
+  const wood = mkMat(def.accent ?? 0x6b4a2f, ghost);
+  for (const s of [-1, 1]) { // twin flanking towers with capped tops
+    const t = new THREE.Mesh(box(0.6, 1.5, 1.9), stone);
+    t.position.set(s * 0.68, 0.75, 0); t.castShadow = !ghost; g.add(t);
+    const c = new THREE.Mesh(box(0.72, 0.14, 2.0), cap);
+    c.position.set(s * 0.68, 1.56, 0); g.add(c);
+  }
+  const lintel = new THREE.Mesh(box(1.96, 0.4, 1.9), stone);
+  lintel.position.y = 1.28; lintel.castShadow = !ghost; g.add(lintel);
+  for (const s of [-1, 1]) { // heavy timber doors on both faces of the passage
+    const doors = new THREE.Mesh(box(0.78, 1.05, 0.1), wood);
+    doors.position.set(0, 0.53, s * 0.92); doors.userData.marker = true; g.add(doors);
+  }
+  return g;
 }
 
 // ---------- guild hall — a municipal Dutch raadhuis: brick, stepped gable,

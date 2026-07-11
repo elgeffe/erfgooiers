@@ -22,7 +22,8 @@ export interface EnemySetup {
   wild?: { kind: UnitKind; count: number }[];              // roaming beasts (boars, dragon)
   /** Camps with guards; `kinds` mixes the garrison round-robin (default bandits). */
   camps?: { count: number; guards: number; kinds?: UnitKind[] }[];
-  keep?: { guards: number; kinds?: UnitKind[] };           // one enemy keep (late levels)
+  /** One enemy keep (late levels); `fortified` rings it with walls & a gate. */
+  keep?: { guards: number; kinds?: UnitKind[]; fortified?: boolean };
   towers?: number;                                         // watchtowers around the keep
   waves?: WaveDef[];                                       // raids marching on the castle
   boss?: UnitKind;                                         // a single boss unit
@@ -130,7 +131,7 @@ export const LEVELS: LevelDef[] = [
     kit: { stock: { timber: 20, stone: 16, bread: 14, coin: 16, weapon: 3, armor: 1 }, serfs: 3, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 11 }, { kind: 'archer', count: 8 }, { kind: 'knight', count: 3 }],
     // the dead walk the fortified village: skeletons man its outworks
-    enemies: { keep: { guards: 14, kinds: ['orc', 'skeleton', 'skelarcher'] }, towers: 3,
+    enemies: { keep: { guards: 14, kinds: ['orc', 'skeleton', 'skelarcher'], fortified: true }, towers: 3,
       camps: [{ count: 2, guards: 7, kinds: ['skeleton', 'skelarcher'] }],
       commander: { every: 70, kind: 'orc', count: 4, from: 'camp' },
       waves: [{ at: 440, kind: 'troll', count: 3 }, { at: 580, kind: 'zombie', count: 6 }] },
@@ -143,7 +144,7 @@ export const LEVELS: LevelDef[] = [
     startArmy: [{ kind: 'soldier', count: 13 }, { kind: 'archer', count: 10 }, { kind: 'knight', count: 4 }],
     // the demon broods over the keep's quarter instead of raiding your town;
     // its garrison is a full host of the living and the dead
-    enemies: { keep: { guards: 18, kinds: ['orc', 'troll', 'skeleton', 'skelarcher', 'zombie'] }, towers: 4, boss: 'demon',
+    enemies: { keep: { guards: 18, kinds: ['orc', 'troll', 'skeleton', 'skelarcher', 'zombie'], fortified: true }, towers: 4, boss: 'demon',
       camps: [{ count: 2, guards: 9, kinds: ['zombie', 'skeleton', 'skelarcher'] }],
       commander: { every: 60, kind: 'orc', count: 5, from: 'camp' },
       waves: [{ at: 500, kind: 'troll', count: 3 }, { at: 700, kind: 'brute', count: 1 }] },
@@ -216,7 +217,7 @@ export function sandboxLevel(cfg: SandboxConfig = DEFAULT_SANDBOX): LevelDef {
       } : {
         wild: [{ kind: 'boar', count: Math.round(4 * scale) }],
         camps: [{ count: Math.max(2, Math.round(2 * scale)), guards: 5 }],
-        keep: { guards: 8 }, towers: 3,
+        keep: { guards: 8, fortified: true }, towers: 3,
         commander: { every: 75, kind: 'orc', count: 4, from: 'camp' },
         waves: [{ at: 640, kind: 'troll', count: 3 }],
       };

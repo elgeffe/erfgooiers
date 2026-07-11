@@ -287,7 +287,7 @@ export class Game {
   }
 
   private sendTo(u: Unit, x: number, y: number): boolean {
-    const p = findPath(this.world, u.tx, u.ty, x, y);
+    const p = findPath(this.world, u.tx, u.ty, x, y, u.faction);
     if (p === null) { u.path = null; return false; }
     u.path = p; u.pathI = 0; return true;
   }
@@ -1202,7 +1202,8 @@ export class Game {
     if (b.removed) return;
     const c = this.buildingCenter(b);
     for (let i = 0; i < 4; i++) this.onDeath(c.x + (rnd() - 0.5) * 1.4, c.z + (rnd() - 0.5) * 1.4, b.faction, b.def.roof, 'serf', 1);
-    this.objective?.onStructureDestroyed(b.faction);
+    // walls & gates are fortifications, not strongholds — no objective credit
+    if (!b.def.bulwark) this.objective?.onStructureDestroyed(b.faction);
     for (const o of this.units) if (o.foeB === b) o.foeB = null;
     const isCastle = b === this.store;
     this.removeBuilding(b);
@@ -1581,7 +1582,11 @@ export class Game {
     if (setup.commander) this.commanderT = -setup.commander.every * 0.75;
     if (setup.wild) for (const w of setup.wild) this.spawnWild(w.kind, w.count);
     if (setup.camps) for (const c of setup.camps) for (let i = 0; i < c.count; i++) this.spawnStronghold('banditcamp', c.guards, c.kinds);
-    if (setup.keep) { const camp = this.spawnStronghold('enemycastle', setup.keep.guards, setup.keep.kinds); if (camp && setup.towers) for (let i = 0; i < setup.towers; i++) this.spawnTowerNear(camp); }
+    if (setup.keep) {
+      const camp = this.spawnStronghold('enemycastle', setup.keep.guards, setup.keep.kinds);
+      if (camp && setup.towers) for (let i = 0; i < setup.towers; i++) this.spawnTowerNear(camp);
+      if (camp && setup.keep.fortified) this.fortifyStronghold(camp);
+    }
     if (setup.boss) this.spawnBoss(setup.boss);
   }
 
@@ -1717,6 +1722,24 @@ export class Game {
     for (let i = 0; i < total; i++) { const k = kinds[i % kinds.length]; per.set(k, (per.get(k) ?? 0) + 1); }
     for (const [k, n] of per) this.spawnSquad(k, n, this.world.wx(spot.x), this.world.wz(spot.y), 'enemy');
     return b;
+  }
+
+  /** Ring a keep with walls and one barred gate facing the player's town.
+   *  Terrain that refuses a segment simply leaves a rough gap. */
+  private fortifyStronghold(b: Building): void {
+    const cx = this.world.W / 2, cy = this.world.H / 2;
+    const dirx = cx - b.x, diry = cy - b.y;
+    const side = Math.abs(dirx) > Math.abs(diry) ? (dirx > 0 ? 'e' : 'w') : (diry > 0 ? 's' : 'n');
+    const R = 4;
+    for (let dy = -R; dy <= R; dy += 2) for (let dx = -R; dx <= R; dx += 2) {
+      if (Math.abs(dx) !== R && Math.abs(dy) !== R) continue; // perimeter only
+      const gate = (side === 'e' && dx === R && dy === 0) || (side === 'w' && dx === -R && dy === 0)
+        || (side === 's' && dy === R && dx === 0) || (side === 'n' && dy === -R && dx === 0);
+      const x = b.x + dx, y = b.y + dy;
+      if (!this.areaClear(x, y)) continue;
+      const w = this.placeBuilding(gate ? 'enemygate' : 'enemywall', x, y, true, 0, 'enemy');
+      w.active = true;
+    }
   }
 
   private spawnTowerNear(b: Building): void {

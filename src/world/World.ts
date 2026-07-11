@@ -1,7 +1,7 @@
 import { W as DEFAULT_W, H as DEFAULT_H } from '../constants';
 import { worldRng } from '../engine/rng';
 import { BIOMES, pickTreeKind, type BiomeDef, type BiomeKey } from '../data/biomes';
-import type { DecoKind, DepositKind, Tile } from '../types';
+import type { DecoKind, DepositKind, Faction, Tile } from '../types';
 
 // Worldgen pulls exclusively from this stream (reseeded per level) so a level's
 // map is fully determined by its seed, independent of sim/cosmetic call order.
@@ -94,12 +94,16 @@ export class World {
   wx(tx: number): number { return tx - this.W / 2 + 0.5; }
   wz(ty: number): number { return ty - this.H / 2 + 0.5; }
 
-  /** Can a unit stand on / walk through this tile? */
-  passable(x: number, y: number): boolean {
+  /** Can a unit stand on / walk through this tile? A `faction` lets that
+   *  side's units walk through its own gates; everyone else is walled out. */
+  passable(x: number, y: number, faction?: Faction): boolean {
     const t = this.T(x, y);
     if (!t) return false;
     if (t.type !== 'grass') return false; // water & rock both block
-    if (t.b || t.site) return false;
+    if (t.b || t.site) {
+      const ownGate = !!faction && !!t.b && !t.site && t.b.def.gate && t.b.faction === faction;
+      if (!ownGate) return false;
+    }
     if (t.dep) return false;              // ore heaps are solid — mine from beside them
     if (t.tree?.dense) return false;      // old-growth thickets are a wall of trunks
     return true;
