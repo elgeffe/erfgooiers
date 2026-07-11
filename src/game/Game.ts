@@ -1751,19 +1751,26 @@ export class Game {
     }
   }
 
+  /** Boss health multiplier for the run's difficulty tier (set by main). */
+  bossHpMult = 1;
+
   private spawnBoss(kind: UnitKind): void {
     // on frontier maps the boss broods in the walled-off enemy quarter and
     // stays there — the player picks when to march in and start that fight
     const ez = this.world.enemyZone;
     if (ez) {
-      this.spawnSquad(kind, 1, this.world.wx(ez.x), this.world.wz(ez.y), UNITS[kind].faction);
+      const squad = this.spawnSquad(kind, 1, this.world.wx(ez.x), this.world.wz(ez.y), UNITS[kind].faction);
+      for (const u of squad) u.hp = u.maxHp = Math.round(u.maxHp * this.bossHpMult);
       this.toast(`The ${UNITS[kind].name} broods in its mountain lair — muster before you march`, 'err');
       return;
     }
     const e = this.randomEdge();
     const squad = this.spawnSquad(kind, 1, e.x, e.z, UNITS[kind].faction);
     const castle = this.store;
-    for (const u of squad) { u.raider = true; if (castle) this.orderUnit(u, 'attackMove', castle.x + 1, castle.y + 1); }
+    for (const u of squad) {
+      u.hp = u.maxHp = Math.round(u.maxHp * this.bossHpMult);
+      u.raider = true; if (castle) this.orderUnit(u, 'attackMove', castle.x + 1, castle.y + 1);
+    }
     this.toast(`The ${UNITS[kind].name} descends upon Het Gooi!`, 'err');
   }
 
