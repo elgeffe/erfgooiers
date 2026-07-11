@@ -108,7 +108,7 @@ export class Game {
     const serfs = kit.serfs + this.mods.extraSerfs();
     const laborers = kit.laborers + this.mods.extraLaborers();
     for (let i = 0; i < serfs; i++) this.spawnUnit('serf', 0xd8c49a, { x: d.x - 2 + (i % 4), y: d.y + Math.floor(i / 4) });
-    for (let i = 0; i < laborers; i++) { const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + (i % 3), y: d.y + Math.floor(i / 3) }); u.roleName = 'Builder'; }
+    for (let i = 0; i < laborers; i++) { const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + (i % 3), y: d.y + Math.floor(i / 3) }); u.roleName = 'Builder'; u.anchor = { x: u.tx, y: u.ty }; }
     // the Guild Hall trains the villagers who staff your buildings (separate from storage)
     this.guild = this.placeBuilding('guildhall', cx + 3, cy, true);
     const gd = doorTile(this.guild);
@@ -493,7 +493,9 @@ export class Game {
     let target: Site | null = null;
     for (const s of this.sites) { if (claimable(s) && s.priority) { target = s; break; } }
     if (!target) for (const s of this.sites) { if (claimable(s)) { target = s; break; } }
-    if (target) { target.builder = u; u.target = target; u.wstate = 'build'; }
+    if (target) { target.builder = u; u.target = target; u.wstate = 'build'; u.path = null; }
+    // nothing to build: stroll about instead of standing as a fixed obstacle
+    else this.wander(u, dt, 'Strolling', 'Idle');
   }
 
   private outTotal(b: Building): number { let n = 0; for (const k in b.out) n += b.out[k]; return n; }
@@ -1138,11 +1140,11 @@ export class Game {
     u.mesh.position.y = u.lungeT > 0 ? Math.sin((1 - u.lungeT / 0.22) * Math.PI) * 0.12 : 0;
   }
 
-  /** Idle beasts & camp guards amble around their anchor, pausing to root & graze. */
-  private wander(u: Unit, dt: number): void {
-    if (u.path) { this.moveUnit(u, dt); u.status = 'Roaming'; return; }
+  /** Idle beasts, camp guards & off-duty builders amble around their anchor. */
+  private wander(u: Unit, dt: number, moving = 'Roaming', resting = 'Grazing'): void {
+    if (u.path) { this.moveUnit(u, dt); u.status = moving; return; }
     u.mesh.position.y = 0;
-    u.status = 'Grazing';
+    u.status = resting;
     u.timer -= dt;
     if (u.timer > 0) return;
     u.timer = 4 + rnd() * 7;
@@ -1867,7 +1869,7 @@ export class Game {
   /** Spawn a civilian worker (serf / laborer / villager) at a tile. */
   private spawnCivilian(role: string, tile: { x: number; y: number }): Unit {
     if (role === 'serf') return this.spawnUnit('serf', 0xd8c49a, tile);
-    if (role === 'laborer') { const u = this.spawnUnit('laborer', 0xc97b3d, tile); u.roleName = 'Builder'; return u; }
+    if (role === 'laborer') { const u = this.spawnUnit('laborer', 0xc97b3d, tile); u.roleName = 'Builder'; u.anchor = { x: tile.x, y: tile.y }; return u; }
     const u = this.spawnUnit('villager', 0xcdbb8f, tile); u.roleName = 'Villager'; u.status = 'Awaiting a post'; return u;
   }
 
