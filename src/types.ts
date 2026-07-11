@@ -15,6 +15,13 @@ export type BuildingKey =
 
 export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'iron' | 'field' | 'fish';
 
+/** Stable owner identity for the two allied co-op economies. */
+export type PlayerId = 'p1' | 'p2';
+export const PLAYER_IDS: readonly PlayerId[] = ['p1', 'p2'];
+
+/** Simulation owner. Diplomacy is derived separately so p1/p2 remain allied. */
+export type OwnerId = PlayerId | 'enemy' | 'wild';
+
 /** Which side a unit or building belongs to. Economy workers are always 'player'. */
 export type Faction = 'player' | 'enemy' | 'wild';
 export type Formation = 'box' | 'line' | 'split';
