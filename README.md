@@ -79,4 +79,8 @@ Key areas:
 - `src/engine/` — RNG, pathfinding, and pure formation layout
 
 Contributor and agent conventions live in [AGENTS.md](AGENTS.md). Product direction and
-remaining milestones live in [ROADMAP.md](ROADMAP.md).
+remaining milestones live in [ROADMAP.md](ROADMAP.md). The proposed first multiplayer
+step is documented in [docs/co-op-design.md](docs/co-op-design.md): a host-authoritative
+four-level two-player PvE Expedition with larger maps, its own difficulty presets,
+independent player economies connected by physical trade, invites, and a public server
+browser. An in-game Multiplayer panel covers connection health and invite-code rejoin.

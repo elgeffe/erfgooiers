@@ -1,5 +1,9 @@
 # Erfgooiers Grand Skirmish — asynchronous turn-based multiplayer
 
+> This is a separate future competitive/strategy concept. The nearer-term multiplayer
+> priority is [two-player real-time co-op](co-op-design.md), using a host-authoritative
+> shared PvE simulation, invite codes, and a public server browser.
+
 A solution design for a multiplayer game type built from the pieces Erfgooiers
 already has: the sandbox generator, the deterministic simulation, heroes, and
 the army layer. It is **not** real-time co-op (see ROADMAP's caveats about

@@ -134,12 +134,45 @@ commandable hero character yet.
 - Performance budgets for large maps and armies; profile before further optimization.
 - Daily seeded runs, shareable seed links, achievements, and run-history summaries.
 
+### 5. Two-player real-time co-op Expeditions
+
+Co-op is the first multiplayer target: a dedicated four-level Expedition with much
+larger maps, multi-front objectives, and its own difficulty presets. Two allied players
+each own a settlement, workers, resources, production chains, army, hero, gold, cards,
+and shop while sharing the map, enemies, objectives, and Expedition outcome. The host
+is authoritative for networking, while a small WebSocket room service provides
+host/invite, public server browsing, relay, presence, checkpoints, and reconnects.
+
+- First extract versioned gameplay commands and stable entity IDs while keeping
+  singleplayer on the same command path.
+- Add canonical fingerprints plus render-free checkpoints/replay so a guest can be
+  corrected or rejoined without serializing Three.js objects.
+- Prove two-tab command replication under latency/jitter, then add the room service and
+  main-menu Host / Join by invite / Server browser / Lobby flow.
+- Add an in-game Multiplayer panel for connection health, invite copying, automatic and
+  manual reconnect, player presence, and approved seat reclaim. The same invite code
+  remains usable during a run and restores the original player/settlement.
+- Ship a two-player sandbox vertical slice before building the four dedicated Expedition
+  levels, composable co-op objectives, difficulty presets, shops, contracts, saves,
+  participation rewards, and summaries.
+- Add a Trade tab for requests and physical, interceptable shipments between
+  player-owned stores; resources never teleport or silently enter the ally's logistics
+  network.
+- Scale difficulty through simultaneous fronts, tighter logistics, enemy composition,
+  and recovery pressure before relying on HP inflation.
+- Keep strict player ownership, shared team victory, fixed `1x` speed, personal hero
+  effects unless explicitly team-wide, mutual lifecycle readiness, friend-level trust,
+  durable reconnect seats, and no host migration for v1.
+
+The staged architecture, protocol, recovery model, security boundaries, risks, and exit
+criteria are documented in [docs/co-op-design.md](docs/co-op-design.md).
+
 ## Future
 
 - Async daily/seed leaderboards and friend score races.
 - Additional heroes, cards, buildings, enemies, biomes, and Ascension tiers.
-- Co-op only after deterministic simulation order, serialization, and lockstep recovery
-  have dedicated tests. Multiplayer is not currently scheduled.
+- Competitive/asynchronous multiplayer remains future work after co-op; see
+  [docs/multiplayer-design.md](docs/multiplayer-design.md).
 
 ## Open decisions
 
