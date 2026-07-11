@@ -267,16 +267,36 @@ export class World {
       // the pass: a gap somewhere along the arc, kept off the arc's ends
       const passAng = 0.25 + rnd() * (Math.PI / 2 - 0.5);
       const passHalf = 2.5 / R;                               // ≈5 walkable tiles of gap
+      // the range's character varies per seed so frontiers don't all read as
+      // the same neat circle: a clean arc, a wobbling ridge line, or a wobbling
+      // ridge whose pass extends into a guarded corridor
+      const style = rnd();
+      const amp = style < 0.34 ? 0 : 2 + rnd() * 2.5;
+      const wobF = 3 + rnd() * 3, wobP = rnd() * Math.PI * 2;
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         const dx = (x - cx0) * sgnX, dy = (y - cy0) * sgnY;   // fold every corner into quadrant I
         if (dx < 0 || dy < 0) continue;
         const d = Math.hypot(dx, dy);
-        if (d < R - 1.2 || d > R + 1.2) continue;
         const ang = Math.atan2(dy, dx);
+        const Ra = R + Math.sin(ang * wobF + wobP) * amp;     // the ridge line meanders
+        if (d < Ra - 1.2 || d > Ra + 1.2) continue;
         if (Math.abs(ang - passAng) < passHalf) continue;      // leave the pass open
         const t = this.tiles[y][x];
         if (t.type !== 'grass' || nearCentre(x, y, 2)) continue;
         t.type = 'rock'; t.rock = 'peak';
+      }
+      // corridor style: two ridge spurs flank the approach to the pass, so the
+      // way in reads as a mountain corridor rather than a hole in a ring
+      if (style >= 0.72) {
+        const len = Math.round(R * 0.35);
+        for (const edge of [passAng - passHalf * 2.2, passAng + passHalf * 2.2]) {
+          for (let d = R + 2; d <= R + 2 + len; d++) {
+            const x = cx0 + sgnX * Math.round(d * Math.cos(edge));
+            const y = cy0 + sgnY * Math.round(d * Math.sin(edge));
+            rockTile(x, y, 'peak');
+            if (rnd() < 0.6) rockTile(x + (rnd() < 0.5 ? sgnX : 0), y + (rnd() < 0.5 ? sgnY : 0), 'peak');
+          }
+        }
       }
       const ir = Math.round(R * 0.55);
       this.enemyZone = {

@@ -1745,23 +1745,66 @@ export class Game {
     return true;
   }
 
+  /** Tiles an army can walk to from the town centre (lazy, one BFS per level). */
+  private reachMask: Uint8Array | null = null;
+  private reachable(x: number, y: number): boolean {
+    const W = this.world.W, H = this.world.H;
+    if (x < 0 || y < 0 || x >= W || y >= H) return false;
+    if (!this.reachMask) {
+      const seen = new Uint8Array(W * H);
+      const qx: number[] = [], qy: number[] = [];
+      const cx = Math.floor(W / 2), cy = Math.floor(H / 2);
+      // seed at the first walkable tile near the centre (the castle sits on it)
+      outer: for (let r = 1; r < 10; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (this.world.passable(cx + dx, cy + dy)) { qx.push(cx + dx); qy.push(cy + dy); seen[(cy + dy) * W + cx + dx] = 1; break outer; }
+      }
+      for (let i = 0; i < qx.length; i++) {
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = qx[i] + dx, ny = qy[i] + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H || seen[ny * W + nx]) continue;
+          if (!this.world.passable(nx, ny)) continue;
+          seen[ny * W + nx] = 1; qx.push(nx); qy.push(ny);
+        }
+      }
+      this.reachMask = seen;
+    }
+    return !!this.reachMask[y * W + x];
+  }
+
   private findStrongholdSpot(): { x: number; y: number } | null {
     const W = this.world.W, H = this.world.H, cx = W / 2, cy = H / 2;
-    // frontier maps: strongholds live inside the walled-off enemy quarter
+    const spaced = (x: number, y: number) => this.camps.every(c => Math.hypot(c.x - x, c.y - y) >= 6);
+    // a keep no army can walk to is no objective: demand a reachable doorstep
+    const open = (x: number, y: number): boolean => {
+      if (!this.areaClear(x, y) || !spaced(x, y)) return false;
+      for (let oy = -1; oy <= 2; oy++) for (let ox = -1; ox <= 2; ox++) {
+        if ((ox === -1 || ox === 2 || oy === -1 || oy === 2) && this.reachable(x + ox, y + oy)) return true;
+      }
+      return false;
+    };
+    // frontier maps: strongholds live inside the walled-off enemy quarter,
+    // crowning the deepest ground in the corner rather than lining the pass
     const ez = this.world.enemyZone;
     if (ez) {
-      for (let tries = 0; tries < 400; tries++) {
+      let best: { x: number; y: number } | null = null, bd = -1;
+      for (let tries = 0; tries < 500; tries++) {
         const x = ez.x + Math.floor((rnd() * 2 - 1) * ez.r), y = ez.y + Math.floor((rnd() * 2 - 1) * ez.r);
         if (x < 2 || y < 2 || x > W - 4 || y > H - 4) continue;
         if (Math.hypot(x - ez.x, y - ez.y) > ez.r) continue;
-        if (this.areaClear(x, y)) return { x, y };
+        if (!open(x, y)) continue;
+        const d = Math.hypot(x - cx, y - cy);
+        if (d > bd) { bd = d; best = { x, y }; }
       }
+      if (best) return best;
       // the quarter can be waterlogged on a wet seed — fall through to anywhere
     }
-    for (let tries = 0; tries < 400; tries++) {
-      const x = 2 + Math.floor(rnd() * (W - 5)), y = 2 + Math.floor(rnd() * (H - 5));
-      if (Math.abs(x - cx) < 12 && Math.abs(y - cy) < 12) continue; // keep clear of the player's start
-      if (this.areaClear(x, y)) return { x, y };
+    // prefer walk-reachable ground; only settle for anywhere if none exists
+    for (const anywhere of [false, true]) {
+      for (let tries = 0; tries < 400; tries++) {
+        const x = 2 + Math.floor(rnd() * (W - 5)), y = 2 + Math.floor(rnd() * (H - 5));
+        if (Math.abs(x - cx) < 12 && Math.abs(y - cy) < 12) continue; // keep clear of the player's start
+        if (anywhere ? this.areaClear(x, y) : open(x, y)) return { x, y };
+      }
     }
     return null;
   }
