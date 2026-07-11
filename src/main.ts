@@ -19,6 +19,8 @@ import { UNITS, type UnitKind } from './data/units';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionArmyMult, ascensionForcesCurse, ascensionPrepMult, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
+import { CoOpClient, type ConnectionSnapshot } from './net/CoOpClient';
+import type { ExpeditionDifficulty, RoomState, ServerMessage } from './net/protocol';
 
 /* =====================================================================
    Erfgooiers — roguelite economy builder set in Het Gooi.
@@ -38,6 +40,8 @@ const view = new View(canvas, minimap);
 const ui = new UI();
 const controls = new Controls(view, ui);
 ui.onMode = m => controls.setMode(m);
+const coop = new CoOpClient();
+const pendingReclaims = new Map<string, { playerName: string; seat: string }>();
 
 let meta: MetaState = Save.loadMeta();
 let run: RunState | null = null;
@@ -419,12 +423,169 @@ function clearSaveData(): void {
 }
 
 // ---------- screens (DOM overlays) ----------
-type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'heroselect' | 'sandboxselect' | null;
+type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'heroselect' | 'sandboxselect' | 'coopmenu' | 'cooplobby' | null;
 function showScreen(id: ScreenId): void {
   $('pausemenu').style.display = 'none';
-  for (const s of ['menu', 'shop', 'summary', 'heritage', 'heroselect', 'sandboxselect']) $(s).style.display = id === s ? 'flex' : 'none';
+  for (const s of ['menu', 'shop', 'summary', 'heritage', 'heroselect', 'sandboxselect', 'coopmenu', 'cooplobby']) $(s).style.display = id === s ? 'flex' : 'none';
   $('hud').style.display = phase === 'playing' ? 'block' : 'none';
 }
+
+// ---------- co-op room browser, lobby, and in-game connection panel ----------
+function openCoopMenu(): void {
+  showCoopError('');
+  const code = new URL(location.href).searchParams.get('coop');
+  if (code) ($('coopInviteCode') as HTMLInputElement).value = code;
+  showScreen('coopmenu');
+  void refreshCoopRooms();
+}
+
+async function hostCoop(): Promise<void> {
+  try {
+    showCoopError('');
+    const playerName = ($('coopPlayerName') as HTMLInputElement).value;
+    await coop.createRoom(playerName, {
+      visibility: ($('coopPublic') as HTMLInputElement).checked ? 'public' : 'unlisted',
+      roomName: ($('coopRoomName') as HTMLInputElement).value,
+      region: 'Europe',
+      difficulty: ($('coopDifficulty') as HTMLSelectElement).value as ExpeditionDifficulty,
+      mode: 'expedition',
+      passwordProtected: false,
+    });
+    renderCoopLobby();
+    showScreen('cooplobby');
+  } catch (error) { showCoopError(errorMessage(error)); }
+}
+
+async function joinCoop(): Promise<void> {
+  try {
+    showCoopError('');
+    const code = ($('coopInviteCode') as HTMLInputElement).value;
+    const playerName = ($('coopPlayerName') as HTMLInputElement).value;
+    const result = await coop.joinByInvite(code, playerName);
+    if ('status' in result && result.status === 'pending') {
+      showCoopError('Rejoin requested — waiting for the connected player to approve it.');
+      void pollReclaim(result.requestId);
+      return;
+    }
+    renderCoopLobby();
+    showScreen('cooplobby');
+  } catch (error) { showCoopError(errorMessage(error)); }
+}
+
+async function pollReclaim(requestId: string): Promise<void> {
+  for (let attempt = 0; attempt < 300; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const result = await coop.pollReclaim(requestId);
+      if (typeof result !== 'string') { renderCoopLobby(); showScreen('cooplobby'); return; }
+      if (result !== 'pending') { showCoopError(`Rejoin ${result}. Ask the other player to send a new invite.`); return; }
+    } catch (error) { showCoopError(errorMessage(error)); return; }
+  }
+  showCoopError('Rejoin request expired. Enter the invite code to try again.');
+}
+
+async function refreshCoopRooms(): Promise<void> {
+  const list = $('coopRooms');
+  list.innerHTML = '<div class="tag">Finding rooms…</div>';
+  try {
+    const rooms = await coop.listRooms();
+    list.innerHTML = rooms.length ? rooms.map(room =>
+      `<div class="cooproom" data-code="${escapeHtml(room.inviteCode)}"><div><b>${escapeHtml(room.roomName)}</b><small>${escapeHtml(room.hostName)} · ${escapeHtml(room.region)} · ${escapeHtml(room.difficulty)}</small></div><span>${escapeHtml(room.phase)}</span><span class="slots">${room.players}/2</span></div>`,
+    ).join('') : '<div class="tag">No public rooms yet. Host one or use an invite code.</div>';
+    list.querySelectorAll<HTMLElement>('.cooproom').forEach(row => row.onclick = () => {
+      ($('coopInviteCode') as HTMLInputElement).value = row.dataset.code || '';
+    });
+  } catch (error) {
+    list.innerHTML = '<div class="tag">Room service unavailable.</div>';
+    showCoopError(errorMessage(error));
+  }
+}
+
+function renderCoopLobby(): void {
+  const snapshot = coop.snapshot();
+  const room = snapshot.room;
+  if (!room) return;
+  $('coopLobbyMeta').innerHTML = `<b>${escapeHtml(room.settings.roomName)}</b> · ${escapeHtml(room.inviteCode)} · ${escapeHtml(room.settings.difficulty)} · level ${room.level}`;
+  $('coopLobbyPlayers').innerHTML = playerRows(room, snapshot.playerId, 'coopplayer');
+  const local = room.players.find(player => player.id === snapshot.playerId);
+  const bothReady = room.players.length === 2 && room.players.every(player => player.ready);
+  $('coopLobbyStatus').textContent = room.players.length < 2
+    ? 'Waiting for the other player — share the invite code.'
+    : bothReady ? 'Both players ready. Expedition setup will start.' : 'Choose Ready when your connection is stable.';
+  const ready = $('btnCoopReady') as HTMLButtonElement;
+  ready.textContent = local?.ready ? 'Not ready' : 'Ready';
+  ready.classList.toggle('ghost', !!local?.ready);
+}
+
+function renderMultiplayer(snapshot: ConnectionSnapshot): void {
+  const dot = $('coopStatusDot');
+  dot.className = snapshot.status;
+  const button = $('btnMultiplayer') as HTMLButtonElement;
+  button.style.display = snapshot.room ? 'block' : 'none';
+  const statusLabel = snapshot.status.replace(/([A-Z])/g, ' $1');
+  $('mpConnection').textContent = `${statusLabel}${snapshot.rtt === null ? '' : ` · ${Math.round(snapshot.rtt)} ms`}${snapshot.error ? ` · ${snapshot.error}` : ''}`;
+  const banner = $('coopConnectionBanner');
+  const troubled = snapshot.room && !['connected', 'offline'].includes(snapshot.status);
+  banner.style.display = troubled ? 'block' : 'none';
+  banner.textContent = snapshot.status === 'paused' ? 'Host disconnected — Expedition paused while reconnecting.' : 'Connection interrupted — reconnecting…';
+  if (!snapshot.room) { $('mpRoom').innerHTML = ''; $('mpPlayers').innerHTML = ''; return; }
+  $('mpRoom').innerHTML = `<div class="mp-room"><b>${escapeHtml(snapshot.room.settings.roomName)}</b>Invite ${escapeHtml(snapshot.room.inviteCode)} · level ${snapshot.room.level}</div>`;
+  $('mpPlayers').innerHTML = playerRows(snapshot.room, snapshot.playerId, 'mp-player');
+  renderReclaims();
+  renderCoopLobby();
+}
+
+function playerRows(room: RoomState, localId: string | null, cls: string): string {
+  return room.players.map(player =>
+    `<div class="${cls}"><span class="dot" style="background:${escapeHtml(player.color)}"></span><div><b>${escapeHtml(player.name)}${player.id === localId ? ' (you)' : ''}</b><small>${player.host ? 'Host · ' : ''}${player.ready ? 'Ready' : 'Not ready'}</small></div><span class="mp-presence ${player.presence}">${escapeHtml(player.presence)}</span></div>`,
+  ).join('');
+}
+
+function renderReclaims(): void {
+  $('mpReclaims').innerHTML = [...pendingReclaims].map(([id, request]) =>
+    `<div class="mp-reclaim" data-id="${escapeHtml(id)}"><b>${escapeHtml(request.playerName)}</b> wants to reclaim ${escapeHtml(request.seat)}.<div class="row"><button data-answer="yes">Approve</button><button data-answer="no">Deny</button></div></div>`,
+  ).join('');
+  $('mpReclaims').querySelectorAll<HTMLElement>('.mp-reclaim').forEach(row => {
+    row.querySelectorAll<HTMLButtonElement>('button').forEach(button => button.onclick = () => {
+      coop.approveReclaim(row.dataset.id!, button.dataset.answer === 'yes');
+      pendingReclaims.delete(row.dataset.id!);
+      renderReclaims();
+    });
+  });
+}
+
+function handleCoopMessage(message: ServerMessage): void {
+  if (message.type === 'reclaimRequested') {
+    pendingReclaims.set(message.requestId, { playerName: message.playerName, seat: message.seat });
+    renderReclaims();
+    ui.toast(`${message.playerName} wants to rejoin`, 'err');
+  }
+}
+
+function showCoopError(message: string): void {
+  const el = $('coopError');
+  el.textContent = message;
+  el.style.display = message ? 'block' : 'none';
+}
+
+async function copyCoopInvite(): Promise<void> {
+  const text = coop.inviteUrl();
+  if (!text) return;
+  try { await navigator.clipboard.writeText(text); ui.toast('Invite copied'); }
+  catch { ui.toast('Could not copy invite', 'err'); }
+}
+
+function leaveCoop(): void {
+  coop.leave();
+  pendingReclaims.clear();
+  $('multiplayerpanel').style.display = 'none';
+  goMenu();
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
 function renderMenu(): void {
   const has = Save.hasRun();
@@ -504,6 +665,32 @@ $('heroChip').onclick = () => {
 ($('btnSandbox') as HTMLButtonElement).onclick = openSandboxSetup;
 ($('btnSbxBack') as HTMLButtonElement).onclick = goMenu;
 ($('btnSbxStart') as HTMLButtonElement).onclick = startSandbox;
+($('btnCoop') as HTMLButtonElement).onclick = openCoopMenu;
+($('btnCoopBack') as HTMLButtonElement).onclick = goMenu;
+($('btnCoopHost') as HTMLButtonElement).onclick = () => void hostCoop();
+($('btnCoopJoin') as HTMLButtonElement).onclick = () => void joinCoop();
+($('btnCoopRefresh') as HTMLButtonElement).onclick = () => void refreshCoopRooms();
+($('btnCoopLobbyBack') as HTMLButtonElement).onclick = leaveCoop;
+($('btnCoopCopy') as HTMLButtonElement).onclick = () => void copyCoopInvite();
+($('btnCoopReady') as HTMLButtonElement).onclick = () => {
+  const snapshot = coop.snapshot();
+  const local = snapshot.room?.players.find(player => player.id === snapshot.playerId);
+  coop.setReady(!local?.ready);
+};
+
+coop.onConnection = renderMultiplayer;
+coop.onMessage = handleCoopMessage;
+renderMultiplayer(coop.snapshot());
+window.setInterval(() => { if (coop.snapshot().status === 'connected') coop.ping(); }, 3000);
+
+($('btnMultiplayer') as HTMLButtonElement).onclick = () => {
+  const panel = $('multiplayerpanel');
+  panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+};
+($('closeMultiplayer') as HTMLButtonElement).onclick = () => { $('multiplayerpanel').style.display = 'none'; };
+($('btnMpCopy') as HTMLButtonElement).onclick = () => void copyCoopInvite();
+($('btnMpReconnect') as HTMLButtonElement).onclick = () => coop.reconnectNow();
+($('btnMpLeave') as HTMLButtonElement).onclick = leaveCoop;
 
 // ---------- sandbox spawn toolbar ----------
 /** One spawn button: what to spawn per click (and per hold-tick), and how it looks. */
@@ -700,5 +887,6 @@ function frame(now: number): void {
 }
 
 goMenu();
+if (new URL(location.href).searchParams.has('coop')) openCoopMenu();
 requestAnimationFrame(frame);
 

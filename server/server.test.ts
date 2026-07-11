@@ -49,6 +49,34 @@ describe('co-op HTTP/WebSocket service', () => {
     });
     expect(rejoined).toMatchObject({ status: 'joined', grant: { playerId: 'p2' } });
   });
+
+  it('delivers lost-secret reclaim requests to the connected teammate', async () => {
+    const app = createCoOpServer(); apps.push(app);
+    const port = await app.listen();
+    const base = `http://127.0.0.1:${port}`;
+    const host = await post(`${base}/v1/rooms`, { playerName: 'Ada', settings });
+    const guest = await post(`${base}/v1/rooms/${host.room.inviteCode}/join`, { playerName: 'Bram' });
+    const hostWs = await connect(port, host.ticket);
+    const guestWs = await connect(port, guest.ticket);
+    const hostMessages = collect(hostWs);
+    guestWs.close();
+    await waitFor(hostMessages, message => message.type === 'roomState' && message.room.players.some(player => player.id === 'p2' && player.presence === 'offline'));
+
+    const pending = await post(`${base}/v1/rooms/${host.room.inviteCode}/rejoin`, { playerName: 'Bram on laptop' });
+    expect(pending.status).toBe('pending');
+    const request = await waitFor(hostMessages, message => message.type === 'reclaimRequested');
+    expect(request).toMatchObject({ seat: 'p2', playerName: 'Bram on laptop' });
+    hostWs.send(JSON.stringify({ type: 'reclaimDecision', requestId: pending.requestId, approve: true }));
+
+    let approved: any = null;
+    for (let i = 0; i < 100 && !approved; i++) {
+      const status = await fetch(`${base}/v1/reclaims/${pending.requestId}`).then(r => r.json()) as any;
+      if (status.status === 'approved') approved = status;
+      else await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    expect(approved).toMatchObject({ status: 'approved', grant: { playerId: 'p2' } });
+    hostWs.close();
+  });
 });
 
 async function post(url: string, body: unknown): Promise<any> {

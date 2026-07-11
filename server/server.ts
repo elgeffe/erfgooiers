@@ -30,7 +30,7 @@ export function createCoOpServer(options: CoOpServerOptions = {}) {
       if (!originAllowed(req, allowedOrigins)) throw new RoomError('origin_denied', 'Request origin is not allowed', 403);
       setCors(req, res, allowedOrigins);
       if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
-      await routeHttp(req, res, store);
+      await routeHttp(req, res, store, (roomId, message) => broadcast(roomId, message));
     } catch (error) {
       sendError(res, error);
     }
@@ -145,7 +145,12 @@ export function createCoOpServer(options: CoOpServerOptions = {}) {
   };
 }
 
-async function routeHttp(req: IncomingMessage, res: ServerResponse, store: RoomStore): Promise<void> {
+async function routeHttp(
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: RoomStore,
+  notify: (roomId: string, message: ServerMessage) => void,
+): Promise<void> {
   const url = requestUrl(req);
   const segments = url.pathname.split('/').filter(Boolean);
   if (req.method === 'GET' && url.pathname === '/v1/health') {
@@ -169,7 +174,15 @@ async function routeHttp(req: IncomingMessage, res: ServerResponse, store: RoomS
     }
     if (req.method === 'POST' && segments[3] === 'rejoin') {
       const body = await readJson(req) as { playerName: string; reconnectSecret?: string; password?: string };
-      sendJson(res, 200, store.rejoin(code, body.playerName, body.reconnectSecret, body.password)); return;
+      const result = store.rejoin(code, body.playerName, body.reconnectSecret, body.password);
+      sendJson(res, 200, result);
+      if (result.status === 'pending') {
+        notify(store.stateByCode(code).id, {
+          type: 'reclaimRequested', requestId: result.requestId,
+          playerName: body.playerName, seat: result.seat,
+        });
+      }
+      return;
     }
   }
   if (req.method === 'GET' && segments[0] === 'v1' && segments[1] === 'reclaims' && segments[2]) {

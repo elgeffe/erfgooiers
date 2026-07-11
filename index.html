@@ -25,6 +25,7 @@
     <button id="btnSound" title="Toggle sound">🔊</button>
   </div>
   <div id="runctl">
+    <button id="btnMultiplayer" title="Connection, invites, and players"><span id="coopStatusDot">●</span> Multiplayer</button>
     <button id="btnPerks" title="Heritage cards & active power-ups">🃏 Cards</button>
     <button id="btnDebugWin" title="Debug: instantly clear this level">✓ Win</button>
     <button id="btnToMenu" title="Pause and open the menu">Menu</button>
@@ -59,6 +60,22 @@
   <div id="perklist"></div>
   <div class="hnote">Cards you carry this run — permanent Heritage unlocks and power-ups bought in the shop.</div>
 </div>
+
+<div id="multiplayerpanel" class="panel">
+  <button id="closeMultiplayer">✕</button>
+  <h3 class="serif">Multiplayer</h3>
+  <div id="mpConnection" class="mp-connection"></div>
+  <div id="mpRoom"></div>
+  <div id="mpPlayers"></div>
+  <div id="mpReclaims"></div>
+  <div class="mp-actions">
+    <button id="btnMpCopy">Copy invite</button>
+    <button id="btnMpReconnect">Reconnect now</button>
+    <button id="btnMpLeave" class="danger">Leave Expedition</button>
+  </div>
+</div>
+
+<div id="coopConnectionBanner"></div>
 
 <div id="wavebar"><span class="wb-icon">⚔️</span><span id="waveText"></span></div>
 <div id="buildmenu"></div>
@@ -95,10 +112,54 @@
     <div class="btns">
       <button id="btnContinue">Continue run</button>
       <button id="btnNewRun">New run</button>
+      <button id="btnCoop">Co-op Expedition</button>
       <button id="btnHeritage" class="ghost">Heritage — spend Erfgoed</button>
       <button id="btnSandbox" class="ghost">Sandbox — free build</button>
       <button id="btnHelp" class="ghost">How to play</button>
       <button id="btnClearSave" class="danger" title="Wipe the saved run and all meta-progress">Clear save data</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- co-op browser / create / join ---------- -->
+<div id="coopmenu" class="screen">
+  <div class="card coopcard">
+    <h1 class="serif">Co-op Expedition</h1>
+    <div class="tag">Two allied settlements, independent economies, one shared Expedition.</div>
+    <div id="coopError" class="coop-error"></div>
+    <label class="coopfield"><span>Your name</span><input id="coopPlayerName" maxlength="24" value="Erfgooier"></label>
+    <div class="coopcols">
+      <section>
+        <div class="shopsect">Host a room</div>
+        <label class="coopfield"><span>Room name</span><input id="coopRoomName" maxlength="48" value="Polder Expedition"></label>
+        <label class="coopfield"><span>Difficulty</span><select id="coopDifficulty"><option value="journey">Journey</option><option value="erfgooiers">Erfgooiers</option><option value="veldheer">Veldheer</option></select></label>
+        <label class="coopcheck"><input id="coopPublic" type="checkbox" checked> Show in server browser</label>
+        <button id="btnCoopHost">Host Expedition</button>
+      </section>
+      <section>
+        <div class="shopsect">Join by invite</div>
+        <label class="coopfield"><span>Invite code</span><input id="coopInviteCode" maxlength="9" placeholder="ABCD-2345"></label>
+        <button id="btnCoopJoin">Join / rejoin</button>
+        <div class="shopsect">Public rooms</div>
+        <button id="btnCoopRefresh" class="ghost">Refresh browser</button>
+      </section>
+    </div>
+    <div id="coopRooms" class="cooprooms"></div>
+    <div class="btns row"><button id="btnCoopBack" class="ghost">Back to menu</button></div>
+  </div>
+</div>
+
+<!-- ---------- co-op lobby ---------- -->
+<div id="cooplobby" class="screen">
+  <div class="card coopcard">
+    <h1 class="serif">Expedition lobby</h1>
+    <div id="coopLobbyMeta" class="metaline"></div>
+    <div id="coopLobbyPlayers" class="coopplayers"></div>
+    <div id="coopLobbyStatus" class="tag"></div>
+    <div class="btns row">
+      <button id="btnCoopLobbyBack" class="ghost">Leave room</button>
+      <button id="btnCoopCopy" class="ghost">Copy invite</button>
+      <button id="btnCoopReady">Ready</button>
     </div>
   </div>
 </div>

@@ -256,6 +256,7 @@ export class RoomStore {
   }
 
   state(roomId: string): RoomState { return cloneRoom(this.roomById(roomId).state); }
+  stateByCode(inviteCode: string): RoomState { return cloneRoom(this.roomByCode(inviteCode).state); }
 
   summary(inviteCode: string): RoomSummary {
     const room = this.roomByCode(inviteCode);
