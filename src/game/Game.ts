@@ -1580,8 +1580,8 @@ export class Game {
     // the commander's first raid gets extra grace beyond its usual cadence
     if (setup.commander) this.commanderT = -setup.commander.every * 0.75;
     if (setup.wild) for (const w of setup.wild) this.spawnWild(w.kind, w.count);
-    if (setup.camps) for (const c of setup.camps) for (let i = 0; i < c.count; i++) this.spawnStronghold('banditcamp', c.guards);
-    if (setup.keep) { const camp = this.spawnStronghold('enemycastle', setup.keep.guards); if (camp && setup.towers) for (let i = 0; i < setup.towers; i++) this.spawnTowerNear(camp); }
+    if (setup.camps) for (const c of setup.camps) for (let i = 0; i < c.count; i++) this.spawnStronghold('banditcamp', c.guards, c.kinds);
+    if (setup.keep) { const camp = this.spawnStronghold('enemycastle', setup.keep.guards, setup.keep.kinds); if (camp && setup.towers) for (let i = 0; i < setup.towers; i++) this.spawnTowerNear(camp); }
     if (setup.boss) this.spawnBoss(setup.boss);
   }
 
@@ -1701,14 +1701,21 @@ export class Game {
     }
   }
 
-  /** Place an enemy stronghold away from the centre and post guards around it. */
-  private spawnStronghold(key: BuildingKey, guards: number): Building | null {
+  /** Extra weight on stronghold garrisons at higher ascensions (set by main). */
+  garrisonMult = 1;
+
+  /** Place an enemy stronghold away from the centre and post guards around it.
+   *  `kinds` mixes the garrison round-robin; the default is all bandits. */
+  private spawnStronghold(key: BuildingKey, guards: number, kinds: UnitKind[] = ['bandit']): Building | null {
     const spot = this.findStrongholdSpot();
     if (!spot) return null;
     const b = this.placeBuilding(key, spot.x, spot.y, true, 0, 'enemy');
     b.active = true;
     this.camps.push(b);
-    this.spawnSquad('bandit', guards, this.world.wx(spot.x), this.world.wz(spot.y), 'enemy');
+    const total = Math.round(guards * this.garrisonMult);
+    const per = new Map<UnitKind, number>();
+    for (let i = 0; i < total; i++) { const k = kinds[i % kinds.length]; per.set(k, (per.get(k) ?? 0) + 1); }
+    for (const [k, n] of per) this.spawnSquad(k, n, this.world.wx(spot.x), this.world.wz(spot.y), 'enemy');
     return b;
   }
 

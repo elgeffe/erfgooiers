@@ -832,8 +832,11 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
 }
 
 function makeHumanoid(colorHex: number, role: string): { group: THREE.Group; itemMesh: THREE.Mesh } {
-  // greenskins & trolls get their own hide; everyone else the usual complexion
-  const skinHex = role === 'orc' ? 0x7a9a4a : role === 'troll' ? 0x8fa08a : 0xe8c9a0;
+  // greenskins & trolls get their own hide, the undead bone or rot;
+  // everyone else the usual complexion
+  const skinHex = role === 'orc' ? 0x7a9a4a : role === 'troll' ? 0x8fa08a
+    : role === 'skeleton' || role === 'skelarcher' ? 0xdcd6c4
+    : role === 'zombie' || role === 'brute' ? 0x8aa065 : 0xe8c9a0;
   const g = new THREE.Group();
   const body = new THREE.Mesh(geoBody, umat(colorHex)); body.position.y = 0.21; body.castShadow = true;
   const head = new THREE.Mesh(geoHead, umat(skinHex)); head.position.y = 0.55; head.castShadow = true;
@@ -995,6 +998,35 @@ function dressUnit(g: THREE.Group, role: string): void {
       add(plate(0x6a5a44));
       add(bow());
       add(quiver());
+      break;
+    }
+    case 'skeleton': { // rusted half-helm over bare bone, old sword & shield
+      add(dome(0x6e5f4a, 0.165, 0.66));
+      add(plate(0xb9b2a0)); // exposed ribcage reads as a bone-pale chest
+      add(shield(0x5a4a3a));
+      add(sword());
+      break;
+    }
+    case 'skelarcher': { // tattered hood, bone-pale chest, bow & quiver
+      const hood = hatCone(0x4a4440, 0.18, 0.24, 8); hood.position.y = 0.71; add(hood);
+      add(plate(0xc4bda8));
+      add(bow());
+      add(quiver());
+      break;
+    }
+    case 'zombie': { // bare rotting head, torn grave clothes
+      add(plate(0x5c6a48));
+      const wound = new THREE.Mesh(box(0.1, 0.08, 0.04), mat(0x7a2f2a));
+      wound.position.set(0.1, 0.32, 0.19); wound.userData.marker = true; add(wound);
+      break;
+    }
+    case 'brute': { // the bloated one: a vast straining belly and iron shackles
+      const belly = new THREE.Mesh(sphere(0.24, 9, 7), mat(0x74875a));
+      belly.position.set(0, 0.24, 0.1); belly.scale.set(1.15, 1, 0.95); belly.userData.marker = true; add(belly);
+      for (const sx of [-1, 1]) {
+        const cuff = new THREE.Mesh(cyl(0.06, 0.06, 0.05, 8), mat(0x4a4a50));
+        cuff.position.set(sx * 0.23, 0.16, 0.03); cuff.userData.marker = true; add(cuff);
+      }
       break;
     }
     case 'bandit': { // dark hood, ragged leather, crude axe

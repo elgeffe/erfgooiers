@@ -4,6 +4,7 @@ import type { Faction } from '../types';
 /** Combat unit archetypes. Economy workers (serf/laborer/specialists) are not here. */
 export type UnitKind = 'soldier' | 'pikeman' | 'archer' | 'knight' | 'bandit' | 'boar' | 'dragon'
   | 'wolf' | 'orc' | 'troll' | 'demon' | 'hero'
+  | 'skeleton' | 'skelarcher' | 'zombie' | 'brute'
   | 'lancer' | 'horseknight' | 'horsearcher'
   | 'ballista' | 'onager' | 'trebuchet';
 
@@ -80,6 +81,20 @@ export const UNITS: Record<UnitKind, UnitDef> = {
   troll: { kind: 'troll', name: 'Troll', faction: 'enemy', color: 0x5d7263, model: 'human',
     hp: 120, dmg: 9, range: 5.5, atkCd: 1.9, speed: BASE_SPEED * 0.8, scale: 1.3, aggro: 12,
     arrows: true, wander: true },
+
+  // ---- the undead (harder levels): garrisons of the later strongholds ----
+  skeleton: { kind: 'skeleton', name: 'Skeletal Warrior', faction: 'enemy', color: 0xd8d2c0, model: 'human',
+    hp: 55, dmg: 9, range: 1.3, atkCd: 1.0, speed: BASE_SPEED * 1.05, scale: 0.98, aggro: 11, wander: true },
+
+  skelarcher: { kind: 'skelarcher', name: 'Skeletal Archer', faction: 'enemy', color: 0xcfc9b4, model: 'human',
+    hp: 38, dmg: 7, range: 5.0, atkCd: 1.3, speed: BASE_SPEED, scale: 0.95, aggro: 12, arrows: true, wander: true },
+
+  zombie: { kind: 'zombie', name: 'Zombie', faction: 'enemy', color: 0x6f8a4d, model: 'human',
+    hp: 120, dmg: 11, range: 1.2, atkCd: 1.4, speed: BASE_SPEED * 0.65, scale: 1.05, aggro: 12, wander: true },
+
+  // the huge fat one: a slow, walking siege wall of rotten flesh
+  brute: { kind: 'brute', name: 'Bloated Zombie', faction: 'enemy', color: 0x55703c, model: 'human',
+    hp: 900, dmg: 24, range: 1.5, atkCd: 1.8, speed: BASE_SPEED * 0.5, scale: 1.75, aggro: 12, wander: true },
 
   // ---- cavalry (trained at the Stable): speed is their armour ----
   lancer: { kind: 'lancer', name: 'Lancer', faction: 'player', color: 0x4a7ab0, model: 'cavalry',

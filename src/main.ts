@@ -96,6 +96,8 @@ function startLevel(): void {
   controls.setGame(game);
   // sandbox trouble is configured on the setup screen; runs use the level table
   game.prepMult = sandbox ? 1 : ascensionPrepMult(run.ascension);
+  // higher ascensions garrison the enemy strongholds ever more heavily
+  game.garrisonMult = sandbox ? 1 : 1 + 0.35 * run.ascension;
   game.setEnemies(level.enemies ?? null);
   // mutator payloads beyond stat curses: extra wild packs on the map
   for (const id of mutators) {
