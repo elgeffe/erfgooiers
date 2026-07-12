@@ -79,7 +79,7 @@ export const LEVELS: LevelDef[] = [
     objectives: [{ kind: 'produce', item: 'coin', n: 5 }],
     world: { w: 40, h: 40, treeStands: 5, oreVeins: 7, waterScale: 0.6, meadows: 2, goldPiles: 3 },
     kit: { stock: { timber: 12, stone: 10, bread: 8, coin: 4 }, serfs: 2, laborers: 1 },
-    timeTarget: 370, hardTimer: 580, reward: 38 },
+    timeTarget: 600, hardTimer: 580, reward: 38 },
 
   // two full chains side by side PLUS a first muster: the level before the
   // combat arc doubles as military drill \u2014 hit the food goal, then train a
@@ -91,7 +91,7 @@ export const LEVELS: LevelDef[] = [
     ],
     world: { w: 42, h: 42, treeStands: 6, oreVeins: 6, waterScale: 0.8, meadows: 3, goldPiles: 4 },
     kit: { stock: { timber: 16, stone: 10, bread: 8, coin: 10, weapon: 3 }, serfs: 2, laborers: 2 },
-    timeTarget: 480, hardTimer: 760, reward: 45 },
+    timeTarget: 900, hardTimer: 760, reward: 45 },
 
   { index: 5, name: 'Raiders at the Gate', type: 'Defend',
     objectives: [{ kind: 'survive', waves: 2 }],
