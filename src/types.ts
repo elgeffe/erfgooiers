@@ -11,7 +11,7 @@ export type BuildingKey =
   | 'farm' | 'mill' | 'bakery' | 'goldmine' | 'coalmine' | 'mint'
   | 'vineyard' | 'winery' | 'pigfarm' | 'butcher' | 'tavern' | 'fishery' | 'clamdigger'
   | 'barracks' | 'stable' | 'engineer' | 'ironmine' | 'smithy' | 'armory' | 'watchtower'
-  | 'stonetower' | 'wall' | 'gate'
+  | 'stonetower' | 'wall' | 'gate' | 'monastery'
   | 'banditcamp' | 'enemywatchtower' | 'enemycastle' | 'enemywall' | 'enemygate';
 
 export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'iron' | 'field' | 'fish';

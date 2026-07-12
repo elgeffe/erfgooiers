@@ -6,7 +6,7 @@ export type UnitKind = 'soldier' | 'pikeman' | 'archer' | 'knight' | 'bandit' | 
   | 'wolf' | 'orc' | 'troll' | 'demon' | 'hero'
   | 'skeleton' | 'skelarcher' | 'zombie' | 'brute'
   | 'lancer' | 'horseknight' | 'horsearcher'
-  | 'ballista' | 'onager' | 'trebuchet';
+  | 'ballista' | 'onager' | 'trebuchet' | 'priest';
 
 /** How a combat unit is drawn — humanoid reuses the worker model; beasts differ. */
 export type FighterModel = 'human' | 'beast' | 'dragon' | 'wolf' | 'demon' | 'hero' | 'cavalry' | 'siege';
@@ -34,6 +34,7 @@ export interface UnitDef {
   splash?: number;      // lobs an arcing rock that damages everything within this tile radius (onager)
   tags?: UnitTag[];      // target traits used by data-driven counters (mounted, etc.)
   bonusVs?: { tag: UnitTag; mult: number }[]; // damage multipliers against matching targets
+  heal?: { range: number; amount: number; rate: number };
 }
 
 export type UnitTag = 'mounted';
@@ -45,6 +46,8 @@ export type UnitTag = 'mounted';
 export function formationRank(role: string): number {
   return (UNITS as Record<string, UnitDef | undefined>)[role]?.rank ?? 2;
 }
+
+export function isCommandableRole(role: string): boolean { return role in UNITS; }
 
 export const UNITS: Record<UnitKind, UnitDef> = {
   soldier: { kind: 'soldier', name: 'Soldier', faction: 'player', color: 0x3f5aa0, model: 'human',
@@ -120,6 +123,10 @@ export const UNITS: Record<UnitKind, UnitDef> = {
 
   trebuchet: { kind: 'trebuchet', name: 'Trebuchet', faction: 'player', color: 0x6b4f30, model: 'siege',
     hp: 90, dmg: 48, range: 9, atkCd: 5, speed: BASE_SPEED * 0.4, scale: 1.15, aggro: 4, arrows: true, rank: 4 },
+
+  priest: { kind: 'priest', name: 'Priest', faction: 'player', color: 0xf1ead8, model: 'human',
+    hp: 45, dmg: 0, range: 0, atkCd: 1.5, speed: BASE_SPEED * 0.9, scale: 0.98, aggro: 0, rank: 5,
+    heal: { range: 4.5, amount: 8, rate: 1.5 } },
 
   // the run's mounted hero: sturdy and fast, but one per run — losing them stings
   hero: { kind: 'hero', name: 'Hero', faction: 'player', color: 0xd9a441, model: 'hero',

@@ -48,3 +48,20 @@ describe('Game siege orders', () => {
     expect(guard.dead).toBe(false);
   });
 });
+
+describe('priest healing', () => {
+  it('automatically heals an injured nearby ally without healing enemies', () => {
+    const world = new World({ seed: 405, w: 32, h: 32, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
+    for (const row of world.tiles) for (const t of row) { t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; }
+    const game = new Game(world, headlessView(world));
+    game.init({ stock: {}, serfs: 0, laborers: 0, villagers: 0 });
+    const priest = game.spawnFighter('priest', { x: 5, y: 5 }, 'player');
+    const ally = game.spawnFighter('soldier', { x: 6, y: 5 }, 'player');
+    const enemy = game.spawnFighter('bandit', { x: 6, y: 6 }, 'enemy');
+    ally.hp = 10; ally.dmg = 0; enemy.hp = 10; enemy.dmg = 0;
+    game.update(0.05);
+    expect(ally.hp).toBe(18);
+    expect(enemy.hp).toBe(10);
+    expect(priest.foe).toBeNull();
+  });
+});

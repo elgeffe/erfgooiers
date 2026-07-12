@@ -1052,6 +1052,7 @@ export class Game {
 
   private combatUpdate(u: Unit, dt: number): void {
     const def = UNITS[u.role as UnitKind];
+    if (def.heal) { this.supportUpdate(u, def.heal, dt); return; }
     const flying = !!def.flying;
     u.atkTimer = Math.max(0, u.atkTimer - dt);
     if (u.lungeT > 0) u.lungeT = Math.max(0, u.lungeT - dt);
@@ -1177,6 +1178,35 @@ export class Game {
     } else {
       this.groundPose(u, flying);
     }
+  }
+
+  private supportUpdate(u: Unit, heal: { range: number; amount: number; rate: number }, dt: number): void {
+    u.atkTimer = Math.max(0, u.atkTimer - dt);
+    if (u.atkTimer <= 0) {
+      let target: Unit | null = null, ratio = 1;
+      this.forUnitsNear(u.tx, u.ty, Math.ceil(heal.range) + 1, o => {
+        if (o === u || o.dead || o.faction !== u.faction || o.hp >= o.maxHp) return;
+        const dx = o.tx - u.tx, dy = o.ty - u.ty;
+        if (dx * dx + dy * dy > heal.range * heal.range) return;
+        const r = o.hp / o.maxHp;
+        if (r < ratio) { ratio = r; target = o; }
+      });
+      if (target) {
+        const ally = target as Unit;
+        ally.hp = Math.min(ally.maxHp, ally.hp + heal.amount);
+        u.atkTimer = heal.rate;
+        u.status = `Healing ${ally.roleName}`;
+      } else u.status = 'Tending the company';
+    }
+    u.foe = null; u.foeB = null;
+    if (u.order) {
+      if (u.tx === u.order.x && u.ty === u.order.y) u.order = null;
+      else if (!u.path && this.pathBudget > 0) {
+        this.pathBudget--;
+        if (!this.sendTo(u, u.order.x, u.order.y)) u.order = null;
+      }
+      if (u.path) this.moveUnit(u, dt); else this.groundPose(u, false);
+    } else this.groundPose(u, false);
   }
 
   /** Resting pose between swings: melee units hop into each attack, fliers hover. */
@@ -1541,6 +1571,7 @@ export class Game {
 
   /** Issue a command to a unit (used by Controls for hero/army orders). */
   orderUnit(u: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null): void {
+    if (UNITS[u.role as UnitKind]?.heal && type === 'attack') { type = 'attackMove'; foe = null; }
     u.order = { type, x, y, foe };
     u.foe = type === 'attack' ? foe : null;
     u.foeB = null;

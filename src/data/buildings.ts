@@ -133,6 +133,13 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
         desc: 'The wall-breaker — devastating stones from far off, but crawls' },
     ] } },
 
+  monastery: { name: 'Monastery', desc: 'A stone cloister and chapel that trains priests to heal nearby allies', model: 'cottage',
+    cost: { timber: 4, stone: 6, coin: 2 }, roof: 0x70433a, wall: 0xd8cfba, accent: 0xd9a441, hp: 280,
+    military: { units: [
+      { kind: 'priest', cost: { coin: 3 }, time: 8,
+        desc: 'Humble support unit — automatically heals nearby friendly units and stays at the rear' },
+    ] } },
+
   watchtower: { name: 'Watchtower', desc: 'Looses arrows at raiders in range — build it along their path', model: 'mine',
     cost: { timber: 2, stone: 5 }, roof: 0x6a7076, wall: 0x9aa0a3, accent: 0x3f5aa0, hp: 320,
     tower: { range: 7, dmg: 9, rate: 1.4 } },
@@ -172,5 +179,5 @@ export const MENU_CATEGORIES: BuildCategory[] = [
   { id: 'materials', name: 'Materials', keys: ['guildhall', 'woodcutter', 'sawmill', 'forester', 'quarry', 'storehouse'] },
   { id: 'food', name: 'Food', keys: ['farm', 'mill', 'bakery', 'pigfarm', 'butcher', 'vineyard', 'winery', 'fishery', 'clamdigger', 'tavern'] },
   { id: 'coin', name: 'Coin', keys: ['goldmine', 'coalmine', 'mint'] },
-  { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'ironmine', 'smithy', 'armory', 'watchtower', 'stonetower', 'wall', 'gate'] },
+  { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'monastery', 'ironmine', 'smithy', 'armory', 'watchtower', 'stonetower', 'wall', 'gate'] },
 ];

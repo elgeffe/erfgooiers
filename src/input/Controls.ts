@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DEFS } from '../data/buildings';
+import { isCommandableRole } from '../data/units';
 import type { Game } from '../game/Game';
 import { DEFAULT_SETTINGS, type GameSettings } from '../game/Settings';
 import type { View } from '../render/View';
@@ -79,7 +80,7 @@ export class Controls {
 
   /** Programmatic selection (e.g. the hero chip) — same as click-selecting. */
   selectUnits(units: Unit[]): void {
-    this.selUnits = units.filter(u => !u.dead && u.faction === 'player' && u.dmg > 0);
+    this.selUnits = units.filter(u => !u.dead && u.faction === 'player' && isCommandableRole(u.role));
   }
 
   /** Bind to a level's Game; clears any active build mode and stale squads. */
@@ -203,7 +204,7 @@ export class Controls {
     const u = this.game.pickUnit(gp.x, gp.z);
     if (u) {
       this.game.select(u);
-      this.selUnits = u.faction === 'player' && u.dmg > 0 ? [u] : [];
+      this.selUnits = u.faction === 'player' && isCommandableRole(u.role) ? [u] : [];
       return;
     }
     this.selUnits = [];
@@ -216,10 +217,10 @@ export class Controls {
     e.preventDefault();
     const gp = this.view.groundPoint(e.clientX, e.clientY);
     const clicked = this.game.pickUnit(gp.x, gp.z);
-    if (!clicked || clicked.faction !== 'player' || clicked.dmg <= 0) return;
+    if (!clicked || clicked.faction !== 'player' || !isCommandableRole(clicked.role)) return;
     const picked: Unit[] = [];
     for (const u of this.game.units) {
-      if (u.dead || u.faction !== 'player' || u.dmg <= 0 || u.role !== clicked.role) continue;
+      if (u.dead || u.faction !== 'player' || !isCommandableRole(u.role) || u.role !== clicked.role) continue;
       const s = this.view.worldToScreen(u.mesh.position.x, u.mesh.position.y, u.mesh.position.z);
       if (s.x >= 0 && s.x <= innerWidth && s.y >= 0 && s.y <= innerHeight) picked.push(u);
     }
@@ -235,7 +236,7 @@ export class Controls {
     const minY = Math.min(y0, y1), maxY = Math.max(y0, y1);
     const picked: Unit[] = [];
     for (const u of this.game.units) {
-      if (u.faction !== 'player' || u.dmg <= 0) continue;
+      if (u.faction !== 'player' || !isCommandableRole(u.role)) continue;
       const s = this.view.worldToScreen(u.mesh.position.x, u.mesh.position.y, u.mesh.position.z);
       if (s.x >= minX && s.x <= maxX && s.y >= minY && s.y <= maxY) picked.push(u);
     }

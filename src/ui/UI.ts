@@ -2,6 +2,7 @@ import { DEFS, MENU_CATEGORIES } from '../data/buildings';
 import { ITEMS, RES_SHOWN } from '../data/items';
 import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID } from '../data/upgrades';
 import { META_BY_ID } from '../data/metaUpgrades';
+import { UNITS, type UnitKind } from '../data/units';
 import { ROAD_STONE_COST } from '../constants';
 import { installFavicon, logoSVG } from './logo';
 import { audio } from '../audio/Audio';
@@ -286,17 +287,22 @@ export class UI {
     // A selected unit has no building `def` — show its live stats instead.
     if (o.role !== undefined && !o.def) {
       $('inspName').textContent = o.roleName;
-      // fighters show combat stats; workers show hunger & task
-      if (o.dmg > 0) {
-        $('inspSub').textContent = o.faction === 'player' ? 'Fighter — right-click to order, drag to box-select' : 'Hostile';
+      const support = UNITS[o.role as UnitKind]?.heal;
+      if (o.dmg > 0 || support) {
+        $('inspSub').textContent = support ? 'Support — automatically heals nearby allies' : o.faction === 'player' ? 'Fighter — right-click to order, drag to box-select' : 'Hostile';
         const hp = Math.max(0, Math.round(o.hp)), ratio = Math.max(0, o.hp / o.maxHp);
         const hcol2 = ratio > 0.5 ? 'var(--good)' : ratio > 0.25 ? 'var(--accent)' : 'var(--bad)';
         let fb = '<div class="sect">Status</div><div class="invrow">' + o.status + '</div>';
         fb += `<div class="sect">Health</div><div class="invrow">HP<b>${hp} / ${o.maxHp}</b></div>`;
         fb += `<div class="bar"><div style="width:${Math.round(ratio * 100)}%;background:${hcol2}"></div></div>`;
-        fb += `<div class="sect">Combat</div><div class="invrow">Damage<b>${Math.round(o.dmg * 10) / 10}</b></div>`;
-        fb += `<div class="invrow">${o.range > 1.6 ? 'Range' : 'Reach'}<b>${Math.round(o.range * 10) / 10} tiles</b></div>`;
-        fb += `<div class="invrow">Attack every<b>${o.atkCd}s</b></div>`;
+        if (support) {
+          fb += `<div class="sect">Healing</div><div class="invrow">Restores<b>${support.amount} HP</b></div>`;
+          fb += `<div class="invrow">Radius<b>${support.range} tiles</b></div><div class="invrow">Prayer every<b>${support.rate}s</b></div>`;
+        } else {
+          fb += `<div class="sect">Combat</div><div class="invrow">Damage<b>${Math.round(o.dmg * 10) / 10}</b></div>`;
+          fb += `<div class="invrow">${o.range > 1.6 ? 'Range' : 'Reach'}<b>${Math.round(o.range * 10) / 10} tiles</b></div>`;
+          fb += `<div class="invrow">Attack every<b>${o.atkCd}s</b></div>`;
+        }
         $('inspBody').innerHTML = fb;
         return;
       }
@@ -408,7 +414,7 @@ export class UI {
     if (role === 'serf') return 'serf';
     if (role === 'villager') return 'villager';
     if (role === 'laborer') return 'laborer';
-    if (['soldier', 'pikeman', 'archer', 'knight', 'lancer', 'horseknight', 'horsearcher', 'ballista', 'onager', 'trebuchet', 'hero'].includes(role)) return 'military';
+    if (role in UNITS) return 'military';
     return 'specialist';
   }
 

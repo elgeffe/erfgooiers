@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { damageMultiplier } from './units';
+import { UNITS, damageMultiplier, formationRank, isCommandableRole } from './units';
 
 describe('unit counters', () => {
   it('gives pikemen their mounted-target bonus only against riders', () => {
@@ -13,5 +13,13 @@ describe('unit counters', () => {
   it('treats economy roles outside UNITS as untagged instead of crashing', () => {
     expect(damageMultiplier('pikeman', 'serf' as never)).toBe(1);
     expect(damageMultiplier('serf' as never, 'horseknight')).toBe(1);
+  });
+});
+
+describe('priest support role', () => {
+  it('is commandable, heals, and forms behind siege', () => {
+    expect(isCommandableRole('priest')).toBe(true);
+    expect(UNITS.priest.heal).toEqual({ range: 4.5, amount: 8, rate: 1.5 });
+    expect(formationRank('priest')).toBeGreaterThan(formationRank('trebuchet'));
   });
 });

@@ -943,6 +943,18 @@ function dressUnit(g: THREE.Group, role: string): void {
       add(brim(0x8a5a34, 0.17, 0.08, 0.65));
       break;
     }
+    case 'priest': { // pointed white mitre, Christian cross and crozier
+      const mitre = hatCone(0xf4efe2, 0.19, 0.38, 4); mitre.position.y = 0.82; mitre.scale.z = 0.58; add(mitre);
+      const band = new THREE.Mesh(box(0.28, 0.045, 0.04), mat(0xd9a441)); band.position.set(0, 0.72, 0.12); add(band);
+      const cv = new THREE.Mesh(box(0.035, 0.16, 0.025), mat(0xd9a441)); cv.position.set(0, 0.86, 0.13); add(cv);
+      const ch = new THREE.Mesh(box(0.11, 0.035, 0.025), mat(0xd9a441)); ch.position.set(0, 0.89, 0.13); add(ch);
+      add(apron(0xf4efe2));
+      const staff = new THREE.Group();
+      const shaft = new THREE.Mesh(box(0.025, 0.7, 0.025), mat(0xb8912e)); shaft.position.y = 0.28;
+      const hook = new THREE.Mesh(torus(0.08, 0.018, 6, 10, Math.PI * 1.5), mat(0xb8912e)); hook.position.set(0.06, 0.66, 0); hook.rotation.z = Math.PI / 2;
+      staff.add(shaft, hook); staff.position.set(0.27, 0.1, 0.05); add(staff);
+      break;
+    }
     case 'soldier': { // steel helmet with a crest, breastplate, sword & shield
       add(dome(0x9298a0, 0.175, 0.66));
       const crest = new THREE.Mesh(box(0.04, 0.11, 0.22), mat(0xb5352f)); crest.position.set(0, 0.79, 0); crest.userData.marker = true; add(crest);
@@ -1424,6 +1436,7 @@ export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean)
     case 'watchtower': return woodenWatchtower(def, ghost);
     case 'enemywatchtower': case 'stonetower': return stoneWatchtower(def, ghost);
     case 'banditcamp': return banditCamp(def, ghost);
+    case 'monastery': return monasteryBuilding(def, ghost);
     case 'wall': case 'enemywall': return wallSegment(def, ghost);
     case 'gate': case 'enemygate': return gateArch(def, ghost);
   }
@@ -1437,6 +1450,22 @@ export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean)
     case 'guildhall': return guildhall(def, ghost);
     default: return cottage(def, ghost);
   }
+}
+
+function monasteryBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const stone = mkMat(def.wall, ghost), roof = mkMat(def.roof, ghost), gold = mkMat(def.accent ?? 0xd9a441, ghost);
+  const nave = new THREE.Mesh(box(1.75, 0.85, 1.45), stone); nave.position.set(0, 0.43, 0.12); nave.castShadow = !ghost; g.add(nave);
+  for (const s of [-1, 1]) {
+    const slope = new THREE.Mesh(box(0.98, 0.12, 1.58), roof); slope.position.set(s * 0.42, 1.02, 0.12); slope.rotation.z = s * 0.55; g.add(slope);
+  }
+  const tower = new THREE.Mesh(box(0.52, 1.35, 0.52), stone); tower.position.set(-0.55, 0.68, -0.5); tower.castShadow = !ghost; g.add(tower);
+  const spire = new THREE.Mesh(cone(0.42, 0.65, 4), roof); spire.position.set(-0.55, 1.68, -0.5); spire.rotation.y = Math.PI / 4; g.add(spire);
+  const crossV = new THREE.Mesh(box(0.06, 0.4, 0.06), gold); crossV.position.set(-0.55, 2.08, -0.5); g.add(crossV);
+  const crossH = new THREE.Mesh(box(0.25, 0.06, 0.06), gold); crossH.position.set(-0.55, 2.12, -0.5); g.add(crossH);
+  const door = new THREE.Mesh(box(0.52, 0.68, 0.08), mkMat(0x5b3926, ghost)); door.position.set(-0.35, 0.34, 0.88); door.userData.marker = true; g.add(door);
+  for (const x of [0.2, 0.58]) { const w = new THREE.Mesh(box(0.18, 0.32, 0.04), gold); w.position.set(x, 0.5, 0.86); g.add(w); }
+  return g;
 }
 
 // ---------- fortifications: a crenellated rampart block and a barred gate ----------
