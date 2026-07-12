@@ -832,8 +832,11 @@ export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group;
 }
 
 function makeHumanoid(colorHex: number, role: string): { group: THREE.Group; itemMesh: THREE.Mesh } {
-  // greenskins & trolls get their own hide; everyone else the usual complexion
-  const skinHex = role === 'orc' ? 0x7a9a4a : role === 'troll' ? 0x8fa08a : 0xe8c9a0;
+  // greenskins & trolls get their own hide, the undead bone or rot;
+  // everyone else the usual complexion
+  const skinHex = role === 'orc' ? 0x7a9a4a : role === 'troll' ? 0x8fa08a
+    : role === 'skeleton' || role === 'skelarcher' ? 0xdcd6c4
+    : role === 'zombie' || role === 'brute' ? 0x8aa065 : 0xe8c9a0;
   const g = new THREE.Group();
   const body = new THREE.Mesh(geoBody, umat(colorHex)); body.position.y = 0.21; body.castShadow = true;
   const head = new THREE.Mesh(geoHead, umat(skinHex)); head.position.y = 0.55; head.castShadow = true;
@@ -995,6 +998,35 @@ function dressUnit(g: THREE.Group, role: string): void {
       add(plate(0x6a5a44));
       add(bow());
       add(quiver());
+      break;
+    }
+    case 'skeleton': { // rusted half-helm over bare bone, old sword & shield
+      add(dome(0x6e5f4a, 0.165, 0.66));
+      add(plate(0xb9b2a0)); // exposed ribcage reads as a bone-pale chest
+      add(shield(0x5a4a3a));
+      add(sword());
+      break;
+    }
+    case 'skelarcher': { // tattered hood, bone-pale chest, bow & quiver
+      const hood = hatCone(0x4a4440, 0.18, 0.24, 8); hood.position.y = 0.71; add(hood);
+      add(plate(0xc4bda8));
+      add(bow());
+      add(quiver());
+      break;
+    }
+    case 'zombie': { // bare rotting head, torn grave clothes
+      add(plate(0x5c6a48));
+      const wound = new THREE.Mesh(box(0.1, 0.08, 0.04), mat(0x7a2f2a));
+      wound.position.set(0.1, 0.32, 0.19); wound.userData.marker = true; add(wound);
+      break;
+    }
+    case 'brute': { // the bloated one: a vast straining belly and iron shackles
+      const belly = new THREE.Mesh(sphere(0.24, 9, 7), mat(0x74875a));
+      belly.position.set(0, 0.24, 0.1); belly.scale.set(1.15, 1, 0.95); belly.userData.marker = true; add(belly);
+      for (const sx of [-1, 1]) {
+        const cuff = new THREE.Mesh(cyl(0.06, 0.06, 0.05, 8), mat(0x4a4a50));
+        cuff.position.set(sx * 0.23, 0.16, 0.03); cuff.userData.marker = true; add(cuff);
+      }
       break;
     }
     case 'bandit': { // dark hood, ragged leather, crude axe
@@ -1390,8 +1422,10 @@ export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean)
     case 'armory': return armoryBuilding(def, ghost);
     case 'barracks': return barracksBuilding(def, ghost);
     case 'watchtower': return woodenWatchtower(def, ghost);
-    case 'enemywatchtower': return stoneWatchtower(def, ghost);
+    case 'enemywatchtower': case 'stonetower': return stoneWatchtower(def, ghost);
     case 'banditcamp': return banditCamp(def, ghost);
+    case 'wall': case 'enemywall': return wallSegment(def, ghost);
+    case 'gate': case 'enemygate': return gateArch(def, ghost);
   }
   switch (def.model) {
     case 'windmill': return windmill(def, ghost);
@@ -1403,6 +1437,41 @@ export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean)
     case 'guildhall': return guildhall(def, ghost);
     default: return cottage(def, ghost);
   }
+}
+
+// ---------- fortifications: a crenellated rampart block and a barred gate ----------
+function wallSegment(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const stone = mkMat(def.wall, ghost), cap = mkMat(def.roof, ghost);
+  const body = new THREE.Mesh(box(1.9, 1.1, 1.9), stone);
+  body.position.y = 0.55; body.castShadow = !ghost; body.receiveShadow = !ghost; g.add(body);
+  const walk = new THREE.Mesh(box(1.98, 0.12, 1.98), cap);
+  walk.position.y = 1.16; g.add(walk);
+  // merlons ring the parapet
+  for (const [x, z] of [[-0.75, -0.75], [0, -0.75], [0.75, -0.75], [-0.75, 0.75], [0, 0.75], [0.75, 0.75], [-0.75, 0], [0.75, 0]]) {
+    const m = new THREE.Mesh(box(0.28, 0.26, 0.28), stone);
+    m.position.set(x, 1.35, z); m.userData.marker = true; g.add(m);
+  }
+  return g;
+}
+
+function gateArch(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const stone = mkMat(def.wall, ghost), cap = mkMat(def.roof, ghost);
+  const wood = mkMat(def.accent ?? 0x6b4a2f, ghost);
+  for (const s of [-1, 1]) { // twin flanking towers with capped tops
+    const t = new THREE.Mesh(box(0.6, 1.5, 1.9), stone);
+    t.position.set(s * 0.68, 0.75, 0); t.castShadow = !ghost; g.add(t);
+    const c = new THREE.Mesh(box(0.72, 0.14, 2.0), cap);
+    c.position.set(s * 0.68, 1.56, 0); g.add(c);
+  }
+  const lintel = new THREE.Mesh(box(1.96, 0.4, 1.9), stone);
+  lintel.position.y = 1.28; lintel.castShadow = !ghost; g.add(lintel);
+  for (const s of [-1, 1]) { // heavy timber doors on both faces of the passage
+    const doors = new THREE.Mesh(box(0.78, 1.05, 0.1), wood);
+    doors.position.set(0, 0.53, s * 0.92); doors.userData.marker = true; g.add(doors);
+  }
+  return g;
 }
 
 // ---------- guild hall — a municipal Dutch raadhuis: brick, stepped gable,

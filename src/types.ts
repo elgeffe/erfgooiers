@@ -11,7 +11,8 @@ export type BuildingKey =
   | 'farm' | 'mill' | 'bakery' | 'goldmine' | 'coalmine' | 'mint'
   | 'vineyard' | 'winery' | 'pigfarm' | 'butcher' | 'tavern' | 'fishery' | 'clamdigger'
   | 'barracks' | 'stable' | 'engineer' | 'ironmine' | 'smithy' | 'armory' | 'watchtower'
-  | 'banditcamp' | 'enemywatchtower' | 'enemycastle';
+  | 'stonetower' | 'wall' | 'gate'
+  | 'banditcamp' | 'enemywatchtower' | 'enemycastle' | 'enemywall' | 'enemygate';
 
 export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'iron' | 'field' | 'fish';
 
@@ -70,6 +71,8 @@ export interface BuildingDef {
   military?: MilitaryDef;      // barracks: trainable military units
   trainer?: MilitaryDef;       // guild hall: trainable civilian workers
   tower?: TowerDef;            // watchtowers/keeps: automatic arrow fire
+  bulwark?: boolean;           // fortification: razing it never counts as a stronghold
+  gate?: boolean;              // its own faction walks through; enemies must break it
 }
 
 export interface Coord { x: number; y: number; }

@@ -4,6 +4,7 @@ import type { Faction } from '../types';
 /** Combat unit archetypes. Economy workers (serf/laborer/specialists) are not here. */
 export type UnitKind = 'soldier' | 'pikeman' | 'archer' | 'knight' | 'bandit' | 'boar' | 'dragon'
   | 'wolf' | 'orc' | 'troll' | 'demon' | 'hero'
+  | 'skeleton' | 'skelarcher' | 'zombie' | 'brute'
   | 'lancer' | 'horseknight' | 'horsearcher'
   | 'ballista' | 'onager' | 'trebuchet';
 
@@ -66,9 +67,11 @@ export const UNITS: Record<UnitKind, UnitDef> = {
     hp: 70, dmg: 10, range: 1.0, atkCd: 1.2, speed: BASE_SPEED * 1.1, scale: 1, aggro: 6,
     wander: true, leash: 14, charge: 1.5 },
 
-  // a proper siege of a boss: bring a massed, trained army, not the start kit
+  // a proper siege of a boss: bring a massed, trained army — the granted start
+  // kit alone cannot burn through this before the dragon burns through it
+  // (higher ascensions scale it further via Game.bossHpMult)
   dragon: { kind: 'dragon', name: 'Dragon of Het Gooi', faction: 'wild', color: 0x7a2233, model: 'dragon',
-    hp: 2600, dmg: 40, range: 2.5, atkCd: 2.0, speed: BASE_SPEED * 0.8, scale: 2.4, aggro: 14, flying: true, fire: true },
+    hp: 4200, dmg: 40, range: 2.5, atkCd: 2.0, speed: BASE_SPEED * 0.8, scale: 2.4, aggro: 14, flying: true, fire: true },
 
   wolf: { kind: 'wolf', name: 'Wolf', faction: 'wild', color: 0x777d84, model: 'wolf',
     hp: 40, dmg: 7, range: 1.0, atkCd: 0.9, speed: BASE_SPEED * 1.25, scale: 0.95, aggro: 8,
@@ -80,6 +83,20 @@ export const UNITS: Record<UnitKind, UnitDef> = {
   troll: { kind: 'troll', name: 'Troll', faction: 'enemy', color: 0x5d7263, model: 'human',
     hp: 120, dmg: 9, range: 5.5, atkCd: 1.9, speed: BASE_SPEED * 0.8, scale: 1.3, aggro: 12,
     arrows: true, wander: true },
+
+  // ---- the undead (harder levels): garrisons of the later strongholds ----
+  skeleton: { kind: 'skeleton', name: 'Skeletal Warrior', faction: 'enemy', color: 0xd8d2c0, model: 'human',
+    hp: 55, dmg: 9, range: 1.3, atkCd: 1.0, speed: BASE_SPEED * 1.05, scale: 0.98, aggro: 11, wander: true },
+
+  skelarcher: { kind: 'skelarcher', name: 'Skeletal Archer', faction: 'enemy', color: 0xcfc9b4, model: 'human',
+    hp: 38, dmg: 7, range: 5.0, atkCd: 1.3, speed: BASE_SPEED, scale: 0.95, aggro: 12, arrows: true, wander: true },
+
+  zombie: { kind: 'zombie', name: 'Zombie', faction: 'enemy', color: 0x6f8a4d, model: 'human',
+    hp: 120, dmg: 11, range: 1.2, atkCd: 1.4, speed: BASE_SPEED * 0.65, scale: 1.05, aggro: 12, wander: true },
+
+  // the huge fat one: a slow, walking siege wall of rotten flesh
+  brute: { kind: 'brute', name: 'Bloated Zombie', faction: 'enemy', color: 0x55703c, model: 'human',
+    hp: 900, dmg: 24, range: 1.5, atkCd: 1.8, speed: BASE_SPEED * 0.5, scale: 1.75, aggro: 12, wander: true },
 
   // ---- cavalry (trained at the Stable): speed is their armour ----
   lancer: { kind: 'lancer', name: 'Lancer', faction: 'player', color: 0x4a7ab0, model: 'cavalry',
@@ -113,10 +130,11 @@ export const UNITS: Record<UnitKind, UnitDef> = {
     flying: true, fire: true },
 };
 
-/** Counter multiplier encoded on the attacker definition (identity by default). */
+/** Counter multiplier encoded on the attacker definition (identity by default).
+ *  Roles outside UNITS (serfs, builders, specialists) carry no tags or bonuses. */
 export function damageMultiplier(attacker: UnitKind, target: UnitKind): number {
-  const tags = UNITS[target].tags ?? [];
+  const tags = UNITS[target]?.tags ?? [];
   let mult = 1;
-  for (const bonus of UNITS[attacker].bonusVs ?? []) if (tags.includes(bonus.tag)) mult *= bonus.mult;
+  for (const bonus of UNITS[attacker]?.bonusVs ?? []) if (tags.includes(bonus.tag)) mult *= bonus.mult;
   return mult;
 }

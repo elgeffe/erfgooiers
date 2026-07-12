@@ -1,7 +1,7 @@
 import { W as DEFAULT_W, H as DEFAULT_H } from '../constants';
 import { worldRng } from '../engine/rng';
 import { BIOMES, pickTreeKind, type BiomeDef, type BiomeKey } from '../data/biomes';
-import type { DecoKind, DepositKind, Tile } from '../types';
+import type { DecoKind, DepositKind, Faction, Tile } from '../types';
 
 // Worldgen pulls exclusively from this stream (reseeded per level) so a level's
 // map is fully determined by its seed, independent of sim/cosmetic call order.
@@ -23,6 +23,9 @@ export interface WorldParams {
    *  one corner (with a guarded pass or two), and enemy strongholds/bosses are
    *  placed inside it. Combat starts when YOU march through the pass. */
   frontier?: boolean;
+  /** How many corners get walled off (default 1 when `frontier` is set). The
+   *  hardest maps wall several corners, each with its own pass and garrison. */
+  frontiers?: number;
   /** The landscape this map is cut from (palette, flora, fauna, gen character). */
   biome?: BiomeKey;
 }
@@ -42,7 +45,9 @@ export class World {
   /** The map's generation seed (exposed for per-tile cosmetic hashing). */
   readonly seed: number;
   readonly tiles: Tile[][] = [];
-  /** The walled-off enemy quarter on frontier maps (centre + radius), or null. */
+  /** The walled-off enemy quarters on frontier maps (centre + radius). */
+  enemyZones: { x: number; y: number; r: number }[] = [];
+  /** The first walled-off quarter, or null — kept for single-zone callers. */
   enemyZone: { x: number; y: number; r: number } | null = null;
   /** The biome this map was generated in (View/models read its palette). */
   readonly biome: BiomeDef;
@@ -65,11 +70,13 @@ export class World {
       mountains: params.mountains ?? 0,
       ruins: params.ruins ?? 0,
       frontier: params.frontier ?? false,
+      frontiers: params.frontiers ?? (params.frontier ? 1 : 0),
       biome: params.biome ?? 'gooi',
     };
     this.biome = BIOMES[this.p.biome];
     // the biome shapes the terrain: extra ridge chains, denser or thinner woods
     this.p.mountains += this.biome.gen.mountainsAdd;
+    if (this.biome.gen.flatland) this.p.mountains = 0;
     this.p.treeStands = Math.round(this.p.treeStands * this.biome.gen.treeMult);
     this.W = this.p.w;
     this.H = this.p.h;
@@ -93,12 +100,16 @@ export class World {
   wx(tx: number): number { return tx - this.W / 2 + 0.5; }
   wz(ty: number): number { return ty - this.H / 2 + 0.5; }
 
-  /** Can a unit stand on / walk through this tile? */
-  passable(x: number, y: number): boolean {
+  /** Can a unit stand on / walk through this tile? A `faction` lets that
+   *  side's units walk through its own gates; everyone else is walled out. */
+  passable(x: number, y: number, faction?: Faction): boolean {
     const t = this.T(x, y);
     if (!t) return false;
     if (t.type !== 'grass') return false; // water & rock both block
-    if (t.b || t.site) return false;
+    if (t.b || t.site) {
+      const ownGate = !!faction && !!t.b && !t.site && t.b.def.gate && t.b.faction === faction;
+      if (!ownGate) return false;
+    }
     if (t.dep) return false;              // ore heaps are solid — mine from beside them
     if (t.tree?.dense) return false;      // old-growth thickets are a wall of trunks
     return true;
@@ -248,42 +259,71 @@ export class World {
       if (kind === 'peak' && nearWater(x, y)) return;
       t.type = 'rock'; t.rock = kind;
     };
-    // ---- the frontier: a mountain arc walls off one corner as enemy land ----
-    // A thick rock band sweeps a quarter-circle around a random corner, with
-    // one clear pass (plus any lake gaps) — the only ways in on foot. The
-    // enclosed quarter is exposed as `enemyZone` for stronghold placement.
-    if (this.p.frontier) {
-      // on a single-coast map the enemy quarter keeps to the landward corners,
-      // so its arc (and pass) never drowns in the sea
+    // ---- the frontier: mountain arcs wall off corners as enemy land ----
+    // A thick rock band sweeps a quarter-circle around each chosen corner,
+    // with one clear pass (plus any lake gaps) — the only ways in on foot. The
+    // enclosed quarters are exposed as `enemyZones` for stronghold placement.
+    const frontierCount = Math.max(this.p.frontiers, this.p.frontier ? 1 : 0);
+    if (frontierCount > 0) {
+      // on a single-coast map the enemy quarters keep to the landward corners,
+      // so their arcs (and passes) never drown in the sea
       let corners = [[0, 0], [W - 1, 0], [0, H - 1], [W - 1, H - 1]];
       if (this.coastDir) {
         const cd = this.coastDir;
         corners = corners.filter(([cx, cy]) => (cx - W / 2) * cd.x + (cy - H / 2) * cd.y < 0);
       }
-      const corner = corners[Math.floor(rnd() * corners.length)];
-      const [cx0, cy0] = corner;
-      const R = Math.round(Math.min(W, H) * 0.42);
+      for (let i = corners.length - 1; i > 0; i--) { // seeded shuffle, distinct corners
+        const j = Math.floor(rnd() * (i + 1));
+        [corners[i], corners[j]] = [corners[j], corners[i]];
+      }
+      const zones = Math.min(frontierCount, corners.length);
+      for (let z = 0; z < zones; z++) {
+      const [cx0, cy0] = corners[z];
+      // several walled quarters must not merge: shrink the arcs a touch
+      const R = Math.round(Math.min(W, H) * (zones > 1 ? 0.36 : 0.42));
       const sgnX = cx0 === 0 ? 1 : -1, sgnY = cy0 === 0 ? 1 : -1;
       // the pass: a gap somewhere along the arc, kept off the arc's ends
       const passAng = 0.25 + rnd() * (Math.PI / 2 - 0.5);
       const passHalf = 2.5 / R;                               // ≈5 walkable tiles of gap
+      // the range's character varies per seed so frontiers don't all read as
+      // the same neat circle: a clean arc, a wobbling ridge line, or a wobbling
+      // ridge whose pass extends into a guarded corridor
+      const style = rnd();
+      const amp = style < 0.34 ? 0 : 2 + rnd() * 2.5;
+      const wobF = 3 + rnd() * 3, wobP = rnd() * Math.PI * 2;
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         const dx = (x - cx0) * sgnX, dy = (y - cy0) * sgnY;   // fold every corner into quadrant I
         if (dx < 0 || dy < 0) continue;
         const d = Math.hypot(dx, dy);
-        if (d < R - 1.2 || d > R + 1.2) continue;
         const ang = Math.atan2(dy, dx);
+        const Ra = R + Math.sin(ang * wobF + wobP) * amp;     // the ridge line meanders
+        if (d < Ra - 1.2 || d > Ra + 1.2) continue;
         if (Math.abs(ang - passAng) < passHalf) continue;      // leave the pass open
         const t = this.tiles[y][x];
         if (t.type !== 'grass' || nearCentre(x, y, 2)) continue;
         t.type = 'rock'; t.rock = 'peak';
       }
+      // corridor style: two ridge spurs flank the approach to the pass, so the
+      // way in reads as a mountain corridor rather than a hole in a ring
+      if (style >= 0.72) {
+        const len = Math.round(R * 0.35);
+        for (const edge of [passAng - passHalf * 2.2, passAng + passHalf * 2.2]) {
+          for (let d = R + 2; d <= R + 2 + len; d++) {
+            const x = cx0 + sgnX * Math.round(d * Math.cos(edge));
+            const y = cy0 + sgnY * Math.round(d * Math.sin(edge));
+            rockTile(x, y, 'peak');
+            if (rnd() < 0.6) rockTile(x + (rnd() < 0.5 ? sgnX : 0), y + (rnd() < 0.5 ? sgnY : 0), 'peak');
+          }
+        }
+      }
       const ir = Math.round(R * 0.55);
-      this.enemyZone = {
+      this.enemyZones.push({
         x: cx0 + sgnX * Math.round(ir * Math.cos(Math.PI / 4)),
         y: cy0 + sgnY * Math.round(ir * Math.sin(Math.PI / 4)),
         r: Math.round(R * 0.5),
-      };
+      });
+      }
+      this.enemyZone = this.enemyZones[0];
     }
 
     // ridges read as RANGES: long chains of overlapping blobs holding one
@@ -318,12 +358,11 @@ export class World {
       }
     }
 
-    // ---- guarantee the frontier's pass: water (a delta arm, the wandering
-    // lake) can conspire with the arc and the ridges to seal the enemy
-    // quarter. If the zone can't be walked to from the centre, carve a
+    // ---- guarantee every frontier's pass: water (a delta arm, the wandering
+    // lake) can conspire with the arcs and the ridges to seal an enemy
+    // quarter. If a zone can't be walked to from the centre, carve a
     // causeway to it so the assault is always possible on foot.
-    if (this.p.frontier && this.enemyZone) {
-      const ez = this.enemyZone;
+    for (const ez of this.enemyZones) {
       const seen = new Uint8Array(W * H);
       const qx = [Math.floor(W / 2)], qy = [Math.floor(H / 2)];
       seen[qy[0] * W + qx[0]] = 1;

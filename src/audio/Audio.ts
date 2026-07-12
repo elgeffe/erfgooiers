@@ -240,6 +240,9 @@ export class AudioEngine {
   private noise!: AudioBuffer;
 
   private muted = false;
+  // settings-screen multipliers on the built-in mix (0..1, default full)
+  private musicVol = 1;
+  private sfxVol = 1;
   private timer = 0;
   private nextNote = 0;   // ctx time of the next bar to schedule
   private step = 0;       // running bar counter
@@ -255,6 +258,18 @@ export class AudioEngine {
   }
 
   get isMuted(): boolean { return this.muted; }
+
+  /** Settings: scale the score's loudness (0 silences the music entirely). */
+  setMusicVolume(v: number): void {
+    this.musicVol = Math.min(1, Math.max(0, v));
+    if (this.music) this.music.gain.value = 0.34 * this.musicVol;
+  }
+
+  /** Settings: scale effect loudness (0 silences clicks, swords, arrows…). */
+  setSfxVolume(v: number): void {
+    this.sfxVol = Math.min(1, Math.max(0, v));
+    if (this.sfx) this.sfx.gain.value = 0.9 * this.sfxVol;
+  }
 
   /**
    * Shift the score to match a run's difficulty. The change is queued and lands
@@ -315,9 +330,9 @@ export class AudioEngine {
     this.master.connect(ctx.destination);
 
     this.music = ctx.createGain();
-    this.music.gain.value = 0.34;
+    this.music.gain.value = 0.34 * this.musicVol;
     this.sfx = ctx.createGain();
-    this.sfx.gain.value = 0.9;
+    this.sfx.gain.value = 0.9 * this.sfxVol;
 
     // A subtle feedback delay adds a little air without smearing the chords.
     this.delay = ctx.createDelay(1);

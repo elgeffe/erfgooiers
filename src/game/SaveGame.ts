@@ -69,3 +69,37 @@ export function clearRun(): void {
 export function clearAll(): void {
   try { localStorage.removeItem(RUN_KEY); localStorage.removeItem(META_KEY); } catch { /* ignore */ }
 }
+
+// ---------- export / import (the settings screen's backup & transfer) ----------
+
+interface ExportFile { format: 'erfgooiers-save'; version: number; meta: string | null; run: string | null; }
+
+/** Bundle the raw stored documents into one portable JSON string. */
+export function exportAll(): string {
+  let meta: string | null = null, run: string | null = null;
+  try { meta = localStorage.getItem(META_KEY); run = localStorage.getItem(RUN_KEY); } catch { /* ignore */ }
+  const file: ExportFile = { format: 'erfgooiers-save', version: VERSION, meta, run };
+  return JSON.stringify(file, null, 2);
+}
+
+/** Restore an exported bundle. Validates before touching storage, so a bad
+ *  file never clobbers a good save. The caller reloads state on success. */
+export function importAll(json: string): { ok: boolean; error?: string } {
+  let file: ExportFile;
+  try { file = JSON.parse(json) as ExportFile; } catch { return { ok: false, error: 'That file is not valid JSON' }; }
+  if (!file || file.format !== 'erfgooiers-save') return { ok: false, error: 'Not an Erfgooiers save file' };
+  if (file.version !== VERSION) return { ok: false, error: `Save version ${file.version} does not match this build (v${VERSION})` };
+  // each embedded document must itself parse as a versioned Doc
+  for (const [name, raw] of [['meta', file.meta], ['run', file.run]] as const) {
+    if (raw === null) continue;
+    try {
+      const doc = JSON.parse(raw) as Doc<unknown>;
+      if (!doc || doc.version !== VERSION || doc.data === undefined) return { ok: false, error: `The ${name} data inside is damaged` };
+    } catch { return { ok: false, error: `The ${name} data inside is damaged` }; }
+  }
+  try {
+    if (file.meta !== null) localStorage.setItem(META_KEY, file.meta); else localStorage.removeItem(META_KEY);
+    if (file.run !== null) localStorage.setItem(RUN_KEY, file.run); else localStorage.removeItem(RUN_KEY);
+  } catch { return { ok: false, error: 'Could not write to browser storage' }; }
+  return { ok: true };
+}

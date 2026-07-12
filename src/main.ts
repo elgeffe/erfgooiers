@@ -8,7 +8,7 @@ import { Shop } from './ui/Shop';
 import { logoSVG } from './ui/logo';
 import { randomSeed, simRng, uiRng } from './engine/rng';
 import { Modifiers } from './game/Modifiers';
-import { Objective } from './game/Objectives';
+import { Objective, ascendObjective } from './game/Objectives';
 import { UPGRADES, cardUnlocked, specsFor } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
@@ -16,7 +16,9 @@ import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from '.
 import { DEFAULT_SANDBOX, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
 import { BIOMES, campaignBiome } from './data/biomes';
 import { UNITS, type UnitKind } from './data/units';
+import { unitLabel } from './game/util';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionArmyMult, ascensionForcesCurse, ascensionPrepMult, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
+import { loadSettings, saveSettings } from './game/Settings';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
 
@@ -68,7 +70,20 @@ function startLevel(): void {
   // ascension journey: higher tiers march the run's later levels into
   // harsher biomes (sandbox picks its own on the setup screen)
   const biomeKey = sandbox ? sandboxCfg.biome : campaignBiome(run.ascension, run.levelIndex);
-  const world = new World({ seed, ...level.world, biome: biomeKey });
+  // The Infernal finale: Hell is a vast, thrice-walled battlefield. Great
+  // undead strongholds stand between you and the dragon, with the resources
+  // (and the clock, below) to raise the army that can break them.
+  const hellFinale = !sandbox && biomeKey === 'hell';
+  const worldParams = { seed, ...level.world, biome: biomeKey };
+  if (hellFinale) {
+    worldParams.w = (level.world.w ?? 48) + 24;
+    worldParams.h = (level.world.h ?? 48) + 24;
+    worldParams.frontiers = 3;
+    worldParams.treeStands = Math.round((level.world.treeStands ?? 8) * 1.7);
+    worldParams.oreVeins = Math.round((level.world.oreVeins ?? 6) * 1.8);
+    worldParams.goldPiles = (level.world.goldPiles ?? 4) + 8;
+  }
+  const world = new World(worldParams);
   view.loadWorld(world);
   const mutators = sandbox ? [] : run.mutators;
   const selectedHeroId = sandbox ? (sandboxCfg.hero === 'none' ? null : sandboxCfg.hero) : run.hero;
@@ -88,7 +103,8 @@ function startLevel(): void {
     game.objective = null;
   } else {
     const idx = run.objectiveIdx ?? baseObjectiveIdx(run.runSeed, run.levelIndex, level.objectives.length);
-    game.objective = new Objective(level.objectives[idx % level.objectives.length]);
+    // higher ascensions reshape the goal itself (harder openings, swollen asks)
+    game.objective = new Objective(ascendObjective(level.objectives[idx % level.objectives.length], run.ascension, run.levelIndex));
   }
   game.init(level.kit);
   ui.setGame(game);
@@ -96,7 +112,16 @@ function startLevel(): void {
   controls.setGame(game);
   // sandbox trouble is configured on the setup screen; runs use the level table
   game.prepMult = sandbox ? 1 : ascensionPrepMult(run.ascension);
-  game.setEnemies(level.enemies ?? null);
+  // higher ascensions garrison the enemy strongholds ever more heavily
+  // and breathe more life into their bosses
+  game.garrisonMult = sandbox ? 1 : 1 + 0.35 * run.ascension;
+  game.bossHpMult = sandbox ? 1 : 1 + 0.5 * run.ascension;
+  // hell's extra strongholds: great undead hosts in every walled corner
+  // (a fresh object each time — the static LEVELS table stays untouched)
+  const enemies = hellFinale && level.enemies
+    ? { ...level.enemies, camps: [...(level.enemies.camps ?? []), { count: 4, guards: 14, kinds: ['skeleton', 'skelarcher', 'zombie', 'brute'] as UnitKind[] }] }
+    : level.enemies ?? null;
+  game.setEnemies(enemies);
   // mutator payloads beyond stat curses: extra wild packs on the map
   for (const id of mutators) {
     const def = MUTATOR_BY_ID[id];
@@ -126,7 +151,8 @@ function startLevel(): void {
   ui.setGold(run.gold);
   ui.setSandbox(sandbox);
   ($('sandboxbar') as HTMLElement).style.display = sandbox ? 'flex' : 'none';
-  levelHardTimer = Math.round(level.hardTimer * ascensionTimerMult(sandbox ? 0 : run.ascension));
+  // hell's siege is meant to be long and cumbersome: much more clock to match
+  levelHardTimer = Math.round(level.hardTimer * ascensionTimerMult(sandbox ? 0 : run.ascension) * (hellFinale ? 1.8 : 1));
   if (game.objective) {
     ui.setLevel(level.index, level.name);
     ui.setObjective(game.objective.brief());
@@ -230,7 +256,7 @@ let sandboxCfg: SandboxConfig = { ...DEFAULT_SANDBOX };
 /** The setup screen's option groups: key into SandboxConfig, label, choices.
  *  Stubs render greyed out — options that exist on the roadmap, not yet in code. */
 const SBX_GROUPS: { key: keyof SandboxConfig; label: string; opts: [string, string][]; stubs?: [string, string][] }[] = [
-  { key: 'size', label: 'Map size', opts: [['small', 'Small · 48'], ['medium', 'Medium · 64'], ['large', 'Large · 84'], ['huge', 'Huge · 100']] },
+  { key: 'size', label: 'Map size', opts: [['small', 'Small · 48'], ['medium', 'Medium · 64'], ['large', 'Large · 84'], ['huge', 'Huge · 112'], ['colossal', 'Colossal · 144']] },
   { key: 'biome', label: 'Biome', opts: [['gooi', 'Het Gooi'], ['ardennes', 'The Ardennes'], ['blackforest', 'The Black Forest'], ['alps', 'The Alps'], ['winter', 'Winter'], ['polder', 'The Polder'], ['seaside', 'Zeeland Delta'], ['island', 'Texel'], ['hell', 'Hell']] },
   { key: 'water', label: 'Water', opts: [['dry', 'Dry'], ['normal', 'Normal'], ['wet', 'Wetlands']] },
   { key: 'mapRes', label: 'Map resources', opts: [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']] },
@@ -531,6 +557,10 @@ const SANDBOX_ENEMY: SandboxSpawnDef[] = [
   { kind: 'wolf', count: 8, icon: '🐺', label: 'Wolves' },
   { kind: 'orc', count: 8, icon: '🪓', label: 'Orcs' },
   { kind: 'troll', count: 3, icon: '🪨', label: 'Trolls' },
+  { kind: 'skeleton', count: 10, icon: '💀', label: 'Skeletons' },
+  { kind: 'skelarcher', count: 8, icon: '🏹', label: 'Skeletal Archers' },
+  { kind: 'zombie', count: 10, icon: '🧟', label: 'Zombies' },
+  { kind: 'brute', count: 1, icon: '🧟‍♂️', label: 'Bloated Zombie' },
   { kind: 'demon', count: 1, icon: '🔥', label: 'Demon' },
   { kind: 'dragon', count: 1, icon: '🐉', label: 'Dragon' },
 ];
@@ -573,7 +603,123 @@ for (const def of SANDBOX_ENEMY) $('sbEnemy').appendChild(makeSandboxSpawnBtn(de
   const collapsed = bar.classList.toggle('collapsed');
   $('sbToggle').textContent = collapsed ? 'Sandbox ▸' : 'Sandbox ▾';
 };
+// ---------- sandbox wave console: type a size, pick a kind, summon a raid ----------
+{
+  const kindSel = $('sbWaveKind') as HTMLSelectElement;
+  for (const def of SANDBOX_ENEMY) {
+    const opt = document.createElement('option');
+    opt.value = def.kind; opt.textContent = `${def.icon} ${def.label}`;
+    kindSel.appendChild(opt);
+  }
+  const countInp = $('sbWaveCount') as HTMLInputElement;
+  // typing in the console must never fall through to game hotkeys
+  for (const el of [kindSel, countInp]) el.addEventListener('keydown', e => e.stopPropagation());
+  const summon = (): void => {
+    if (!game) return;
+    const count = Math.max(1, Math.min(1000, Math.round(Number(countInp.value) || 0)));
+    countInp.value = String(count);
+    const kind = kindSel.value as UnitKind;
+    const n = game.summonWave(kind, count);
+    ui.toast(n ? `A wave of ${n} ${unitLabel(kind).toLowerCase()}${n > 1 ? 's' : ''} marches on your castle!` : 'No room to muster that wave', n ? 'err' : undefined);
+  };
+  ($('sbWaveGo') as HTMLButtonElement).onclick = summon;
+  countInp.addEventListener('keydown', e => { if (e.key === 'Enter') summon(); });
+}
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
+
+// ---------- settings screen ----------
+const settings = loadSettings();
+audio.setMusicVolume(settings.musicVol);
+audio.setSfxVolume(settings.sfxVol);
+view.setQualityMode(settings.quality);
+controls.settings = settings;
+
+let settingsReturn: 'menu' | 'pause' = 'menu';
+function openSettings(from: 'menu' | 'pause'): void {
+  settingsReturn = from;
+  if (from === 'menu') $('menu').style.display = 'none';
+  else $('pausemenu').style.display = 'none';
+  renderSettings();
+  $('settings').style.display = 'flex';
+}
+function closeSettings(): void {
+  $('settings').style.display = 'none';
+  if (settingsReturn === 'menu') $('menu').style.display = 'flex';
+  else $('pausemenu').style.display = 'flex';
+}
+($('btnSettings') as HTMLButtonElement).onclick = () => openSettings('menu');
+($('btnPauseSettings') as HTMLButtonElement).onclick = () => openSettings('pause');
+($('btnSettingsBack') as HTMLButtonElement).onclick = closeSettings;
+
+/** Push the stored values into the controls (called every time it opens). */
+function renderSettings(): void {
+  ($('setMusic') as HTMLInputElement).value = String(Math.round(settings.musicVol * 100));
+  ($('setSfx') as HTMLInputElement).value = String(Math.round(settings.sfxVol * 100));
+  ($('setPan') as HTMLInputElement).value = String(Math.round(settings.panSpeed * 100));
+  ($('setInvZoom') as HTMLInputElement).checked = settings.invertZoom;
+  ($('setEdgePan') as HTMLInputElement).checked = settings.edgePan;
+  ($('setAutoPause') as HTMLInputElement).checked = settings.autoPauseOnBlur;
+  ($('setQuality') as HTMLSelectElement).value = settings.quality;
+  $('setMusicVal').textContent = `${Math.round(settings.musicVol * 100)}%`;
+  $('setSfxVal').textContent = `${Math.round(settings.sfxVol * 100)}%`;
+  $('setPanVal').textContent = `${settings.panSpeed.toFixed(1)}×`;
+}
+/** Every control applies live and persists immediately. */
+($('setMusic') as HTMLInputElement).oninput = e => {
+  settings.musicVol = Number((e.target as HTMLInputElement).value) / 100;
+  audio.setMusicVolume(settings.musicVol); saveSettings(settings);
+  $('setMusicVal').textContent = `${Math.round(settings.musicVol * 100)}%`;
+};
+($('setSfx') as HTMLInputElement).oninput = e => {
+  settings.sfxVol = Number((e.target as HTMLInputElement).value) / 100;
+  audio.setSfxVolume(settings.sfxVol); saveSettings(settings);
+  $('setSfxVal').textContent = `${Math.round(settings.sfxVol * 100)}%`;
+  audio.play('click');
+};
+($('setPan') as HTMLInputElement).oninput = e => {
+  settings.panSpeed = Number((e.target as HTMLInputElement).value) / 100;
+  saveSettings(settings);
+  $('setPanVal').textContent = `${settings.panSpeed.toFixed(1)}×`;
+};
+($('setInvZoom') as HTMLInputElement).onchange = e => { settings.invertZoom = (e.target as HTMLInputElement).checked; saveSettings(settings); };
+($('setEdgePan') as HTMLInputElement).onchange = e => { settings.edgePan = (e.target as HTMLInputElement).checked; saveSettings(settings); };
+($('setAutoPause') as HTMLInputElement).onchange = e => { settings.autoPauseOnBlur = (e.target as HTMLInputElement).checked; saveSettings(settings); };
+($('setQuality') as HTMLSelectElement).onchange = e => {
+  settings.quality = (e.target as HTMLSelectElement).value as typeof settings.quality;
+  view.setQualityMode(settings.quality); saveSettings(settings);
+};
+addEventListener('blur', () => { if (settings.autoPauseOnBlur) openPauseMenu(); });
+
+// save export / import: a downloadable JSON bundle of run + Heritage progress
+($('btnExportSave') as HTMLButtonElement).onclick = () => {
+  const blob = new Blob([Save.exportAll()], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `erfgooiers-save-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  ui.toast('Save exported — keep the file somewhere safe');
+};
+($('btnImportSave') as HTMLButtonElement).onclick = () => ($('importFile') as HTMLInputElement).click();
+($('importFile') as HTMLInputElement).onchange = async e => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = ''; // allow re-picking the same file later
+  if (!file) return;
+  const res = Save.importAll(await file.text());
+  if (!res.ok) { ui.toast(res.error ?? 'That save could not be read', 'err'); return; }
+  // reload from storage so every screen reflects the imported progress
+  if (phase === 'playing') disposeLevel();
+  meta = Save.loadMeta();
+  run = null;
+  goMenu();
+  ui.toast('Save imported');
+};
+($('btnSettingsClear') as HTMLButtonElement).onclick = () => {
+  $('settings').style.display = 'none';
+  clearSaveData();
+};
+
 ($('btnHelp') as HTMLButtonElement).onclick = () => $('intro').style.display = 'flex';
 ($('startBtn') as HTMLButtonElement).onclick = () => $('intro').style.display = 'none';
 ($('btnSumMenu') as HTMLButtonElement).onclick = goMenu;

@@ -46,6 +46,19 @@ describe('formationSpots', () => {
     expect(spots).not.toContainEqual({ x: 5, y: 5 });
   });
 
+  it('an explicit facing overrides the origin-derived direction', () => {
+    // the army approaches from the west, but the drag aims it north (-y):
+    // the line must spread across x and stack its ranks along y
+    const spots = formationSpots(50, 50, 30, 'line', [{ x: 0, y: 50 }], open, { x: 0, y: -1 });
+    const xs = new Set(spots.map(p => p.x));
+    expect(xs.size).toBeGreaterThanOrEqual(10);
+    // front rank first: smallest y (furthest north) leads
+    for (let i = 1; i < spots.length; i++) expect(spots[i].y).toBeGreaterThanOrEqual(spots[i - 1].y);
+    // a zero-length facing falls back to the origin-derived direction
+    const fallback = formationSpots(50, 50, 30, 'line', [{ x: 0, y: 50 }], open, { x: 0, y: 0 });
+    expect(fallback).toEqual(formationSpots(50, 50, 30, 'line', [{ x: 0, y: 50 }], open));
+  });
+
   it('orders spots front rank first, along the direction of travel', () => {
     // approaching from the west (-x): the army faces +x, so the front rank
     // (largest x) must come back before deeper ranks (smaller x)

@@ -20,6 +20,30 @@ export type ObjectiveDef =
   | { kind: 'slay'; unit: UnitKind; n: number }
   | { kind: 'destroy'; n: number };
 
+/**
+ * Adapt a level's objective to the run's ascension tier.
+ *  - From Very Hard (a ≥ 2), level 1 opens with a whole-economy multi goal —
+ *    tuned production and a fed workforce, not a single hut.
+ *  - From Absurd (a ≥ 3), economy quantities swell by half, honest to the name.
+ *  Combat and collection goals stay untouched: their counts are bounded by
+ *  what the map actually spawns.
+ */
+export function ascendObjective(def: ObjectiveDef, ascension: number, levelIndex: number): ObjectiveDef {
+  if (levelIndex === 1 && ascension >= 2) {
+    def = ascension >= 4
+      ? { kind: 'produceMulti', reqs: [{ item: 'timber', n: 12 }, { item: 'bread', n: 8 }, { item: 'coin', n: 4 }] }
+      : { kind: 'produceMulti', reqs: [{ item: 'timber', n: 10 }, { item: 'bread', n: 6 }] };
+  }
+  if (ascension < 3) return def;
+  const swell = (n: number) => Math.ceil(n * 1.5);
+  switch (def.kind) {
+    case 'produce': return { ...def, n: swell(def.n) };
+    case 'produceMulti': return { ...def, reqs: def.reqs.map(r => ({ ...r, n: swell(r.n) })) };
+    case 'stock': return { ...def, reqs: def.reqs.map(r => ({ ...r, n: swell(r.n) })) };
+    default: return def;
+  }
+}
+
 const ITEM_LABEL: Record<string, string> = {
   trunk: 'Trunk', timber: 'Timber', stone: 'Stone', wheat: 'Wheat', flour: 'Flour',
   bread: 'Bread', goldore: 'Gold ore', coal: 'Coal', coin: 'Coin',
