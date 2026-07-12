@@ -655,51 +655,61 @@ for (const def of SANDBOX_ENEMY) $('sbEnemy').appendChild(makeSandboxSpawnBtn(de
 {
   const modal = $('wavemodal');
   const kindsEl = $('waveKinds');
-  const countInp = $('waveCount') as HTMLInputElement;
+  const totalEl = $('waveTotal');
   const delayInp = $('waveDelay') as HTMLInputElement;
-  const selectedKinds = new Set<UnitKind>(['bandit']);
+  // per-kind counts: the wave is exactly what you type, kind by kind
+  const counts = new Map<UnitKind, number>([['bandit', 12]]);
+  const refreshTotal = (): void => {
+    let total = 0;
+    for (const n of counts.values()) total += n;
+    totalEl.textContent = String(total);
+  };
   const renderKinds = (): void => {
     kindsEl.innerHTML = '';
     for (const def of SANDBOX_ENEMY) {
-      const b = document.createElement('button');
-      b.className = 'opt' + (selectedKinds.has(def.kind) ? ' on' : '');
-      b.textContent = `${def.icon} ${def.label}`;
-      b.title = `Toggle ${def.label.toLowerCase()} in the wave`;
-      b.onclick = () => {
-        if (selectedKinds.has(def.kind)) { if (selectedKinds.size > 1) selectedKinds.delete(def.kind); }
-        else selectedKinds.add(def.kind);
-        audio.play('click');
-        renderKinds();
-      };
-      kindsEl.appendChild(b);
+      const row = document.createElement('div');
+      row.className = 'waverow-kind' + (counts.get(def.kind) ? ' on' : '');
+      const label = document.createElement('span');
+      label.className = 'wavekind-label';
+      label.textContent = `${def.icon} ${def.label}`;
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.min = '0'; inp.max = '1000'; inp.step = '1';
+      inp.value = String(counts.get(def.kind) ?? 0);
+      inp.title = `How many ${def.label.toLowerCase()} arrive in the wave`;
+      inp.addEventListener('keydown', e => e.stopPropagation());
+      inp.addEventListener('input', () => {
+        const n = Math.max(0, Math.min(1000, Math.round(Number(inp.value) || 0)));
+        if (n > 0) counts.set(def.kind, n); else counts.delete(def.kind);
+        row.classList.toggle('on', n > 0);
+        refreshTotal();
+      });
+      row.appendChild(label);
+      row.appendChild(inp);
+      kindsEl.appendChild(row);
     }
+    refreshTotal();
   };
   // typing in the modal must never fall through to game hotkeys
-  for (const el of [countInp, delayInp]) el.addEventListener('keydown', e => e.stopPropagation());
+  delayInp.addEventListener('keydown', e => e.stopPropagation());
   const openModal = (): void => { renderKinds(); modal.style.display = 'flex'; };
   const closeModal = (): void => { modal.style.display = 'none'; };
   const summon = (): void => {
     if (!game) return;
-    const count = Math.max(1, Math.min(1000, Math.round(Number(countInp.value) || 0)));
-    countInp.value = String(count);
+    let total = 0;
+    for (const n of counts.values()) total += n;
+    if (total < 1) { ui.toast('Set a count for at least one kind', 'err'); audio.play('error'); return; }
     const delay = Math.max(0, Math.min(3600, Math.round(Number(delayInp.value) || 0)));
     delayInp.value = String(delay);
-    // the wave mixes the chosen kinds evenly (round-robin remainder to the first)
-    const kinds = [...selectedKinds];
-    const per = Math.floor(count / kinds.length);
-    for (let i = 0; i < kinds.length; i++) {
-      const n = per + (i < count % kinds.length ? 1 : 0);
-      if (n > 0) game.scheduleWave(kinds[i], n, delay);
-    }
+    for (const [kind, n] of counts) if (n > 0) game.scheduleWave(kind, n, delay);
     ui.toast(delay > 0
-      ? `A wave of ${count} raiders will march in ${delay}s`
-      : `A wave of ${count} raiders marches on your castle!`, delay > 0 ? undefined : 'err');
+      ? `A wave of ${total} raiders will march in ${delay}s`
+      : `A wave of ${total} raiders marches on your castle!`, delay > 0 ? undefined : 'err');
     closeModal();
   };
   ($('sbWaveOpen') as HTMLButtonElement).onclick = openModal;
   ($('waveCancel') as HTMLButtonElement).onclick = closeModal;
   ($('waveGo') as HTMLButtonElement).onclick = summon;
-  countInp.addEventListener('keydown', e => { if (e.key === 'Enter') summon(); });
+  delayInp.addEventListener('keydown', e => { if (e.key === 'Enter') summon(); });
   addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display === 'flex') closeModal(); });
 }
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;

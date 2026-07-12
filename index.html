@@ -76,11 +76,11 @@
 <div id="wavemodal" class="screen">
   <div class="card">
     <h1 class="serif">Summon a wave</h1>
-    <div class="tag">Pick the raiders, set the size — and optionally put the raid on a timer. It marches from the map edge onto your castle.</div>
-    <div class="optlabel">Raiders — pick one or several kinds (the wave mixes them)</div>
-    <div id="waveKinds" class="optrow"></div>
+    <div class="tag">Set how many of each kind should arrive — the wave marches from the map edge onto your castle. Optionally put it on a timer.</div>
+    <div class="optlabel">Raiders — set a count for each kind you want in the wave</div>
+    <div id="waveKinds" class="wavekinds"></div>
     <div class="waverow">
-      <label>Total raiders <input id="waveCount" type="number" min="1" max="1000" step="1" value="50"></label>
+      <span class="wavetotal">Total: <b id="waveTotal">0</b> raiders</span>
       <label>Arrives in <input id="waveDelay" type="number" min="0" max="3600" step="5" value="0"> s <span class="whint">(0 = at once)</span></label>
     </div>
     <div class="btns row">
