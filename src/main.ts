@@ -13,8 +13,9 @@ import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID, cardUnlocked, specsFor } from './da
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
-import { DEFAULT_SANDBOX, levelFor, sandboxLevel, sandboxWaterOpts, type LevelDef, type SandboxConfig } from './data/levels';
-import { BIOMES, campaignBiome } from './data/biomes';
+import { DEFAULT_SANDBOX, biomeWater, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
+import { campaignBiome } from './data/biomes';
+import type { BiomeKey } from './data/biomes';
 import { UNITS, type UnitKind } from './data/units';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionArmyMult, ascensionForcesCurse, ascensionPrepMult, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import { loadSettings, saveSettings } from './game/Settings';
@@ -290,13 +291,11 @@ function startRun(): void {
 let sandboxCfg: SandboxConfig = { ...DEFAULT_SANDBOX };
 
 /** The setup screen's option groups: key into SandboxConfig, label, choices.
- *  Built per render — the water group's choices are phrased by the chosen
- *  biome (lava in Hell, canals in the Polder), so the two stay linked. */
+ *  The water level isn't a knob of its own — it follows the chosen biome. */
 function sbxGroups(): { key: keyof SandboxConfig; label: string; opts: [string, string][] }[] {
   return [
     { key: 'size', label: 'Map size', opts: [['small', 'Small · 48'], ['medium', 'Medium · 64'], ['large', 'Large · 84'], ['huge', 'Huge · 112'], ['colossal', 'Colossal · 144']] },
     { key: 'biome', label: 'Biome', opts: [['gooi', 'Het Gooi'], ['ardennes', 'The Ardennes'], ['blackforest', 'The Black Forest'], ['alps', 'The Alps'], ['winter', 'Winter'], ['polder', 'The Polder'], ['seaside', 'Zeeland Delta'], ['island', 'Texel'], ['hell', 'Hell']] },
-    { key: 'water', label: `Water — ${BIOMES[sandboxCfg.biome].name}`, opts: sandboxWaterOpts(sandboxCfg.biome) },
     { key: 'mapRes', label: 'Map resources', opts: [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']] },
     { key: 'startRes', label: 'Starting stock', opts: [['modest', 'Modest'], ['plentiful', 'Plentiful'], ['cornucopia', 'Cornucopia']] },
     { key: 'enemies', label: 'Enemies', opts: [['none', 'None — peaceful'], ['wilds', 'Wild beasts'], ['camps', 'Bandit camps'], ['warzone', 'Warzone']] },
@@ -326,6 +325,8 @@ function renderSandboxSetup(): void {
       const key = b.dataset.key as keyof SandboxConfig;
       // numeric knobs (stronghold count) parse back from their string value
       (sandboxCfg as any)[key] = key === 'strongholds' ? Number(b.dataset.val) : b.dataset.val;
+      // water isn't chosen directly — it follows whichever biome is picked
+      if (key === 'biome') sandboxCfg.water = biomeWater(b.dataset.val as BiomeKey);
       audio.play('click');
       renderSandboxSetup();
     };

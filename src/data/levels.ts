@@ -204,17 +204,14 @@ export const DEFAULT_SANDBOX: SandboxConfig = {
   size: 'large', biome: 'gooi', water: 'normal', mapRes: 'rich', startRes: 'plentiful', enemies: 'none', strongholds: 0, hero: 'none',
 };
 
-/** Water choices phrased for the biome, so the option reads as part of that
- *  landscape (lava in Hell, canals in the Polder, tides on the coasts) rather
- *  than a generic slider that fights the biome's own water character. */
-export function sandboxWaterOpts(biome: BiomeKey): [SandboxConfig['water'], string][] {
+/** The water level is a property of the biome, not a separate knob: waterlogged
+ *  landscapes (the Polder, the coasts) run wet, high dry country (the Alps, Hell)
+ *  runs dry, and everything else sits at a normal water table. */
+export function biomeWater(biome: BiomeKey): SandboxConfig['water'] {
   switch (biome) {
-    case 'hell': return [['dry', 'Scorched'], ['normal', 'Lava veins'], ['wet', 'Rivers of fire']];
-    case 'polder': return [['dry', 'Drained'], ['normal', 'Canal country'], ['wet', 'Waterland']];
-    case 'seaside': return [['dry', 'Dry hinterland'], ['normal', 'Delta'], ['wet', 'Drowned land']];
-    case 'island': return [['dry', 'High dunes'], ['normal', 'Tidal flats'], ['wet', 'Half-drowned']];
-    case 'winter': return [['dry', 'Frozen solid'], ['normal', 'Open water'], ['wet', 'Thaw lakes']];
-    default: return [['dry', 'Dry'], ['normal', 'Normal'], ['wet', 'Wetlands']];
+    case 'polder': case 'seaside': case 'island': return 'wet';
+    case 'alps': case 'hell': return 'dry';
+    default: return 'normal';
   }
 }
 
