@@ -13,7 +13,7 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - when i have a large host of units, then i  have a second host with a lot of siege units. my normal units were attacking enemies, my siege units about to attack a castle wall. suddenly the game performance dropped very badly. seems like a bug?
 
-
+- priest and archers should keep a distance from enemy units when selected to attack.
 
 ## Design changes
 
