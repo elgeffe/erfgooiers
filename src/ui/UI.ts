@@ -257,7 +257,7 @@ export class UI {
         return;
       }
       if (t && t.closest('#prioBtn')) {
-        if (o && o.isSite) { this.game!.togglePriority(o); this.renderInspector(); }
+        if (o && (o.isSite || (o.def && (o.def.recipe || o.def.gather)))) { this.game!.togglePriority(o); this.renderInspector(); }
         return;
       }
       const trainBtn = t && t.closest('[data-train]') as HTMLElement | null;
@@ -339,8 +339,10 @@ export class UI {
         body += `<div class="sect">Production</div><div class="bar"><div style="width:${Math.round(o.prog * 100)}%"></div></div>`;
         body += '<div class="sect">Inputs</div>' + this.invRowsHTML(o.inp);
         body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
+        body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize this chain'}</button>`;
       } else if (o.def.gather) {
         body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
+        body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize this chain'}</button>`;
       } else if (o.def.tavern) {
         const tv = o.def.tavern;
         body += `<div class="sect">Provisions (any food · serves up to ${tv.capacity} workers)</div>` + this.invRowsHTML(o.inp);

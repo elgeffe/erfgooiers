@@ -369,7 +369,7 @@ export class Game {
       if (!b.active || !b.def.recipe) continue;
       for (const it in this.mods.recipeInputs(b.def)) {
         const have = (b.inp[it] || 0) + (b.incoming[it] || 0);
-        if (have < carryCap) demands.push({ pri: 1, to: b, item: it });
+        if (have < carryCap) demands.push({ pri: b.priority ? 0.75 : 1, to: b, item: it });
       }
     }
     for (const b of this.buildings) {
@@ -387,7 +387,13 @@ export class Game {
       for (const it in b.out) {
         if (b.out[it] > 0) {
           const wanted = demands.some(d => d.item === it);
-          if (!wanted || b.out[it] >= outCap - 1) demands.push({ pri: 2, to: this.nearestStore(b), item: it, from: b });
+          // A producer at (or nearing) the output cap has STOPPED working —
+          // draining it un-halts production, so it outranks routine input
+          // top-ups (which sit at 1). At pri 2 behind every site and input
+          // demand these drains starved whenever serfs were busy, leaving
+          // "full output nobody picks up" and stalled chains.
+          if (b.out[it] >= outCap - 1) demands.push({ pri: b.priority ? 0.4 : 0.5, to: this.nearestStore(b), item: it, from: b });
+          else if (!wanted) demands.push({ pri: 2, to: this.nearestStore(b), item: it, from: b });
         }
       }
     }
@@ -1563,8 +1569,9 @@ export class Game {
     this.moveUnit(u, dt);
   }
 
-  /** Toggle a construction site's priority (materials & builders go there first). */
-  togglePriority(s: Site): void {
+  /** Toggle priority on a construction site (materials & builders go there
+   *  first) or a production building (serfs feed & empty it first). */
+  togglePriority(s: Site | Building): void {
     s.priority = !s.priority;
     this.sfx('click');
     this.toast(s.priority ? s.def.name + ' prioritized' : s.def.name + ' no longer prioritized');

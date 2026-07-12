@@ -127,6 +127,7 @@ export interface Building {
   trainQ?: string[];           // barracks: queued unit kinds being trained
   rally?: Coord;               // barracks: where freshly trained fighters march to
   rallyMesh?: THREE.Object3D;  // the flag marking the rally point
+  priority?: boolean;          // player-flagged: serfs feed & empty this building first
   removed?: boolean;
   isSite?: false;
 }
