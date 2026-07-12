@@ -5,23 +5,28 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - i still see that resources are brought to the castle first instead of their respective production building (coal and gold to the mint building.) production chains should always have priority over storage in the castle.
 
+
+- the monastary roof is upside down.
+
+- add priest units to the sandbox spawn
+
 - builders are very often in the way of serfs moving around, blocking the movement. can we fix this?
 
 - when starting a level i want the build menu to always default to the Materials tab.
 
 - in sandbox mode, there was still a small group of enemies coming to my castle as a wave. remove that from the logic.
 
+- when i have a large host of units, then i  have a second host with a lot of siege units. my normal units were attacking enemies, my siege units about to attack a castle wall. suddenly the game performance dropped very badly. seems like a bug?
 
 
 
 ## Design changes
 
-
 - add some spacing in between the fullscreen and mute button 
 
 - improve the cloud designs, make them look more like real clouds, improve the fidelity of the animal shapes that sometimes pass by.
 
-
+- make the mouth of the mountain range wider for levels with enemies, also get more creative with the shape of the mountain range instead of just a circle. > the main castle of ours does not have to be dead center, it can also be in the opposite corner of the enemy.
 
 ## Improvements
 

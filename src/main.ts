@@ -653,6 +653,7 @@ const SANDBOX_FRIENDLY: SandboxSpawnDef[] = [
   { kind: 'pikeman', count: 10, icon: '🔱', label: 'Pikemen' },
   { kind: 'archer', count: 8, icon: '🏹', label: 'Archers' },
   { kind: 'knight', count: 6, icon: '🛡️', label: 'Knights' },
+  { kind: 'priest', count: 4, icon: '⛪', label: 'Priests' },
   { kind: 'lancer', count: 8, icon: '🐎', label: 'Lancers' },
   { kind: 'horseknight', count: 6, icon: '🏇', label: 'Horse Knights' },
   { kind: 'horsearcher', count: 8, icon: '🎯', label: 'Horse Archers' },
