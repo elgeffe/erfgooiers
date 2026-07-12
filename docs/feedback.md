@@ -1,8 +1,6 @@
 fix each of these items, always start with bugs first, then design changes > improvements > features > epics should always be last and first written out as docs/.md file.
 
 ## Bugs
-- i have a very large host of units, but when i try to pass into the enemy area through a small mountain range opening the units keep walking back and never entering. the flow of the units should be smooth through the smallest gaps. for some reason it seems like the units move towards the target direction, but then turn around and walk back. i think this is the bug. 
-
 - i still see that resources are brought to the castle first instead of their respective production building (coal and gold to the mint building.) production chains should always have priority over storage in the castle.
 
 - builders are very often in the way of serfs moving around, blocking the movement. can we fix this?
