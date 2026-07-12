@@ -36,7 +36,7 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - increase the difficulty of higher ascension levels by increasing the number of enemies significantly and also making the objective the exact amount that has spawned on the map (buildings and units), or just make it 'clear all enemy units and buildings, survive all raids' as objective. increase the enemy wave configuration with more enemies and diverse enemies per wave.
 
-- how can we make the levels of hell difficult EXTRA hellishly difficult? it should be actually really hard to defeat them (use maximum size maps and many many enemies, strongholds and difficult objectives). maybe start from the the hell levels from the start?
+
 
 ## Features
 
@@ -67,7 +67,7 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - implement a gore mode in the settings that introduces blood spots on bodies and other blood related visual effects. can we also introduce a setting or easter egg in the settings menu to enable the wilhelm scream when units die?
 
-
+- how can we make the levels of hell difficult EXTRA hellishly difficult? it should be actually really hard to defeat them (use maximum size maps and many many enemies, strongholds and difficult objectives). maybe start from the the hell levels from the start?
 
 
 - add more rare and legendary cards, they are unlocked through achievements. add an achievements menu in the main menu to show which cards have been unlocked, give a hint for cards that have not been unlocked yet. make sure achievements are linked to the save state and exported with the export setting.
@@ -82,3 +82,8 @@ fix each of these items, always start with bugs first, then design changes > imp
 ## Epics
 
 - we need to help new players to guide them in the objectives. i'm thinking either a modal at the start of the level with a cute, but slowly evolving brutal story that reads like a japanase anime but with a Het Gooi / Netherlands / Europe kind of vibe. almost like lord of the rings? pick names that sound dutch and english at the same time like Henk the Brave, Pieter the Wise, Koenraad the Merciless. the dragon of het gooi in their journey leads them to the alps as they chase him because he attacked het gooi recently. once they get to the alps the dragon flies over the player into the sky and flies down again on het gooi, it was a trap. in the end the player arrives just in time to defeat or get beaten by the dragon. in the modal you show how to produce the objective briefly with hints, as the levels go by the hints get fewer so the player has to put some effort in. when the player wins the first time against the dragon there is a final modal with a congratulations for the player of saving het gooi. in the hard ascension no more story just gameplay, only have the modal to show the objective and the timer and other stats. let users click the objective panel in the game to revisit the modal with instructions. adapt the biomes to the storyline in the first ascension run.
+
+## Architecture
+- move all tests to a proper folder
+
+- refactor main.ts to be minimal

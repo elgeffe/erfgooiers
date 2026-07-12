@@ -1816,7 +1816,7 @@ export class Game {
     }
     this.pendingBoss = null;
     if (setup.boss) {
-      if (this.deferBoss && this.enemyGarrisonLeft() > 0) {
+      if (this.deferBoss && this.enemyStructuresLeft() > 0) {
         this.pendingBoss = setup.boss;
         this.toast(`Raze every enemy stronghold first — only then will the ${UNITS[setup.boss].name} reveal itself`, 'err');
       } else this.spawnBoss(setup.boss);
@@ -1849,7 +1849,7 @@ export class Game {
     if (!this.enemy) return;
     // two-phase boss: once the whole enemy garrison is razed, the held-back
     // dragon reveals itself and sweeps in from the edge for the final fight
-    if (this.pendingBoss && this.enemyGarrisonLeft() === 0) {
+    if (this.pendingBoss && this.enemyStructuresLeft() === 0) {
       const kind = this.pendingBoss; this.pendingBoss = null;
       this.spawnBoss(kind, true);
     }
@@ -1879,9 +1879,14 @@ export class Game {
       if (wv.cleared || !wv.units.length) continue;
       if (wv.units.every(u => u.dead)) { wv.cleared = true; this.objective?.onWaveCleared(); this.toast('Raid repelled!'); }
     }
-    // the enemy commander sends fresh squads on a timer
+    // the enemy commander sends fresh squads on a timer — but reinforcements
+    // that muster "from camp" dry up once every camp and keep has been razed,
+    // so a cleared map stays cleared (and the clear-all objective can be won)
     const cmd = this.enemy.commander;
-    if (cmd) { this.commanderT += sdt; if (this.commanderT >= cmd.every) { this.commanderT = 0; this.spawnRaid(cmd.kind, cmd.count, cmd.from ?? 'camp'); } }
+    if (cmd && (cmd.from !== 'camp' || this.enemyStructuresLeft() > 0)) {
+      this.commanderT += sdt;
+      if (this.commanderT >= cmd.every) { this.commanderT = 0; this.spawnRaid(cmd.kind, cmd.count, cmd.from ?? 'camp'); }
+    }
   }
 
   /** Every tower (any faction) looses arrows at the nearest hostile fighter in range. */
@@ -2053,15 +2058,29 @@ export class Game {
   private pendingBoss: UnitKind | null = null;
 
   /** Standing enemy garrison structures — camps, keeps and their towers. The
-   *  deferred boss waits for this to reach zero. Walls & gates don't count:
-   *  they're fortifications to breach, not strongholds to raze. */
-  private enemyGarrisonLeft(): number {
+   *  deferred boss and the clear-all objective wait for this to reach zero.
+   *  Walls & gates don't count: they're fortifications to breach, not
+   *  strongholds to raze. */
+  enemyStructuresLeft(): number {
     let n = 0;
     for (const b of this.buildings) {
       if (b.removed || b.faction !== 'enemy') continue;
       if (b.key === 'banditcamp' || b.key === 'enemycastle' || b.key === 'enemywatchtower') n++;
     }
     return n;
+  }
+
+  /** Living hostile units on the map (clear-all objective). */
+  hostileUnitsLeft(): number {
+    let n = 0;
+    for (const u of this.units) if (!u.dead && u.faction !== 'player') n++;
+    return n;
+  }
+
+  /** True while the level still has scheduled raid waves yet to launch. */
+  scheduledWavesPending(): boolean {
+    const w = this.enemy?.waves;
+    return !!w && this.waveIdx < w.length;
   }
 
   private spawnBoss(kind: UnitKind, fromEdge = false): void {

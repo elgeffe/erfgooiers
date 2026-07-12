@@ -175,6 +175,22 @@ function startLevel(): void {
     const packMult = 1 + 0.4 * run.ascension;
     enemies = { ...enemies, wild: enemies.wild.map(w => ({ ...w, count: Math.round(w.count * packMult) })) };
   }
+  // higher ascensions turn the Defend & assault levels into a real siege: the
+  // raid waves swell and a broader, nastier cast keeps arriving. The top tier
+  // also plants an extra fortified stronghold to storm (feeds the clear-all
+  // objective — more foes, more strongholds, more diverse raids).
+  if (!sandbox && enemies?.waves && run.ascension > 0 && level.index >= 5 && level.index <= 9) {
+    const a = Math.min(4, run.ascension);
+    const waveMult = 1 + 0.5 * a;
+    const scaled = enemies.waves.map(w => ({ ...w, count: Math.max(1, Math.round(w.count * waveMult)) }));
+    const roster: UnitKind[] = ['orc', 'skeleton', 'skelarcher', 'zombie', 'troll', 'bandit'];
+    const extra = Array.from({ length: a }, (_, i) => ({ at: 240 + i * 150, kind: roster[i % roster.length], count: 3 + a + i }));
+    enemies = { ...enemies, waves: [...scaled, ...extra] };
+    // the frontier assault levels gain extra walled keeps at the very top tiers
+    if (run.ascension >= 3 && level.index >= 7) {
+      enemies = { ...enemies, strongholds: { count: 1 + (run.ascension - 3), guards: 12, towers: 2, kinds: ['orc', 'troll', 'skeleton', 'skelarcher', 'zombie'] } };
+    }
+  }
   game.setEnemies(enemies);
   // mutator payloads beyond stat curses: extra wild packs on the map
   for (const id of mutators) {

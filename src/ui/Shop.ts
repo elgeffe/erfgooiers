@@ -4,7 +4,7 @@ import { MUTATOR_BY_ID, type Contract } from '../data/mutators';
 import { HERO_BY_ID } from '../data/heroes';
 import { BIOMES, campaignBiome } from '../data/biomes';
 import { levelFor } from '../data/levels';
-import { Objective } from '../game/Objectives';
+import { Objective, ascendObjective } from '../game/Objectives';
 import type { RunState } from '../game/RunState';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -179,7 +179,8 @@ export class Shop {
     for (const c of this.contracts) {
       const el = document.createElement('div');
       el.className = `scard contract con-${c.kind}` + (this.chosen === c ? ' picked' : '');
-      const brief = new Objective(level.objectives[c.objectiveIdx % level.objectives.length]).brief();
+      const rawObj = level.objectives[c.objectiveIdx % level.objectives.length];
+      const brief = new Objective(ascendObjective(rawObj, this.run.ascension, nextIndex)).brief();
       const bio = BIOMES[campaignBiome(this.run.ascension, nextIndex)];
       const bioLine = bio.key !== 'gooi' ? `<br><i>${bio.name} — ${bio.desc}</i>` : '';
       const curses = c.mutators.map(id => {
