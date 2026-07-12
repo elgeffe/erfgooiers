@@ -286,17 +286,22 @@ export const BIOMES: Record<BiomeKey, BiomeDef> = {
  *   Hard      → the march leaves home: the Polder (5), then the Ardennes
  *   Very Hard → level 7 follows the Delta coast; the Black Forest swallows 8+
  *   Absurd    → the hunt crosses to Texel (6), and the run ends in the Alps
- *   Grim      → winter falls on the high march (level 9 freezes over)
+ *   Grim      → winter falls on the WHOLE combat arc: every level from the
+ *               first raid to the high march (5–9) plays under snow. The
+ *               economy arc (1–4) stays in Het Gooi — winter bans the very
+ *               farm/bakery/vineyard chains those objectives demand.
  *   Infernal  → the dragon's hoard lies at the gates of Hell (level 10)
  */
 export function campaignBiome(ascension: number, levelIndex: number): BiomeKey {
   if (levelIndex <= 4 || ascension <= 0) return 'gooi';
+  // Grim's long winter: the combat levels' goals (survive/slay/destroy) are
+  // biome-proof, so the snow can claim them all without stranding an objective
+  if (ascension >= 4 && levelIndex >= 5 && levelIndex <= 9) return 'winter';
   if (levelIndex === 5) return 'polder';
   if (levelIndex === 6) return ascension >= 3 ? 'island' : 'ardennes';
   if (levelIndex === 7) return ascension >= 2 ? 'seaside' : 'ardennes';
   if (levelIndex === 8) return ascension >= 2 ? 'blackforest' : 'ardennes';
   if (levelIndex === 9) {
-    if (ascension >= 4) return 'winter';
     if (ascension >= 3) return 'alps';
     return ascension >= 2 ? 'blackforest' : 'ardennes';
   }

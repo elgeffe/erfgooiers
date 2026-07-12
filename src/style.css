@@ -163,20 +163,28 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 #formationbar button:hover{border-color:var(--accent);color:var(--ink);}
 #formationbar .fhint{text-transform:none;letter-spacing:0;font-size:10px;opacity:.75;cursor:help;}
 #formationbar button.on{border-color:var(--good);color:#bce8af;background:rgba(70,194,86,.16);}
-#sandboxbar{position:absolute;left:12px;bottom:12px;display:none;align-items:center;flex-wrap:wrap;gap:6px;max-width:calc(100vw - 210px);background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:10px;padding:7px 10px;z-index:12;}
-#sandboxbar .sb-title{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);margin-right:2px;background:none;border:none;cursor:pointer;padding:6px 2px;}
+/* the spawn bar docks as a scrollable column on the LEFT edge, out of the
+   build menu's bottom strip (body.sandbox narrows the menu to match) */
+#sandboxbar{position:absolute;left:12px;bottom:12px;display:none;flex-direction:column;align-items:stretch;gap:6px;width:172px;max-height:calc(100vh - 130px);overflow-y:auto;background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:10px;padding:7px 10px;z-index:12;}
+#sandboxbar .sb-title{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);background:none;border:none;cursor:pointer;padding:4px 2px;text-align:left;}
 #sandboxbar .sb-title:hover{color:var(--accent);}
-#sandboxbar .sb-group{display:flex;align-items:center;flex-wrap:wrap;gap:6px;}
-#sandboxbar .sb-group+.sb-group{border-left:1px solid rgba(255,255,255,.12);padding-left:8px;}
-#sandboxbar .sb-label{color:var(--ink-dim);font-size:9px;text-transform:uppercase;letter-spacing:.7px;margin:0 2px;}
+#sandboxbar .sb-group{display:flex;flex-direction:column;align-items:stretch;gap:5px;}
+#sandboxbar .sb-group+.sb-group{border-top:1px solid rgba(255,255,255,.12);padding-top:7px;}
+#sandboxbar .sb-label{color:var(--ink-dim);font-size:9px;text-transform:uppercase;letter-spacing:.7px;margin:0 2px 1px;}
+#sandboxbar.collapsed{width:auto;max-height:none;overflow:visible;}
 #sandboxbar.collapsed .sb-group{display:none;}
-#sandboxbar button{background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 9px;font-size:12px;cursor:pointer;}
+#sandboxbar button{background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 9px;font-size:12px;cursor:pointer;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #sandboxbar button:hover{background:#4a3823;border-color:var(--accent);}
-/* the wave console: type a size, pick a kind, summon */
-#sandboxbar select,#sandboxbar input{background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:6px 7px;font-size:12px;font-family:inherit;}
-#sandboxbar select:focus,#sandboxbar input:focus{outline:none;border-color:var(--accent);}
-#sandboxbar input[type=number]{width:64px;font-variant-numeric:tabular-nums;}
-#sandboxbar .sb-x{color:var(--ink-dim);font-size:11px;}
+/* the docked spawn column claims the left strip — the build menu yields to it */
+body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
+/* the wave composer modal */
+#wavemodal .card{width:min(760px,94vw);text-align:left;}
+#wavemodal .card h1{justify-content:flex-start;}
+#wavemodal .waverow{display:flex;flex-wrap:wrap;gap:18px;margin:14px 0 4px;}
+#wavemodal .waverow label{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);}
+#wavemodal .waverow input{background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:6px 7px;font-size:12px;font-family:inherit;width:76px;font-variant-numeric:tabular-nums;}
+#wavemodal .waverow input:focus{outline:none;border-color:var(--accent);}
+#wavemodal .whint{color:var(--ink-dim);font-size:11px;}
 /* ---------- intro ---------- */
 #intro{position:absolute;inset:0;background:rgba(15,11,8,.72);display:none;align-items:center;justify-content:center;z-index:30;}
 #introCard{width:430px;background:var(--panel);border:1px solid rgba(217,164,65,.4);border-radius:14px;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.6);}
@@ -205,11 +213,15 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 .optrow .opt.stub{opacity:.4;cursor:default;font-style:italic;}
 .optrow .opt.stub:hover{color:var(--ink-dim);border-color:rgba(255,255,255,.1);}
 
-/* ascension picker on the hero-select screen */
-.ascrow{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin:8px 0 2px;}
-.ascrow .asc{background:var(--panel2);color:var(--ink-dim);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;}
+/* difficulty picker on the start-a-run screen */
+.ascrow{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 10px;}
+.ascrow .asc{display:inline-flex;align-items:center;gap:7px;background:var(--panel2);color:var(--ink-dim);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;}
 .ascrow .asc:hover{color:var(--ink);border-color:var(--accent);}
 .ascrow .asc.on{background:#4a3823;color:var(--accent);border-color:var(--accent);}
+.ascrow .asc.locked{opacity:.4;cursor:default;}
+.ascrow .asc.locked:hover{color:var(--ink-dim);border-color:rgba(255,255,255,.1);}
+.ascrow .asc .asc-ico{font-size:15px;line-height:1;}
+#ascensionRow .metaline{margin-bottom:0;font-size:11.5px;line-height:1.45;}
 .screen .btns{display:flex;flex-direction:column;gap:9px;}
 .screen .btns button{background:var(--accent);color:#241a0e;border:none;border-radius:8px;padding:11px;font-size:14px;font-weight:700;cursor:pointer;}
 .screen .btns button:hover{background:#e8b855;}
@@ -233,8 +245,10 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 #keytable b{color:var(--accent);font-weight:700;}
 
 /* ---------- shop ---------- */
-/* wide screens get a wide shop/hero picker; small screens adapt down and scroll */
-.shopcard{width:min(1500px,96vw);text-align:left;max-height:94vh;overflow-y:auto;}
+/* wide screens get a wide shop/hero picker; small screens adapt down and scroll.
+   `.screen .card` (two classes) outranks a lone `.shopcard`, so the pair must
+   be repeated here — otherwise every "wide" screen collapses to 440px. */
+.shopcard,.screen .card.shopcard{width:min(1180px,96vw);text-align:left;max-height:94vh;overflow-y:auto;}
 .shopcard h1{justify-content:flex-start;}
 .shopsect{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);margin:14px 0 7px;}
 .shopgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;}

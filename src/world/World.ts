@@ -45,10 +45,11 @@ export class World {
   /** The map's generation seed (exposed for per-tile cosmetic hashing). */
   readonly seed: number;
   readonly tiles: Tile[][] = [];
-  /** The walled-off enemy quarters on frontier maps (centre + radius). */
-  enemyZones: { x: number; y: number; r: number }[] = [];
+  /** The walled-off enemy quarters on frontier maps (centre + radius), each
+   *  with the open pass through its mountain arc (gate garrisons stand there). */
+  enemyZones: { x: number; y: number; r: number; pass: { x: number; y: number } }[] = [];
   /** The first walled-off quarter, or null — kept for single-zone callers. */
-  enemyZone: { x: number; y: number; r: number } | null = null;
+  enemyZone: { x: number; y: number; r: number; pass: { x: number; y: number } } | null = null;
   /** The biome this map was generated in (View/models read its palette). */
   readonly biome: BiomeDef;
   /** On single-coast maps: unit vector from the map centre toward the open sea
@@ -317,10 +318,15 @@ export class World {
         }
       }
       const ir = Math.round(R * 0.55);
+      // the pass tile: where the gap sits on the arc, clamped onto the board —
+      // gate garrisons (the dragon level's road-block camps) muster around it
+      const px = Math.max(2, Math.min(W - 3, cx0 + sgnX * Math.round(R * Math.cos(passAng))));
+      const py = Math.max(2, Math.min(H - 3, cy0 + sgnY * Math.round(R * Math.sin(passAng))));
       this.enemyZones.push({
         x: cx0 + sgnX * Math.round(ir * Math.cos(Math.PI / 4)),
         y: cy0 + sgnY * Math.round(ir * Math.sin(Math.PI / 4)),
         r: Math.round(R * 0.5),
+        pass: { x: px, y: py },
       });
       }
       this.enemyZone = this.enemyZones[0];
@@ -500,6 +506,7 @@ export class World {
         piles++;
       }
     }
+
   }
 
   private setDeco(t: Tile, kind: DecoKind): void { t.deco = { kind, meshes: [] }; }

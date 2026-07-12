@@ -13,10 +13,9 @@ import { UPGRADES, cardUnlocked, specsFor } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
-import { DEFAULT_SANDBOX, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
+import { DEFAULT_SANDBOX, levelFor, sandboxLevel, sandboxWaterOpts, type LevelDef, type SandboxConfig } from './data/levels';
 import { BIOMES, campaignBiome } from './data/biomes';
 import { UNITS, type UnitKind } from './data/units';
-import { unitLabel } from './game/util';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionArmyMult, ascensionForcesCurse, ascensionPrepMult, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import { loadSettings, saveSettings } from './game/Settings';
 import * as Save from './game/SaveGame';
@@ -83,6 +82,11 @@ function startLevel(): void {
     worldParams.oreVeins = Math.round((level.world.oreVeins ?? 6) * 1.8);
     worldParams.goldPiles = (level.world.goldPiles ?? 4) + 8;
   }
+  // the road to the dragon: higher tiers wall off MORE corners on the boss
+  // map, each behind its own barred pass and gate garrison (see gatecamps)
+  if (!sandbox && level.index === 10) {
+    worldParams.frontiers = Math.max(worldParams.frontiers ?? 2, 2 + Math.min(2, run.ascension));
+  }
   const world = new World(worldParams);
   view.loadWorld(world);
   const mutators = sandbox ? [] : run.mutators;
@@ -118,9 +122,15 @@ function startLevel(): void {
   game.bossHpMult = sandbox ? 1 : 1 + 0.5 * run.ascension;
   // hell's extra strongholds: great undead hosts in every walled corner
   // (a fresh object each time — the static LEVELS table stays untouched)
-  const enemies = hellFinale && level.enemies
+  let enemies = hellFinale && level.enemies
     ? { ...level.enemies, camps: [...(level.enemies.camps ?? []), { count: 4, guards: 14, kinds: ['skeleton', 'skelarcher', 'zombie', 'brute'] as UnitKind[] }] }
     : level.enemies ?? null;
+  // the hunt's quarry grows with the tier: enough wolves AND boars on the map
+  // to honour the swollen slayMulti objective (see ascendObjective)
+  if (!sandbox && enemies?.wild && level.type === 'Hunt' && run.ascension > 0) {
+    const packMult = 1 + 0.4 * run.ascension;
+    enemies = { ...enemies, wild: enemies.wild.map(w => ({ ...w, count: Math.round(w.count * packMult) })) };
+  }
   game.setEnemies(enemies);
   // mutator payloads beyond stat curses: extra wild packs on the map
   for (const id of mutators) {
@@ -129,17 +139,18 @@ function startLevel(): void {
   }
   ui.setMutators(mutators.map(id => MUTATOR_BY_ID[id]).filter(d => !!d));
   // hostile sandboxes grant a default garrison too (their LevelDef carries
-  // one); higher ascensions thin the granted army but stretch prep time
-  if (level.startArmy) {
-    const armyMult = sandbox ? 1 : ascensionArmyMult(run.ascension);
-    const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
-    for (const a of level.startArmy) game.spawnSquad(a.kind, Math.max(1, Math.round(a.count * armyMult)), sx, sz, 'player');
-  }
-  // the hero rides out of the castle gate at every level's start, with any warband
+  // one); higher ascensions thin the granted army but stretch prep time.
+  // The whole granted muster (level army + hero warband) parades in a grid
+  // on the open ground in front of the castle gate, never on the castle.
   const heroDef = selectedHeroId ? HERO_BY_ID[selectedHeroId] : null;
-  if (heroDef?.startArmy) {
-    const sx = world.wx(game.store.x) + 0.5, sz = world.wz(game.store.y) + 0.5;
-    for (const a of heroDef.startArmy) game.spawnSquad(a.kind, a.count, sx, sz, 'player');
+  {
+    const startGroups: { kind: UnitKind; count: number }[] = [];
+    if (level.startArmy) {
+      const armyMult = sandbox ? 1 : ascensionArmyMult(run.ascension);
+      for (const a of level.startArmy) startGroups.push({ kind: a.kind, count: Math.max(1, Math.round(a.count * armyMult)) });
+    }
+    if (heroDef?.startArmy) startGroups.push(...heroDef.startArmy);
+    if (startGroups.length) game.spawnStartArmy(startGroups);
   }
   const heroChip = $('heroChip') as HTMLElement;
   if (heroDef) {
@@ -151,6 +162,8 @@ function startLevel(): void {
   ui.setGold(run.gold);
   ui.setSandbox(sandbox);
   ($('sandboxbar') as HTMLElement).style.display = sandbox ? 'flex' : 'none';
+  // the sandbox spawn bar docks left — give the build menu room to breathe
+  document.body.classList.toggle('sandbox', sandbox);
   // hell's siege is meant to be long and cumbersome: much more clock to match
   levelHardTimer = Math.round(level.hardTimer * ascensionTimerMult(sandbox ? 0 : run.ascension) * (hellFinale ? 1.8 : 1));
   if (game.objective) {
@@ -193,28 +206,37 @@ function stampContract(r: RunState): void {
 }
 
 // ---------- hero select (start of a run) ----------
+// The flow: pick a hero card, pick a difficulty tier, press Start run.
 let pickedAscension = 0;
+let pickedHero = 'erfgooier';
+
+/** How extreme each tier feels, at a glance (matches ASCENSION_NAMES). */
+const ASCENSION_ICONS = ['🌱', '⚔️', '🔥', '💀', '❄️', '😈'];
 
 function openHeroSelect(): void {
   phase = 'heroSelect';
   pickedAscension = Math.min(pickedAscension, meta.ascension);
+  if (!heroAvailable(pickedHero, meta.unlocks)) pickedHero = 'erfgooier';
   renderHeroSelect();
   showScreen('heroselect');
 }
 
-/** The ascension ladder: pick the difficulty tier the run is played at. */
+/** The difficulty ladder: always shown, with locked tiers greyed out until a
+ *  win at the tier below opens them. Each tier carries an extremeness mark. */
 function renderAscensionRow(): void {
   const row = $('ascensionRow');
-  if (meta.ascension <= 0) { row.innerHTML = ''; return; }
-  let s = '<div class="shopsect">Ascension — win at your highest tier to unlock the next</div><div class="ascrow">';
-  for (let a = 0; a <= meta.ascension; a++) {
-    s += `<button class="asc${a === pickedAscension ? ' on' : ''}" data-asc="${a}" title="${ASCENSION_DESCS[a]}">${ASCENSION_NAMES[a]}</button>`;
+  let s = '<div class="ascrow">';
+  for (let a = 0; a <= MAX_ASCENSION; a++) {
+    const locked = a > meta.ascension;
+    s += `<button class="asc${a === pickedAscension ? ' on' : ''}${locked ? ' locked' : ''}" data-asc="${a}"`
+      + ` title="${locked ? `Locked — win at ${ASCENSION_NAMES[a - 1]} to open this tier` : ASCENSION_DESCS[a]}">`
+      + `<span class="asc-ico">${ASCENSION_ICONS[a]}</span>${ASCENSION_NAMES[a]}${locked ? ' 🔒' : ''}</button>`;
   }
   const active = pickedAscension === 0 ? ASCENSION_DESCS[0] : ASCENSION_DESCS.slice(1, pickedAscension + 1).join(' · ');
   s += `</div><div class="metaline">${active}</div>`;
   row.innerHTML = s;
-  row.querySelectorAll<HTMLElement>('.asc').forEach(b => {
-    b.onclick = () => { pickedAscension = parseInt(b.dataset.asc!, 10); renderHeroSelect(); };
+  row.querySelectorAll<HTMLElement>('.asc:not(.locked)').forEach(b => {
+    b.onclick = () => { pickedAscension = parseInt(b.dataset.asc!, 10); audio.play('click'); renderHeroSelect(); };
   });
 }
 
@@ -224,23 +246,25 @@ function renderHeroSelect(): void {
   for (const h of HEROES) {
     const owned = heroAvailable(h.id, meta.unlocks);
     const afford = meta.heritage >= h.heritageCost;
+    const picked = owned && pickedHero === h.id;
     const el = document.createElement('div');
-    el.className = 'scard' + (owned ? '' : afford ? '' : ' cant disabled');
+    el.className = 'scard' + (picked ? ' picked' : '') + (owned || afford ? '' : ' cant disabled');
     const lines =
       `<div class="sc-desc">✦ ${h.boon}${h.bane ? `<br>✝ ${h.bane}` : ''}</div>`;
-    const price = owned ? 'Lead this run →' : `Unlock — ${h.heritageCost} Heritage`;
-    el.innerHTML = `<div class="sc-icon">${h.icon}</div><div class="sc-body"><div class="sc-name">${h.name}</div><div class="sc-desc">${h.title}</div>${lines}<div class="sc-price">${price}</div></div>`;
-    if (owned) el.onclick = () => startRunWithHero(h.id);
+    const price = picked ? 'Leading this run ✓' : owned ? 'Choose' : `Unlock — ${h.heritageCost} Heritage`;
+    el.innerHTML = `<div class="sc-icon">${h.icon}</div><div class="sc-body"><div class="sc-name">${h.name}</div><div class="sc-desc">${h.title}</div>${lines}<div class="sc-price${picked ? ' owned' : ''}">${price}</div></div>`;
+    if (owned) el.onclick = () => { pickedHero = h.id; audio.play('click'); renderHeroSelect(); };
     else if (afford) el.onclick = () => { meta.heritage -= h.heritageCost; meta.unlocks.push(heroUnlockId(h.id)); Save.saveMeta(meta); audio.play('coin'); renderHeroSelect(); };
     grid.appendChild(el);
   }
   renderAscensionRow();
 }
 
-function startRunWithHero(heroId: string): void {
+function startRun(): void {
+  if (!heroAvailable(pickedHero, meta.unlocks)) pickedHero = 'erfgooier';
   sandbox = false;
   run = newRun(randomSeed(), Math.min(pickedAscension, meta.ascension));
-  run.hero = heroId;
+  run.hero = pickedHero;
   run.gold = metaSpecialValue(meta.activeGlobalBuff, 'startGold');
   stampContract(run);
   meta.stats.runs++;
@@ -254,16 +278,20 @@ function startRunWithHero(heroId: string): void {
 let sandboxCfg: SandboxConfig = { ...DEFAULT_SANDBOX };
 
 /** The setup screen's option groups: key into SandboxConfig, label, choices.
- *  Stubs render greyed out — options that exist on the roadmap, not yet in code. */
-const SBX_GROUPS: { key: keyof SandboxConfig; label: string; opts: [string, string][]; stubs?: [string, string][] }[] = [
-  { key: 'size', label: 'Map size', opts: [['small', 'Small · 48'], ['medium', 'Medium · 64'], ['large', 'Large · 84'], ['huge', 'Huge · 112'], ['colossal', 'Colossal · 144']] },
-  { key: 'biome', label: 'Biome', opts: [['gooi', 'Het Gooi'], ['ardennes', 'The Ardennes'], ['blackforest', 'The Black Forest'], ['alps', 'The Alps'], ['winter', 'Winter'], ['polder', 'The Polder'], ['seaside', 'Zeeland Delta'], ['island', 'Texel'], ['hell', 'Hell']] },
-  { key: 'water', label: 'Water', opts: [['dry', 'Dry'], ['normal', 'Normal'], ['wet', 'Wetlands']] },
-  { key: 'mapRes', label: 'Map resources', opts: [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']] },
-  { key: 'startRes', label: 'Starting stock', opts: [['modest', 'Modest'], ['plentiful', 'Plentiful'], ['cornucopia', 'Cornucopia']] },
-  { key: 'enemies', label: 'Enemies', opts: [['none', 'None — peaceful'], ['wilds', 'Wild beasts'], ['camps', 'Bandit camps'], ['warzone', 'Warzone']] },
-  { key: 'hero', label: 'Hero', opts: [['none', 'No hero'], ...HEROES.map(h => [h.id, `${h.icon} ${h.name}`] as [string, string])] },
-];
+ *  Built per render — the water group's choices are phrased by the chosen
+ *  biome (lava in Hell, canals in the Polder), so the two stay linked. */
+function sbxGroups(): { key: keyof SandboxConfig; label: string; opts: [string, string][] }[] {
+  return [
+    { key: 'size', label: 'Map size', opts: [['small', 'Small · 48'], ['medium', 'Medium · 64'], ['large', 'Large · 84'], ['huge', 'Huge · 112'], ['colossal', 'Colossal · 144']] },
+    { key: 'biome', label: 'Biome', opts: [['gooi', 'Het Gooi'], ['ardennes', 'The Ardennes'], ['blackforest', 'The Black Forest'], ['alps', 'The Alps'], ['winter', 'Winter'], ['polder', 'The Polder'], ['seaside', 'Zeeland Delta'], ['island', 'Texel'], ['hell', 'Hell']] },
+    { key: 'water', label: `Water — ${BIOMES[sandboxCfg.biome].name}`, opts: sandboxWaterOpts(sandboxCfg.biome) },
+    { key: 'mapRes', label: 'Map resources', opts: [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']] },
+    { key: 'startRes', label: 'Starting stock', opts: [['modest', 'Modest'], ['plentiful', 'Plentiful'], ['cornucopia', 'Cornucopia']] },
+    { key: 'enemies', label: 'Enemies', opts: [['none', 'None — peaceful'], ['wilds', 'Wild beasts'], ['camps', 'Bandit camps'], ['warzone', 'Warzone']] },
+    { key: 'strongholds', label: 'Enemy strongholds — camps holding spots across the map', opts: [['0', 'As the enemies say'], ['2', '2 strongholds'], ['4', '4 strongholds'], ['6', '6 strongholds']] },
+    { key: 'hero', label: 'Hero', opts: [['none', 'No hero'], ...HEROES.map(h => [h.id, `${h.icon} ${h.name}`] as [string, string])] },
+  ];
+}
 
 function openSandboxSetup(): void {
   renderSandboxSetup();
@@ -273,19 +301,22 @@ function openSandboxSetup(): void {
 function renderSandboxSetup(): void {
   const el = $('sbxOptions');
   let s = '';
-  for (const grp of SBX_GROUPS) {
+  for (const grp of sbxGroups()) {
     s += `<div class="optgroup"><div class="optlabel">${grp.label}</div><div class="optrow">`;
     for (const [val, label] of grp.opts) {
-      s += `<button class="opt${sandboxCfg[grp.key] === val ? ' on' : ''}" data-key="${grp.key}" data-val="${val}">${label}</button>`;
-    }
-    for (const [, label] of grp.stubs ?? []) {
-      s += `<button class="opt stub" title="Coming in a later update">${label} · soon</button>`;
+      s += `<button class="opt${String(sandboxCfg[grp.key]) === val ? ' on' : ''}" data-key="${grp.key}" data-val="${val}">${label}</button>`;
     }
     s += '</div></div>';
   }
   el.innerHTML = s;
   el.querySelectorAll<HTMLElement>('.opt[data-key]').forEach(b => {
-    b.onclick = () => { (sandboxCfg as any)[b.dataset.key!] = b.dataset.val; audio.play('click'); renderSandboxSetup(); };
+    b.onclick = () => {
+      const key = b.dataset.key as keyof SandboxConfig;
+      // numeric knobs (stronghold count) parse back from their string value
+      (sandboxCfg as any)[key] = key === 'strongholds' ? Number(b.dataset.val) : b.dataset.val;
+      audio.play('click');
+      renderSandboxSetup();
+    };
   });
 }
 
@@ -426,6 +457,7 @@ function abandonRun(): void {
 function openPauseMenu(): void {
   if (phase !== 'playing') return;
   ui.setSpeed(0);
+  controls.resetInput();
   $('pausemenu').style.display = 'flex';
 }
 
@@ -450,6 +482,8 @@ function showScreen(id: ScreenId): void {
   $('pausemenu').style.display = 'none';
   for (const s of ['menu', 'shop', 'summary', 'heritage', 'heroselect', 'sandboxselect']) $(s).style.display = id === s ? 'flex' : 'none';
   $('hud').style.display = phase === 'playing' ? 'block' : 'none';
+  // a screen swallows keyups/pointerups — never leave the camera mid-pan
+  controls.resetInput();
 }
 
 function renderMenu(): void {
@@ -519,6 +553,7 @@ $('menuLogo').innerHTML = logoSVG(40);
 $('introLogo').innerHTML = logoSVG(40);
 ($('btnNewRun') as HTMLButtonElement).onclick = openHeroSelect;
 ($('btnHeroBack') as HTMLButtonElement).onclick = goMenu;
+($('btnStartRun') as HTMLButtonElement).onclick = startRun;
 // the hero chip selects the mounted hero and swings the camera to them
 $('heroChip').onclick = () => {
   if (!game || !game.heroUnit || game.heroUnit.dead) return;
@@ -603,27 +638,56 @@ for (const def of SANDBOX_ENEMY) $('sbEnemy').appendChild(makeSandboxSpawnBtn(de
   const collapsed = bar.classList.toggle('collapsed');
   $('sbToggle').textContent = collapsed ? 'Sandbox ▸' : 'Sandbox ▾';
 };
-// ---------- sandbox wave console: type a size, pick a kind, summon a raid ----------
+// ---------- sandbox wave composer: a modal to mix a raid & put it on a timer ----------
 {
-  const kindSel = $('sbWaveKind') as HTMLSelectElement;
-  for (const def of SANDBOX_ENEMY) {
-    const opt = document.createElement('option');
-    opt.value = def.kind; opt.textContent = `${def.icon} ${def.label}`;
-    kindSel.appendChild(opt);
-  }
-  const countInp = $('sbWaveCount') as HTMLInputElement;
-  // typing in the console must never fall through to game hotkeys
-  for (const el of [kindSel, countInp]) el.addEventListener('keydown', e => e.stopPropagation());
+  const modal = $('wavemodal');
+  const kindsEl = $('waveKinds');
+  const countInp = $('waveCount') as HTMLInputElement;
+  const delayInp = $('waveDelay') as HTMLInputElement;
+  const selectedKinds = new Set<UnitKind>(['bandit']);
+  const renderKinds = (): void => {
+    kindsEl.innerHTML = '';
+    for (const def of SANDBOX_ENEMY) {
+      const b = document.createElement('button');
+      b.className = 'opt' + (selectedKinds.has(def.kind) ? ' on' : '');
+      b.textContent = `${def.icon} ${def.label}`;
+      b.title = `Toggle ${def.label.toLowerCase()} in the wave`;
+      b.onclick = () => {
+        if (selectedKinds.has(def.kind)) { if (selectedKinds.size > 1) selectedKinds.delete(def.kind); }
+        else selectedKinds.add(def.kind);
+        audio.play('click');
+        renderKinds();
+      };
+      kindsEl.appendChild(b);
+    }
+  };
+  // typing in the modal must never fall through to game hotkeys
+  for (const el of [countInp, delayInp]) el.addEventListener('keydown', e => e.stopPropagation());
+  const openModal = (): void => { renderKinds(); modal.style.display = 'flex'; };
+  const closeModal = (): void => { modal.style.display = 'none'; };
   const summon = (): void => {
     if (!game) return;
     const count = Math.max(1, Math.min(1000, Math.round(Number(countInp.value) || 0)));
     countInp.value = String(count);
-    const kind = kindSel.value as UnitKind;
-    const n = game.summonWave(kind, count);
-    ui.toast(n ? `A wave of ${n} ${unitLabel(kind).toLowerCase()}${n > 1 ? 's' : ''} marches on your castle!` : 'No room to muster that wave', n ? 'err' : undefined);
+    const delay = Math.max(0, Math.min(3600, Math.round(Number(delayInp.value) || 0)));
+    delayInp.value = String(delay);
+    // the wave mixes the chosen kinds evenly (round-robin remainder to the first)
+    const kinds = [...selectedKinds];
+    const per = Math.floor(count / kinds.length);
+    for (let i = 0; i < kinds.length; i++) {
+      const n = per + (i < count % kinds.length ? 1 : 0);
+      if (n > 0) game.scheduleWave(kinds[i], n, delay);
+    }
+    ui.toast(delay > 0
+      ? `A wave of ${count} raiders will march in ${delay}s`
+      : `A wave of ${count} raiders marches on your castle!`, delay > 0 ? undefined : 'err');
+    closeModal();
   };
-  ($('sbWaveGo') as HTMLButtonElement).onclick = summon;
+  ($('sbWaveOpen') as HTMLButtonElement).onclick = openModal;
+  ($('waveCancel') as HTMLButtonElement).onclick = closeModal;
+  ($('waveGo') as HTMLButtonElement).onclick = summon;
   countInp.addEventListener('keydown', e => { if (e.key === 'Enter') summon(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display === 'flex') closeModal(); });
 }
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
 
@@ -835,7 +899,8 @@ function frame(now: number): void {
     while (simAcc >= TICK && steps < MAX_STEPS) { game.update(TICK); simAcc -= TICK; steps++; }
     simMs += (performance.now() - t0 - simMs) * 0.05;
     if (simAcc > TICK) simAcc = 0;
-    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateWave(game.nextWave()); }
+    // the wave banner counts down scheduled console waves too
+    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateWave(game.nextWave() ?? game.nextScheduledWave()); }
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
     // a hostile sandbox can still lose its castle — that ends the session
     if (game.defeat) onDefeat('castle');

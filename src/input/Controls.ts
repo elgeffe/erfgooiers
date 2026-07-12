@@ -49,6 +49,9 @@ export class Controls {
     canvas.addEventListener('wheel', e => { e.preventDefault(); this.view.zoom((e.deltaY > 0) !== this.settings.invertZoom ? 1.1 : 0.9); }, { passive: false });
     addEventListener('keydown', e => this.onKey(e));
     addEventListener('keyup', e => { this.keys[e.key.toLowerCase()] = false; });
+    // a missed keyup / pointerup (focus stolen by a menu, the window blurring
+    // mid-drag) must never leave the camera gliding forever
+    addEventListener('blur', () => this.resetInput());
     this.formationBar?.querySelectorAll<HTMLButtonElement>('button[data-formation]').forEach(button => {
       button.onclick = e => {
         e.stopPropagation();
@@ -57,6 +60,21 @@ export class Controls {
         this.ui.toast(`${button.title} selected`);
       };
     });
+  }
+
+  /** Drop every held key/drag state. Called on window blur and whenever a
+   *  full-screen menu opens, so a swallowed keyup or pointerup can't leave the
+   *  camera stuck panning in one direction. */
+  resetInput(): void {
+    for (const k in this.keys) this.keys[k] = false;
+    this.dragging = false;
+    this.roadPainting = false;
+    this.plotPainting = false;
+    this.demoDragging = false;
+    this.boxStart = null;
+    this.boxing = false;
+    this.orderDraft = null;
+    if (this.selbox) this.selbox.style.display = 'none';
   }
 
   /** Programmatic selection (e.g. the hero chip) — same as click-selecting. */
@@ -140,6 +158,9 @@ export class Controls {
   }
 
   private onMove(e: PointerEvent): void {
+    // the button was released somewhere we never heard about (over a menu, off
+    // the window): stop the drag-pan instead of gliding forever
+    if (this.dragging && (e.buttons & 6) === 0) this.dragging = false;
     if (this.dragging && this.lastMouse) {
       const dx = e.clientX - this.lastMouse.x, dy = e.clientY - this.lastMouse.y;
       const scale = this.view.viewSize * 2 / innerHeight * this.settings.panSpeed;
@@ -242,6 +263,14 @@ export class Controls {
     }
     const t = this.view.tileAt(e.clientX, e.clientY);
     if (!t) return;
+    // right-click a hostile building (wall, gate, camp, keep): besiege it
+    const b = this.game.buildingAt(t.x, t.y);
+    if (b && b.faction !== 'player') {
+      this.game.orderGroupAttackBuilding(this.selUnits, b);
+      this.view.showOrderMarker(gp.x, gp.z, true);
+      this.ui.toast(`Attacking the ${b.name}`);
+      return;
+    }
     this.orderDraft = { tx: t.x, ty: t.y, gx: gp.x, gz: gp.z, active: false, key: '' };
   }
 

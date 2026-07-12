@@ -903,17 +903,27 @@ export class Game {
     return out;
   }
 
-  /** Click-select a building/site at a tile, or collect a gold pile (used by Controls). */
+  /** Click-select a building/site at a tile (used by Controls). Gold piles are
+   *  no longer clicked up — a unit must walk over to fetch them. */
   selectAt(tx: number, ty: number): void {
     const t = this.world.tiles[ty][tx];
-    if (t.pickup) { this.collectGoldAt(tx, ty); return; }
+    if (t.pickup) {
+      const now = Date.now();
+      if (now - this.pickupHintT > 2500) {
+        this.pickupHintT = now;
+        this.toast('Send a unit (or your hero) to the gold pile to collect it');
+      }
+      return;
+    }
     if (t.b) this.select(t.b);
     else if (t.site) this.select(t.site);
     else this.select(null);
   }
+  private pickupHintT = 0;
+  private pickupScanT = 0;
 
-  /** The player clicked a gold pile on the map — collect it instantly. */
-  collectGoldAt(tx: number, ty: number): void {
+  /** A unit reached a gold pile — scoop it into the purse. */
+  collectGoldAt(tx: number, ty: number, by?: Unit): void {
     const t = this.world.T(tx, ty);
     if (!t || !t.pickup) return;
     const gain = Math.max(1, Math.round(t.pickup.gold * this.mods.goldMult()));
@@ -924,7 +934,22 @@ export class Game {
     this.onGold(gain);
     this.sfx('coin');
     this.objective?.onCollect();
-    this.toast('Collected a gold pile (+' + gain + ' gold)');
+    this.toast(`${by ? by.roleName : 'A unit'} collected a gold pile (+${gain} gold)`);
+  }
+
+  /** Any player unit standing by a gold pile picks it up — no clicking. Runs a
+   *  few times a second over the (short) pickup list via the spatial hash. */
+  private collectPickups(): void {
+    for (let i = this.pickups.length - 1; i >= 0; i--) {
+      const p = this.pickups[i];
+      let taker: Unit | null = null;
+      this.forUnitsNear(p.x, p.y, 2, u => {
+        if (taker || u.dead || u.faction !== 'player') return;
+        const dx = u.mesh.position.x - this.world.wx(p.x), dz = u.mesh.position.z - this.world.wz(p.y);
+        if (dx * dx + dz * dz <= 1.1 * 1.1) taker = u;
+      });
+      if (taker) this.collectGoldAt(p.x, p.y, taker);
+    }
   }
 
   // =====================================================================
@@ -1062,7 +1087,10 @@ export class Game {
     // YOU choose when the fight starts by walking up to them. Raiders and
     // player units keep their full awareness.
     const aggro = u.faction !== 'player' && !u.raider ? Math.min(def.aggro, 4.5) : def.aggro;
-    if (!foe && canSeek) foe = this.acquireTarget(u, aggro);
+    // A locked structure target comes from an explicit siege order or from the
+    // unreachable-guard fallback below. Keep battering that structure instead
+    // of reacquiring the same guard on the next tick and oscillating forever.
+    if (!foe && canSeek && !u.foeB) foe = this.acquireTarget(u, aggro);
     u.foe = foe;
 
     if (foe) {
@@ -1084,7 +1112,19 @@ export class Game {
       } else {
         // chase — throttle A* so hundreds of pursuers don't re-path every tick;
         // charging beasts (boars) put on a burst of speed
-        if (!u.path) { u.timer -= dt; if (u.timer <= 0) { this.sendTo(u, foe.tx, foe.ty); u.timer = 0.4 + rnd() * 0.35; } }
+        if (!u.path) {
+          u.timer -= dt;
+          if (u.timer <= 0) {
+            const reached = this.sendTo(u, foe.tx, foe.ty);
+            u.timer = 0.4 + rnd() * 0.35;
+            // the foe is walled in (a garrison behind stronghold ramparts):
+            // don't mill about forever — batter down what stands in the way
+            if (!reached) {
+              const bt = this.buildingTargetFor(u);
+              if (bt) { u.foe = null; u.foeB = bt; return; }
+            }
+          }
+        }
         this.moveUnit(u, def.charge ? dt * def.charge : dt);
         u.status = 'Fighting';
       }
@@ -1538,6 +1578,24 @@ export class Game {
     }
   }
 
+  /** The standing building on a tile, or null (Controls asks before ordering). */
+  buildingAt(tx: number, ty: number): Building | null {
+    const t = this.world.T(tx, ty);
+    return t && t.b && !t.b.removed ? t.b : null;
+  }
+
+  /** Order a selection to raze a hostile building: everyone marches on its
+   *  walls and locks it as their siege target (no waiting for auto-acquire). */
+  orderGroupAttackBuilding(units: Unit[], b: Building): void {
+    if (b.removed) return;
+    for (const u of units) {
+      const s = this.siegeTile(u, b);
+      this.orderUnit(u, 'attackMove', s.x, s.y);
+      u.obeyT = 0;      // engage at once — this IS the fight they were sent to
+      u.foeB = b;
+    }
+  }
+
   /** Plant (or move) a military building's rally flag — freshly trained fighters
    *  march there on their own. */
   setRally(b: Building, x: number, y: number): void {
@@ -1547,6 +1605,48 @@ export class Game {
     b.rallyMesh.position.set(this.world.wx(x), 0, this.world.wz(y));
     this.toast('Rally point set — trained fighters will muster there');
     this.sfx('click');
+  }
+
+  /**
+   * Muster the level's granted army OUTSIDE the castle: a tidy parade grid on
+   * the open ground in front of the gate, ranks extending away from the walls
+   * as the army grows. Blocked tiles dent a rank locally (tryTile skips them);
+   * anything that can't fit in the parade ground falls back to a ring spawn.
+   */
+  spawnStartArmy(groups: { kind: UnitKind; count: number }[]): Unit[] {
+    const total = groups.reduce((s, g) => s + g.count, 0);
+    if (total <= 0) return [];
+    const d = doorTile(this.store);
+    // march direction: straight out through the castle's door side
+    // (rot 0 = south, 1 = west, 2 = north, 3 = east — see doorTile)
+    const [dirX, dirY] = [[0, 1], [-1, 0], [0, -1], [1, 0]][this.store.rot || 0];
+    const cols = Math.max(4, Math.ceil(Math.sqrt(total * 1.8)));
+    const out: Unit[] = [];
+    const queue: UnitKind[] = [];
+    for (const g of groups) for (let i = 0; i < g.count; i++) queue.push(g.kind);
+    const tryTile = (x: number, y: number): void => {
+      if (!queue.length || this.units.length >= MAX_UNITS) return;
+      const t = this.world.T(x, y);
+      if (!t || t.type !== 'grass' || t.b || t.site || t.dep || t.tree || t.field) return;
+      out.push(this.spawnFighter(queue.shift()!, { x, y }, 'player'));
+    };
+    // first rank stands two tiles clear of the door; each following rank steps
+    // one further from the castle
+    for (let rank = 0; queue.length && rank < 40; rank++) {
+      const rx = d.x + dirX * (2 + rank), ry = d.y + dirY * (2 + rank);
+      for (let c = 0; queue.length && c < cols; c++) {
+        const off = (c % 2 === 0 ? 1 : -1) * Math.ceil(c / 2); // centre-out
+        tryTile(rx + (dirY !== 0 ? off : 0), ry + (dirX !== 0 ? off : 0));
+      }
+    }
+    // whatever the parade ground couldn't hold spawns around the door instead
+    for (const kind of queue.splice(0)) {
+      const spare = this.spawnSquad(kind, 1, this.world.wx(d.x) + dirX * 2, this.world.wz(d.y) + dirY * 2, 'player');
+      out.push(...spare);
+    }
+    // face the ranks away from the castle, toward the field
+    for (const u of out) u.mesh.rotation.y = Math.atan2(dirX, dirY);
+    return out;
   }
 
   /** Scatter `count` fighters of a kind around a world point (sandbox/level spawner). */
@@ -1596,6 +1696,14 @@ export class Game {
     // the commander's first raid gets extra grace beyond its usual cadence
     if (setup.commander) this.commanderT = -setup.commander.every * 0.75;
     if (setup.wild) for (const w of setup.wild) this.spawnWild(w.kind, w.count);
+    // gate garrisons: a camp planted ON each frontier pass — the enemy position
+    // that must fall before the army can travel through into the walled quarter
+    if (setup.gatecamps) {
+      for (const ez of this.world.enemyZones) {
+        const total = Math.round(setup.gatecamps.guards * this.garrisonMult);
+        this.spawnCampNear(ez.pass.x, ez.pass.y, total, setup.gatecamps.kinds ?? ['bandit']);
+      }
+    }
     if (setup.camps) for (const c of setup.camps) for (let i = 0; i < c.count; i++) this.spawnStronghold('banditcamp', c.guards, c.kinds);
     if (setup.keep) {
       const camp = this.spawnStronghold('enemycastle', setup.keep.guards, setup.keep.kinds);
@@ -1711,6 +1819,31 @@ export class Game {
     return this.spawnRaid(kind, count, 'edge').length;
   }
 
+  /** Sandbox waves put on a timer: each entry marches when the sim clock hits
+   *  its hour. Works with or without a level enemy director. */
+  private readonly pendingWaves: { kind: UnitKind; count: number; at: number }[] = [];
+
+  /** Queue a sandbox wave `delay` sim-seconds from now (0 = at once). */
+  scheduleWave(kind: UnitKind, count: number, delay: number): void {
+    if (delay <= 0) { this.summonWave(kind, count); return; }
+    this.pendingWaves.push({ kind, count, at: this.elapsed + delay });
+    this.pendingWaves.sort((a, b) => a.at - b.at);
+  }
+
+  /** Seconds until the earliest scheduled sandbox wave, or null. */
+  nextScheduledWave(): { in: number; count: number } | null {
+    const w = this.pendingWaves[0];
+    return w ? { in: Math.max(0, w.at - this.elapsed), count: w.count } : null;
+  }
+
+  private launchPendingWaves(): void {
+    while (this.pendingWaves.length && this.elapsed >= this.pendingWaves[0].at) {
+      const w = this.pendingWaves.shift()!;
+      const n = this.summonWave(w.kind, w.count);
+      if (n) { this.toast(`The scheduled wave marches — ${n} ${unitLabel(w.kind).toLowerCase()}${n > 1 ? 's' : ''}!`, 'err'); this.sfx('error'); }
+    }
+  }
+
   /** Scatter wild beasts across the map's OUTER band, far from the starting
    *  settlement — hunting them is a deliberate expedition, never an ambush. */
   private spawnWild(kind: UnitKind, count: number): void {
@@ -1743,6 +1876,27 @@ export class Game {
     for (let i = 0; i < total; i++) { const k = kinds[i % kinds.length]; per.set(k, (per.get(k) ?? 0) + 1); }
     for (const [k, n] of per) this.spawnSquad(k, n, this.world.wx(spot.x), this.world.wz(spot.y), 'enemy');
     return b;
+  }
+
+  /** A camp as close as the ground allows to a given tile (frontier passes):
+   *  the camp building may sit just off the gap, but its garrison stands ON
+   *  the pass so nothing slips through without a fight. */
+  private spawnCampNear(px: number, py: number, guards: number, kinds: UnitKind[]): void {
+    let spot: { x: number; y: number } | null = null;
+    outer: for (let r = 0; r < 8 && !spot; r++) {
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        if (this.areaClear(px + dx, py + dy)) { spot = { x: px + dx, y: py + dy }; break outer; }
+      }
+    }
+    if (spot) {
+      const b = this.placeBuilding('banditcamp', spot.x, spot.y, true, 0, 'enemy');
+      b.active = true;
+      this.camps.push(b);
+    }
+    const per = new Map<UnitKind, number>();
+    for (let i = 0; i < guards; i++) { const k = kinds[i % kinds.length]; per.set(k, (per.get(k) ?? 0) + 1); }
+    for (const [k, n] of per) this.spawnSquad(k, n, this.world.wx(px), this.world.wz(py), 'enemy');
   }
 
   /** Ring a keep with walls and one barred gate facing the player's town.
@@ -1948,6 +2102,9 @@ export class Game {
     this.trainQueues(sdt);
     this.staffBuildings();
     this.combatDirector(sdt);
+    this.launchPendingWaves();
+    this.pickupScanT += sdt;
+    if (this.pickupScanT > 0.3 && this.pickups.length) { this.pickupScanT = 0; this.collectPickups(); }
     this.towerFire(sdt); // towers watch on every level, with or without a director
     this.fieldT += sdt;
     if (this.fieldT > 0.5) { this.fieldT = 0; this.fieldRecolor(); }
@@ -1999,6 +2156,7 @@ export class Game {
         const d = doorTile(b);
         if ((UNITS as any)[kind]) {
           const u = this.spawnFighter(kind as UnitKind, { x: d.x, y: d.y }, 'player');
+          this.objective?.onTrain(); // military drill counts toward produceTrain goals
           if (b.rally) this.orderUnit(u, 'attackMove', b.rally.x, b.rally.y); // muster at the flag
         } else this.spawnCivilian(kind, { x: d.x, y: d.y });
         this.sfx('build');
