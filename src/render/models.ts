@@ -1455,16 +1455,24 @@ export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean)
 function monasteryBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   const stone = mkMat(def.wall, ghost), roof = mkMat(def.roof, ghost), gold = mkMat(def.accent ?? 0xd9a441, ghost);
+  
   const nave = new THREE.Mesh(box(1.75, 0.85, 1.45), stone); nave.position.set(0, 0.43, 0.12); nave.castShadow = !ghost; g.add(nave);
+  
+  // Roof Slopes Fixed Here
   for (const s of [-1, 1]) {
-    const slope = new THREE.Mesh(box(0.98, 0.12, 1.58), roof); slope.position.set(s * 0.42, 1.02, 0.12); slope.rotation.z = s * 0.55; g.add(slope);
+    const slope = new THREE.Mesh(box(0.98, 0.12, 1.58), roof); 
+    slope.position.set(s * 0.42, 1.02, 0.12); 
+    slope.rotation.z = -s * 0.55; 
+    g.add(slope);
   }
+  
   const tower = new THREE.Mesh(box(0.52, 1.35, 0.52), stone); tower.position.set(-0.55, 0.68, -0.5); tower.castShadow = !ghost; g.add(tower);
   const spire = new THREE.Mesh(cone(0.42, 0.65, 4), roof); spire.position.set(-0.55, 1.68, -0.5); spire.rotation.y = Math.PI / 4; g.add(spire);
   const crossV = new THREE.Mesh(box(0.06, 0.4, 0.06), gold); crossV.position.set(-0.55, 2.08, -0.5); g.add(crossV);
   const crossH = new THREE.Mesh(box(0.25, 0.06, 0.06), gold); crossH.position.set(-0.55, 2.12, -0.5); g.add(crossH);
   const door = new THREE.Mesh(box(0.52, 0.68, 0.08), mkMat(0x5b3926, ghost)); door.position.set(-0.35, 0.34, 0.88); door.userData.marker = true; g.add(door);
   for (const x of [0.2, 0.58]) { const w = new THREE.Mesh(box(0.18, 0.32, 0.04), gold); w.position.set(x, 0.5, 0.86); g.add(w); }
+  
   return g;
 }
 

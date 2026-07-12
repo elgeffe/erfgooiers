@@ -5,11 +5,6 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - i still see that resources are brought to the castle first instead of their respective production building (coal and gold to the mint building.) production chains should always have priority over storage in the castle.
 
-
-- the monastary roof is upside down.
-
-- add priest units to the sandbox spawn
-
 - builders are very often in the way of serfs moving around, blocking the movement. can we fix this?
 
 - when starting a level i want the build menu to always default to the Materials tab.
