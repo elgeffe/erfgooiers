@@ -108,6 +108,16 @@ function startLevel(): void {
   if (!sandbox && level.index === 10) {
     worldParams.frontiers = Math.max(worldParams.frontiers ?? 2, 2 + Math.min(2, run.ascension));
   }
+  // the hunt spreads out on higher ascensions: a bigger range for the growing
+  // packs (see ascendObjective) so the chase takes real ground to run down
+  if (!sandbox && level.type === 'Hunt' && run.ascension > 0) {
+    const tiers = Math.min(3, run.ascension);
+    worldParams.w = (level.world.w ?? 46) + tiers * 10;
+    worldParams.h = (level.world.h ?? 46) + tiers * 10;
+    worldParams.treeStands = Math.round((level.world.treeStands ?? 8) * (1 + 0.22 * tiers));
+    worldParams.meadows = Math.round((level.world.meadows ?? 5) * (1 + 0.25 * tiers));
+    worldParams.goldPiles = (level.world.goldPiles ?? 3) + tiers * 2;
+  }
   const world = new World(worldParams);
   view.loadWorld(world);
   const mutators = sandbox ? [] : run.mutators;
