@@ -282,12 +282,10 @@ export class Controls {
     const fx = gp.x - d.gx, fz = gp.z - d.gz;
     if (!d.active && fx * fx + fz * fz < 1.2) return; // a plain click, so far
     d.active = true;
-    // redraw only when the snapped facing changes — the layout is cardinal
     const key = Math.abs(fx) >= Math.abs(fz) ? `x${Math.sign(fx) || 1}` : `z${Math.sign(fz) || 1}`;
     if (key === d.key) return;
     d.key = key;
     const spots = this.game.formationPreview(this.selUnits, d.tx, d.ty, this.formation, { x: fx, y: fz });
-    // the chevron shows the snapped facing the ranks will actually take
     const sfx = key[0] === 'x' ? Number(key.slice(1)) : 0;
     const sfz = key[0] === 'z' ? Number(key.slice(1)) : 0;
     this.view.showFormationPreview(spots, sfx, sfz);
@@ -379,7 +377,9 @@ export class Controls {
 
     // keep the selection live: drop any fighters that have died, then draw rings
     if (this.game && this.selUnits.length) {
-      this.selUnits = this.selUnits.filter(u => !u.dead && this.game!.units.indexOf(u) >= 0);
+      // Death is flagged before the simulation sweep. Avoid the former
+      // O(selection × all-units) indexOf scan on every rendered frame.
+      this.selUnits = this.selUnits.filter(u => !u.dead);
     }
     if (this.formationBar) this.formationBar.style.display = this.selUnits.length > 1 ? 'flex' : 'none';
     this.view.showSelection(this.selUnits);

@@ -1426,9 +1426,11 @@ export class Game {
     const W = this.world.W;
     const cells = new Map<number, Unit[]>();
     const list: Unit[] = [];
+    const indices = new Map<Unit, number>();
     for (const u of this.units) {
       if (u.dead || !u.mesh.visible) continue;
       list.push(u);
+      indices.set(u, list.length - 1);
       const k = u.ty * W + u.tx;
       let c = cells.get(k);
       if (!c) { c = []; cells.set(k, c); }
@@ -1444,7 +1446,9 @@ export class Game {
         const c = cells.get((u.ty + oy) * W + (u.tx + ox));
         if (!c) continue;
         for (const o of c) {
-          if (o === u) continue;
+          // Resolve each pair once and push both participants. The old loop
+          // evaluated every overlap twice, dominating large moving armies.
+          if ((indices.get(o) ?? -1) <= (indices.get(u) ?? -1)) continue;
           const dx = o.mesh.position.x - u.mesh.position.x, dz = o.mesh.position.z - u.mesh.position.z;
           const r = ru + 0.3 * (o.mesh.scale.x || 1);
           const d2 = dx * dx + dz * dz;
@@ -1455,9 +1459,10 @@ export class Game {
             const ax = ((u.tx + o.ty) % 2) * 2 - 1, az = ((u.ty + o.tx) % 2) * 2 - 1;
             const l = Math.hypot(ax, az); nx = ax / l; nz = az / l;
           } else { nx = dx / d; nz = dz / d; }
-          // each of the pair sees the other and steps back its own half
+          // split the correction evenly between the pair
           const overlap = (r - d) * 0.5 * push;
           this.nudge(u, -nx * overlap, -nz * overlap);
+          this.nudge(o, nx * overlap, nz * overlap);
         }
       }
     }
@@ -1573,7 +1578,9 @@ export class Game {
       .map((u, i) => ({ u, i, r: formationRank(u.role) }))
       .sort((a, b) => a.r - b.r || a.i - b.i);
     for (let i = 0; i < ordered.length; i++) {
-      const s = spots[Math.min(i, spots.length - 1)];
+      // If terrain truly cannot provide enough ground, excess units hold their
+      // current unique tiles rather than all collapsing onto the final slot.
+      const s = spots[i] ?? { x: ordered[i].u.tx, y: ordered[i].u.ty };
       this.orderUnit(ordered[i].u, type, s.x, s.y);
     }
   }

@@ -15,33 +15,68 @@ const DIRS: [number, number, number][] = [
   [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2],
 ];
 
+interface OpenNode { x: number; y: number; f: number; }
+
+/** Allocation-light binary min-heap. Mass formation orders can enqueue tens
+ * of thousands of A* frontier nodes; linear scans of the old open array made
+ * that work quadratic. */
+class MinHeap {
+  private readonly a: OpenNode[] = [];
+  get length(): number { return this.a.length; }
+  push(n: OpenNode): void {
+    const a = this.a;
+    let i = a.length;
+    a.push(n);
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (a[p].f <= n.f) break;
+      a[i] = a[p]; i = p;
+    }
+    a[i] = n;
+  }
+  pop(): OpenNode {
+    const a = this.a, root = a[0], tail = a.pop()!;
+    if (a.length) {
+      let i = 0;
+      while (true) {
+        const l = i * 2 + 1;
+        if (l >= a.length) break;
+        const r = l + 1;
+        const c = r < a.length && a[r].f < a[l].f ? r : l;
+        if (a[c].f >= tail.f) break;
+        a[i] = a[c]; i = c;
+      }
+      a[i] = tail;
+    }
+    return root;
+  }
+}
+
 export function findPath(world: World, sx: number, sy: number, ex: number, ey: number, faction?: Faction): Coord[] | null {
   if (sx === ex && sy === ey) return [];
   const W = world.W, H = world.H;
   const tiles = world.tiles;
-  const open: { x: number; y: number; f: number }[] = [];
-  const gS = new Map<number, number>();
-  const came = new Map<number, number>();
+  const open = new MinHeap();
+  const size = W * H;
+  const gS = new Float64Array(size); gS.fill(Infinity);
+  const came = new Int32Array(size); came.fill(-1);
   const key = (x: number, y: number) => y * W + x;
   const h = (x: number, y: number) => {
     const dx = Math.abs(x - ex), dy = Math.abs(y - ey);
     return (Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy)) * TILE_COST_ROAD;
   };
   open.push({ x: sx, y: sy, f: h(sx, sy) });
-  gS.set(key(sx, sy), 0);
-  const closed = new Set<number>();
-  let guard = 0;
-  while (open.length && guard++ < 5000) {
-    let bi = 0;
-    for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i;
-    const cur = open.splice(bi, 1)[0];
+  gS[key(sx, sy)] = 0;
+  const closed = new Uint8Array(size);
+  while (open.length) {
+    const cur = open.pop();
     const ck = key(cur.x, cur.y);
-    if (closed.has(ck)) continue;
-    closed.add(ck);
+    if (closed[ck]) continue;
+    closed[ck] = 1;
     if (cur.x === ex && cur.y === ey) {
       const path: Coord[] = [];
       let k = ck;
-      while (came.has(k)) { path.push({ x: k % W, y: Math.floor(k / W) }); k = came.get(k)!; }
+      while (came[k] >= 0) { path.push({ x: k % W, y: Math.floor(k / W) }); k = came[k]; }
       path.reverse();
       return smooth(world, sx, sy, path, faction);
     }
@@ -54,10 +89,10 @@ export function findPath(world: World, sx: number, sy: number, ex: number, ey: n
       const t = tiles[ny][nx];
       if (t.type !== 'grass') continue; // water & rock both block
       const cost = (t.road ? TILE_COST_ROAD : TILE_COST_GRASS) * mult;
-      const ng = gS.get(ck)! + cost, nk = key(nx, ny);
-      if (gS.has(nk) && gS.get(nk)! <= ng) continue;
-      gS.set(nk, ng);
-      came.set(nk, ck);
+      const ng = gS[ck] + cost, nk = key(nx, ny);
+      if (gS[nk] <= ng) continue;
+      gS[nk] = ng;
+      came[nk] = ck;
       open.push({ x: nx, y: ny, f: ng + h(nx, ny) });
     }
   }

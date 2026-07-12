@@ -104,8 +104,10 @@ export function formationSpots(
     block(count, Math.max(1, Math.round(Math.sqrt(count * 1.8))), 0);
   }
 
-  // last resort for anything still unplaced (surrounded click point etc.)
-  for (let r = 0; r < 24 && out.length < count; r++)
+  // Grow with the requested army. The old fixed radius silently collapsed
+  // selections above its capacity onto the final destination.
+  const fallbackRadius = Math.max(32, Math.ceil(Math.sqrt(count)) * 4);
+  for (let r = 0; r <= fallbackRadius && out.length < count; r++)
     for (let ox = -r; ox <= r && out.length < count; ox++)
       for (let oy = -r; oy <= r && out.length < count; oy++) {
         if (r > 0 && Math.abs(ox) !== r && Math.abs(oy) !== r) continue;

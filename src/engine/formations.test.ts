@@ -59,6 +59,12 @@ describe('formationSpots', () => {
     expect(fallback).toEqual(formationSpots(50, 50, 30, 'line', [{ x: 0, y: 50 }], open));
   });
 
+  it('does not collapse selections beyond the old fixed fallback capacity', () => {
+    const spots = formationSpots(0, 0, 3000, 'box', [], open);
+    expect(spots).toHaveLength(3000);
+    expect(new Set(spots.map(p => `${p.x},${p.y}`)).size).toBe(3000);
+  });
+
   it('orders spots front rank first, along the direction of travel', () => {
     // approaching from the west (-x): the army faces +x, so the front rank
     // (largest x) must come back before deeper ranks (smaller x)
