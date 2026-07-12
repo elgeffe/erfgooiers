@@ -282,8 +282,17 @@ export class UI {
     for (const k in obj) { if (!obj[k]) continue; s += `<div class="invrow">${itemIconSVG(k as ItemKey, 14)}${ITEMS[k as keyof typeof ITEMS].name}<b>${obj[k]}</b></div>`; }
     return s || '<div class="invrow" style="color:var(--ink-dim)">empty</div>';
   }
+  /** Keep the inspector clear of the objective card above it: the card's
+   *  height varies (long objective text, mutator chips) and a fixed top made
+   *  the two panels touch. */
+  private placeInspector(): void {
+    const obj = $('objective');
+    const visible = obj.style.display !== 'none' && obj.offsetParent !== null;
+    $('inspector').style.top = visible ? Math.round(obj.getBoundingClientRect().bottom + 10) + 'px' : '84px';
+  }
   private renderInspector(): void {
     const o = this.game?.selected; if (!o) return;
+    this.placeInspector();
     // A selected unit has no building `def` — show its live stats instead.
     if (o.role !== undefined && !o.def) {
       $('inspName').textContent = o.roleName;
