@@ -1800,9 +1800,15 @@ function facadeWindow(g: THREE.Group, x: number, y: number, z: number, ghost: bo
 /** A low cabin assembled from visible round logs, with a deep woodland roof. */
 function woodcutterHut(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group(), logs = mkMat(0x76502f, ghost), ends = mkMat(0xc69a62, ghost);
-  for (let row = 0; row < 6; row++) for (const z of [-0.62, 0.62]) {
-    const log = new THREE.Mesh(cyl(0.085, 0.085, 1.55, 8), logs); log.rotation.z = Math.PI / 2; log.position.set(0, 0.1 + row * 0.14, z); log.castShadow = !ghost; g.add(log);
+  // eave walls run along Z, tucked under the roof's two lower edges (x = ±0.7)
+  for (let row = 0; row < 6; row++) for (const x of [-0.7, 0.7]) {
+    const log = new THREE.Mesh(cyl(0.085, 0.085, 1.5, 8), logs); log.rotation.x = Math.PI / 2; log.position.set(x, 0.1 + row * 0.14, 0); log.castShadow = !ghost; g.add(log);
   }
+  // gable-end walls run along X, closing the cabin into four full log walls (z = ±0.62)
+  for (let row = 0; row < 6; row++) for (const z of [-0.62, 0.62]) {
+    const log = new THREE.Mesh(cyl(0.085, 0.085, 1.5, 8), logs); log.rotation.z = Math.PI / 2; log.position.set(0, 0.1 + row * 0.14, z); log.castShadow = !ghost; g.add(log);
+  }
+  // notched log ends at the four corners
   for (const x of [-0.7, 0.7]) for (const z of [-0.64, 0.64]) {
     const cap = new THREE.Mesh(circle(0.087, 8), ends); cap.rotation.y = Math.PI / 2; cap.position.set(x, 0.45, z); cap.userData.marker = true; g.add(cap);
   }
