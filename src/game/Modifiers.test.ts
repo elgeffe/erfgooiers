@@ -28,6 +28,13 @@ describe('Modifiers', () => {
     expect(m.carryCap()).toBe(CARRY_CAP + 3);
   });
 
+  it('accepts live specs and stacks them', () => {
+    const m = new Modifiers();
+    m.addSpecs([{ stat: 'buildTime', mult: 0.75 }]);
+    m.addSpecs([{ stat: 'buildTime', mult: 0.75 }]);
+    expect(m.buildTime()).toBeCloseTo(BUILD_TIME * 0.5625);
+  });
+
   it('filters scope an effect to its context', () => {
     const m = new Modifiers([{ stat: 'unitSpeed', mult: 1.2, filter: 'serf' }]);
     expect(m.unitSpeed(fakeUnit('serf'))).toBeCloseTo(BASE_SPEED * 1.2);

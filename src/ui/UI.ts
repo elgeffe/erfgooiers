@@ -1,6 +1,6 @@
 import { DEFS, MENU_CATEGORIES } from '../data/buildings';
 import { ITEMS, RES_SHOWN } from '../data/items';
-import { UPGRADE_BY_ID } from '../data/upgrades';
+import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID } from '../data/upgrades';
 import { META_BY_ID } from '../data/metaUpgrades';
 import { ROAD_STONE_COST } from '../constants';
 import { installFavicon, logoSVG } from './logo';
@@ -29,6 +29,7 @@ function fmtTime(s: number): string {
  */
 export class UI {
   onMode: (m: Mode) => void = () => {};
+  onSandboxCard: (id: string) => boolean = () => false;
 
   private game: Game | null = null;
   private readonly resEls: Record<string, HTMLElement> = {};
@@ -39,6 +40,7 @@ export class UI {
   private perksOpen = false;
   private perkUpgrades: string[] = [];
   private perkUnlocks: string[] = [];
+  private sandbox = false;
 
   constructor() {
     $('logo').innerHTML = logoSVG(30);
@@ -128,10 +130,15 @@ export class UI {
 
   /** Toggle sandbox HUD: no objective card, no timer, no debug-win button. */
   setSandbox(on: boolean): void {
+    this.sandbox = on;
     ($('objective') as HTMLElement).style.display = on ? 'none' : '';
     ($('timerChip') as HTMLElement).style.display = on ? 'none' : '';
     ($('btnDebugWin') as HTMLElement).style.display = on ? 'none' : '';
+    if (this.perksOpen) this.renderPerks();
   }
+
+  /** Refresh modifier-derived HUD after a live sandbox card purchase. */
+  refreshModifiers(): void { this.refreshBuildCosts(); }
 
   // ---------- resource bar & objective ----------
   private buildResbar(): void {
@@ -477,9 +484,22 @@ export class UI {
     if (ids.length) {
       for (const id of ids) { const d = UPGRADE_BY_ID[id]; if (d) s += this.perkRow(d.icon, d.name + (counts[id] > 1 ? ` ×${counts[id]}` : ''), d.desc); }
     } else {
-      s += '<div class="invrow" style="color:var(--ink-dim)">No shop power-ups yet — buy some between levels.</div>';
+      s += `<div class="invrow" style="color:var(--ink-dim)">${this.sandbox ? 'Choose free cards below.' : 'No shop power-ups yet — buy some between levels.'}</div>`;
+    }
+    if (this.sandbox) {
+      const full = this.perkUpgrades.length >= MAX_CARDS;
+      s += `<div class="sect">Free sandbox cards (${this.perkUpgrades.length}/${MAX_CARDS})</div>`;
+      for (const d of UPGRADES) {
+        const disabled = full || !!d.unique && this.perkUpgrades.includes(d.id);
+        s += `<button class="perkrow perkbuy" data-card="${d.id}"${disabled ? ' disabled' : ''}><span class="pk-icon">${d.icon}</span><span class="pk-body"><span class="pk-name">${d.name} · free</span><span class="pk-desc">${d.desc}</span></span></button>`;
+      }
     }
     $('perklist').innerHTML = s;
+    if (this.sandbox) $('perklist').querySelectorAll<HTMLButtonElement>('[data-card]').forEach(button => {
+      button.onclick = () => {
+        if (this.onSandboxCard(button.dataset.card!)) this.renderPerks();
+      };
+    });
   }
 
   // ---------- toasts ----------

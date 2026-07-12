@@ -9,7 +9,7 @@ import { logoSVG } from './ui/logo';
 import { randomSeed, simRng, uiRng } from './engine/rng';
 import { Modifiers } from './game/Modifiers';
 import { Objective, ascendObjective } from './game/Objectives';
-import { UPGRADES, cardUnlocked, specsFor } from './data/upgrades';
+import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID, cardUnlocked, specsFor } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
@@ -39,6 +39,18 @@ const view = new View(canvas, minimap);
 const ui = new UI();
 const controls = new Controls(view, ui);
 ui.onMode = m => controls.setMode(m);
+ui.onSandboxCard = id => {
+  if (!sandbox || !run || !game || run.upgrades.length >= MAX_CARDS) return false;
+  const def = UPGRADE_BY_ID[id];
+  if (!def || def.unique && run.upgrades.includes(id)) return false;
+  run.upgrades.push(id);
+  game.mods.addSpecs(def.apply);
+  ui.setPerks(run.upgrades, meta.activeGlobalBuff ? [meta.activeGlobalBuff] : []);
+  ui.refreshModifiers();
+  audio.play('coin');
+  ui.toast(`${def.name} added — free sandbox card`);
+  return true;
+};
 
 let meta: MetaState = Save.loadMeta();
 let run: RunState | null = null;
