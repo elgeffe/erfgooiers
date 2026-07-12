@@ -1570,12 +1570,6 @@ function guildhall(def: BuildingDef, ghost: boolean): THREE.Group {
     st.position.set(0, 0.035 + i * 0.07, 0.82 - i * 0.05); st.userData.marker = true; g.add(st);
   }
 
-  // the town flag by the door
-  if (!ghost) {
-    const flag = makeFlag();
-    flag.position.set(0.78, 0, 0.62);
-    g.add(flag);
-  }
   return g;
 }
 
