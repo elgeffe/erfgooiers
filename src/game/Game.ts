@@ -1036,15 +1036,26 @@ export class Game {
 
   private attack(attacker: Unit, foe: Unit): void {
     attacker.lungeT = 0.22; // little hop into the swing
-    if (this.swingsSteel(attacker)) this.sfx('sword');
+    const s = this.meleeSfx(attacker);
+    if (s) this.sfx(s);
     const mult = damageMultiplier(attacker.role as UnitKind, foe.role as UnitKind);
     this.hurtUnit(attacker, foe, attacker.dmg * mult);
   }
 
-  /** Melee humans (soldiers, knights, bandits) clash steel; beasts stay mute. */
-  private swingsSteel(u: Unit): boolean {
+  /** The strike sound a melee unit makes, chosen by what it is: light blades
+   *  ring, heavy cavalry and knights clang, the shambling undead land wet
+   *  blunt thuds, beasts snap and bite, demons rake. Archers and siege loose
+   *  projectiles (their own sounds) so they swing silently here. */
+  private meleeSfx(u: Unit): 'sword' | 'clang' | 'maul' | 'bite' | 'claw' | null {
     const def = UNITS[u.role as UnitKind];
-    return !!def && def.model === 'human' && !def.arrows;
+    if (!def || def.arrows) return null;
+    if (def.model === 'beast' || def.model === 'wolf' || def.model === 'dragon') return 'bite';
+    if (def.model === 'demon') return 'claw';
+    switch (u.role) {
+      case 'zombie': case 'brute': return 'maul';
+      case 'knight': case 'horseknight': case 'hero': case 'lancer': case 'orc': return 'clang';
+      default: return 'sword';
+    }
   }
 
   private killUnit(u: Unit): void {
@@ -1281,7 +1292,8 @@ export class Game {
   }
 
   private attackBuilding(u: Unit, b: Building): void {
-    if (this.swingsSteel(u)) this.sfx('sword');
+    const s = this.meleeSfx(u);
+    if (s) this.sfx(s);
     b.hp -= structureDamage(u.role as UnitKind, u.dmg);
     this.onHurt(this.buildingCenter(b).x, this.buildingCenter(b).z, b.faction);
     if (b.hp <= 0) this.destroyBuilding(b);
