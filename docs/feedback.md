@@ -5,42 +5,15 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 ## Design changes
 
+- add some spacing in between the fullscreen and mute button 
+
 
 ## Improvements
 
-- i want 360 degree right click hold formation.
-
-- add a column formation too.
-
-- use shift+click to chain commands.
-
-- keep wild beast detection as is, but increase detection sensitivity for enemy units.
-
-- improve the sound effect of friendly melee attacks and enemy attacks for each type of unit.
-
-
-- in the modal for enemies in the sandbox, let me input for each type of enemy how many should arrive individually.
-
-- heritage and power ups in sandbox should be a modal with responsive design and cards. copy the ux of the shop for this purpose. let me select and remove cards as i wish.
-
-- trebuchet weapons should have high damage against all structural buildings such as walls and castles, etc.
-
-- in sandbox mode, i meant that number of strongholds should be 6 other castles with walls and towers across the map in the corners and behind mountain ranges or walls / forests.
-
-- change enemies menu to toggles to include wild beasts, bandit camps, the other option is number of strongholds (as the enemies say = none, then input field for number of strongholds until max 6).
-
-
-- increase difficulty of later ascensions in the dragon level by first objective: kill all the enemy encampments and fortresses, only then the dragon randomly appears on the map in the next section of the level. in higher ascensions increase the number of enemy units significantly.
-
-- the boar hunt should have a larger map on higher ascensions levels.
-
-- increase the difficulty of higher ascension levels by increasing the number of enemies significantly and also making the objective the exact amount that has spawned on the map (buildings and units), or just make it 'clear all enemy units and buildings, survive all raids' as objective. increase the enemy wave configuration with more enemies and diverse enemies per wave.
 
 
 
 ## Features
-
-- implement a few new beginning motifs and start them randomly. i want a random one to load at startup and at the first levels to give the player some more variety. i'm thinking: a few different modal jazz motifs (refactor the audio engine if needed for better architecture). a retro 8bit inspired motif. also implement a 'evil sounding' 'devil's interval / tritone' melody with classical music tempo's evolving over the levels.
 
 - introduce a priest unit (with a christian pointy hat) that can be purchased with coin at a monestary building (give it a proper design). it can heal friendly units who are nearby automatically. they have a low rank and are far in the back when in formation.
 
@@ -65,7 +38,7 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - implement unit max caps in the settings to control max unit counts if player is on a slower laptop. also implement a godlike mode for maximum unit counts. do the same for dead bodies and their duration on the battlefield.
 
-- implement a gore mode in the settings that introduces blood spots on bodies and other blood related visual effects. can we also introduce a setting or easter egg in the settings menu to enable the wilhelm scream when units die?
+
 
 - how can we make the levels of hell difficult EXTRA hellishly difficult? it should be actually really hard to defeat them (use maximum size maps and many many enemies, strongholds and difficult objectives). maybe start from the the hell levels from the start?
 
@@ -74,7 +47,9 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 
 
+- implement a gore mode in the settings that introduces blood spots on bodies and other blood related visual effects. 
 
+- can we also introduce a setting or easter egg in the settings menu to enable the wilhelm scream when units die?
 
 
 
