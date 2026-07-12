@@ -246,19 +246,21 @@ export class Controls {
 
   /** A pending right-click order: the anchor tile/point, whether the drag has
    *  grown into a formation draft, and the last drawn facing (to skip redraws). */
-  private orderDraft: { tx: number; ty: number; gx: number; gz: number; active: boolean; angle: number | null } | null = null;
+  private orderDraft: { tx: number; ty: number; gx: number; gz: number; active: boolean; angle: number | null; queue: boolean } | null = null;
 
   /** Right-click down: attack a hostile immediately; on open ground, arm a
    *  draft — release in place orders as before, holding and dragging previews
-   *  the formation on its tiles and aims it along the drag. */
+   *  the formation on its tiles and aims it along the drag. Holding Shift chains
+   *  the command behind any already in flight instead of replacing it. */
   private beginOrder(e: PointerEvent): void {
     if (!this.game) return;
+    const queue = e.shiftKey;
     const gp = this.view.groundPoint(e.clientX, e.clientY);
     // Screen-space picking matches the visible body in the isometric view;
     // ground-only picking can land behind a tall unit when its torso is clicked.
     const foe = this.pickUnitAtPointer(e, true) ?? this.game.pickUnit(gp.x, gp.z);
     if (foe && foe.faction !== 'player') {
-      this.game.orderGroup(this.selUnits, 'attack', foe.tx, foe.ty, foe, this.formation);
+      this.game.orderGroup(this.selUnits, 'attack', foe.tx, foe.ty, foe, this.formation, undefined, queue);
       this.view.showOrderMarker(foe.mesh.position.x, foe.mesh.position.z, true);
       return;
     }
@@ -267,12 +269,12 @@ export class Controls {
     // right-click a hostile building (wall, gate, camp, keep): besiege it
     const b = this.game.buildingAt(t.x, t.y);
     if (b && b.faction !== 'player') {
-      this.game.orderGroupAttackBuilding(this.selUnits, b);
+      this.game.orderGroupAttackBuilding(this.selUnits, b, queue);
       this.view.showOrderMarker(gp.x, gp.z, true);
-      this.ui.toast(`Attacking the ${b.name}`);
+      this.ui.toast(`${queue ? 'Then attacking' : 'Attacking'} the ${b.name}`);
       return;
     }
-    this.orderDraft = { tx: t.x, ty: t.y, gx: gp.x, gz: gp.z, active: false, angle: null };
+    this.orderDraft = { tx: t.x, ty: t.y, gx: gp.x, gz: gp.z, active: false, angle: null, queue };
   }
 
   /** Grow / redraw the draft while the right button is held. */
@@ -298,7 +300,7 @@ export class Controls {
     if (!d || !this.game || !this.selUnits.length) return;
     const gp = this.view.groundPoint(e.clientX, e.clientY);
     const facing = d.active ? { x: gp.x - d.gx, y: gp.z - d.gz } : undefined;
-    this.game.orderGroup(this.selUnits, 'attackMove', d.tx, d.ty, null, this.formation, facing);
+    this.game.orderGroup(this.selUnits, 'attackMove', d.tx, d.ty, null, this.formation, facing, d.queue);
     this.view.showOrderMarker(d.gx, d.gz);
   }
 

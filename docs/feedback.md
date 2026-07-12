@@ -2,41 +2,33 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 ## Bugs
 
-- formations are broken, when i select a large number of units not all of them move. fix the bug. while looking at this, improve fps performance when large number of units are moving and getting commands, push it to the limit of your capabilities
-
-- implement priority system for resource buildings too so serfs also prioritize chains. the game has a problem that important buildings have full output, i have a bunch of serfs running around but no output is picked up. this is halting progress in objectives.
-
-- the coal mine has some kind of black square section sticking out, remove it.
-
-- the objective panel is sometimes touching the building panel when i have a building or unit open, give them some space in between.
-
-- let messages and timers not overlay each other in the top, fix this bug.
-
-- in bandit country objective, the enemy camps spawned inside the mouth of the mountain range, also because there is a large body of water on the other side. update the map generation to prevent this situation. let enemy encampments also spawn inside the mountain range area.
-
-- in dragon's hoard, enemy encampments where spawned inside the player area to close to the castle. we should prevent this.
 
 ## Design changes
 
-- walls should not have entrances. gates should have entrances on both sides and 2 wide.
-
-- the woodcutter building should have the logwalls rotated 90 degrees so that they align with the bottom of the rooftop. there should be an open entrance, unless you can fix it to be a fully logged 4 walls?
-
-- the little blue flag on the school building should be removed.
-
-- water should not be a selectable in the sandbox menu, it should be linked to the biome selection.
-
-- show the text of the curse in the shop on the card so i can see what the curse is.
 
 ## Improvements
 
-- let me purchase cards in sandbox mode in the card menu for free up to 5 cards.
+- i want 360 degree right click hold formation.
+
+- add a column formation too.
+
+- use shift+click to chain commands.
+
+- keep wild beast detection as is, but increase detection sensitivity for enemy units.
+
+- improve the sound effect of friendly melee attacks and enemy attacks for each type of unit.
+
+
+- in the modal for enemies in the sandbox, let me input for each type of enemy how many should arrive individually.
+
+- heritage and power ups in sandbox should be a modal with responsive design and cards. copy the ux of the shop for this purpose. let me select and remove cards as i wish.
 
 - trebuchet weapons should have high damage against all structural buildings such as walls and castles, etc.
 
-- maybe we need to grey out some of the buildings in early levels in the first ascension to reduce the overload to the user? just enable some beginner things and slowly unlock the build menu throughout the levels. make sure we do not block any objectives, otherwise fix the issue.
+- in sandbox mode, i meant that number of strongholds should be 6 other castles with walls and towers across the map in the corners and behind mountain ranges or walls / forests.
 
-- let the dragon in the last level restore health very slowly to annoy the player, in higher ascensions restore speed is increased. let the restore start after a minute of last damage received.
+- change enemies menu to toggles to include wild beasts, bandit camps, the other option is number of strongholds (as the enemies say = none, then input field for number of strongholds until max 6).
+
 
 - increase difficulty of later ascensions in the dragon level by first objective: kill all the enemy encampments and fortresses, only then the dragon randomly appears on the map in the next section of the level. in higher ascensions increase the number of enemy units significantly.
 
@@ -46,27 +38,19 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - how can we make the levels of hell difficult EXTRA hellishly difficult? it should be actually really hard to defeat them (use maximum size maps and many many enemies, strongholds and difficult objectives). maybe start from the the hell levels from the start?
 
-- in sandbox mode, i meant that number of strongholds should be 6 other castles with walls and towers across the map in the corners and behind mountain ranges or walls / forests.
-
-- change enemies menu to toggles to include wild beasts, bandit camps, the other option is number of strongholds (as the enemies say = none, then input field for number of strongholds until max 6).
-
-- keep wild beast detection as is, but increase detection sensitivity for enemy units.
-
-- improve the sound effect of friendly melee attacks and enemy attacks for each type of unit.
-
 ## Features
+
+- let the dragon in the last level restore health very slowly to annoy the player, in higher ascensions restore speed is increased. let the restore start after a minute of last damage received.
 
 - implement a few new beginning motifs and start them randomly. i want a random one to load at startup and at the first levels to give the player some more variety. i'm thinking: a few different modal jazz motifs (refactor the audio engine if needed for better architecture). a retro 8bit inspired motif.
 
-- i want 360 degree right click hold formation.
-
-- add a column formation too.
+- maybe we need to grey out some of the buildings in early levels in the first ascension to reduce the overload to the user? just enable some beginner things and slowly unlock the build menu throughout the levels. make sure we do not block any objectives, otherwise fix the issue.
 
 - introduce a priest unit (with a christian pointy hat) that can be purchased with coin at a monestary building (give it a proper design). it can heal friendly units who are nearby automatically. they have a low rank and are far in the back when in formation.
 
 - in the coin build tab, add a market building. users can assign additional resources there with an input field and see a timer with expected coin income (per minute?). a great way to monetize overproduction of a resource. a caravan of traders with horses passes by the market, goes in and leaves again automatically. the caravan cannot be attacked or slain by enemies.
 
-- use shift+click to chain commands.
+
 
 - implement unit max caps in the settings to control max unit counts if player is on a slower laptop. also implement a godlike mode for maximum unit counts. do the same for dead bodies and their duration on the battlefield.
 
@@ -82,11 +66,11 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - should we add??: when buildings are training, add a floating clock icon above them to indicate that training is being done. add a empty and full resources floating icon above buildings.
 
-- heritage and power ups in sandbox should be a modal with responsive design and cards. copy the ux of the shop for this purpose. let me select and remove cards as i wish.
+
 
 - add more rare and legendary cards, they are unlocked through achievements. add an achievements menu in the main menu to show which cards have been unlocked, give a hint for cards that have not been unlocked yet. make sure achievements are linked to the save state and exported with the export setting.
 
-- in the modal for enemies in the sandbox, let me input for each type of enemy how many should arrive individually.
+
 
 ## Epics
 

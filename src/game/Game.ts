@@ -9,7 +9,7 @@ import { findPath } from '../engine/pathfinding';
 import { formationSpots } from '../engine/formations';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
-import type { Building, BuildingKey, Coord, Faction, Formation, Site, Unit } from '../types';
+import type { Building, BuildingKey, Coord, Faction, Formation, Site, Unit, UnitOrder } from '../types';
 import { buildingEntranceTiles, doorTile, unitLabel } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
@@ -225,7 +225,7 @@ export class Game {
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
       home: null, wstate: 'idle', timer: 0, target: null, hunger: 70 + rnd() * 30, bob: 0, status: 'Idle',
       faction: 'player', spd: BASE_SPEED, hp: 20, maxHp: 20, dmg: 0, range: 0, atkCd: 1, atkTimer: 0,
-      dead: false, raider: false, foe: null, foeB: null, order: null, obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null, sepI: 0,
+      dead: false, raider: false, foe: null, foeB: null, order: null, orderQueue: [], obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null, sepI: 0,
     };
     this.units.push(u);
     return u;
@@ -254,7 +254,7 @@ export class Game {
       maxHp: Math.round(def.hp * this.mods.combatMult('hp', 'hero')),
       dmg: def.dmg * this.mods.combatMult('damage', 'hero'),
       range: def.range, atkCd: def.atkCd, atkTimer: 0,
-      dead: false, raider: false, foe: null, foeB: null, order: null, obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null, sepI: 0,
+      dead: false, raider: false, foe: null, foeB: null, order: null, orderQueue: [], obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null, sepI: 0,
     };
     this.units.push(u);
     this.heroUnit = u;
@@ -1086,6 +1086,8 @@ export class Game {
     }
     let foe = u.foe;
     if (foe && foe.dead) foe = null;
+    // a chained attack order whose target has fallen hands off to the next command
+    if (u.order && u.order.type === 'attack' && (!u.order.foe || u.order.foe.dead) && u.orderQueue.length && this.advanceOrder(u)) foe = u.foe;
     if (u.order && u.order.type === 'attack' && u.order.foe && !u.order.foe.dead) foe = u.order.foe;
     // pure 'move' orders don't auto-seek (lets you march past enemies); an
     // attack-move only re-engages once the obey window has passed
@@ -1166,16 +1168,16 @@ export class Game {
     // no foe: follow a move/attack-move order, wander near home, or hold
     if (u.order && (u.order.type === 'move' || u.order.type === 'attackMove')) {
       if (flying) {
-        if (this.moveFlying(u, dt, this.world.wx(u.order.x), this.world.wz(u.order.y))) u.order = null;
+        if (this.moveFlying(u, dt, this.world.wx(u.order.x), this.world.wz(u.order.y))) this.advanceOrder(u);
         return;
       }
       if (!u.path) {
-        if (u.tx === u.order.x && u.ty === u.order.y) { u.order = null; }
+        if (u.tx === u.order.x && u.ty === u.order.y) { this.advanceOrder(u); }
         // pathfinding is budgeted per tick: a freshly ordered horde sets off
         // staggered over a few ticks instead of freezing the sim on one
         else if (this.pathBudget > 0) {
           this.pathBudget--;
-          if (!this.sendTo(u, u.order.x, u.order.y)) u.order = null;
+          if (!this.sendTo(u, u.order.x, u.order.y)) this.advanceOrder(u);
         }
       }
       if (u.path) this.moveUnit(u, dt); else this.groundPose(u, flying);
@@ -1206,10 +1208,10 @@ export class Game {
     }
     u.foe = null; u.foeB = null;
     if (u.order) {
-      if (u.tx === u.order.x && u.ty === u.order.y) u.order = null;
+      if (u.tx === u.order.x && u.ty === u.order.y) this.advanceOrder(u);
       else if (!u.path && this.pathBudget > 0) {
         this.pathBudget--;
-        if (!this.sendTo(u, u.order.x, u.order.y)) u.order = null;
+        if (!this.sendTo(u, u.order.x, u.order.y)) this.advanceOrder(u);
       }
       if (u.path) this.moveUnit(u, dt); else this.groundPose(u, false);
     } else this.groundPose(u, false);
@@ -1577,16 +1579,36 @@ export class Game {
     this.toast(s.priority ? s.def.name + ' prioritized' : s.def.name + ' no longer prioritized');
   }
 
-  /** Issue a command to a unit (used by Controls for hero/army orders). */
-  orderUnit(u: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null): void {
+  /** Issue a command to a unit (used by Controls for hero/army orders). With
+   *  `queue`, the command is appended behind whatever the unit is already doing
+   *  (shift-click chaining) instead of replacing it. */
+  orderUnit(u: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, queue = false): void {
     if (UNITS[u.role as UnitKind]?.heal && type === 'attack') { type = 'attackMove'; foe = null; }
-    u.order = { type, x, y, foe };
-    u.foe = type === 'attack' ? foe : null;
+    const o: UnitOrder = { type, x, y, foe };
+    if (queue && (u.order || u.orderQueue.length)) { u.orderQueue.push(o); return; }
+    u.orderQueue.length = 0;
+    this.applyOrder(u, o);
+  }
+
+  /** Make an order the unit's active command, breaking off any current fight. */
+  private applyOrder(u: Unit, o: UnitOrder): void {
+    u.order = o;
+    u.foe = o.type === 'attack' ? o.foe : null;
     u.foeB = null;
     u.path = null;
     // a fresh move/attack-move overrules whatever fight the unit was in:
     // suppress re-aggro (and retaliation) long enough to break off and march
-    u.obeyT = type === 'attack' ? 0 : 2.5;
+    u.obeyT = o.type === 'attack' ? 0 : 2.5;
+  }
+
+  /** Current command done: pull the next chained order into effect, if any.
+   *  Returns true when a queued order took over, false when the queue is empty
+   *  (leaving `order` cleared exactly as the old `u.order = null` did). */
+  private advanceOrder(u: Unit): boolean {
+    const next = u.orderQueue.shift();
+    if (!next) { u.order = null; return false; }
+    this.applyOrder(u, next);
+    return true;
   }
 
   /** Ground a formation may stand on (shared by orders and the drag preview).
@@ -1608,9 +1630,9 @@ export class Game {
   /** Order a whole selection: attacks converge on the foe, moves fan out into a
    *  loose formation so the squad doesn't pile onto a single tile. An explicit
    *  `facing` (from the drag-to-aim gesture) overrides the marching direction. */
-  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'box', facing?: { x: number; y: number }): void {
+  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'box', facing?: { x: number; y: number }, queue = false): void {
     if (type === 'attack' && foe) {
-      for (const u of units) this.orderUnit(u, 'attack', foe.tx, foe.ty, foe);
+      for (const u of units) this.orderUnit(u, 'attack', foe.tx, foe.ty, foe, queue);
       return;
     }
     const spots = formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), this.formationGround, facing);
@@ -1624,7 +1646,7 @@ export class Game {
       // If terrain truly cannot provide enough ground, excess units hold their
       // current unique tiles rather than all collapsing onto the final slot.
       const s = spots[i] ?? { x: ordered[i].u.tx, y: ordered[i].u.ty };
-      this.orderUnit(ordered[i].u, type, s.x, s.y);
+      this.orderUnit(ordered[i].u, type, s.x, s.y, null, queue);
     }
   }
 
@@ -1636,13 +1658,15 @@ export class Game {
 
   /** Order a selection to raze a hostile building: everyone marches on its
    *  walls and locks it as their siege target (no waiting for auto-acquire). */
-  orderGroupAttackBuilding(units: Unit[], b: Building): void {
+  orderGroupAttackBuilding(units: Unit[], b: Building, queue = false): void {
     if (b.removed) return;
     for (const u of units) {
       const s = this.siegeTile(u, b);
-      this.orderUnit(u, 'attackMove', s.x, s.y);
-      u.obeyT = 0;      // engage at once — this IS the fight they were sent to
-      u.foeB = b;
+      this.orderUnit(u, 'attackMove', s.x, s.y, null, queue);
+      // A chained siege can't lock the target yet (the unit is still finishing
+      // earlier orders); it re-engages on arrival through normal aggro. A direct
+      // order engages at once — this IS the fight they were sent to.
+      if (!queue) { u.obeyT = 0; u.foeB = b; }
     }
   }
 
