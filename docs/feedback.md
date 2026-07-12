@@ -63,3 +63,19 @@ the boar hunt should have a larger map on higher ascensions levels.
 increase the difficulty of higher ascension levels by increasing the number of enemies significantly and also making the objective the exact amount that has spawned on the map (buildings and units), or just make it 'clear all enemy units and buildings, survive all raids' as objective. increase the enemy wave configuration with more enemies and diverse enemies per wave.
 
 how can we make the levels of hell difficult EXTRA hellishly difficult? it should be actually really hard to defeat them (use maximum size maps and many many enemies, strongholds and difficult objectives). maybe start from the the hell levels from the start?
+
+in sandbox mode, i meant that number of strongholds should be 6 other castles with walls and towers across the map in the corners and behind mountain ranges or walls / forests
+
+water should not be a selectable in the sandbox menu, it should be linked to the biome selection
+
+change enemies menu to toggles to include wild beasts, bandit camps, the other option is number of strongholds (as the enemies say = none, then input field for number of strongholds until max 6)
+
+heritage and power ups in sandbox should be a modal with responsive design and cards. copy the ux of the shop for this purpose. let me select and remove cards as i wish.
+
+add more rare and legendary cards, they are unlocked through achievements. add an achievements menu in the main menu to show which cards have been unlocked, give a hint for cards that have not been unlocked yet. make sure achievements are linked to the save state and exported with the export setting.
+
+in the modal for enemies in the sandbox, let me input for each type of enemy how many should arrive individually.
+
+keep wild beast detection as is, but increase detection sensitivity for enemy units.
+
+improve the sound effect of friendly melee attacks and enemy attacks for each type of unit.
