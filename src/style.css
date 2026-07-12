@@ -262,6 +262,10 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
    be repeated here — otherwise every "wide" screen collapses to 440px. */
 .shopcard,.screen .card.shopcard{width:min(1180px,96vw);text-align:left;max-height:94vh;overflow-y:auto;}
 .shopcard h1{justify-content:flex-start;}
+/* the sandbox card picker borrows the shop's wide, scrolling, left-aligned look */
+.sbcard-card,.screen .card.sbcard-card{width:min(1180px,96vw);text-align:left;max-height:94vh;overflow-y:auto;}
+.sbcard-card h1{justify-content:flex-start;}
+.sbcard-card .btns.row{margin-top:18px;}
 .shopsect{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);margin:14px 0 7px;}
 .shopgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;}
 /* shop wares: three portrait cards, side by side */

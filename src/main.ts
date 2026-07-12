@@ -40,14 +40,22 @@ const view = new View(canvas, minimap);
 const ui = new UI();
 const controls = new Controls(view, ui);
 ui.onMode = m => controls.setMode(m);
+/** Rebuild the sandbox's live modifiers from base perks + the cards held now.
+ *  Called after any add/remove so a removed card's effect actually lifts. */
+function rebuildSandboxMods(): void {
+  if (!game || !run) return;
+  const heroId = sandboxCfg.hero === 'none' ? null : sandboxCfg.hero;
+  game.mods.setSpecs([...heroSpecsFor(heroId), ...specsFor(run.upgrades), ...metaSpecsFor(meta.activeGlobalBuff)]);
+  ui.setPerks(run.upgrades, meta.activeGlobalBuff ? [meta.activeGlobalBuff] : []);
+  ui.refreshModifiers();
+}
+
 ui.onSandboxCard = id => {
   if (!sandbox || !run || !game || run.upgrades.length >= MAX_CARDS) return false;
   const def = UPGRADE_BY_ID[id];
   if (!def || def.unique && run.upgrades.includes(id)) return false;
   run.upgrades.push(id);
-  game.mods.addSpecs(def.apply);
-  ui.setPerks(run.upgrades, meta.activeGlobalBuff ? [meta.activeGlobalBuff] : []);
-  ui.refreshModifiers();
+  rebuildSandboxMods();
   audio.play('coin');
   ui.toast(`${def.name} added — free sandbox card`);
   return true;
@@ -711,6 +719,56 @@ for (const def of SANDBOX_ENEMY) $('sbEnemy').appendChild(makeSandboxSpawnBtn(de
   ($('waveGo') as HTMLButtonElement).onclick = summon;
   delayInp.addEventListener('keydown', e => { if (e.key === 'Enter') summon(); });
   addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display === 'flex') closeModal(); });
+}
+
+// ---------- sandbox card picker: shop-style cards you can freely add & remove ----------
+{
+  const modal = $('sbcardmodal');
+  const ownedEl = $('sbcardOwned');
+  const availEl = $('sbcardAvail');
+  const ownedLabel = $('sbcardOwnedLabel');
+  // A shop-styled card (mirrors Shop.card so the UX reads the same).
+  const cardEl = (def: (typeof UPGRADES)[number], priceLabel: string, cls: string, onClick: () => void): HTMLElement => {
+    const el = document.createElement('div');
+    el.className = `scard rar-${def.rarity}` + (cls ? ' ' + cls : '');
+    const tag = def.rarity !== 'common'
+      ? `<span class="rtag rtag-${def.rarity}">${def.rarity}${def.unique ? ' · unique' : ''}</span>`
+      : (def.unique ? '<span class="rtag">unique</span>' : '');
+    el.innerHTML = `<div class="sc-icon">${def.icon}</div><div class="sc-body"><div class="sc-name">${def.name}${tag}</div><div class="sc-desc">${def.desc}</div><div class="sc-price ${cls}">${priceLabel}</div></div>`;
+    if (!cls.includes('disabled')) el.onclick = onClick;
+    return el;
+  };
+  const render = (): void => {
+    if (!run) return;
+    const full = run.upgrades.length >= MAX_CARDS;
+    ownedLabel.textContent = `Your cards (${run.upgrades.length}/${MAX_CARDS})` +
+      (run.upgrades.length ? ' — click a card to remove it' : '');
+    ownedEl.innerHTML = '';
+    run.upgrades.forEach((id, i) => {
+      const def = UPGRADE_BY_ID[id];
+      if (def) ownedEl.appendChild(cardEl(def, 'remove ✕', 'sellable', () => {
+        run!.upgrades.splice(i, 1);
+        rebuildSandboxMods();
+        audio.play('click');
+        render();
+      }));
+    });
+    if (!run.upgrades.length) ownedEl.innerHTML = '<div class="sc-desc">No cards yet — add some below.</div>';
+    availEl.innerHTML = '';
+    for (const def of UPGRADES) {
+      const owned = def.unique && run.upgrades.includes(def.id);
+      const disabled = full || owned;
+      const label = owned ? 'held' : full ? 'slots full' : 'add +';
+      availEl.appendChild(cardEl(def, label, disabled ? 'cant disabled' : '', () => {
+        if (ui.onSandboxCard(def.id)) render();
+      }));
+    }
+  };
+  const open = (): void => { render(); modal.style.display = 'flex'; };
+  const close = (): void => { modal.style.display = 'none'; };
+  ($('sbCardsOpen') as HTMLButtonElement).onclick = open;
+  ($('sbcardDone') as HTMLButtonElement).onclick = close;
+  addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display === 'flex') close(); });
 }
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
 

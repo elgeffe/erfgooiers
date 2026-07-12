@@ -51,6 +51,10 @@ export class Modifiers {
   /** Add live rules (sandbox cards use this without rebuilding the level). */
   addSpecs(specs: readonly ModifierSpec[]): void { this.specs.push(...specs); }
 
+  /** Replace every live rule — sandbox card editing rebuilds the whole set from
+   *  scratch (base perks + whatever cards you currently hold) so removals take. */
+  setSpecs(specs: readonly ModifierSpec[]): void { this.specs.length = 0; this.specs.push(...specs); }
+
   private accMult(stat: string, ctx?: string): number {
     let m = 1;
     for (const s of this.specs) {

@@ -40,35 +40,42 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 ## Features
 
-- let the dragon in the last level restore health very slowly to annoy the player, in higher ascensions restore speed is increased. let the restore start after a minute of last damage received.
-
-- implement a few new beginning motifs and start them randomly. i want a random one to load at startup and at the first levels to give the player some more variety. i'm thinking: a few different modal jazz motifs (refactor the audio engine if needed for better architecture). a retro 8bit inspired motif.
-
-- maybe we need to grey out some of the buildings in early levels in the first ascension to reduce the overload to the user? just enable some beginner things and slowly unlock the build menu throughout the levels. make sure we do not block any objectives, otherwise fix the issue.
+- implement a few new beginning motifs and start them randomly. i want a random one to load at startup and at the first levels to give the player some more variety. i'm thinking: a few different modal jazz motifs (refactor the audio engine if needed for better architecture). a retro 8bit inspired motif. also implement a 'evil sounding' 'devil's interval / tritone' melody with classical music tempo's evolving over the levels.
 
 - introduce a priest unit (with a christian pointy hat) that can be purchased with coin at a monestary building (give it a proper design). it can heal friendly units who are nearby automatically. they have a low rank and are far in the back when in formation.
+
+- add a persistent warning when there are too few villagers or too few serfs. implement a way to visualize both these kpi's as metrics that the user can see in the workers button on the top left. add counts of units, with maybe some metric next to them to indicate if the user has enough of the unit. same for builders.
+
+- let the dragon in the last level restore health very slowly to annoy the player, in higher ascensions restore speed is increased. let the restore start after a minute of last damage received.
+
 
 - in the coin build tab, add a market building. users can assign additional resources there with an input field and see a timer with expected coin income (per minute?). a great way to monetize overproduction of a resource. a caravan of traders with horses passes by the market, goes in and leaves again automatically. the caravan cannot be attacked or slain by enemies.
 
 
 
-- implement unit max caps in the settings to control max unit counts if player is on a slower laptop. also implement a godlike mode for maximum unit counts. do the same for dead bodies and their duration on the battlefield.
+- maybe we need to grey out some of the buildings in early levels in the first ascension to reduce the overload to the user? just enable some beginner things and slowly unlock the build menu throughout the levels. make sure we do not block any objectives, otherwise fix the issue.
 
-- implement a gore mode in the settings that introduces blood spots on bodies and other blood related visual effects. can we also introduce a setting or easter egg in the settings menu to enable the wilhelm scream when units die?
 
 - in the beginner ascension level, allow destruction of buildings that return the resources fully. in later levels deminish by half, in final levels no resource return.
+
 
 - add a defensive construction objective level in hard+ ascensions in early levels (build a gated wall with x amount of wall pieces (10/20?), with 4 defense towers), and a harder multi wave defense level where the player has to defend their encampment from ever stronger enemies in higher ascensions. give ample time to build the objective, only after the objective is completed in the level start the waves.
 
 - actually introduce a speedrun like score system in the main menu (warns users in the settings menu when they clear cache this high score settings are destroyed too, pro tip: use export to save runs), let players type in their name when starting a run, and let them select a title after that like: (name) the Brave / the Wise / the Stout / the Drunkard / the Gamer / etc.
 
-- add a persistent warning when there are too few villagers or too few serfs. implement a way to visualize both these kpi's as metrics that the user can see in the workers button on the top left. add counts of units, with maybe some metric next to them to indicate if the user has enough of the unit. same for builders.
+- implement unit max caps in the settings to control max unit counts if player is on a slower laptop. also implement a godlike mode for maximum unit counts. do the same for dead bodies and their duration on the battlefield.
 
-- should we add??: when buildings are training, add a floating clock icon above them to indicate that training is being done. add a empty and full resources floating icon above buildings.
+- implement a gore mode in the settings that introduces blood spots on bodies and other blood related visual effects. can we also introduce a setting or easter egg in the settings menu to enable the wilhelm scream when units die?
+
 
 
 
 - add more rare and legendary cards, they are unlocked through achievements. add an achievements menu in the main menu to show which cards have been unlocked, give a hint for cards that have not been unlocked yet. make sure achievements are linked to the save state and exported with the export setting.
+
+
+
+
+
 
 
 
