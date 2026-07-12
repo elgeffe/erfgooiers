@@ -1065,8 +1065,13 @@ export class Game {
     if (flying) this.animateFlight(u, dt);
     if (def.fire) this.fireVolley(u, dt);
 
-    // wild beasts leash: a chase that strays too far from home is abandoned
-    if (u.faction === 'wild' && def.leash && u.anchor) {
+    // leash: a chase that strays too far from home is abandoned. Wild beasts use
+    // their own short leash; hostile camp guards, now that they spot you from far
+    // off, get a generous one so they defend their camp instead of emptying it to
+    // chase a lone worker across the map. Raiders (marching on the castle) never leash.
+    const leash = u.faction === 'wild' ? def.leash
+      : (!u.raider && u.anchor ? (def.leash ?? 18) : undefined);
+    if (leash && u.anchor) {
       const da = Math.hypot(u.tx - u.anchor.x, u.ty - u.anchor.y);
       if (u.wstate === 'leash') {
         if (da < 3) { u.wstate = 'idle'; }
@@ -1076,7 +1081,7 @@ export class Game {
           u.status = 'Heading home';
           return;
         }
-      } else if (da > def.leash) { u.wstate = 'leash'; u.foe = null; u.path = null; return; }
+      } else if (da > leash) { u.wstate = 'leash'; u.foe = null; u.path = null; return; }
     }
 
     if (u.obeyT > 0) {
@@ -1092,10 +1097,11 @@ export class Game {
     // pure 'move' orders don't auto-seek (lets you march past enemies); an
     // attack-move only re-engages once the obey window has passed
     const canSeek = (!u.order || u.order.type !== 'move') && u.obeyT <= 0;
-    // enemies that hold ground (wild beasts, camp guards) are short-sighted:
-    // YOU choose when the fight starts by walking up to them. Raiders and
-    // player units keep their full awareness.
-    const aggro = u.faction !== 'player' && !u.raider ? Math.min(def.aggro, 4.5) : def.aggro;
+    // wild beasts that hold ground are short-sighted: YOU choose when the fight
+    // starts by walking up to them. Hostile *units* (bandits, orcs, the undead —
+    // even camp guards) stay fully alert and pick you up at their real aggro
+    // range. Raiders and player units always keep their full awareness.
+    const aggro = u.faction === 'wild' && !u.raider ? Math.min(def.aggro, 4.5) : def.aggro;
     // A locked structure target comes from an explicit siege order or from the
     // unreachable-guard fallback below. Keep battering that structure instead
     // of reacquiring the same guard on the next tick and oscillating forever.
