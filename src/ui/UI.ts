@@ -122,11 +122,21 @@ export class UI {
   /** Refresh the "next raid" countdown banner, or hide it when no wave is pending. */
   updateWave(info: { in: number; count: number; label?: string } | null): void {
     const el = $('wavebar') as HTMLElement;
-    if (!info) { el.style.display = 'none'; return; }
+    if (!info) { el.style.display = 'none'; this.placeToasts(); return; }
     el.style.display = 'flex';
     // muster-triggered raids show what will provoke them instead of a countdown
     $('waveText').textContent = info.label ?? `Next raid in ${fmtTime(info.in)} · ${info.count} raiders`;
     el.classList.toggle('imminent', !info.label && info.in <= 10);
+    this.placeToasts();
+  }
+
+  /** Toast messages and the raid countdown share the top-centre of the screen;
+   *  drop the toast column below the banner whenever it is showing so the two
+   *  never overlay. */
+  private placeToasts(): void {
+    const wave = $('wavebar') as HTMLElement;
+    const showing = wave.style.display !== 'none';
+    ($('toasts') as HTMLElement).style.top = showing ? Math.round(wave.getBoundingClientRect().bottom + 8) + 'px' : '';
   }
 
   /** Toggle sandbox HUD: no objective card, no timer, no debug-win button. */
@@ -521,6 +531,7 @@ export class UI {
 
   // ---------- toasts ----------
   toast(msg: string, cls?: string): void {
+    this.placeToasts();
     const el = document.createElement('div'); el.className = 'toast' + (cls ? ' ' + cls : ''); el.textContent = msg;
     $('toasts').appendChild(el);
     setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .4s'; setTimeout(() => el.remove(), 400); }, 3200);
