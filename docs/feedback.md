@@ -1,1 +1,0 @@
-implement a few new beginning motifs and start them randomly. i want a random one to load at startup and at the first levels to give the player some more variety. i'm thinking: a few different modal jazz motifs (refactor the audio engine if needed for better architecture). a retro 8bit inspired motif.
