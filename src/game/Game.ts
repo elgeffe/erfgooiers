@@ -1085,7 +1085,10 @@ export class Game {
     if (leash && u.anchor) {
       const da = Math.hypot(u.tx - u.anchor.x, u.ty - u.anchor.y);
       if (u.wstate === 'leash') {
-        if (da < 3) { u.wstate = 'idle'; }
+        if (da < 3) { 
+          u.wstate = 'idle'; 
+          u.path = null; // FIX: Wipe the return path cleanly
+        }
         else {
           if (!u.path) this.sendTo(u, u.anchor.x, u.anchor.y);
           this.moveUnit(u, dt);
@@ -1615,9 +1618,13 @@ export class Game {
     u.foe = o.type === 'attack' ? o.foe : null;
     u.foeB = null;
     u.path = null;
-    // a fresh move/attack-move overrules whatever fight the unit was in:
-    // suppress re-aggro (and retaliation) long enough to break off and march
     u.obeyT = o.type === 'attack' ? 0 : 2.5;
+
+    // FIX: Shift their home anchor to their new destination 
+    // so they don't tether back to their old barracks/spawn grid
+    if (u.faction === 'player' && u.anchor) {
+      u.anchor = { x: o.x, y: o.y };
+    }
   }
 
   /** Current command done: pull the next chained order into effect, if any.

@@ -1,23 +1,33 @@
 fix each of these items, always start with bugs first, then design changes > improvements > features > epics should always be last and first written out as docs/.md file.
 
 ## Bugs
+- i have a very large host of units, but when i try to pass into the enemy area through a small mountain range opening the units keep walking back and never entering. the flow of the units should be smooth through the smallest gaps. for some reason it seems like the units move towards the target direction, but then turn around and walk back. i think this is the bug. 
 
-- for some reason resources are stored in the Storehouse (rename to Castle btw) and not used by production buildings? even when i set prioritize (rename the button from Prioritize this chain to Prioritize)
+- i still see that resources are brought to the castle first instead of their respective production building (coal and gold to the mint building.) production chains should always have priority over storage in the castle.
 
-- two serfs walked into each other and got stuck. this should not happen.
+- builders are very often in the way of serfs moving around, blocking the movement. can we fix this?
+
+- when starting a level i want the build menu to always default to the Materials tab.
+
+- in sandbox mode, there was still a small group of enemies coming to my castle as a wave. remove that from the logic.
+
 
 
 
 ## Design changes
+
 
 - add some spacing in between the fullscreen and mute button 
 
 - improve the cloud designs, make them look more like real clouds, improve the fidelity of the animal shapes that sometimes pass by.
 
 
+
 ## Improvements
 
+- remove the melody notes from the songs, i only want pads and chords (use extended chords or chord substitutions to make it more dynamic.)
 
+- the strongholds in the sandbox should be distributed across the map in different locations, not all in the same corner
 
 
 ## Features
