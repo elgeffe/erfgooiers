@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UNITS, damageMultiplier, formationRank, isCommandableRole } from './units';
+import { UNITS, damageMultiplier, formationRank, isCommandableRole, structureDamage } from './units';
 
 describe('unit counters', () => {
   it('gives pikemen their mounted-target bonus only against riders', () => {
@@ -21,5 +21,12 @@ describe('priest support role', () => {
     expect(isCommandableRole('priest')).toBe(true);
     expect(UNITS.priest.heal).toEqual({ range: 4.5, amount: 8, rate: 1.5 });
     expect(formationRank('priest')).toBeGreaterThan(formationRank('trebuchet'));
+  });
+});
+
+describe('structural damage', () => {
+  it('makes trebuchets devastating to every building', () => {
+    expect(structureDamage('trebuchet', 48)).toBe(192);
+    expect(structureDamage('soldier', 8)).toBe(8);
   });
 });

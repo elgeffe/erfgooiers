@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ROAD_STONE_COST, PLOT_RANGE, BASE_SPEED } from '../constants';
 import { DEFS } from '../data/buildings';
 import { ITEMS } from '../data/items';
-import { UNITS, damageMultiplier, formationRank, type UnitKind } from '../data/units';
+import { UNITS, damageMultiplier, formationRank, structureDamage, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
@@ -1268,7 +1268,7 @@ export class Game {
 
   private attackBuilding(u: Unit, b: Building): void {
     if (this.swingsSteel(u)) this.sfx('sword');
-    b.hp -= u.dmg;
+    b.hp -= structureDamage(u.role as UnitKind, u.dmg);
     this.onHurt(this.buildingCenter(b).x, this.buildingCenter(b).z, b.faction);
     if (b.hp <= 0) this.destroyBuilding(b);
   }

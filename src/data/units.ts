@@ -35,6 +35,7 @@ export interface UnitDef {
   tags?: UnitTag[];      // target traits used by data-driven counters (mounted, etc.)
   bonusVs?: { tag: UnitTag; mult: number }[]; // damage multipliers against matching targets
   heal?: { range: number; amount: number; rate: number };
+  structureMult?: number; // damage multiplier against buildings and fortifications
 }
 
 export type UnitTag = 'mounted';
@@ -122,7 +123,7 @@ export const UNITS: Record<UnitKind, UnitDef> = {
     hp: 65, dmg: 16, range: 7.5, atkCd: 3.2, speed: BASE_SPEED * 0.55, scale: 1.02, aggro: 9, splash: 1.7, rank: 4 },
 
   trebuchet: { kind: 'trebuchet', name: 'Trebuchet', faction: 'player', color: 0x6b4f30, model: 'siege',
-    hp: 90, dmg: 48, range: 9, atkCd: 5, speed: BASE_SPEED * 0.4, scale: 1.15, aggro: 4, arrows: true, rank: 4 },
+    hp: 90, dmg: 48, range: 9, atkCd: 5, speed: BASE_SPEED * 0.4, scale: 1.15, aggro: 4, arrows: true, rank: 4, structureMult: 4 },
 
   priest: { kind: 'priest', name: 'Priest', faction: 'player', color: 0xf1ead8, model: 'human',
     hp: 45, dmg: 0, range: 0, atkCd: 1.5, speed: BASE_SPEED * 0.9, scale: 0.98, aggro: 0, rank: 5,
@@ -144,4 +145,9 @@ export function damageMultiplier(attacker: UnitKind, target: UnitKind): number {
   let mult = 1;
   for (const bonus of UNITS[attacker]?.bonusVs ?? []) if (tags.includes(bonus.tag)) mult *= bonus.mult;
   return mult;
+}
+
+/** Damage dealt to any structural building; siege bonuses stay data-driven. */
+export function structureDamage(attacker: UnitKind, baseDamage: number): number {
+  return baseDamage * (UNITS[attacker]?.structureMult ?? 1);
 }
