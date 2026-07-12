@@ -1557,7 +1557,7 @@ export class Game {
   };
 
   /** The tiles a selection would occupy — the right-drag aim preview. `facing`
-   *  is the drag direction; the layout snaps it to the nearest cardinal. */
+   *  is the continuous drag direction. */
   formationPreview(units: Unit[], x: number, y: number, formation: Formation, facing: { x: number; y: number }): Coord[] {
     return formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), this.formationGround, facing);
   }

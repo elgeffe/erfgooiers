@@ -59,6 +59,14 @@ describe('formationSpots', () => {
     expect(fallback).toEqual(formationSpots(50, 50, 30, 'line', [{ x: 0, y: 50 }], open));
   });
 
+  it('supports continuous 360 degree facing with unique rotated slots', () => {
+    const spots = formationSpots(80, 80, 300, 'line', [{ x: 20, y: 20 }], open, { x: 1, y: 1 });
+    expect(spots).toHaveLength(300);
+    expect(new Set(spots.map(p => `${p.x},${p.y}`)).size).toBe(300);
+    expect(new Set(spots.map(p => p.x)).size).toBeGreaterThan(20);
+    expect(new Set(spots.map(p => p.y)).size).toBeGreaterThan(20);
+  });
+
   it('does not collapse selections beyond the old fixed fallback capacity', () => {
     const spots = formationSpots(0, 0, 3000, 'box', [], open);
     expect(spots).toHaveLength(3000);

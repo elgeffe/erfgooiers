@@ -6,9 +6,8 @@ export interface FormationOrigin { x: number; y: number; }
  * Lay out formation destinations around a target, facing away from the
  * selected group's average origin.
  *
- * Built to survive HUGE selections: shapes are exact integer lattices (the
- * facing snaps to the nearest cardinal so ranks never collapse onto shared
- * tiles through rounding), rank depth is capped so a 200-unit line is a wide
+ * Built to survive HUGE selections: rotated slots are claimed through a
+ * collision-safe lattice projection, rank depth is capped so a 200-unit line is a wide
  * wall three ranks deep rather than one absurd 200-tile string, and a blocked
  * slot is refilled from a small spiral around ITSELF — holes in the ground
  * dent a rank locally instead of dumping half the army into a blob at the
@@ -59,10 +58,8 @@ export function formationSpots(
         }
   };
 
-  // face along an explicit direction when one is given (the drag-to-aim
-  // preview), else away from the group's average origin — snapped to the
-  // nearest cardinal either way so (col, row) offsets stay exact integer
-  // lattice vectors
+  // Keep the full facing vector for genuine 360° right-drag aiming. claimNear
+  // resolves duplicates produced by projecting a rotated shape to tiles.
   let dx: number, dy: number;
   if (facing && (facing.x || facing.y)) {
     dx = facing.x; dy = facing.y;
@@ -72,8 +69,8 @@ export function formationSpots(
     ax /= Math.max(1, origins.length); ay /= Math.max(1, origins.length);
     dx = cx - ax; dy = cy - ay;
   }
-  const fx = Math.abs(dx) >= Math.abs(dy) ? (Math.sign(dx) || 1) : 0;
-  const fy = fx === 0 ? (Math.sign(dy) || 1) : 0;
+  const fl = Math.hypot(dx, dy) || 1;
+  const fx = dx / fl, fy = dy / fl;
   const rxv = -fy, ryv = fx; // the rank axis (perpendicular to facing)
 
   /** Fill `n` slots as a block `cols` wide, ranks marching backward from the

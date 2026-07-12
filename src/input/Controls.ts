@@ -245,7 +245,7 @@ export class Controls {
 
   /** A pending right-click order: the anchor tile/point, whether the drag has
    *  grown into a formation draft, and the last drawn facing (to skip redraws). */
-  private orderDraft: { tx: number; ty: number; gx: number; gz: number; active: boolean; key: string } | null = null;
+  private orderDraft: { tx: number; ty: number; gx: number; gz: number; active: boolean; angle: number | null } | null = null;
 
   /** Right-click down: attack a hostile immediately; on open ground, arm a
    *  draft — release in place orders as before, holding and dragging previews
@@ -271,7 +271,7 @@ export class Controls {
       this.ui.toast(`Attacking the ${b.name}`);
       return;
     }
-    this.orderDraft = { tx: t.x, ty: t.y, gx: gp.x, gz: gp.z, active: false, key: '' };
+    this.orderDraft = { tx: t.x, ty: t.y, gx: gp.x, gz: gp.z, active: false, angle: null };
   }
 
   /** Grow / redraw the draft while the right button is held. */
@@ -282,13 +282,11 @@ export class Controls {
     const fx = gp.x - d.gx, fz = gp.z - d.gz;
     if (!d.active && fx * fx + fz * fz < 1.2) return; // a plain click, so far
     d.active = true;
-    const key = Math.abs(fx) >= Math.abs(fz) ? `x${Math.sign(fx) || 1}` : `z${Math.sign(fz) || 1}`;
-    if (key === d.key) return;
-    d.key = key;
+    const angle = Math.round(Math.atan2(fz, fx) * 36 / Math.PI);
+    if (angle === d.angle) return;
+    d.angle = angle;
     const spots = this.game.formationPreview(this.selUnits, d.tx, d.ty, this.formation, { x: fx, y: fz });
-    const sfx = key[0] === 'x' ? Number(key.slice(1)) : 0;
-    const sfz = key[0] === 'z' ? Number(key.slice(1)) : 0;
-    this.view.showFormationPreview(spots, sfx, sfz);
+    this.view.showFormationPreview(spots, fx, fz);
   }
 
   /** Right button released: commit the draft (aimed if dragged, plain if not). */
