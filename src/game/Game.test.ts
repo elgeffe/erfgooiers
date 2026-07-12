@@ -65,3 +65,50 @@ describe('priest healing', () => {
     expect(priest.foe).toBeNull();
   });
 });
+
+describe('serf hauling from storehouse', () => {
+  it('hauls resources from the storehouse to a production building', () => {
+    const world = new World({ seed: 406, w: 32, h: 32, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
+    for (const row of world.tiles) for (const t of row) { t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; }
+    const game = new Game(world, headlessView(world));
+    // Start with 5 flour in store, 1 serf, 0 laborers, 0 villagers
+    game.init({ stock: { flour: 5 }, serfs: 1, laborers: 0, villagers: 0 });
+
+    // Place a bakery
+    const bakery = game.placeBuilding('bakery', 10, 10, true);
+    // Directly staff and activate the bakery
+    const worker = game.spawnUnit('baker', 0xf0e6d2, { x: 10, y: 10 });
+    worker.home = bakery;
+    bakery.worker = worker;
+    bakery.active = true;
+
+    // Run the game simulation for a few ticks
+    for (let i = 0; i < 200; i++) {
+      game.update(0.05);
+    }
+
+    const serf = game.units.find(u => u.role === 'serf')!;
+    console.log('SERF STATE:', {
+      role: serf.role,
+      tx: serf.tx,
+      ty: serf.ty,
+      task: serf.task,
+      status: serf.status,
+      carrying: serf.carrying,
+      path: serf.path,
+    });
+    console.log('BAKERY STATE:', {
+      inp: bakery.inp,
+      out: bakery.out,
+      working: bakery.working,
+      prog: bakery.prog,
+      active: bakery.active,
+    });
+
+    // Check if the bakery received the flour (or already turned it to bread)
+    expect((bakery.inp['flour'] || 0) + (bakery.out['bread'] || 0) + (bakery.working ? 1 : 0)).toBeGreaterThan(0);
+  });
+});
+
+
+

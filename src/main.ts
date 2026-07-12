@@ -434,7 +434,7 @@ function computeTally(): { rows: TallyRow[]; total: number } {
     rows.push({ label: `Speed bonus — done in ${Math.round(g.elapsed)}s`, gold: Math.round(level.reward * 0.5) });
   }
   const surplus = Math.floor(g.stockTotal() / 8);
-  if (surplus > 0) rows.push({ label: 'Surplus goods in the storehouse', gold: surplus });
+  if (surplus > 0) rows.push({ label: 'Surplus goods in the castle', gold: surplus });
   const fed = g.wellFedWorkers();
   const fedGold = Math.floor(fed / 2);
   if (fedGold > 0) rows.push({ label: `${fed} well-fed workers`, gold: fedGold });

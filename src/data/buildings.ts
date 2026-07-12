@@ -1,7 +1,7 @@
 import type { BuildingDef, BuildingKey } from '../types';
 
 export const DEFS: Record<BuildingKey, BuildingDef> = {
-  storehouse: { name: 'Storehouse', desc: 'A fortified depot: stores every good and looses arrows at raiders. Your first one is the castle — build more to shorten haul routes', model: 'castle',
+  storehouse: { name: 'Castle', desc: 'A fortified depot: stores every good and looses arrows at raiders. Build more to shorten haul routes', model: 'castle',
     cost: { timber: 12, stone: 16, coin: 10 }, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 500,
     tower: { range: 7, dmg: 8, rate: 1.6 } },
 

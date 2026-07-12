@@ -169,7 +169,7 @@ export class UI {
     for (const k of RES_SHOWN) {
       const d = this.game.itemBreakdown(k);
       this.resEls[k].textContent = String(d.store);
-      this.resRowEls[k].title = `${ITEMS[k].name} — ${d.store} in the storehouse · ${d.buildings} in buildings · ${d.carried} being carried`;
+      this.resRowEls[k].title = `${ITEMS[k].name} — ${d.store} in the castle · ${d.buildings} in buildings · ${d.carried} being carried`;
     }
   }
 
@@ -358,10 +358,10 @@ export class UI {
         body += `<div class="sect">Production</div><div class="bar"><div style="width:${Math.round(o.prog * 100)}%"></div></div>`;
         body += '<div class="sect">Inputs</div>' + this.invRowsHTML(o.inp);
         body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
-        body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize this chain'}</button>`;
+        body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize'}</button>`;
       } else if (o.def.gather) {
         body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
-        body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize this chain'}</button>`;
+        body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize'}</button>`;
       } else if (o.def.tavern) {
         const tv = o.def.tavern;
         body += `<div class="sect">Provisions (any food · serves up to ${tv.capacity} workers)</div>` + this.invRowsHTML(o.inp);
