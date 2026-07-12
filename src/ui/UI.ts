@@ -444,7 +444,12 @@ export class UI {
     const players = this.game.units.filter(u => u.faction === 'player');
     const counts: Record<string, number> = { all: players.length, serf: 0, villager: 0, laborer: 0, specialist: 0, military: 0 };
     for (const u of players) counts[this.unitCat(u.role)]++;
+    // Live logistics KPIs: which of the labour pools is short-handed.
+    const metrics = this.game.workerMetrics();
+    const metricFor = (id: string) => id === 'serf' ? metrics.serf : id === 'laborer' ? metrics.builder : id === 'villager' ? metrics.villager : null;
+    const shortage = (['serf', 'villager', 'builder'] as const).some(k => metrics[k].status === 'bad');
     $('unitTitle').textContent = `Workers · ${players.length}`;
+    this.setWorkerWarning(shortage, metrics);
     const tabsDef: { id: string; label: string }[] = [
       { id: 'all', label: 'All' },
       { id: 'serf', label: 'Serfs' },
@@ -458,7 +463,10 @@ export class UI {
     let tabs = '';
     for (const c of tabsDef) {
       if (c.id !== 'all' && counts[c.id] === 0 && this.unitTab !== c.id) continue;
-      tabs += `<button class="utab${this.unitTab === c.id ? ' on' : ''}" data-tab="${c.id}">${c.label} <b>${counts[c.id]}</b></button>`;
+      const m = metricFor(c.id);
+      // a small traffic-light dot + hover note flags an under-supplied pool
+      const kpi = m ? ` <i class="kpi ${m.status}" title="${m.note}"></i>` : '';
+      tabs += `<button class="utab${this.unitTab === c.id ? ' on' : ''}${m && m.status === 'bad' ? ' short' : ''}" data-tab="${c.id}"${m ? ` title="${m.note}"` : ''}>${c.label} <b>${counts[c.id]}</b>${kpi}</button>`;
     }
     if (tabs !== this.lastTabsHTML) { $('unitTabs').innerHTML = tabs; this.lastTabsHTML = tabs; }
 
