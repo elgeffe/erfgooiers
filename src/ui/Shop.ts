@@ -184,7 +184,7 @@ export class Shop {
       const bioLine = bio.key !== 'gooi' ? `<br><i>${bio.name} — ${bio.desc}</i>` : '';
       const curses = c.mutators.map(id => {
         const m = MUTATOR_BY_ID[id];
-        return m ? `<span class="mutchip" title="${m.desc}">${m.icon} ${m.name}</span>` : '';
+        return m ? `<div class="mutrow"><span class="mutchip">${m.icon} ${m.name}</span><span class="mutdesc">${m.desc}</span></div>` : '';
       }).join('') || '<span class="mutchip calm">No curses</span>';
       el.innerHTML =
         `<div class="sc-body"><div class="sc-name">${c.kind === 'elite' ? '⚔️ ' : ''}${c.name}</div>` +

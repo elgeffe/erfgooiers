@@ -296,7 +296,10 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 /* contracts — the road ahead */
 .scard.contract{flex-direction:column;align-items:stretch;text-align:left;}
 .scard.contract .sc-desc{margin:4px 0 6px;}
-.scard.contract .conchips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;}
+.scard.contract .conchips{display:flex;flex-direction:column;gap:5px;margin-bottom:6px;}
+.scard.contract .mutrow{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 7px;}
+.scard.contract .mutrow .mutchip{flex:none;}
+.scard.contract .mutdesc{font-size:10.5px;line-height:1.35;color:#d8c4b6;opacity:.9;}
 .scard.contract .mutchip.calm{background:rgba(143,191,107,.15);border-color:rgba(143,191,107,.5);color:#d6f0bf;}
 .scard.con-elite{border-color:rgba(217,164,65,.7);box-shadow:0 0 10px rgba(217,164,65,.15);}
 .btns button.disabled{opacity:.5;pointer-events:none;}
