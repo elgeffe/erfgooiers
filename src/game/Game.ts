@@ -225,7 +225,7 @@ export class Game {
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
       home: null, wstate: 'idle', timer: 0, target: null, hunger: 70 + rnd() * 30, bob: 0, status: 'Idle',
       faction: 'player', spd: BASE_SPEED, hp: 20, maxHp: 20, dmg: 0, range: 0, atkCd: 1, atkTimer: 0,
-      dead: false, raider: false, foe: null, foeB: null, order: null, obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null,
+      dead: false, raider: false, foe: null, foeB: null, order: null, obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null, sepI: 0,
     };
     this.units.push(u);
     return u;
@@ -254,7 +254,7 @@ export class Game {
       maxHp: Math.round(def.hp * this.mods.combatMult('hp', 'hero')),
       dmg: def.dmg * this.mods.combatMult('damage', 'hero'),
       range: def.range, atkCd: def.atkCd, atkTimer: 0,
-      dead: false, raider: false, foe: null, foeB: null, order: null, obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null,
+      dead: false, raider: false, foe: null, foeB: null, order: null, obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null, sepI: 0,
     };
     this.units.push(u);
     this.heroUnit = u;
@@ -1456,11 +1456,10 @@ export class Game {
     const W = this.world.W;
     const cells = new Map<number, Unit[]>();
     const list: Unit[] = [];
-    const indices = new Map<Unit, number>();
     for (const u of this.units) {
       if (u.dead || !u.mesh.visible) continue;
+      u.sepI = list.length;            // stamp the crowd index on the unit itself…
       list.push(u);
-      indices.set(u, list.length - 1);
       const k = u.ty * W + u.tx;
       let c = cells.get(k);
       if (!c) { c = []; cells.set(k, c); }
@@ -1478,7 +1477,9 @@ export class Game {
         for (const o of c) {
           // Resolve each pair once and push both participants. The old loop
           // evaluated every overlap twice, dominating large moving armies.
-          if ((indices.get(o) ?? -1) <= (indices.get(u) ?? -1)) continue;
+          // …and compare the stamped indices — no per-pair Map lookups in the
+          // hottest loop of the sim.
+          if (o.sepI <= u.sepI) continue;
           const dx = o.mesh.position.x - u.mesh.position.x, dz = o.mesh.position.z - u.mesh.position.z;
           const r = ru + 0.3 * (o.mesh.scale.x || 1);
           const d2 = dx * dx + dz * dz;
@@ -1581,10 +1582,14 @@ export class Game {
     u.obeyT = type === 'attack' ? 0 : 2.5;
   }
 
-  /** Ground a formation may stand on (shared by orders and the drag preview). */
+  /** Ground a formation may stand on (shared by orders and the drag preview).
+   *  Must stay in lock-step with World.passable: a spot the pathfinder can't
+   *  reach (a dense thicket reads as open grass here) makes sendTo fail, and
+   *  that unit silently drops its order instead of marching — the root of
+   *  "not all of my units moved" on big, wooded selections. */
   private readonly formationGround = (tx: number, ty: number): boolean => {
     const t = this.world.T(tx, ty);
-    return !!t && t.type === 'grass' && !t.b && !t.site && !t.dep;
+    return !!t && t.type === 'grass' && !t.b && !t.site && !t.dep && !t.tree?.dense;
   };
 
   /** The tiles a selection would occupy — the right-drag aim preview. `facing`

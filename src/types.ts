@@ -189,6 +189,7 @@ export interface Unit {
   anchor: Coord | null; // wild beasts & camp guards roam around (and leash to) this
   lungeT: number;       // melee swing animation timer (little hop toward the foe)
   hpBar: THREE.Object3D | null;
+  sepI: number;         // transient index within the crowd-separation pass (avoids a per-tick Map)
 }
 
 /** UI/Controls interaction mode. */
