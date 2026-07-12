@@ -2,9 +2,11 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 ## Bugs
 
+- for some reason resources are stored in the Storehouse (rename to Castle btw) and not used by production buildings? even when i set prioritize (rename the button from Prioritize this chain to Prioritize)
+
 - two serfs walked into each other and got stuck. this should not happen.
 
-- for some reason resources are stored in the Storehouse (rename to Castle btw) and not used by production buildings? even when i set prioritize (rename the button from Prioritize this chain to Prioritize)
+
 
 ## Design changes
 
