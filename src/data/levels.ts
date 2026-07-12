@@ -72,7 +72,7 @@ export const LEVELS: LevelDef[] = [
     objectives: [{ kind: 'produce', item: 'bread', n: 8 }],
     world: { w: 38, h: 38, treeStands: 6, oreVeins: 5, waterScale: 0.6, meadows: 3, goldPiles: 2 },
     kit: { stock: { timber: 12, stone: 10, bread: 6, coin: 4 }, serfs: 2, laborers: 1 },
-    timeTarget: 330, hardTimer: 520, reward: 30 },
+    timeTarget: 600, hardTimer: 520, reward: 30 },
 
   // two mines feeding one mint \u2014 the first dual-input recipe
   { index: 3, name: 'First Coin', type: 'Economy',
@@ -107,12 +107,12 @@ export const LEVELS: LevelDef[] = [
       { whenArmy: 16, delay: 60, kind: 'bandit', count: 5 },
       { whenArmy: 16, delay: 100, bonusTime: 150, kind: 'bandit', count: 8 },
     ] },
-    timeTarget: 300, hardTimer: 480, reward: 55 },
+    timeTarget: 900, hardTimer: 600, reward: 55 },
 
   // the hunt rolls its quarry: boars or wolves at Normal; from Hard the
   // ascension rewrites it to BOTH with growing counts (see ascendObjective —
   // main scales the wild packs on the map to match)
-  { index: 6, name: 'The Boar Hunt', type: 'Hunt',
+  { index: 6, name: 'The Wild Hunt', type: 'Hunt',
     objectives: [
       { kind: 'slay', unit: 'boar', n: 8 },
       { kind: 'slay', unit: 'wolf', n: 8 },
@@ -121,7 +121,7 @@ export const LEVELS: LevelDef[] = [
     kit: { stock: { timber: 14, stone: 10, bread: 12, coin: 8, weapon: 2 }, serfs: 2, laborers: 2 },
     startArmy: [{ kind: 'soldier', count: 8 }, { kind: 'archer', count: 4 }],
     enemies: { wild: [{ kind: 'boar', count: 10 }, { kind: 'wolf', count: 10 }] },
-    timeTarget: 260, hardTimer: 380, reward: 60 },
+    timeTarget: 900, hardTimer: 600, reward: 60 },
 
   // Frontier levels (7+): a mountain arc walls off an enemy quarter with a
   // guarded pass. Nothing hostile starts near you — combat begins when YOU
@@ -134,7 +134,7 @@ export const LEVELS: LevelDef[] = [
     enemies: { wild: [{ kind: 'wolf', count: 4 }], camps: [{ count: 2, guards: 8, kinds: ['bandit', 'bandit', 'orc'] }],
       commander: { every: 75, kind: 'bandit', count: 3, from: 'camp' },
       waves: [{ at: 380, kind: 'orc', count: 4 }] },
-    timeTarget: 480, hardTimer: 720, reward: 75 },
+    timeTarget: 900, hardTimer: 720, reward: 75 },
 
   { index: 8, name: 'The Fortified Village', type: 'Military',
     objectives: [{ kind: 'destroy', n: 4 }],
@@ -146,7 +146,7 @@ export const LEVELS: LevelDef[] = [
       camps: [{ count: 2, guards: 7, kinds: ['skeleton', 'skelarcher'] }],
       commander: { every: 70, kind: 'orc', count: 4, from: 'camp' },
       waves: [{ at: 440, kind: 'troll', count: 3 }, { at: 580, kind: 'zombie', count: 6 }] },
-    timeTarget: 560, hardTimer: 840, reward: 95 },
+    timeTarget: 900, hardTimer: 840, reward: 95 },
 
   { index: 9, name: 'The Enemy Keep', type: 'Military',
     objectives: [{ kind: 'destroy', n: 5 }],
@@ -159,7 +159,7 @@ export const LEVELS: LevelDef[] = [
       camps: [{ count: 2, guards: 9, kinds: ['zombie', 'skeleton', 'skelarcher'] }],
       commander: { every: 60, kind: 'orc', count: 5, from: 'camp' },
       waves: [{ at: 500, kind: 'troll', count: 3 }, { at: 700, kind: 'brute', count: 1 }] },
-    timeTarget: 660, hardTimer: 960, reward: 120 },
+    timeTarget: 900, hardTimer: 800, reward: 120 },
 
   { index: 10, name: 'Dragon\u2019s Hoard', type: 'Boss',
     objectives: [{ kind: 'slay', unit: 'dragon', n: 1 }],
@@ -175,7 +175,7 @@ export const LEVELS: LevelDef[] = [
       gatecamps: { guards: 8, kinds: ['skeleton', 'skelarcher', 'orc'] },
       camps: [{ count: 2, guards: 10, kinds: ['skeleton', 'skelarcher', 'zombie', 'brute'] }],
       waves: [{ at: 300, kind: 'boar', count: 6 }, { at: 520, kind: 'orc', count: 5 }, { at: 760, kind: 'troll', count: 2 }, { at: 950, kind: 'zombie', count: 8 }] },
-    timeTarget: 840, hardTimer: 1200, reward: 160 },
+    timeTarget: 1200, hardTimer: 1000, reward: 160 },
 ];
 
 /** The level for a run index (clamped so runs never fall off the end of the table). */
