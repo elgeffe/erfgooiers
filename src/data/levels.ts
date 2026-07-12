@@ -107,7 +107,7 @@ export const LEVELS: LevelDef[] = [
       { whenArmy: 16, delay: 60, kind: 'bandit', count: 5 },
       { whenArmy: 16, delay: 100, bonusTime: 150, kind: 'bandit', count: 8 },
     ] },
-    timeTarget: 900, hardTimer: 600, reward: 55 },
+    timeTarget: 900, hardTimer: 800, reward: 55 },
 
   // the hunt rolls its quarry: boars or wolves at Normal; from Hard the
   // ascension rewrites it to BOTH with growing counts (see ascendObjective —
@@ -121,7 +121,7 @@ export const LEVELS: LevelDef[] = [
     kit: { stock: { timber: 14, stone: 10, bread: 12, coin: 8, weapon: 2 }, serfs: 2, laborers: 2 },
     startArmy: [{ kind: 'soldier', count: 8 }, { kind: 'archer', count: 4 }],
     enemies: { wild: [{ kind: 'boar', count: 10 }, { kind: 'wolf', count: 10 }] },
-    timeTarget: 900, hardTimer: 600, reward: 60 },
+    timeTarget: 900, hardTimer: 800, reward: 60 },
 
   // Frontier levels (7+): a mountain arc walls off an enemy quarter with a
   // guarded pass. Nothing hostile starts near you — combat begins when YOU
