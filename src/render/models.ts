@@ -683,6 +683,18 @@ function addHorse(g: THREE.Group, horseM: SceneMaterial, dark: SceneMaterial): v
   const tail = new THREE.Mesh(cone(0.035, 0.2, 5), dark); tail.position.set(0, 0.32, -0.32); tail.rotation.x = Math.PI - 0.5; g.add(tail);
 }
 
+export function makeTraderCaravan(): THREE.Group {
+  const g = new THREE.Group(), dark = umat(0x34281f), wood = umat(0x7a4f2d), cloth = umat(0xb54f38);
+  for (const x of [-0.2, 0.2]) { const h = new THREE.Group(); addHorse(h, umat(x < 0 ? 0x8a5a3a : 0x6a4932), dark); h.position.set(x, 0, 0.45); g.add(h); }
+  const cart = new THREE.Group(); cart.position.z = -0.45;
+  const bed = new THREE.Mesh(box(0.75, 0.18, 0.75), wood); bed.position.y = 0.35; cart.add(bed);
+  for (const x of [-0.42, 0.42]) { const w = new THREE.Mesh(cyl(0.22, 0.22, 0.06, 12), dark); w.rotation.z = Math.PI / 2; w.position.set(x, 0.23, 0); cart.add(w); }
+  const canopy = new THREE.Mesh(box(0.72, 0.08, 0.72), cloth); canopy.position.y = 0.82; cart.add(canopy);
+  for (const x of [-0.31, 0.31]) for (const z of [-0.3, 0.3]) { const p = new THREE.Mesh(box(0.035, 0.5, 0.035), wood); p.position.set(x, 0.58, z); cart.add(p); }
+  const trader = makeHumanoid(0x6a4b8a, 'minter').group; trader.scale.setScalar(0.75); trader.position.set(0, 0.42, -0.05); cart.add(trader);
+  g.add(cart); g.scale.setScalar(1.25); return g;
+}
+
 /** Cavalry from the Stable: horse + armed rider, silhouette per kind —
  *  the lancer's couched lance, the horse archer's bow & quiver, the horse
  *  knight's full plate and shield. All face +z like every walker. */
@@ -1437,6 +1449,7 @@ export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean)
     case 'enemywatchtower': case 'stonetower': return stoneWatchtower(def, ghost);
     case 'banditcamp': return banditCamp(def, ghost);
     case 'monastery': return monasteryBuilding(def, ghost);
+    case 'market': return marketBuilding(def, ghost);
     case 'wall': case 'enemywall': return wallSegment(def, ghost);
     case 'gate': case 'enemygate': return gateArch(def, ghost);
   }
@@ -1465,6 +1478,17 @@ function monasteryBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
   const crossH = new THREE.Mesh(box(0.25, 0.06, 0.06), gold); crossH.position.set(-0.55, 2.12, -0.5); g.add(crossH);
   const door = new THREE.Mesh(box(0.52, 0.68, 0.08), mkMat(0x5b3926, ghost)); door.position.set(-0.35, 0.34, 0.88); door.userData.marker = true; g.add(door);
   for (const x of [0.2, 0.58]) { const w = new THREE.Mesh(box(0.18, 0.32, 0.04), gold); w.position.set(x, 0.5, 0.86); g.add(w); }
+  return g;
+}
+
+function marketBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group(), plaster = mkMat(def.wall, ghost), roof = mkMat(def.roof, ghost), wood = mkMat(0x6b472d, ghost);
+  const hall = new THREE.Mesh(box(1.65, 0.72, 1.25), plaster); hall.position.set(0, 0.36, -0.12); hall.castShadow = !ghost; g.add(hall);
+  const cap = new THREE.Mesh(box(1.82, 0.16, 1.42), roof); cap.position.set(0, 0.82, -0.12); g.add(cap);
+  for (const x of [-0.68, 0, 0.68]) { const post = new THREE.Mesh(box(0.08, 0.7, 0.08), wood); post.position.set(x, 0.35, 0.72); g.add(post); }
+  const awning = new THREE.Mesh(box(1.55, 0.08, 0.55), roof); awning.position.set(0, 0.78, 0.72); awning.rotation.x = -0.18; g.add(awning);
+  const counter = new THREE.Mesh(box(1.45, 0.18, 0.25), wood); counter.position.set(0, 0.38, 0.75); g.add(counter);
+  const sign = new THREE.Mesh(box(0.5, 0.38, 0.05), mkMat(def.accent ?? 0xffd24a, ghost)); sign.position.set(0, 1.15, 0.52); sign.userData.marker = true; g.add(sign);
   return g;
 }
 

@@ -12,6 +12,7 @@ export type BuildingKey =
   | 'vineyard' | 'winery' | 'pigfarm' | 'butcher' | 'tavern' | 'fishery' | 'clamdigger'
   | 'barracks' | 'stable' | 'engineer' | 'ironmine' | 'smithy' | 'armory' | 'watchtower'
   | 'stonetower' | 'wall' | 'gate' | 'monastery'
+  | 'market'
   | 'banditcamp' | 'enemywatchtower' | 'enemycastle' | 'enemywall' | 'enemygate';
 
 export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'iron' | 'field' | 'fish';
@@ -128,6 +129,9 @@ export interface Building {
   rally?: Coord;               // barracks: where freshly trained fighters march to
   rallyMesh?: THREE.Object3D;  // the flag marking the rally point
   removed?: boolean;
+  marketItem?: ItemKey;
+  marketAmount?: number;
+  marketTimer?: number;
   isSite?: false;
 }
 

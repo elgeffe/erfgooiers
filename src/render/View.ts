@@ -5,7 +5,7 @@ import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, BuildingKey, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeHero, makeRock, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, setActiveBiome, sphere, stdMat, withSeededScatter, type CritterKind } from './models';
+import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeHero, makeRock, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTraderCaravan, makeTree, makeUnit, noOutline, setActiveBiome, sphere, stdMat, withSeededScatter, type CritterKind } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -463,6 +463,7 @@ this.skyBirds.length = 0;
   createFireball(): THREE.Group { const m = makeFireball(); this.worldGroup.add(m); return m; }
   createFlame(): THREE.Group { const m = makeFlame(); this.worldGroup.add(m); return m; }
   createFlag(): THREE.Group { const m = makeFlag(); this.worldGroup.add(m); return m; }
+  createTraderCaravan(): THREE.Group { const m = makeTraderCaravan(); this.worldGroup.add(m); this.freeze(m, false); return m; }
   /** Marker parented onto a building mesh (not the world) so it follows it. */
   createPlotMarker(): THREE.Group { return makePlotMarker(); }
 
