@@ -16,6 +16,7 @@ export interface FormationOrigin { x: number; y: number; }
  * Shapes:
  *  - box:   a solid block, ~1.8× wider than deep
  *  - line:  a broad wall at most 3 ranks deep
+ *  - column: a marching column, at most 3 files wide
  *  - split: two half-strength boxes flanking a gap (envelopment / pincer)
  *
  * The returned spots are ordered front rank first (nearest the foe, furthest
@@ -89,6 +90,8 @@ export function formationSpots(
   if (formation === 'line') {
     // a broad wall: never deeper than 3 ranks
     block(count, Math.max(1, Math.ceil(count / 3)), 0);
+  } else if (formation === 'column') {
+    block(count, Math.min(3, count), 0);
   } else if (formation === 'split') {
     // two half-boxes flanking a central gap — the pincer
     const half = Math.ceil(count / 2), rest = count - half;
