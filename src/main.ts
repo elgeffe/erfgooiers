@@ -156,6 +156,19 @@ function startLevel(): void {
   let enemies = hellFinale && level.enemies
     ? { ...level.enemies, camps: [...(level.enemies.camps ?? []), { count: 4, guards: 14, kinds: ['skeleton', 'skelarcher', 'zombie', 'brute'] as UnitKind[] }] }
     : level.enemies ?? null;
+  // The dragon level turns into a two-phase siege on higher ascensions: the
+  // dragon stays hidden until its whole host is razed, and that host swells
+  // with extra camps and fortified strongholds (garrisonMult scales the guards
+  // further still). See Game.deferBoss / enemyGarrisonLeft.
+  if (!sandbox && level.index === 10 && run.ascension > 0 && enemies) {
+    game.deferBoss = true;
+    const a = Math.min(3, run.ascension);
+    enemies = {
+      ...enemies,
+      camps: [...(enemies.camps ?? []), { count: 1 + a, guards: 8 + a * 2, kinds: ['orc', 'zombie', 'skeleton', 'skelarcher'] as UnitKind[] }],
+      strongholds: { count: a, guards: 12, towers: 2, kinds: ['orc', 'troll', 'skeleton', 'skelarcher', 'zombie'] as UnitKind[] },
+    };
+  }
   // the hunt's quarry grows with the tier: enough wolves AND boars on the map
   // to honour the swollen slayMulti objective (see ascendObjective)
   if (!sandbox && enemies?.wild && level.type === 'Hunt' && run.ascension > 0) {

@@ -1814,7 +1814,13 @@ export class Game {
         for (let t = 0; t < (s.towers ?? 2); t++) this.spawnTowerNear(keep);
       }
     }
-    if (setup.boss) this.spawnBoss(setup.boss);
+    this.pendingBoss = null;
+    if (setup.boss) {
+      if (this.deferBoss && this.enemyGarrisonLeft() > 0) {
+        this.pendingBoss = setup.boss;
+        this.toast(`Raze every enemy stronghold first — only then will the ${UNITS[setup.boss].name} reveal itself`, 'err');
+      } else this.spawnBoss(setup.boss);
+    }
   }
 
   /** Player-faction fighters currently alive (arming muster-triggered raids). */
@@ -1841,6 +1847,12 @@ export class Game {
 
   private combatDirector(sdt: number): void {
     if (!this.enemy) return;
+    // two-phase boss: once the whole enemy garrison is razed, the held-back
+    // dragon reveals itself and sweeps in from the edge for the final fight
+    if (this.pendingBoss && this.enemyGarrisonLeft() === 0) {
+      const kind = this.pendingBoss; this.pendingBoss = null;
+      this.spawnBoss(kind, true);
+    }
     // launch scheduled raid waves at the castle. Waves are sequential: the
     // head wave launches on its trigger (a timestamp, or the player's muster
     // reaching size + a grace delay), then the next takes its place.
@@ -2034,10 +2046,30 @@ export class Game {
   /** Boss health multiplier for the run's difficulty tier (set by main). */
   bossHpMult = 1;
 
-  private spawnBoss(kind: UnitKind): void {
+  /** The dragon level's two-phase fight (set by main for higher ascensions):
+   *  the boss is held back until every enemy encampment and fortress has been
+   *  razed, then it reveals itself and sweeps in from the map edge. */
+  deferBoss = false;
+  private pendingBoss: UnitKind | null = null;
+
+  /** Standing enemy garrison structures — camps, keeps and their towers. The
+   *  deferred boss waits for this to reach zero. Walls & gates don't count:
+   *  they're fortifications to breach, not strongholds to raze. */
+  private enemyGarrisonLeft(): number {
+    let n = 0;
+    for (const b of this.buildings) {
+      if (b.removed || b.faction !== 'enemy') continue;
+      if (b.key === 'banditcamp' || b.key === 'enemycastle' || b.key === 'enemywatchtower') n++;
+    }
+    return n;
+  }
+
+  private spawnBoss(kind: UnitKind, fromEdge = false): void {
     // on frontier maps the boss broods in the walled-off enemy quarter and
-    // stays there — the player picks when to march in and start that fight
-    const ez = this.world.enemyZone;
+    // stays there — the player picks when to march in and start that fight.
+    // `fromEdge` overrides that (the deferred two-phase reveal): the boss
+    // sweeps in from the map edge and bears down on the town.
+    const ez = fromEdge ? null : this.world.enemyZone;
     if (ez) {
       const squad = this.spawnSquad(kind, 1, this.world.wx(ez.x), this.world.wz(ez.y), UNITS[kind].faction);
       for (const u of squad) u.hp = u.maxHp = Math.round(u.maxHp * this.bossHpMult);
