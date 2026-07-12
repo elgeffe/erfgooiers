@@ -2016,6 +2016,16 @@ export class Game {
     const W = this.world.W, H = this.world.H;
     if (x < 0 || y < 0 || x >= W || y >= H) return false;
     if (!this.reachMask) {
+      // Reachable *for a besieging army*: enemy buildings can be razed, so
+      // they don't wall ground off. Gate garrisons planted ON a frontier pass
+      // used to plug the strict walk-mask, marking the whole quarter behind
+      // them unreachable — every stronghold then fell back to random ground in
+      // the player's half of the map, right next to the castle.
+      const walk = (tx: number, ty: number): boolean => {
+        if (this.world.passable(tx, ty)) return true;
+        const t = this.world.T(tx, ty);
+        return !!t && t.type === 'grass' && !!t.b && t.b.faction !== 'player' && !t.dep && !t.tree?.dense;
+      };
       const seen = new Uint8Array(W * H);
       const qx: number[] = [], qy: number[] = [];
       const cx = Math.floor(W / 2), cy = Math.floor(H / 2);
@@ -2027,7 +2037,7 @@ export class Game {
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           const nx = qx[i] + dx, ny = qy[i] + dy;
           if (nx < 0 || ny < 0 || nx >= W || ny >= H || seen[ny * W + nx]) continue;
-          if (!this.world.passable(nx, ny)) continue;
+          if (!walk(nx, ny)) continue;
           seen[ny * W + nx] = 1; qx.push(nx); qy.push(ny);
         }
       }
@@ -2065,13 +2075,22 @@ export class Game {
       if (best) return best;
       // the quarter can be waterlogged on a wet seed — fall through to anywhere
     }
-    // prefer walk-reachable ground; only settle for anywhere if none exists
+    // prefer walk-reachable ground; only settle for anywhere if none exists.
+    // Keep WELL clear of the player's start (scaled to the map — a flat 12
+    // tiles put fallback camps in the middle of the town on big maps) and take
+    // the farthest candidate rather than the first, so a fallback camp still
+    // reads as frontier trouble, never a squatter beside the castle.
+    const clear = Math.max(12, Math.round(Math.min(W, H) * 0.22));
     for (const anywhere of [false, true]) {
+      let best: { x: number; y: number } | null = null, bd = -1;
       for (let tries = 0; tries < 400; tries++) {
         const x = 2 + Math.floor(rnd() * (W - 5)), y = 2 + Math.floor(rnd() * (H - 5));
-        if (Math.abs(x - cx) < 12 && Math.abs(y - cy) < 12) continue; // keep clear of the player's start
-        if (anywhere ? this.areaClear(x, y) : open(x, y)) return { x, y };
+        const d = Math.hypot(x - cx, y - cy);
+        if (d < clear) continue; // keep clear of the player's start
+        if (!(anywhere ? this.areaClear(x, y) : open(x, y))) continue;
+        if (d > bd) { bd = d; best = { x, y }; }
       }
+      if (best) return best;
     }
     return null;
   }
