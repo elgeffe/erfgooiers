@@ -142,10 +142,10 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     tower: { range: 8, dmg: 11, rate: 1.5 } },
 
   wall: { name: 'Stone Wall', desc: 'A solid stretch of rampart — raiders must batter it down to pass', model: 'mine',
-    cost: { stone: 4 }, roof: 0x8a9095, wall: 0x9aa0a3, accent: 0x6a7076, hp: 600, bulwark: true },
+    cost: { stone: 4 }, roof: 0x8a9095, wall: 0x9aa0a3, accent: 0x6a7076, hp: 600, bulwark: true, entrance: 'none' },
 
   gate: { name: 'Gate', desc: 'A fortified archway: your own units pass freely, enemies must break it down', model: 'mine',
-    cost: { timber: 2, stone: 3 }, roof: 0x77593a, wall: 0x9aa0a3, accent: 0x6b4a2f, hp: 450, bulwark: true, gate: true },
+    cost: { timber: 2, stone: 3 }, roof: 0x77593a, wall: 0x9aa0a3, accent: 0x6b4a2f, hp: 450, bulwark: true, gate: true, entrance: 'through' },
 
   banditcamp: { name: 'Bandit Camp', desc: 'A den of raiders', model: 'barn',
     cost: {}, roof: 0x4a2e20, wall: 0x6b4a34, accent: 0x3a2a20, hp: 180 },
@@ -159,10 +159,10 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     tower: { range: 7, dmg: 11, rate: 2.2 } },
 
   enemywall: { name: 'Stronghold Wall', desc: 'The stronghold’s rampart — batter it down or find the gate', model: 'mine',
-    cost: {}, roof: 0x5a5560, wall: 0x777d82, accent: 0x4a5056, hp: 500, bulwark: true },
+    cost: {}, roof: 0x5a5560, wall: 0x777d82, accent: 0x4a5056, hp: 500, bulwark: true, entrance: 'none' },
 
   enemygate: { name: 'Stronghold Gate', desc: 'The stronghold’s barred gate — its defenders pass, you don’t', model: 'mine',
-    cost: {}, roof: 0x4a3a30, wall: 0x777d82, accent: 0x3a2a20, hp: 400, bulwark: true, gate: true },
+    cost: {}, roof: 0x4a3a30, wall: 0x777d82, accent: 0x3a2a20, hp: 400, bulwark: true, gate: true, entrance: 'through' },
 };
 
 /** Build-menu tabs, grouping buildings by the goal / production chain they serve. */

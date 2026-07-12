@@ -1459,16 +1459,16 @@ function gateArch(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   const stone = mkMat(def.wall, ghost), cap = mkMat(def.roof, ghost);
   const wood = mkMat(def.accent ?? 0x6b4a2f, ghost);
-  for (const s of [-1, 1]) { // twin flanking towers with capped tops
-    const t = new THREE.Mesh(box(0.6, 1.5, 1.9), stone);
-    t.position.set(s * 0.68, 0.75, 0); t.castShadow = !ghost; g.add(t);
-    const c = new THREE.Mesh(box(0.72, 0.14, 2.0), cap);
-    c.position.set(s * 0.68, 1.56, 0); g.add(c);
+  for (const s of [-1, 1]) { // slim piers leave an almost two-tile-wide passage
+    const t = new THREE.Mesh(box(0.18, 1.5, 1.9), stone);
+    t.position.set(s * 0.9, 0.75, 0); t.castShadow = !ghost; g.add(t);
+    const c = new THREE.Mesh(box(0.28, 0.14, 2.0), cap);
+    c.position.set(s * 0.86, 1.56, 0); g.add(c);
   }
   const lintel = new THREE.Mesh(box(1.96, 0.4, 1.9), stone);
   lintel.position.y = 1.28; lintel.castShadow = !ghost; g.add(lintel);
   for (const s of [-1, 1]) { // heavy timber doors on both faces of the passage
-    const doors = new THREE.Mesh(box(0.78, 1.05, 0.1), wood);
+    const doors = new THREE.Mesh(box(1.62, 1.05, 0.1), wood);
     doors.position.set(0, 0.53, s * 0.92); doors.userData.marker = true; g.add(doors);
   }
   return g;

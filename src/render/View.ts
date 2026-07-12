@@ -1528,9 +1528,13 @@ this.updateSkyBirds(dt);
     if (this.ghostKey !== key) {
       this.scene.remove(this.ghost);
       this.ghost = makeBuilding(key, def, true);
-      const mk = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), noOutline(new THREE.MeshBasicMaterial({ color: 0xd9a441, transparent: true, opacity: 0.7, side: THREE.DoubleSide })));
-      mk.rotation.x = -Math.PI / 2; mk.position.set(-0.5, 0.04, 1.5); mk.userData.marker = true;
-      this.ghost.add(mk);
+      const offsets = def.entrance === 'none' ? [] : def.entrance === 'through'
+        ? [[-0.5, -1.5], [0.5, -1.5], [-0.5, 1.5], [0.5, 1.5]] : [[-0.5, 1.5]];
+      for (const [x, z] of offsets) {
+        const mk = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), noOutline(new THREE.MeshBasicMaterial({ color: 0xd9a441, transparent: true, opacity: 0.7, side: THREE.DoubleSide })));
+        mk.rotation.x = -Math.PI / 2; mk.position.set(x, 0.04, z); mk.userData.marker = true;
+        this.ghost.add(mk);
+      }
       this.scene.add(this.ghost); this.ghostKey = key;
     }
     this.ghost.visible = true;

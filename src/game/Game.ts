@@ -10,7 +10,7 @@ import { formationSpots } from '../engine/formations';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
 import type { Building, BuildingKey, Coord, Faction, Formation, Site, Unit } from '../types';
-import { doorTile, unitLabel } from './util';
+import { buildingEntranceTiles, doorTile, unitLabel } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
 
@@ -763,8 +763,8 @@ export class Game {
       if (!t || t.type !== 'grass' || t.b || t.site || t.dep || t.road || t.field) return false;
       if (t.tree?.dense) return false;    // old-growth is not for clearing
     }
-    const d = doorTile({ x: tx, y: ty, rot });
-    return this.world.passable(d.x, d.y);
+    return buildingEntranceTiles({ x: tx, y: ty, rot, def: DEFS[key] })
+      .every(d => this.world.passable(d.x, d.y));
   }
 
   private depositInRange(kind: string, tx: number, ty: number, range: number): boolean {
@@ -898,8 +898,8 @@ export class Game {
   /** Door/entrance tiles of every building and site — highlighted while painting roads. */
   entranceTiles(): Coord[] {
     const out: Coord[] = [];
-    for (const b of this.buildings) out.push(doorTile(b));
-    for (const s of this.sites) out.push(doorTile(s));
+    for (const b of this.buildings) out.push(...buildingEntranceTiles(b));
+    for (const s of this.sites) out.push(...buildingEntranceTiles(s));
     return out;
   }
 
@@ -1919,7 +1919,8 @@ export class Game {
         || (side === 's' && dy === R && dx === 0) || (side === 'n' && dy === -R && dx === 0);
       const x = b.x + dx, y = b.y + dy;
       if (!this.areaClear(x, y)) continue;
-      const w = this.placeBuilding(gate ? 'enemygate' : 'enemywall', x, y, true, 0, 'enemy');
+      const rot = gate && (side === 'e' || side === 'w') ? 1 : 0;
+      const w = this.placeBuilding(gate ? 'enemygate' : 'enemywall', x, y, true, rot, 'enemy');
       w.active = true;
     }
   }

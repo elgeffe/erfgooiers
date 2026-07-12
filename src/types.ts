@@ -73,6 +73,7 @@ export interface BuildingDef {
   tower?: TowerDef;            // watchtowers/keeps: automatic arrow fire
   bulwark?: boolean;           // fortification: razing it never counts as a stronghold
   gate?: boolean;              // its own faction walks through; enemies must break it
+  entrance?: 'none' | 'through'; // default front door; through = two-wide on both faces
 }
 
 export interface Coord { x: number; y: number; }
