@@ -1,5 +1,5 @@
 fix each of these items, always start with bugs first, then design changes > improvements > features > epics should always be last and first written out as docs/.md file.
-
+implement a few new beginning motifs and start them randomly. i want a random one to load at startup and at the first levels to give the player some more variety. i'm thinking: a few different modal jazz motifs (refactor the audio engine if needed for better architecture). a retro 8bit inspired motif.
 
 formations are broken, when i select a large number of units not all of them move. fix the bug. while looking at this, improve fps performance when large number of units are moving and getting commands, push it to the limit of your capabilities
 i want 360 degree right click hold formation.
