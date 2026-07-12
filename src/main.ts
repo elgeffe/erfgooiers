@@ -13,7 +13,7 @@ import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID, cardUnlocked, specsFor } from './da
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
-import { DEFAULT_SANDBOX, biomeWater, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
+import { DEFAULT_SANDBOX, MAX_SANDBOX_STRONGHOLDS, biomeWater, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
 import { campaignBiome } from './data/biomes';
 import type { BiomeKey } from './data/biomes';
 import { UNITS, type UnitKind } from './data/units';
@@ -306,8 +306,6 @@ function sbxGroups(): { key: keyof SandboxConfig; label: string; opts: [string, 
     { key: 'biome', label: 'Biome', opts: [['gooi', 'Het Gooi'], ['ardennes', 'The Ardennes'], ['blackforest', 'The Black Forest'], ['alps', 'The Alps'], ['winter', 'Winter'], ['polder', 'The Polder'], ['seaside', 'Zeeland Delta'], ['island', 'Texel'], ['hell', 'Hell']] },
     { key: 'mapRes', label: 'Map resources', opts: [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']] },
     { key: 'startRes', label: 'Starting stock', opts: [['modest', 'Modest'], ['plentiful', 'Plentiful'], ['cornucopia', 'Cornucopia']] },
-    { key: 'enemies', label: 'Enemies', opts: [['none', 'None — peaceful'], ['wilds', 'Wild beasts'], ['camps', 'Bandit camps'], ['warzone', 'Warzone']] },
-    { key: 'strongholds', label: 'Enemy strongholds — camps holding spots across the map', opts: [['0', 'As the enemies say'], ['2', '2 strongholds'], ['4', '4 strongholds'], ['6', '6 strongholds']] },
     { key: 'hero', label: 'Hero', opts: [['none', 'No hero'], ...HEROES.map(h => [h.id, `${h.icon} ${h.name}`] as [string, string])] },
   ];
 }
@@ -327,17 +325,37 @@ function renderSandboxSetup(): void {
     }
     s += '</div></div>';
   }
+  // Trouble: independent toggles for beasts & camps, plus a stronghold count.
+  // With nothing toggled and no strongholds, the map stays perfectly peaceful.
+  s += '<div class="optgroup"><div class="optlabel">Enemies — toggle any trouble you want (leave all off for a peaceful build)</div><div class="optrow">'
+    + `<button class="opt${sandboxCfg.wildBeasts ? ' on' : ''}" data-toggle="wildBeasts">🐗 Wild beasts</button>`
+    + `<button class="opt${sandboxCfg.banditCamps ? ' on' : ''}" data-toggle="banditCamps">🗡️ Bandit camps</button>`
+    + '</div></div>';
+  s += `<div class="optgroup"><div class="optlabel">Enemy strongholds — fortified castles with walls & towers dotted across the corners</div>`
+    + `<label class="sbxnum">Strongholds <input id="sbxStrongholds" type="number" min="0" max="${MAX_SANDBOX_STRONGHOLDS}" step="1" value="${sandboxCfg.strongholds}"> <span class="whint">(0–${MAX_SANDBOX_STRONGHOLDS})</span></label></div>`;
   el.innerHTML = s;
   el.querySelectorAll<HTMLElement>('.opt[data-key]').forEach(b => {
     b.onclick = () => {
       const key = b.dataset.key as keyof SandboxConfig;
-      // numeric knobs (stronghold count) parse back from their string value
-      (sandboxCfg as any)[key] = key === 'strongholds' ? Number(b.dataset.val) : b.dataset.val;
+      (sandboxCfg as any)[key] = b.dataset.val;
       // water isn't chosen directly — it follows whichever biome is picked
       if (key === 'biome') sandboxCfg.water = biomeWater(b.dataset.val as BiomeKey);
       audio.play('click');
       renderSandboxSetup();
     };
+  });
+  el.querySelectorAll<HTMLElement>('.opt[data-toggle]').forEach(b => {
+    b.onclick = () => {
+      const key = b.dataset.toggle as 'wildBeasts' | 'banditCamps';
+      sandboxCfg[key] = !sandboxCfg[key];
+      audio.play('click');
+      renderSandboxSetup();
+    };
+  });
+  const strong = $('sbxStrongholds') as HTMLInputElement;
+  strong.addEventListener('keydown', e => e.stopPropagation());
+  strong.addEventListener('input', () => {
+    sandboxCfg.strongholds = Math.max(0, Math.min(MAX_SANDBOX_STRONGHOLDS, Math.round(Number(strong.value) || 0)));
   });
 }
 

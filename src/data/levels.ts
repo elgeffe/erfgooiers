@@ -24,6 +24,9 @@ export interface EnemySetup {
   camps?: { count: number; guards: number; kinds?: UnitKind[] }[];
   /** One enemy keep (late levels); `fortified` rings it with walls & a gate. */
   keep?: { guards: number; kinds?: UnitKind[]; fortified?: boolean };
+  /** Several fortified enemy castles dotted across the walled corners of the
+   *  map — each ringed with walls and its own ring of watchtowers. */
+  strongholds?: { count: number; guards: number; kinds?: UnitKind[]; towers?: number };
   /** A garrison camped ON each frontier pass — the road-block that must fall
    *  before an army can march through into the walled enemy quarter. */
   gatecamps?: { guards: number; kinds?: UnitKind[] };
@@ -194,14 +197,18 @@ export interface SandboxConfig {
   water: 'dry' | 'normal' | 'wet';
   mapRes: 'sparse' | 'normal' | 'rich';
   startRes: 'modest' | 'plentiful' | 'cornucopia';
-  enemies: 'none' | 'wilds' | 'camps' | 'warzone';
-  /** Enemy strongholds dotted across the map (0 = whatever `enemies` implies). */
-  strongholds: 0 | 2 | 4 | 6;
+  /** Independent trouble toggles: roaming wild beasts and/or bandit camps. */
+  wildBeasts: boolean;
+  banditCamps: boolean;
+  /** Fortified enemy castles dotted across the map's corners (0–6). */
+  strongholds: number;
   hero: string; // 'none' or a HeroDef id; sandbox exposes every hero for testing
 }
 
+export const MAX_SANDBOX_STRONGHOLDS = 6;
+
 export const DEFAULT_SANDBOX: SandboxConfig = {
-  size: 'large', biome: 'gooi', water: 'normal', mapRes: 'rich', startRes: 'plentiful', enemies: 'none', strongholds: 0, hero: 'none',
+  size: 'large', biome: 'gooi', water: 'normal', mapRes: 'rich', startRes: 'plentiful', wildBeasts: false, banditCamps: false, strongholds: 0, hero: 'none',
 };
 
 /** The water level is a property of the biome, not a separate knob: waterlogged
@@ -230,33 +237,31 @@ export function sandboxLevel(cfg: SandboxConfig = DEFAULT_SANDBOX): LevelDef {
   const size = SBX_SIZE[cfg.size];
   const den = SBX_DENSITY[cfg.mapRes];
   const scale = size / 48;
-  const hostile = cfg.enemies === 'camps' || cfg.enemies === 'warzone' || cfg.strongholds > 0;
+  const strongholds = Math.max(0, Math.min(MAX_SANDBOX_STRONGHOLDS, Math.round(cfg.strongholds)));
+  // strongholds are walled castles that garrison enemy quarters, so they (and
+  // bandit camps) make the map hostile — its trouble kept behind the pass
+  const hostile = cfg.banditCamps || strongholds > 0;
   // no scheduled waves in the sandbox: raids come only from the wave console
-  // (the modal), never on a hidden default timer
-  let enemies: EnemySetup | undefined =
-    cfg.enemies === 'none' ? undefined
-      : cfg.enemies === 'wilds' ? {
-        wild: [
-          { kind: 'boar', count: Math.round(6 * scale) },
-          { kind: 'wolf', count: Math.round(5 * scale) },
-        ],
-      } : cfg.enemies === 'camps' ? {
-        wild: [{ kind: 'wolf', count: Math.round(4 * scale) }],
-        camps: [{ count: Math.max(2, Math.round(2 * scale)), guards: 4 }],
-        commander: { every: 120, kind: 'bandit', count: 3, from: 'camp' },
-      } : {
-        wild: [{ kind: 'boar', count: Math.round(4 * scale) }],
-        camps: [{ count: Math.max(2, Math.round(2 * scale)), guards: 5 }],
-        keep: { guards: 8, fortified: true }, towers: 3,
-        commander: { every: 75, kind: 'orc', count: 4, from: 'camp' },
-      };
-  // an explicit stronghold count overrides whatever the trouble level implies
-  if (cfg.strongholds > 0) {
-    enemies = { ...(enemies ?? {}), camps: [{ count: cfg.strongholds, guards: 5 }] };
+  // (the modal), never on a hidden default timer. Each toggle contributes its
+  // own presence, so wild beasts + camps + strongholds can all run at once.
+  const enemies: EnemySetup = {};
+  if (cfg.wildBeasts) enemies.wild = [
+    { kind: 'boar', count: Math.round(6 * scale) },
+    { kind: 'wolf', count: Math.round(5 * scale) },
+  ];
+  if (cfg.banditCamps) {
+    enemies.camps = [{ count: Math.max(2, Math.round(2 * scale)), guards: 5, kinds: ['bandit', 'bandit', 'orc'] }];
+    enemies.commander = { every: 110, kind: 'bandit', count: 3, from: 'camp' };
   }
-  const startArmy = cfg.enemies === 'none' && cfg.strongholds === 0 ? undefined
-    : cfg.enemies === 'wilds' ? [{ kind: 'soldier' as UnitKind, count: 8 }, { kind: 'archer' as UnitKind, count: 4 }]
-      : cfg.enemies === 'camps' || cfg.enemies === 'none' ? [{ kind: 'soldier' as UnitKind, count: 12 }, { kind: 'archer' as UnitKind, count: 8 }, { kind: 'knight' as UnitKind, count: 2 }]
+  if (strongholds > 0) {
+    enemies.strongholds = { count: strongholds, guards: 10, towers: 2, kinds: ['orc', 'skeleton', 'skelarcher', 'troll'] };
+  }
+  const anyEnemies = cfg.wildBeasts || cfg.banditCamps || strongholds > 0;
+  // a defending garrison scaled to how much trouble was invited
+  const armyTier = strongholds >= 4 ? 3 : strongholds > 0 || cfg.banditCamps ? 2 : cfg.wildBeasts ? 1 : 0;
+  const startArmy = armyTier === 0 ? undefined
+    : armyTier === 1 ? [{ kind: 'soldier' as UnitKind, count: 8 }, { kind: 'archer' as UnitKind, count: 4 }]
+      : armyTier === 2 ? [{ kind: 'soldier' as UnitKind, count: 12 }, { kind: 'archer' as UnitKind, count: 8 }, { kind: 'knight' as UnitKind, count: 2 }]
         : [{ kind: 'soldier' as UnitKind, count: 16 }, { kind: 'archer' as UnitKind, count: 10 }, { kind: 'knight' as UnitKind, count: 4 }, { kind: 'lancer' as UnitKind, count: 4 }];
   return {
     index: 0, name: 'Sandbox', type: 'Sandbox',
@@ -276,6 +281,6 @@ export function sandboxLevel(cfg: SandboxConfig = DEFAULT_SANDBOX): LevelDef {
     },
     kit: SBX_KITS[cfg.startRes],
     timeTarget: Infinity, hardTimer: Infinity, reward: 0,
-    enemies,
+    enemies: anyEnemies ? enemies : undefined,
   };
 }

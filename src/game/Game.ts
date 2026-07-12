@@ -1802,6 +1802,18 @@ export class Game {
       if (camp && setup.towers) for (let i = 0; i < setup.towers; i++) this.spawnTowerNear(camp);
       if (camp && setup.keep.fortified) this.fortifyStronghold(camp);
     }
+    // several fortified castles — each a walled keep ringed with watchtowers,
+    // dealt round-robin into the map's walled corners / mountain pockets
+    // (spawnStronghold already scales the garrison by garrisonMult)
+    if (setup.strongholds) {
+      const s = setup.strongholds;
+      for (let i = 0; i < s.count; i++) {
+        const keep = this.spawnStronghold('enemycastle', s.guards, s.kinds);
+        if (!keep) continue;
+        this.fortifyStronghold(keep);
+        for (let t = 0; t < (s.towers ?? 2); t++) this.spawnTowerNear(keep);
+      }
+    }
     if (setup.boss) this.spawnBoss(setup.boss);
   }
 
