@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ROAD_STONE_COST, PLOT_RANGE, BASE_SPEED, MAX_UNITS } from '../constants';
 import { DEFS } from '../data/buildings';
-import { ITEMS, MARKET_VALUES } from '../data/items';
+import { ITEMS } from '../data/items';
 import { UNITS, damageMultiplier, formationRank, structureDamage, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
@@ -18,6 +18,7 @@ import { canControl, ownerForFaction } from './ownership';
 import { TradeSystem } from './TradeSystem';
 import { EncounterDirector } from './EncounterDirector';
 import { ProjectileSystem } from './ProjectileSystem';
+import { MarketSystem } from './MarketSystem';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -89,8 +90,6 @@ export class Game {
   onKill: (u: Unit) => void = () => {};
 
   private readonly pickups: { x: number; y: number }[] = [];
-  /** Decorative traders are not Units, so combat cannot target or kill them. */
-  private readonly caravans: { mesh: THREE.Group; market: Building; item: ItemKey; amount: number; state: 'arriving' | 'trading' | 'leaving'; edgeX: number; edgeZ: number; wait: number }[] = [];
   private dispatchT = 0;
   private fieldT = 0;
   private roadWarnT = 0;
@@ -99,6 +98,7 @@ export class Game {
   private readonly trade: TradeSystem;
   private readonly encounters: EncounterDirector;
   private readonly projectileSystem: ProjectileSystem;
+  private readonly marketSystem: MarketSystem;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -169,6 +169,15 @@ export class Game {
         if (building.hp <= 0) this.destroyBuilding(building);
       },
       onHurt: (x, z, faction) => this.onHurt(x, z, faction),
+    });
+    this.marketSystem = new MarketSystem({
+      buildings: () => this.buildings,
+      worldWidth: () => this.world.W,
+      buildingCenter: building => this.buildingCenter(building),
+      createCaravan: () => this.view.createTraderCaravan(),
+      remove: mesh => this.view.remove(mesh),
+      sfx: name => this.sfx(name),
+      toast: message => this.toast(message),
     });
   }
 
@@ -1148,10 +1157,7 @@ export class Game {
     for (const f of b.fieldsList) { const t = this.world.tiles[f.y][f.x]; if (t.field) { this.view.removeMeshes(t.field.meshes); t.field = null; this.view.refreshTile(f.x, f.y); } }
     for (let y = b.y; y < b.y + 2; y++) for (let x = b.x; x < b.x + 2; x++) this.world.tiles[y][x].b = null;
     if (b.rallyMesh) this.view.remove(b.rallyMesh);
-    for (let i = this.caravans.length - 1; i >= 0; i--) if (this.caravans[i].market === b) {
-      this.view.remove(this.caravans[i].mesh);
-      this.caravans.splice(i, 1);
-    }
+    this.marketSystem.removeBuilding(b);
     this.view.remove(b.mesh);
     this.buildings.splice(this.buildings.indexOf(b), 1);
     if (this.selected === b) this.select(null);
@@ -2542,78 +2548,20 @@ export class Game {
 
   /** Configure how many units of one surplus resource this market offers per visit. */
   configureMarket(b: Building, item: ItemKey, amount: number): void {
-    if (b.key !== 'market' || b.faction !== 'player' || b.removed || MARKET_VALUES[item] === undefined) return;
-    b.marketItem = item;
-    b.marketAmount = Math.max(0, Math.min(50, Number.isFinite(amount) ? Math.round(amount) : 0));
+    this.marketSystem.configure(b, item, amount);
   }
 
   /** Projected income at one scheduled trader visit per minute. */
   marketIncomePerMinute(b: Building): number {
-    return (MARKET_VALUES[b.marketItem ?? 'timber'] ?? 0) * (b.marketAmount ?? 0);
+    return this.marketSystem.incomePerMinute(b);
   }
 
   marketCaravansInTransit(b: Building): number {
-    let n = 0;
-    for (const c of this.caravans) if (c.market === b) n++;
-    return n;
-  }
-
-  private spawnMarketCaravan(b: Building, item: ItemKey, amount: number): void {
-    const centre = this.buildingCenter(b);
-    const edgeX = centre.x < 0 ? -this.world.W / 2 - 2 : this.world.W / 2 + 2;
-    const mesh = this.view.createTraderCaravan();
-    mesh.position.set(edgeX, 0, centre.z);
-    this.caravans.push({ mesh, market: b, item, amount, state: 'arriving', edgeX, edgeZ: centre.z, wait: 0 });
+    return this.marketSystem.caravansInTransit(b);
   }
 
   private updateMarkets(dt: number): void {
-    for (const b of this.buildings) {
-      if (b.key !== 'market' || b.faction !== 'player' || !b.active || b.removed) continue;
-      b.marketTimer = Math.max(0, (b.marketTimer ?? 60) - dt);
-      if (b.marketTimer > 0 || this.marketCaravansInTransit(b)) continue;
-      const item = b.marketItem ?? 'timber';
-      const amount = b.marketAmount ?? 0;
-      if (amount <= 0) { b.marketTimer = 60; continue; }
-      if ((b.inp[item] || 0) < amount) { b.marketTimer = 5; continue; }
-      b.marketTimer = 60;
-      this.spawnMarketCaravan(b, item, amount);
-    }
-
-    for (let i = this.caravans.length - 1; i >= 0; i--) {
-      const c = this.caravans[i];
-      if (c.market.removed) { this.view.remove(c.mesh); this.caravans.splice(i, 1); continue; }
-      if (c.state === 'trading') {
-        c.wait -= dt;
-        if (c.wait <= 0) c.state = 'leaving';
-        continue;
-      }
-      const centre = this.buildingCenter(c.market);
-      const tx = c.state === 'arriving' ? centre.x : c.edgeX;
-      const tz = c.state === 'arriving' ? centre.z : c.edgeZ;
-      const dx = tx - c.mesh.position.x, dz = tz - c.mesh.position.z;
-      const dist = Math.hypot(dx, dz), step = dt * 3;
-      if (dist > 0.01) c.mesh.rotation.y = Math.atan2(dx, dz);
-      if (dist > step) {
-        c.mesh.position.x += dx / dist * step;
-        c.mesh.position.z += dz / dist * step;
-        continue;
-      }
-      c.mesh.position.set(tx, 0, tz);
-      if (c.state === 'leaving') { this.view.remove(c.mesh); this.caravans.splice(i, 1); continue; }
-
-      const item = c.item;
-      const sold = Math.min(c.amount, c.market.inp[item] || 0);
-      if (sold > 0) {
-        c.market.inp[item] -= sold;
-        const earned = sold * (MARKET_VALUES[item] ?? 0);
-        // Coin starts at the market as output. The normal dispatcher sends a
-        // serf to carry each coin back to the nearest storehouse.
-        c.market.out.coin = (c.market.out.coin || 0) + earned;
-        this.sfx('coin');
-        this.toast(`Market exported ${sold} ${ITEMS[item].name.toLowerCase()} (+${earned} coin)`);
-      }
-      c.state = 'trading'; c.wait = 2.5;
-    }
+    this.marketSystem.update(dt);
   }
 
   /** Order-following A* searches allowed this tick (see combatUpdate). At 20
