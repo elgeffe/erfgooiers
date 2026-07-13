@@ -9,6 +9,24 @@ and the host is allowed to be the network authority when browsers disagree.
 The separate [multiplayer design](multiplayer-design.md) remains a possible future
 asynchronous strategy mode. Co-op does not depend on it and should ship first.
 
+## Current transport note (July 2026)
+
+The published GitHub Pages build currently uses a browser-only direct WebRTC transport.
+Signaling is deliberately manual: the host copies an expiring AES-GCM encrypted offer,
+the guest returns a response encrypted to the host with ephemeral ECDH P-256, HKDF-SHA-256,
+and AES-256-GCM, and the host explicitly accepts or rejects the named guest. After acceptance,
+an ordered reliable WebRTC data channel carries commands and the host is the authoritative
+sequencer. WebRTC provides DTLS encryption for that channel. Both peers also see a six-digit
+short authentication string derived from the ECDH secret; comparing it over voice before
+acceptance detects join-response substitution. The encrypted invite is a bearer capability,
+so it still needs to be shared through a private channel and expires after 15 minutes.
+
+The room service, public browser, reconnect, and reclaim design below is retained as the
+planned server-backed mode and its implementation remains in `server/` and
+`src/net/CoOpClient.ts`; those controls are disabled in the current UI. Direct mode uses a
+public STUN service only for route discovery and intentionally has no TURN relay, so peers
+behind strict symmetric NAT or restrictive firewalls may need the future server-backed mode.
+
 ## 1. Product scope
 
 ### Player experience

@@ -1,7 +1,7 @@
 fix each of these items, always start with bugs first, then design changes > improvements > features > epics should always be last and first written out as docs/.md file.
 
 ## Bugs
-- the way military unit commands work is sometimes resulting in units not adhering to commands when a lot of them have been selected. for example, i select a large group, give them move commands, then chain an attack on a tower (which seems to cause performance issues somehow), a small number of units attack, another set of units walks away? investigate probably causes and fix the issues. i need to be able to command, chain movements, chain attacks and have my units automatically follow orders or attack at will when the chain ends. this should work smoothly as its a core mechanic of the strategic side of the game. DOING
+- when large groups of units have been selected (100's) there is some performance impact when orders are sent. i think we need to look for unique ways to overcome this. i can already see that different units get different commands in steps over time, perhaps we can improve this by clustering units together in ever smaller groups so that the command is spread out over time? use the priorities of the formation as guidance?
 
 - no Coal has spawned on the map, this should not be possible. make sure to increase the default amount of coal to accomodate coin and military equipment.
 
@@ -52,10 +52,16 @@ fix each of these items, always start with bugs first, then design changes > imp
 - rallypoint flag should be purple for barracks
 
 ## Improvements
+- allow aggresion level for unit formations. add another row with: auto-attack, defensive, hold ground
+- increase max zoom level, have a toggle in settings for max zoom level so that users can choose to enable it.
+
+- enemy stongholds input field validation for numbers 0-6
 
 - redesign hero's > update effects and names
 
 - shift+click on train buttons should set 5 units in the queue.
+
+- shift+click on sandbox spawn icon should x10 the output
 
 - each tree should give 2 trunks
 

@@ -141,16 +141,22 @@ Co-op is the first multiplayer target: a dedicated four-level Expedition with mu
 larger maps, multi-front objectives, and its own difficulty presets. Two allied players
 each own a settlement, workers, resources, production chains, army, hero, gold, cards,
 and shop while sharing the map, enemies, objectives, and Expedition outcome. The host
-is authoritative for networking, while a small WebSocket room service provides
-host/invite, public server browsing, relay, presence, checkpoints, and reconnects.
+is authoritative for networking. The current GitHub Pages path uses direct WebRTC with
+manual encrypted offer/answer exchange and explicit host admission. The small WebSocket
+room service remains available in source for a later mode providing public room browsing,
+rendezvous, relay, presence, checkpoints, and reconnects; its UI is disabled for now.
 
 Shipped (first playable slice):
 
 - Versioned gameplay commands with stable entity IDs; singleplayer and co-op share one
   command-application path with per-player ownership validation.
-- The Node room service (rooms, invites, public browser, relay, presence, reconnect
-  credentials, seat reclaim) plus the main-menu Host / Join by invite / Server browser /
-  Lobby flow and the in-game Multiplayer panel.
+- Browser-only direct transport using ordered reliable WebRTC data channels, an expiring
+  AES-GCM invite, an ECDH P-256 + HKDF + AES-GCM guest response, and host Accept / Reject.
+  The host sequences gameplay commands in place of the relay. Public STUN assists direct
+  route discovery; there is no TURN fallback in this mode.
+- The Node room service implementation (rooms, invites, public browser, relay, presence,
+  reconnect credentials, and seat reclaim) is preserved for later activation. Public room
+  and server-backed controls are currently visible but disabled.
 - Two fully separate player economies on one map: stores, workers, dispatch, training,
   bells, roads, demolition, and player-scoped HUD.
 - The Trade tab with requests and physical, interceptable cart shipments — reserve on

@@ -82,6 +82,13 @@ Contributor and agent conventions live in [AGENTS.md](AGENTS.md). Product direct
 remaining milestones live in [ROADMAP.md](ROADMAP.md). The first multiplayer slice is
 documented in [docs/co-op-design.md](docs/co-op-design.md): a host-authoritative four-level
 two-player PvE Expedition with independent economies connected by physical trade, invites,
-and a public server browser. The physical hauling contract, including demand priorities,
+and direct WebRTC play. The GitHub Pages build uses encrypted manual invite/join codes and
+explicit host admission, so it needs no application or relay server. The existing Node room
+service and public browser are retained but disabled for a later server-backed mode. Direct
+play uses public STUN only for route discovery and may not connect through strict symmetric
+NATs, because browser-only mode deliberately has no TURN relay. Host and guest compare a
+six-digit verification code over voice before admission to detect a substituted response.
+The physical hauling contract,
+including demand priorities,
 reservations, and storage fallback, is documented in
 [docs/logistics-engine.md](docs/logistics-engine.md).
