@@ -299,14 +299,24 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 .screen .btns button.danger:hover{background:rgba(201,107,74,.15);}
 .screen .btns.row{flex-direction:row;gap:8px;}
 .screen .btns.row button{flex:1;}
-.screen .coopcard{width:700px;max-height:92vh;overflow:auto;text-align:left;}
+.screen .coopcard{width:760px;max-height:92vh;overflow:auto;text-align:left;}
 .coopcard h1,.coopcard>.tag{text-align:center;}
 .coopcols{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:8px 0 12px;}
 .coopcols section{background:rgba(0,0,0,.14);border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:12px;}
+.coop-name{max-width:360px;margin:14px auto 12px;}
+.coop-choices{align-items:stretch;}
+.coop-route{display:flex;flex-direction:column;position:relative;overflow:hidden;transition:border-color .15s,transform .15s,box-shadow .15s;}
+.coop-route:hover{transform:translateY(-2px);}
+.coop-route-host{border-color:rgba(70,145,235,.35)!important;box-shadow:inset 0 3px 0 #468fe8;}
+.coop-route-join{border-color:rgba(76,190,120,.35)!important;box-shadow:inset 0 3px 0 #4cbe78;}
+.coop-route-head{display:flex;align-items:center;gap:10px;margin:3px 0 8px;}
+.coop-route-head .coop-route-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:10px;background:rgba(255,255,255,.07);font-size:22px;flex:none;}
+.coop-route-head b{display:block;font-size:15px;color:var(--ink);}.coop-route-head small{display:block;color:var(--ink-dim);margin-top:2px;}
 .coopfield{display:flex;flex-direction:column;gap:4px;margin:8px 0;color:var(--ink-dim);font-size:11px;text-align:left;}
 .coopfield input,.coopfield select,.coopfield textarea{width:100%;background:#1f1812;color:var(--ink);border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:8px 9px;outline:none;}
 .coopfield textarea{resize:vertical;min-height:70px;font:10px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;}
 .coopfield input:focus,.coopfield select:focus,.coopfield textarea:focus{border-color:var(--accent);}
+.coop-hint{color:var(--ink-dim);font-size:10px;line-height:1.35;margin:-2px 0 10px;}
 .coopcheck{display:flex;align-items:center;gap:7px;color:var(--ink-dim);font-size:11px;margin:9px 0;}
 .coopcheck.disabled{opacity:.55;}
 .coopcols section>button{width:100%;background:var(--accent);color:#241a0e;border:none;border-radius:7px;padding:9px;font-weight:700;cursor:pointer;}
@@ -321,12 +331,43 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 .coopplayer{display:grid;grid-template-columns:12px 1fr auto;gap:9px;align-items:center;background:var(--panel2);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px;}
 .coopplayer .dot{width:11px;height:11px;border-radius:50%;}
 .coopplayer small{color:var(--ink-dim);}
-.coophandshake{display:none;margin:12px 0;padding:11px;background:rgba(0,0,0,.14);border:1px solid rgba(255,255,255,.08);border-radius:8px;}
-.coophandshake>button{width:100%;}
-.coopapproval{display:none;margin-top:10px;padding:10px;border:1px solid var(--accent);border-radius:7px;background:rgba(213,155,69,.1);text-align:center;}
+.coopfuture{margin:8px 0 12px;padding:8px 10px;border:1px solid rgba(255,255,255,.07);border-radius:7px;color:var(--ink-dim);font-size:11px;}
+.coopfuture summary{cursor:pointer;user-select:none;}.coopfuture>button{padding:6px 10px;background:var(--panel2);color:var(--ink-dim);border:1px solid rgba(255,255,255,.08);border-radius:6px;}
+.coop-progress{display:flex;align-items:center;justify-content:center;margin:13px auto 10px;max-width:520px;}
+.coop-progress span{display:flex;align-items:center;gap:6px;color:var(--ink-dim);font-size:11px;font-weight:700;white-space:nowrap;}
+.coop-progress span i{display:grid;place-items:center;width:23px;height:23px;border-radius:50%;background:var(--panel2);border:1px solid rgba(255,255,255,.12);font-style:normal;}
+.coop-progress>b{height:2px;background:rgba(255,255,255,.1);flex:1;margin:0 9px;}
+.coop-progress span.active{color:#9fc9ff}.coop-progress span.active i{background:#346fb7;border-color:#6fabf4;color:white;box-shadow:0 0 0 3px rgba(70,145,235,.14);}
+.coop-progress span.done{color:#9ee0b7}.coop-progress span.done i{background:#318b56;border-color:#63cf8c;color:white;}
+.coop-progress b.done{background:#4cbe78;}
+.coop-status{border-radius:8px;padding:9px 12px!important;border:1px solid rgba(70,145,235,.32);background:rgba(70,145,235,.1);color:#b9d8ff!important;}
+.coop-status.waiting{border-color:rgba(230,168,56,.4);background:rgba(230,168,56,.1);color:#f2cf8e!important;}
+.coop-status.connected{border-color:rgba(76,190,120,.4);background:rgba(76,190,120,.1);color:#b4e8c7!important;}
+.coop-status.error{border-color:rgba(221,83,72,.48);background:rgba(221,83,72,.12);color:#f1aaa3!important;}
+.coophandshake{display:none;margin:12px 0;}
+.coop-flow-step{margin:10px 0;padding:12px 13px;background:rgba(0,0,0,.14);border:1px solid rgba(255,255,255,.08);border-radius:9px;}
+.coop-flow-step.share{border-left:4px solid #468fe8}.coop-flow-step.response{border-left:4px solid #e6a838;}
+.coop-step-title{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+.coop-step-title>i{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#346fb7;color:#fff;font-style:normal;font-weight:800;flex:none;}
+.coop-flow-step.response .coop-step-title>i{background:#a86f18;}
+.coop-step-title b{display:block;font-size:13px}.coop-step-title small{display:block;color:var(--ink-dim);font-size:10.5px;margin-top:2px;}
+.coop-flow-step textarea[readonly]{color:#c9dcf5;border-color:rgba(70,145,235,.35);}
+.coopapproval{display:none;margin-top:10px;padding:13px;border:1px solid #4cbe78;border-radius:9px;background:rgba(76,190,120,.1);}
+.coop-approval-title{display:flex;align-items:center;justify-content:center;gap:9px;text-align:left;}
+.coop-approval-title>span{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#318b56;color:white;font-weight:900;}
+.coop-approval-title b{display:block;font-size:14px}.coop-approval-title small{display:block;color:#b4e8c7;font-size:10.5px;}
 .coopsafety{margin:9px 0;padding:8px;background:#1f1812;border-radius:6px;color:var(--ink-dim);font-size:11px;text-align:center;}
 .coopsafety b{color:var(--accent);font:700 18px/1 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:3px;}
-@media(max-width:650px){.coopcols{grid-template-columns:1fr}.screen .coopcard{width:94vw}.cooproom{grid-template-columns:1fr auto}}
+.coop-action{border:none;border-radius:7px;padding:10px 12px;font-weight:800;cursor:pointer;color:white;transition:filter .12s,transform .08s,box-shadow .12s;}
+.coop-action:hover{filter:brightness(1.12);box-shadow:0 4px 14px rgba(0,0,0,.25)}.coop-action:active{transform:translateY(1px)}
+.coop-action:disabled{cursor:wait;opacity:.65;filter:saturate(.5);}
+.coop-action.host,.coop-action.copy{background:#347fd2!important;color:white!important;}
+.coop-action.join,.coop-action.accept,.coop-action.ready{background:#31965b!important;color:white!important;}
+.coop-action.ready.ghost{background:var(--panel2)!important;color:var(--ink)!important;}
+.coop-action.review{background:#d18a20!important;color:#21160a!important;width:100%;}
+.coop-action.copied{background:#31965b!important;}
+.coop-flow-step>.coop-action{width:100%;}
+@media(max-width:650px){.coopcols{grid-template-columns:1fr}.screen .coopcard{width:94vw}.cooproom{grid-template-columns:1fr auto}.coop-progress span{font-size:10px}.coop-progress>b{margin:0 5px}}
 
 /* ---------- settings ---------- */
 .setcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:8px 28px;}

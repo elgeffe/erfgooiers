@@ -1,7 +1,7 @@
 fix each of these items, always start with bugs first, then design changes > improvements > features > epics should always be last and first written out as docs/.md file.
 
 ## Bugs
-- when large groups of units have been selected (100's) there is some performance impact when orders are sent. i think we need to look for unique ways to overcome this. i can already see that different units get different commands in steps over time, perhaps we can improve this by clustering units together in ever smaller groups so that the command is spread out over time? use the priorities of the formation as guidance?
+- when large groups of units have been selected (100's) there is some performance impact when orders are sent. i think we need to look for unique ways to overcome this. i can already see that different units get different commands in steps over time, perhaps we can improve this by clustering units together in ever smaller groups so that the command is spread out over time? use the priorities of the formation as guidance? investigate if novel linear or quantum-inspired approaches like tensor networks can help us out here? maybe SVD? what about a small ML model somehow?
 
 - no Coal has spawned on the map, this should not be possible. make sure to increase the default amount of coal to accomodate coin and military equipment.
 
@@ -50,6 +50,8 @@ fix each of these items, always start with bugs first, then design changes > imp
 - coin and gold share the same icon. can we give the gold coins (the one we use for purchasing in the shop) a unique symbol. maybe a crown inside the coin emblem? > also design a unique coin for heritage with a erfgooiers game emblem in it
 
 - rallypoint flag should be purple for barracks
+
+- improve map tile details to make it look prettier, especially the standard grass tiles
 
 ## Improvements
 - allow aggresion level for unit formations. add another row with: auto-attack, defensive, hold ground

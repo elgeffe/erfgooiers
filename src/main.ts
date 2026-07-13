@@ -771,7 +771,7 @@ function openCoopMenu(): void {
 }
 
 async function hostCoop(): Promise<void> {
-  try {
+  await withCoopButton('btnCoopHost', 'Creating secure code…', async () => {
     showCoopError('');
     const playerName = ($('coopPlayerName') as HTMLInputElement).value;
     await coop.createRoom(playerName, {
@@ -784,18 +784,19 @@ async function hostCoop(): Promise<void> {
     });
     renderCoopLobby();
     showScreen('cooplobby');
-  } catch (error) { showCoopError(errorMessage(error)); }
+  });
 }
 
 async function joinCoop(): Promise<void> {
-  try {
+  await withCoopButton('btnCoopJoin', 'Opening host code…', async () => {
     showCoopError('');
     const code = ($('coopInviteCode') as HTMLTextAreaElement).value;
+    if (!code.trim()) throw new Error('Paste the host code before joining');
     const playerName = ($('coopPlayerName') as HTMLInputElement).value;
     await coop.joinByInvite(code, playerName);
     renderCoopLobby();
     showScreen('cooplobby');
-  } catch (error) { showCoopError(errorMessage(error)); }
+  });
 }
 
 function renderCoopLobby(): void {
@@ -806,7 +807,8 @@ function renderCoopLobby(): void {
   $('coopLobbyPlayers').innerHTML = playerRows(room, snapshot.playerId, 'coopplayer');
   const local = room.players.find(player => player.id === snapshot.playerId);
   const bothReady = room.players.length === 2 && room.players.every(player => player.ready);
-  $('coopLobbyStatus').textContent = coopRun && phase === 'shop'
+  const status = $('coopLobbyStatus');
+  status.textContent = coopRun && phase === 'shop'
     ? `Level cleared — the Expedition marches on shortly…`
     : snapshot.status === 'error'
       ? snapshot.error ?? 'The direct connection failed.'
@@ -815,21 +817,38 @@ function renderCoopLobby(): void {
       : room.players.length < 2
         ? coop.pendingJoin() ? 'Review this player, then accept or reject the request.' : 'Share your code, then paste the guest response below.'
       : bothReady ? 'Both players ready — the Expedition is starting.' : 'Choose Ready when your connection is stable.';
+  status.className = `tag coop-status ${snapshot.status === 'error' ? 'error' : snapshot.status === 'connected' ? 'connected' : 'waiting'}`;
   const ready = $('btnCoopReady') as HTMLButtonElement;
-  ready.textContent = local?.ready ? 'Not ready' : 'Ready';
+  ready.textContent = local?.ready ? 'Cancel ready' : 'Ready to start';
   ready.classList.toggle('ghost', !!local?.ready);
   ready.style.display = snapshot.status === 'connected' ? '' : 'none';
   const hostHandshake = $('coopHostHandshake');
   const guestHandshake = $('coopGuestHandshake');
   hostHandshake.style.display = snapshot.role === 'host' && snapshot.status !== 'connected' ? 'block' : 'none';
   guestHandshake.style.display = snapshot.role === 'guest' && snapshot.status !== 'connected' ? 'block' : 'none';
-  ($('btnCoopCopy') as HTMLButtonElement).style.display = snapshot.role === 'host' && snapshot.status !== 'connected' ? '' : 'none';
+  ($('coopHostCode') as HTMLTextAreaElement).value = coop.encryptedInvite();
   ($('coopGeneratedResponse') as HTMLTextAreaElement).value = coop.encryptedJoinResponse();
   $('coopGuestSafety').textContent = coop.verificationCode();
   $('coopHostSafety').textContent = coop.verificationCode();
   const pending = coop.pendingJoin();
   $('coopApproval').style.display = pending ? 'block' : 'none';
+  $('coopHostResponseStep').style.display = pending ? 'none' : '';
   $('coopPendingName').textContent = pending?.playerName ?? '';
+  renderCoopProgress(snapshot, !!pending);
+}
+
+function renderCoopProgress(snapshot: ConnectionSnapshot, pending: boolean): void {
+  const connected = snapshot.status === 'connected';
+  const shareDone = snapshot.role === 'guest' || pending || connected;
+  const share = $('coopStepShare');
+  const connect = $('coopStepConnect');
+  const ready = $('coopStepReady');
+  share.className = shareDone ? 'done' : 'active';
+  connect.className = connected ? 'done' : shareDone ? 'active' : '';
+  ready.className = connected ? 'active' : '';
+  const bars = $('coopProgress').querySelectorAll<HTMLElement>('b');
+  bars[0]?.classList.toggle('done', shareDone);
+  bars[1]?.classList.toggle('done', connected);
 }
 
 function renderMultiplayer(snapshot: ConnectionSnapshot): void {
@@ -863,36 +882,64 @@ function handleCoopMessage(message: ServerMessage): void {
 }
 
 function showCoopError(message: string): void {
-  const el = $('coopError');
-  el.textContent = message;
-  el.style.display = message ? 'block' : 'none';
+  for (const id of ['coopError', 'coopLobbyError']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.textContent = message;
+    el.style.display = message ? 'block' : 'none';
+  }
 }
 
-async function copyCoopInvite(): Promise<void> {
+async function copyCoopInvite(buttonId = 'btnCoopCopy'): Promise<void> {
   const text = coop.encryptedInvite();
   if (!text) return;
-  try { await navigator.clipboard.writeText(text); ui.toast('Share code copied'); }
-  catch { ui.toast('Could not copy invite', 'err'); }
+  await copyCoopCode(text, buttonId, 'Host code copied');
 }
 
 async function copyJoinResponse(): Promise<void> {
   const text = coop.encryptedJoinResponse();
   if (!text) return;
-  try { await navigator.clipboard.writeText(text); ui.toast('Response code copied'); }
-  catch { ui.toast('Could not copy response code', 'err'); }
+  await copyCoopCode(text, 'btnCoopCopyResponse', 'Response code copied');
 }
 
 async function reviewJoinResponse(): Promise<void> {
-  try {
+  await withCoopButton('btnCoopReview', 'Checking response…', async () => {
     showCoopError('');
-    await coop.reviewJoinResponse(($('coopJoinResponse') as HTMLTextAreaElement).value);
+    const response = ($('coopJoinResponse') as HTMLTextAreaElement).value;
+    if (!response.trim()) throw new Error("Paste your friend's response code first");
+    await coop.reviewJoinResponse(response);
     renderCoopLobby();
-  } catch (error) { showCoopError(errorMessage(error)); }
+  });
 }
 
 async function acceptPeer(): Promise<void> {
-  try { await coop.acceptPendingJoin(); renderCoopLobby(); }
+  await withCoopButton('btnCoopAccept', 'Connecting…', async () => {
+    showCoopError('');
+    await coop.acceptPendingJoin();
+    renderCoopLobby();
+  });
+}
+
+async function copyCoopCode(text: string, buttonId: string, message: string): Promise<void> {
+  const button = $(buttonId) as HTMLButtonElement;
+  const original = button.textContent ?? 'Copy code';
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = 'Copied ✓';
+    button.classList.add('copied');
+    ui.toast(message);
+    window.setTimeout(() => { button.textContent = original; button.classList.remove('copied'); }, 1800);
+  } catch { ui.toast('Clipboard blocked — select the code and copy it', 'err'); }
+}
+
+async function withCoopButton(id: string, busyLabel: string, action: () => Promise<void>): Promise<void> {
+  const button = $(id) as HTMLButtonElement;
+  const original = button.textContent ?? '';
+  button.disabled = true;
+  button.textContent = busyLabel;
+  try { await action(); }
   catch (error) { showCoopError(errorMessage(error)); }
+  finally { button.disabled = false; button.textContent = original; }
 }
 
 function leaveCoop(): void {
@@ -995,9 +1042,12 @@ $('heroChip').onclick = () => {
 ($('btnCoopReview') as HTMLButtonElement).onclick = () => void reviewJoinResponse();
 ($('btnCoopAccept') as HTMLButtonElement).onclick = () => void acceptPeer();
 ($('btnCoopReject') as HTMLButtonElement).onclick = () => {
-  void coop.rejectPendingJoin()
-    .then(() => { renderCoopLobby(); ui.toast('Join request rejected'); })
-    .catch(error => showCoopError(errorMessage(error)));
+  void withCoopButton('btnCoopReject', 'Rejecting…', async () => {
+    showCoopError('');
+    await coop.rejectPendingJoin();
+    renderCoopLobby();
+    ui.toast('Join request rejected');
+  });
 };
 ($('btnCoopReady') as HTMLButtonElement).onclick = () => {
   const snapshot = coop.snapshot();
@@ -1018,7 +1068,7 @@ window.setInterval(() => { if (coop.snapshot().status === 'connected') coop.ping
   panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
 };
 ($('closeMultiplayer') as HTMLButtonElement).onclick = () => { $('multiplayerpanel').style.display = 'none'; };
-($('btnMpCopy') as HTMLButtonElement).onclick = () => void copyCoopInvite();
+($('btnMpCopy') as HTMLButtonElement).onclick = () => void copyCoopInvite('btnMpCopy');
 ($('btnMpReconnect') as HTMLButtonElement).onclick = () => coop.reconnectNow();
 ($('btnMpLeave') as HTMLButtonElement).onclick = leaveCoop;
 
