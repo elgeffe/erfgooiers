@@ -1303,25 +1303,12 @@ export class Game {
 
   /** Resting pose between swings: melee units hop into each attack, fliers hover. */
   private groundPose(u: Unit, flying: boolean): void {
-    if (flying) return; // animateFlight owns the y of a flier
-    u.mesh.position.y = u.lungeT > 0 ? Math.sin((1 - u.lungeT / 0.22) * Math.PI) * 0.12 : 0;
+    this.unitMovement.groundPose(u, flying);
   }
 
   /** Idle beasts, camp guards & off-duty builders amble around their anchor. */
   private wander(u: Unit, dt: number, moving = 'Roaming', resting = 'Grazing'): void {
-    if (u.path) { this.moveUnit(u, dt); u.status = moving; return; }
-    u.mesh.position.y = 0;
-    u.status = resting;
-    u.timer -= dt;
-    if (u.timer > 0) return;
-    u.timer = 4 + rnd() * 7;
-    const a = u.anchor ?? { x: u.tx, y: u.ty };
-    for (let tries = 0; tries < 6; tries++) {
-      const x = a.x + Math.round((rnd() - 0.5) * 4), y = a.y + Math.round((rnd() - 0.5) * 4);
-      const t = this.world.T(x, y);
-      if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
-      if (this.sendTo(u, x, y)) return;
-    }
+    this.unitMovement.wander(u, dt, moving, resting);
   }
 
   private buildingCenter(b: Building): { x: number; z: number } {

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ITEMS } from '../data/items';
 import { findPath } from '../engine/pathfinding';
+import { simRng } from '../engine/rng';
 import type { Unit } from '../types';
 import type { World } from '../world/World';
 import type { Modifiers } from './Modifiers';
@@ -94,6 +95,27 @@ export class UnitMovement {
         wing.rotation.x = (wing.userData.flapBase as number)
           + (wing.userData.flapSign as number) * Math.sin(unit.bob) * 0.4;
       }
+    }
+  }
+
+  groundPose(unit: Unit, flying: boolean): void {
+    if (!flying) unit.mesh.position.y = unit.lungeT > 0 ? Math.sin((1 - unit.lungeT / 0.22) * Math.PI) * 0.12 : 0;
+  }
+
+  wander(unit: Unit, dt: number, moving = 'Roaming', resting = 'Grazing'): void {
+    if (unit.path) { this.moveGround(unit, dt); unit.status = moving; return; }
+    unit.mesh.position.y = 0;
+    unit.status = resting;
+    unit.timer -= dt;
+    if (unit.timer > 0) return;
+    unit.timer = 4 + simRng.next() * 7;
+    const anchor = unit.anchor ?? { x: unit.tx, y: unit.ty };
+    for (let tries = 0; tries < 6; tries++) {
+      const x = anchor.x + Math.round((simRng.next() - 0.5) * 4);
+      const y = anchor.y + Math.round((simRng.next() - 0.5) * 4);
+      const tile = this.world.T(x, y);
+      if (!tile || tile.type !== 'grass' || tile.b || tile.site || tile.dep) continue;
+      if (this.sendTo(unit, x, y)) return;
     }
   }
 
