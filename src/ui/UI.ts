@@ -69,6 +69,7 @@ export class UI {
     document.querySelectorAll<HTMLElement>('.bcard[data-key]').forEach(el => {
       el.classList.toggle('bio-hidden', banned.has(el.dataset.key!));
     });
+    this.showCategory('materials');
     this.showInspector(null);
     this.updateWave(null);
     this.setPerksOpen(false);
