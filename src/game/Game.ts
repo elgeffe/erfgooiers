@@ -10,7 +10,7 @@ import { buildFlowField, fieldPath, type FlowField } from '../engine/flowfield';
 import { formationSpots } from '../engine/formations';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
-import { PLAYER_IDS, type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit, type UnitOrder } from '../types';
+import { type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit, type UnitOrder } from '../types';
 import { buildingEntranceTiles, doorTile } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
@@ -24,6 +24,7 @@ import { UnitSpatialIndex } from './UnitSpatialIndex';
 import { DamageSystem } from './DamageSystem';
 import { EnemySpawner } from './EnemySpawner';
 import { TrainingSystem } from './TrainingSystem';
+import { LogisticsSystem } from './LogisticsSystem';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -109,6 +110,7 @@ export class Game {
   private readonly damageSystem: DamageSystem;
   private readonly enemySpawner: EnemySpawner;
   private readonly trainingSystem: TrainingSystem;
+  private readonly logisticsSystem: LogisticsSystem;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -234,6 +236,16 @@ export class Game {
       onGold: amount => this.onGold(amount),
       toast: (message, cls) => this.toast(message, cls),
       sfx: name => this.sfx(name),
+    });
+    this.logisticsSystem = new LogisticsSystem(this.mods, {
+      buildings: () => this.buildings,
+      sites: () => this.sites,
+      units: () => this.units,
+      nearestStore: building => this.nearestStore(building),
+      storeFor: owner => this.storeFor(owner),
+      setCarrying: (unit, item) => this.setCarrying(unit, item),
+      sendTo: (unit, x, y) => this.sendTo(unit, x, y),
+      moveUnit: (unit, dt) => this.moveUnit(unit, dt),
     });
   }
 
@@ -574,135 +586,20 @@ export class Game {
   // =====================================================================
   //  Serf logistics dispatcher
   // =====================================================================
-  private bDist(a: any, b: any): number { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
-
   private dispatch(): void {
-    for (const owner of PLAYER_IDS) this.dispatchOwner(owner);
-  }
-
-  private dispatchOwner(owner: PlayerId): void {
-    let idle = this.units.filter(u => u.owner === owner && u.role === 'serf' && !u.task && !u.collect);
-    if (!idle.length) return;
-    const carryCap = this.mods.carryCap(), outCap = this.mods.outCap();
-    const demands: any[] = [];
-    for (const s of this.sites) {
-      if (s.owner !== owner) continue;
-      for (const it in s.needs) {
-        const rem = s.needs[it] - (s.delivered[it] || 0) - (s.incoming[it] || 0);
-        for (let i = 0; i < rem; i++) demands.push({ pri: s.priority ? -1 : 0, to: s, item: it });
-      }
-    }
-    for (const b of this.buildings) {
-      if (b.owner !== owner || !b.active || !b.def.recipe) continue;
-      for (const it in this.mods.recipeInputs(b.def)) {
-        const have = (b.inp[it] || 0) + (b.incoming[it] || 0);
-        if (have < carryCap) demands.push({ pri: b.priority ? 0.75 : 1, to: b, item: it });
-      }
-    }
-    for (const b of this.buildings) {
-      if (b.owner !== owner || !b.active || !b.def.tavern) continue;
-      const tv = b.def.tavern;
-      const total = tv.foods.reduce((s, f) => s + (b.inp[f] || 0) + (b.incoming[f] || 0), 0);
-      if (total >= tv.capacity) continue;
-      for (const it of tv.foods) {
-        const have = (b.inp[it] || 0) + (b.incoming[it] || 0);
-        if (have < 2) demands.push({ pri: 1, to: b, item: it });
-      }
-    }
-    // Commercial exports are deliberately lower priority than construction
-    // and production inputs. Serfs must physically stock the market before a
-    // caravan can buy anything.
-    for (const b of this.buildings) {
-      if (!b.active || b.key !== 'market' || b.faction !== 'player') continue;
-      const item = b.marketItem ?? 'timber', target = b.marketAmount ?? 0;
-      const missing = target - (b.inp[item] || 0) - (b.incoming[item] || 0);
-      for (let i = 0; i < missing; i++) demands.push({ pri: 1.5, to: b, item });
-    }
-    for (const b of this.buildings) {
-      if (b.owner !== owner || !b.active || b.def.store) continue;
-      for (const it in b.out) {
-        if (b.out[it] > 0) {
-          const wanted = demands.some(d => d.item === it);
-          // A producer at (or nearing) the output cap has STOPPED working —
-          // draining it un-halts production, but an outstanding consumer for
-          // this item must receive it directly. Creating a storage task here
-          // used to reserve the item before the consumer demand ran, causing
-          // full coal/gold mines to send goods to the castle ahead of a mint.
-          // Urgent drains beat unrelated input top-ups so a capped producer
-          // cannot starve forever. `wanted` remains the stronger item-specific
-          // rule: output never goes to storage while any destination wants it.
-          if (!wanted && b.out[it] >= outCap - 1) demands.push({ pri: b.priority ? 0.4 : 0.5, to: this.nearestStore(b), item: it, from: b });
-          else if (!wanted) demands.push({ pri: 2, to: this.nearestStore(b), item: it, from: b });
-        }
-      }
-    }
-    demands.sort((a, b) => a.pri - b.pri);
-    for (const d of demands) {
-      if (!idle.length) break;
-      let from: any = null;
-      if (d.from) { if (d.from.out[d.item] > 0) from = d.from; }
-      else {
-        let best: any = null, bd = 1e9;
-        for (const b of this.buildings) {
-          if (b.owner !== owner || b === d.to) continue;
-          const avail = b.def.store ? (b.stock![d.item] || 0) : (b.out[d.item] || 0);
-          if (avail > 0) { const dd = this.bDist(b, d.to) + (b.def.store ? 0.5 : 0); if (dd < bd) { bd = dd; best = b; } }
-        }
-        from = best;
-      }
-      if (!from) continue;
-      let su: Unit | null = null, sd = 1e9;
-      const fd = doorTile(from);
-      for (const u of idle) { const dd = Math.abs(u.tx - fd.x) + Math.abs(u.ty - fd.y); if (dd < sd) { sd = dd; su = u; } }
-      if (!su) continue;
-      if (from.def.store) from.stock[d.item]--; else from.out[d.item]--;
-      if (d.to.isSite) d.to.incoming[d.item] = (d.to.incoming[d.item] || 0) + 1;
-      else if (!d.to.def.store) d.to.incoming[d.item] = (d.to.incoming[d.item] || 0) + 1;
-      su.task = { from, to: d.to, item: d.item, phase: 'pickup' };
-      su.status = 'Fetching ' + ITEMS[d.item as keyof typeof ITEMS].name;
-      idle = idle.filter(u => u !== su);
-    }
+    this.logisticsSystem.dispatch();
   }
 
   private serfUpdate(u: Unit, dt: number): void {
-    const t = u.task;
-    if (!t) { u.status = 'Idle'; return; }
-    if (t.phase === 'pickup') {
-      const d = doorTile(t.from);
-      if (u.tx === d.x && u.ty === d.y && !u.path) {
-        this.setCarrying(u, t.item);
-        t.phase = 'deliver';
-        u.status = 'Carrying ' + ITEMS[t.item as keyof typeof ITEMS].name + ' → ' + t.to.name;
-      } else if (!u.path) { if (!this.sendTo(u, d.x, d.y)) { this.cancelTask(u); return; } }
-    }
-    if (t.phase === 'deliver') {
-      const d = doorTile(t.to);
-      if (u.tx === d.x && u.ty === d.y && !u.path) {
-        if (t.to.isSite) { t.to.incoming[t.item]--; t.to.delivered[t.item]++; this.checkSiteReady(t.to); }
-        else if (t.to.def.store) { t.to.stock[t.item] = (t.to.stock[t.item] || 0) + 1; }
-        else { t.to.incoming[t.item]--; t.to.inp[t.item] = (t.to.inp[t.item] || 0) + 1; }
-        this.setCarrying(u, null); u.task = null; u.status = 'Idle';
-      } else if (!u.path && u.carrying) { if (!this.sendTo(u, d.x, d.y)) { this.cancelTask(u); return; } }
-    }
-    if (u.path) this.moveUnit(u, dt); else u.mesh.position.y = 0;
+    this.logisticsSystem.updateSerf(u, dt);
   }
 
   private cancelTask(u: Unit): void {
-    const t = u.task; if (!t) return;
-    if (t.phase === 'pickup' && !t.from.removed) { if (t.from.def && t.from.def.store) t.from.stock[t.item]++; else t.from.out[t.item]++; }
-    if (t.to.isSite) t.to.incoming[t.item] = Math.max(0, (t.to.incoming[t.item] || 0) - 1);
-    else if (t.to.def && !t.to.def.store) t.to.incoming[t.item] = Math.max(0, (t.to.incoming[t.item] || 0) - 1);
-    if (u.carrying && (u.owner === 'p1' || u.owner === 'p2')) {
-      const store = this.storeFor(u.owner);
-      store.stock![u.carrying] = (store.stock![u.carrying] || 0) + 1;
-    }
-    this.setCarrying(u, null); u.task = null; u.status = 'Idle';
+    this.logisticsSystem.cancelTask(u);
   }
 
   private checkSiteReady(s: Site): void {
-    for (const k in s.needs) if ((s.delivered[k] || 0) < s.needs[k]) return;
-    s.ready = true;
-    s.frame.visible = true; s.frame.scale.set(1, 0.05, 1);
+    this.logisticsSystem.checkSiteReady(s);
   }
 
   // =====================================================================
