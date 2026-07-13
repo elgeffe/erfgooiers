@@ -1,21 +1,6 @@
 fix each of these items, always start with bugs first, then design changes > improvements > features > epics should always be last and first written out as docs/.md file.
 
-## Bugs
-- when large groups of units have been selected (100's) there is some performance impact when orders are sent. i think we need to look for unique ways to overcome this. i can already see that different units get different commands in steps over time, perhaps we can improve this by clustering units together in ever smaller groups so that the command is spread out over time? use the priorities of the formation as guidance? investigate if novel linear or quantum-inspired approaches like tensor networks can help us out here? maybe SVD? what about a small ML model somehow? FIXED — shared flow field per group order (one Dijkstra flood from the destination, each unit descends it) replaces one full A* per unit; ~10× cheaper mass orders, host under way in 0.1s instead of drip-feeding over seconds DOING
-
-- no Coal has spawned on the map, this should not be possible. make sure to increase the default amount of coal to accomodate coin and military equipment.
-
-- builders are very often in the way of serfs moving around, blocking the movement. can we fix this?
-
-- when starting a level i want the build menu to always default to the Materials tab.
-
-- in sandbox mode, there was still a small group of enemies coming to my castle as a wave. remove that from the logic.
-
-- when i have a large host of units, then i  have a second host with a lot of siege units. my normal units were attacking enemies, my siege units about to attack a castle wall. suddenly the game performance dropped very badly. seems like a bug?
-
-- priest and archers should keep a distance from enemy units when selected to attack.
-
-- rally point set before building construction was finished did not save correctly to the state of the building. the rallypoint for the building before completion is allowed but should maintain when units are trained.
+## Bugs DOING
 
 ## Design changes
 
@@ -54,6 +39,12 @@ fix each of these items, always start with bugs first, then design changes > imp
 - improve map tile details to make it look prettier, especially the standard grass tiles
 
 ## Improvements
+- add card to shop: increases carry capacity of serfs to two (uncommon)
+
+- cards cannot stack in the shop or should they?
+
+- what does Crafting mean in the shop cards? shouldn't this be 'Production' is 18% faster?
+
 - allow aggresion level for unit formations. add another row with: auto-attack, defensive, hold ground
 
 - add mute button in the homescreen panel
@@ -101,6 +92,24 @@ fix each of these items, always start with bugs first, then design changes > imp
 - remove the melody notes from the songs, i only want pads and chords (use extended chords or chord substitutions to make it more dynamic.) make sure only 1 melody plays at the home screen and continues into the new game. only change the melody on a new run or refresh of the whole page or returning to the home screen. FIXED
 
 - the strongholds in the sandbox should be distributed across the map in different locations, not all in the same corner
+
+- Military pathfind update to villagers:
+Good question. There are actually two distinct pieces of pathfinding here, and they benefit villagers differently:
+
+1. The A* + string-pulling (findPath/smooth) — already shared
+The core pathfinder in pathfinding.ts — 8-directional A* with road-cost weighting and the string-pull smooth step that turns grid staircases into natural straight lines — is the same code villagers already use. Serfs, builders, carriers, etc. all move through sendTo(), which calls findPath(...) with the unit's faction, and that runs the same smoothing. So any improvement to findPath/smooth already helps villagers automatically. Nothing to wire up there.
+
+2. The flow field (buildFlowField/fieldPath) — military-only, and mostly shouldn't apply to villagers
+The genuinely "new for military" part is the shared flow field in flowfield.ts. It's built only on group orders gated by FLOW_FIELD_MIN_UNITS (Game.ts:2245) and consumed only by the combat order code (1400, 1433, 1496). Villagers never touch it.
+
+The reason it isn't (and largely shouldn't be) reused for villagers is that the flow field is a rank-one optimization: its whole win is "many units, one shared destination area" — one reverse-Dijkstra flood replaces hundreds of near-identical A* searches. Villager movement is the opposite shape: each serf heads to a different resource node, storehouse, or build site, so there's no shared destination to amortize. A per-villager flow field would just be a full-map flood feeding one descent — strictly worse than the single A* they already run.
+
+Where it could help villagers
+The one place the premise fits is when many villagers converge on the same tile — e.g. a swarm of serfs all hauling to one storehouse door, or a mass of builders dispatched to one construction site. There you'd get the same many-units-one-destination redundancy the flow field was built to kill. Today those still run individual A* through the per-tick path budget (Game.ts:540, 591).
+
+So: the smoothing/A is already doing double duty; the flow field is not, and only worth extending to villagers in the narrow "everyone to the same door" case.* Want me to check whether serf hauling actually bunches enough to make that worthwhile?
+
+the castle is a prime target for serf piling
 
 
 ## Features
