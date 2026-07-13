@@ -69,6 +69,9 @@ export class UI {
     document.querySelectorAll<HTMLElement>('.bcard[data-key]').forEach(el => {
       el.classList.toggle('bio-hidden', banned.has(el.dataset.key!));
     });
+    // clear any prior level's onboarding locks/filters; main re-applies them
+    // for a first-ascension level right after this call
+    this.applyProgression(null, null);
     this.showCategory('materials');
     this.showInspector(null);
     this.updateWave(null);
@@ -77,6 +80,21 @@ export class UI {
     this.refreshResbar();
     this.refreshBuildCosts();
     this.renderUnits();
+  }
+
+  /** First-ascension onboarding: grey out the buildings not yet unlocked and
+   *  surface only the resources those unlocked buildings involve, so a first
+   *  time player meets the menu a handful of cards at a time. Pass nulls to
+   *  clear — every harder tier and the sandbox show the whole menu and every
+   *  resource. Called by main after {@link setGame}. */
+  applyProgression(locked: string[] | null, resources: Set<string> | null): void {
+    const lockedSet = new Set<string>(locked ?? []);
+    document.querySelectorAll<HTMLElement>('.bcard[data-key]').forEach(el => {
+      el.classList.toggle('locked', lockedSet.has(el.dataset.key!));
+    });
+    for (const k of RES_SHOWN) {
+      this.resRowEls[k].style.display = !resources || resources.has(k) ? '' : 'none';
+    }
   }
 
   /** Update build-menu card costs to reflect the run's cost-reducing upgrades. */
@@ -336,8 +354,12 @@ export class UI {
       for (const key of cat.keys) {
         const def = DEFS[key];
         const el = document.createElement('div'); el.className = 'bcard'; el.dataset.key = key; el.dataset.cat = cat.id; el.title = def.desc;
-        el.innerHTML = `<div class="icon">${buildingIconSVG(key, def)}</div><div class="nm">${def.name}</div><div class="cost">${this.costHTML(def.cost)}</div><div class="ptime">${this.timeHTML(def)}</div>`;
-        el.onclick = () => { audio.play('click'); this.onMode(el.classList.contains('on') ? null : { type: 'build', key }); };
+        el.innerHTML = `<div class="icon">${buildingIconSVG(key, def)}</div><div class="nm">${def.name}</div><div class="cost">${this.costHTML(def.cost)}</div><div class="ptime">${this.timeHTML(def)}</div><div class="lockmark">🔒</div>`;
+        el.onclick = () => {
+          // buildings the first-ascension onboarding hasn't unlocked yet are inert
+          if (el.classList.contains('locked')) { audio.play('error'); this.toast(`${def.name} unlocks on a later level`); return; }
+          audio.play('click'); this.onMode(el.classList.contains('on') ? null : { type: 'build', key });
+        };
         row.appendChild(el);
       }
       if (cat.stub) {

@@ -14,6 +14,8 @@ import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutat
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
 import { DEFAULT_SANDBOX, MAX_SANDBOX_STRONGHOLDS, biomeWater, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
+import { lockedBuildingsAt, unlockedResourcesAt } from './data/buildings';
+import { VICTORY_STORY, storyFor } from './data/story';
 import { campaignBiome } from './data/biomes';
 import type { BiomeKey } from './data/biomes';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
@@ -134,6 +136,17 @@ function startLevel(): void {
   }
   game.init(level.kit);
   ui.setGame(game);
+  // First-ascension onboarding: unlock the build menu a few buildings at a time
+  // and surface only the resources those buildings involve. Every harder tier
+  // (and the sandbox) opens the whole menu at once.
+  const onboarding = !sandbox && run.ascension === 0;
+  if (onboarding) {
+    const locked = lockedBuildingsAt(run.levelIndex);
+    game.lockedBuildings = new Set(locked);
+    ui.applyProgression(locked, unlockedResourcesAt(run.levelIndex));
+  } else {
+    ui.applyProgression(null, null);
+  }
   ui.setPerks(run.upgrades, meta.activeGlobalBuff ? [meta.activeGlobalBuff] : []);
   controls.setGame(game);
   // sandbox trouble is configured on the setup screen; runs use the level table
@@ -185,12 +198,60 @@ function startLevel(): void {
   if ((import.meta as any).env?.DEV) (window as any).game = game;
   showScreen(null);
   if (!sandbox) Save.saveRun(run); // persist at the level's start so a reload resumes here
+  // the story briefing opens the level (Normal tier only) and the objective
+  // card becomes a doorway back to it
+  const story = onboarding ? storyFor(run.levelIndex) : undefined;
+  $('objective').classList.toggle('clickable', !!story);
+  $('objective').title = story ? 'Click to revisit the story & how-to' : '';
+  if (story) showStoryModal(run.levelIndex);
 }
 
 function disposeLevel(): void {
   view.clearWorld();
   game = null;
   currentLevel = null;
+}
+
+// ---------- first-ascension story briefings ----------
+// A briefing modal opens each Normal-tier level with one paragraph of the
+// evolving dragon-of-Het-Gooi story and concrete how-to-win hints (thinning as
+// the run goes on). It pauses the sim while open; the objective card reopens it.
+let storyPrevSpeed = 1;
+let storyOnClose: () => void = () => {};
+
+function hideStory(): void {
+  $('story').style.display = 'none';
+  const cb = storyOnClose; storyOnClose = () => {}; cb();
+}
+
+/** Show a level's story + how-to briefing. `reopened` is the objective-card
+ *  revisit — it keeps the current speed rather than assuming a fresh 1×. */
+function showStoryModal(levelIndex: number, reopened = false): void {
+  const s = storyFor(levelIndex);
+  if (!s) return;
+  $('storyChapter').textContent = `Chapter ${levelIndex} of ${RUN_LEVELS} · Het Gooi`;
+  $('storyTitle').textContent = s.title;
+  $('storyText').textContent = s.story;
+  ($('storyGoalHead') as HTMLElement).style.display = s.how.length ? '' : 'none';
+  $('storyHow').innerHTML = s.how.map(h => `<li>${h}</li>`).join('');
+  ($('storyStart') as HTMLButtonElement).textContent = reopened ? 'Back to the field' : 'Begin';
+  // pause while the briefing is up, then restore the speed we came in on
+  if (game) { storyPrevSpeed = reopened ? game.simSpeed : 1; ui.setSpeed(0); }
+  storyOnClose = () => { if (phase === 'playing') ui.setSpeed(storyPrevSpeed || 1); };
+  $('story').style.display = 'flex';
+}
+
+/** The one-time congratulations when the dragon falls on Normal — layered over
+ *  the run summary, inviting the player onward to the Hard ascension. */
+function showVictoryModal(): void {
+  $('storyChapter').textContent = 'The Hunt is Ended';
+  $('storyTitle').textContent = VICTORY_STORY.title;
+  $('storyText').textContent = VICTORY_STORY.story;
+  ($('storyGoalHead') as HTMLElement).style.display = 'none';
+  $('storyHow').innerHTML = `<li>${VICTORY_STORY.cta}</li>`;
+  ($('storyStart') as HTMLButtonElement).textContent = 'Continue';
+  storyOnClose = () => {};
+  $('story').style.display = 'flex';
 }
 
 // ---------- co-op expedition lifecycle ----------
@@ -283,6 +344,8 @@ function startCoopLevel(seed: number, levelIndex: number): void {
   ui.setGold(run!.gold);
   ui.setSandbox(false);
   ui.setCoOp(true);
+  $('objective').classList.remove('clickable'); // no story briefings in co-op
+  $('objective').title = '';
   ($('btnDebugWin') as HTMLElement).style.display = 'none'; // a local-only win would desync
   ($('sandboxbar') as HTMLElement).style.display = 'none';
   levelHardTimer = Math.round(level.hardTimer * diff.timerMult);
@@ -587,8 +650,14 @@ function onLevelClear(): void {
   }
   Save.saveMeta(meta);
   announceCardUnlocks(statsBefore);
+  const normalVictory = last && run.ascension === 0;
   disposeLevel();
-  if (last) { phase = 'summary'; renderSummary(true); showScreen('summary'); Save.clearRun(); run = null; }
+  if (last) {
+    phase = 'summary'; renderSummary(true); showScreen('summary'); Save.clearRun(); run = null;
+    // the dragon fell on Normal: a congratulations layered over the summary,
+    // pointing the player onward to the Hard ascension
+    if (normalVictory) showVictoryModal();
+  }
   else {
     const next = run.levelIndex + 1;
     const contracts = contractsFor(run.runSeed, next, levelFor(next).objectives.length, levelFor(next).reward, ascensionForcesCurse(run.ascension));
@@ -829,6 +898,14 @@ installSettingsController(view, controls, openPauseMenu);
 
 ($('btnHelp') as HTMLButtonElement).onclick = () => $('intro').style.display = 'flex';
 ($('startBtn') as HTMLButtonElement).onclick = () => $('intro').style.display = 'none';
+($('storyStart') as HTMLButtonElement).onclick = () => { audio.play('click'); hideStory(); };
+// the objective card reopens the first-ascension story briefing mid-level
+$('objective').addEventListener('click', () => {
+  if (phase !== 'playing' || !run || sandbox || coopRun || run.ascension !== 0 || !currentLevel) return;
+  if (!storyFor(currentLevel.index)) return;
+  audio.play('click');
+  showStoryModal(currentLevel.index, true);
+});
 ($('btnSumMenu') as HTMLButtonElement).onclick = goMenu;
 ($('btnDebugWin') as HTMLButtonElement).onclick = debugWin;
 ($('btnHeritage') as HTMLButtonElement).onclick = openHeritage;

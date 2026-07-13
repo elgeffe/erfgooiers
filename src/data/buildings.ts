@@ -1,4 +1,4 @@
-import type { BuildingDef, BuildingKey } from '../types';
+import type { BuildingDef, BuildingKey, ItemKey } from '../types';
 
 export const DEFS: Record<BuildingKey, BuildingDef> = {
   storehouse: { name: 'Castle', desc: 'A fortified depot: stores every good and looses arrows at raiders. Build more to shorten haul routes', model: 'castle',
@@ -185,3 +185,71 @@ export const MENU_CATEGORIES: BuildCategory[] = [
   { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'monastery', 'ironmine', 'smithy', 'armory'] },
   { id: 'fortifications', name: 'Fortifications', keys: ['watchtower', 'stonetower', 'wall', 'gate'] },
 ];
+
+/** Every player-buildable key, in menu order (the onboarding's whole universe). */
+export const MENU_KEYS: BuildingKey[] = MENU_CATEGORIES.flatMap(c => c.keys);
+
+// =====================================================================
+//  First-ascension onboarding — the build menu unlocks a handful of
+//  buildings per level so a first-time player is never shown the whole
+//  wall of cards at once. Each entry lists the buildings that FIRST become
+//  available at that level; the unlocked set is cumulative. Every
+//  objective-critical building is opened by the level that needs it, and
+//  from level 5 (where the combat arc begins) the whole menu is unlocked.
+//  This applies only at ascension 0 (Normal); every harder tier opens the
+//  full menu from the start. See unlockedBuildingsAt / lockedBuildingsAt.
+// =====================================================================
+export const TUTORIAL_UNLOCKS: Record<number, BuildingKey[]> = {
+  // First Timber — the woodcutter → sawmill chain, plus the two buildings
+  // every economy leans on (castle depot, Guild Hall for workers) and the quarry.
+  1: ['storehouse', 'guildhall', 'woodcutter', 'sawmill', 'forester', 'quarry'],
+  // Daily Bread — the farm → mill → bakery food chain, the fishery, and a tavern.
+  2: ['farm', 'mill', 'bakery', 'fishery', 'tavern'],
+  // First Coin — the gold/coal → mint coin chain, and the market to sell surplus.
+  3: ['goldmine', 'coalmine', 'mint', 'market'],
+  // The Vintner's Gamble — wine & meat chains, plus the first muster (iron →
+  // smithy → barracks) the level's train goal demands.
+  4: ['vineyard', 'winery', 'pigfarm', 'butcher', 'ironmine', 'smithy', 'barracks'],
+  // Raiders at the Gate onward — the whole menu: heavy military and fortifications.
+  5: ['clamdigger', 'armory', 'stable', 'engineer', 'monastery', 'watchtower', 'stonetower', 'wall', 'gate'],
+};
+
+/** The last level the unlock schedule names; everything past it is fully open. */
+const LAST_UNLOCK_LEVEL = Math.max(...Object.keys(TUTORIAL_UNLOCKS).map(Number));
+
+/** Cumulative set of buildings the onboarding has unlocked by `level`.
+ *  Levels at or past the schedule's end unlock the whole menu. */
+export function unlockedBuildingsAt(level: number): Set<BuildingKey> {
+  if (level >= LAST_UNLOCK_LEVEL) return new Set(MENU_KEYS);
+  const set = new Set<BuildingKey>();
+  for (let l = 1; l <= level; l++) for (const k of TUTORIAL_UNLOCKS[l] ?? []) set.add(k);
+  return set;
+}
+
+/** Menu buildings still locked by the onboarding at `level`. */
+export function lockedBuildingsAt(level: number): BuildingKey[] {
+  const unlocked = unlockedBuildingsAt(level);
+  return MENU_KEYS.filter(k => !unlocked.has(k));
+}
+
+/** The resources a building's own economy touches: its build cost, what it
+ *  gathers or crafts, and any recipe inputs. Drives which resources the
+ *  onboarding surfaces (tavern foods and unit-training costs are intentionally
+ *  excluded — those resources appear via the buildings that actually make them). */
+function buildingResources(key: BuildingKey): ItemKey[] {
+  const def = DEFS[key];
+  const items = new Set<ItemKey>();
+  for (const k in def.cost) items.add(k as ItemKey);
+  if (def.gather?.out) items.add(def.gather.out as ItemKey);
+  if (def.recipe) { items.add(def.recipe.out as ItemKey); for (const k in def.recipe.inp) items.add(k as ItemKey); }
+  return [...items];
+}
+
+/** The resources worth surfacing in the top bar once the onboarding has
+ *  unlocked its buildings at `level`. Timber, stone and coin are always shown
+ *  (the currencies of every build and the shop). */
+export function unlockedResourcesAt(level: number): Set<ItemKey> {
+  const items = new Set<ItemKey>(['timber', 'stone', 'coin']);
+  for (const k of unlockedBuildingsAt(level)) for (const it of buildingResources(k)) items.add(it);
+  return items;
+}

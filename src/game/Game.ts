@@ -1,3 +1,4 @@
+import { DEFS } from '../data/buildings';
 import { ITEMS } from '../data/items';
 import { UNITS, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
@@ -68,6 +69,10 @@ export class Game {
   readonly playerHeroes = new Map<PlayerId, Unit>();
   selected: any = null;
   simSpeed = 1;
+  /** Buildings the first-ascension onboarding has not unlocked yet on this
+   *  level (empty on every other tier and in sandbox/co-op). Placement is
+   *  refused for these; the UI greys their cards out. */
+  lockedBuildings = new Set<BuildingKey>();
   /** The run's mounted hero on this level (null in sandbox / before spawn). */
   heroUnit: Unit | null = null;
   /** Seconds until a fallen hero rides back out of the castle (0 = alive/none). */
@@ -533,6 +538,11 @@ export class Game {
   }
 
   tryPlace(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId = this.localPlayerId): void {
+    if (this.lockedBuildings.has(key)) {
+      this.sfx('error');
+      this.toast(`${DEFS[key].name} unlocks on a later level`, 'err');
+      return;
+    }
     this.placementSystem.tryPlace(key, tx, ty, rot, owner);
   }
 

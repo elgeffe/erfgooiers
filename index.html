@@ -411,6 +411,8 @@
     <h1 class="serif"><span id="introLogo"></span>How to play</h1>
     <div class="tag">A cozy physical economy — every plank, loaf and coin is carried by hand.</div>
     <ul>
+      <li><span class="k">Story</span><span>On <b>Normal</b> difficulty each level opens with a short briefing: a paragraph of the tale and exactly how to reach the goal. Click the <b>objective card</b> (top-right) any time to read it again. Harder ascensions drop the story.</span></li>
+      <li><span class="k">Unlock</span><span>On Normal the build menu starts small and <b>unlocks a few buildings each level</b> — locked cards show a 🔒 and are greyed out. The top resource bar shows only what you can currently make, so there’s less to take in at first. From level 5 the whole menu is open.</span></li>
       <li><span class="k">Build</span><span>Place buildings from the bottom menu. Serfs haul timber &amp; stone from your castle to the site, then a laborer constructs it.</span></li>
       <li><span class="k">Watch</span><span>Specialists gather and craft; serfs automatically carry goods between buildings. Nothing teleports.</span></li>
       <li><span class="k">Roads</span><span>Paint roads for 1 stone each — workers prefer them and walk 30% faster on them.</span></li>
@@ -423,6 +425,17 @@
       <li><span class="k">Controls</span><span>WASD / arrows or right-drag to pan · wheel to zoom · <b>R</b> rotates a building while placing · click a building to inspect · Esc cancels.</span></li>
     </ul>
     <button id="startBtn">Close</button>
+  </div>
+</div>
+
+<div id="story">
+  <div id="storyCard">
+    <div class="story-chapter" id="storyChapter"></div>
+    <h1 class="serif" id="storyTitle"></h1>
+    <p class="story-body" id="storyText"></p>
+    <div class="story-goal-head" id="storyGoalHead">How to reach your goal</div>
+    <ul class="story-how" id="storyHow"></ul>
+    <button id="storyStart">Begin</button>
   </div>
 </div>
 

@@ -66,6 +66,12 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 .bcard.stub:hover{transform:none;border-color:rgba(255,255,255,.07);}
 /* buildings the current biome forbids — wins over showCategory's inline display */
 .bcard.bio-hidden{display:none!important;}
+/* buildings the first-ascension onboarding hasn't unlocked yet: greyed, inert,
+   with a small padlock corner mark. The lock glyph is hidden on every other card. */
+.bcard .lockmark{display:none;}
+.bcard.locked{opacity:.42;filter:grayscale(1);cursor:not-allowed;position:relative;}
+.bcard.locked:hover{transform:none;border-color:rgba(255,255,255,.07);}
+.bcard.locked .lockmark{display:block;position:absolute;top:3px;right:4px;font-size:11px;opacity:.85;filter:none;}
 .bcard .icon{width:38px;height:32px;margin:0 auto 3px;position:relative;}
 .bcard .icon svg{display:block;filter:drop-shadow(0 1px 1px rgba(0,0,0,.45));}
 .bcard .nm{font-size:9.5px;line-height:1.15;color:var(--ink);font-weight:600;min-height:22px;display:flex;align-items:center;justify-content:center;}
@@ -264,6 +270,21 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 #introCard li .k{color:var(--accent);font-weight:700;flex:none;width:78px;}
 #introCard button{width:100%;background:var(--accent);color:#241a0e;border:none;border-radius:8px;padding:10px;font-size:14px;font-weight:700;cursor:pointer;}
 #introCard button:hover{background:#e8b855;}
+/* ---------- first-ascension story briefing (Normal tier only) ---------- */
+#story{position:absolute;inset:0;background:rgba(15,11,8,.8);display:none;align-items:center;justify-content:center;z-index:32;}
+#storyCard{width:480px;max-width:92vw;max-height:90vh;overflow-y:auto;background:var(--panel);border:1px solid rgba(217,164,65,.4);border-radius:14px;padding:26px 30px;box-shadow:0 20px 60px rgba(0,0,0,.65);}
+#storyCard .story-chapter{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--accent);font-weight:700;margin-bottom:6px;}
+#storyCard h1{font-size:23px;color:var(--ink);margin-bottom:12px;line-height:1.2;}
+#storyCard .story-body{font-size:13.5px;line-height:1.65;color:var(--ink-dim);margin-bottom:18px;}
+#storyCard .story-goal-head{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--accent);font-weight:700;margin-bottom:9px;}
+#storyCard .story-how{list-style:none;display:flex;flex-direction:column;gap:8px;margin-bottom:20px;}
+#storyCard .story-how li{position:relative;padding-left:20px;font-size:12.5px;line-height:1.5;color:var(--ink);}
+#storyCard .story-how li::before{content:'▸';position:absolute;left:2px;color:var(--accent);}
+#storyCard button{width:100%;background:var(--accent);color:#241a0e;border:none;border-radius:8px;padding:11px;font-size:14px;font-weight:700;cursor:pointer;}
+#storyCard button:hover{background:#e8b855;}
+/* the objective card reopens the briefing in the first-ascension run */
+#objective.clickable{cursor:pointer;}
+#objective.clickable:hover{border-color:var(--accent);}
 /* ---------- full-screen menu / shop / summary ---------- */
 #hud{display:none;}
 .screen{position:absolute;inset:0;background:radial-gradient(120% 120% at 50% 0%,rgba(40,30,20,.86),rgba(15,11,8,.94));display:none;align-items:center;justify-content:center;z-index:25;}
