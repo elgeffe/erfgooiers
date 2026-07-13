@@ -27,6 +27,7 @@ import { TrainingSystem } from './TrainingSystem';
 import { LogisticsSystem } from './LogisticsSystem';
 import { WorkerSystem } from './WorkerSystem';
 import { UnitMovement } from './UnitMovement';
+import { CombatTargeting } from './CombatTargeting';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -115,6 +116,7 @@ export class Game {
   private readonly logisticsSystem: LogisticsSystem;
   private readonly workerSystem: WorkerSystem;
   private readonly unitMovement: UnitMovement;
+  private readonly combatTargeting: CombatTargeting;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -270,6 +272,12 @@ export class Game {
       sfx: name => this.sfx(name),
     });
     this.unitMovement = new UnitMovement(this.world, this.mods);
+    this.combatTargeting = new CombatTargeting(this.world, {
+      buildings: () => this.buildings,
+      visitUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
+      hostile: (left, right) => this.hostile(left, right),
+      buildingCenter: building => this.buildingCenter(building),
+    });
   }
 
   entityById(id: number): Building | Site | Unit | null {
@@ -982,14 +990,7 @@ export class Game {
 
   /** Nearest hostile fighter within the given aggro radius, or null. */
   private acquireTarget(u: Unit, aggro: number): Unit | null {
-    let best: Unit | null = null, bd = aggro * aggro;
-    this.forUnitsNear(u.tx, u.ty, Math.ceil(aggro) + 1, o => {
-      if (o.dead || o === u) return;
-      if (!this.hostile(u.faction, o.faction)) return;
-      const dx = o.tx - u.tx, dy = o.ty - u.ty, d2 = dx * dx + dy * dy;
-      if (d2 < bd) { bd = d2; best = o; }
-    });
-    return best;
+    return this.combatTargeting.acquireUnit(u, aggro);
   }
 
   private faceUnit(u: Unit, foe: Unit): void {
@@ -1331,35 +1332,13 @@ export class Game {
    *  nearest player building, the player army razes the nearest enemy stronghold
    *  in reach. Non-raiding beasts and camp guards leave walls alone. */
   private buildingTargetFor(u: Unit): Building | null {
-    if (u.faction !== 'player' && !u.raider) return null;
-    const RANGE = u.faction === 'player' ? 18 : 1e9; // raiders always march on the castle
-    let best: Building | null = null, bd = RANGE * RANGE;
-    for (const b of this.buildings) {
-      if (b.removed || !this.hostile(u.faction, b.faction)) continue;
-      const c = this.buildingCenter(b);
-      const dx = c.x - u.mesh.position.x, dz = c.z - u.mesh.position.z, d2 = dx * dx + dz * dz;
-      if (d2 < bd) { bd = d2; best = b; }
-    }
-    return best;
+    return this.combatTargeting.acquireBuilding(u);
   }
 
   /** A free tile on the ring around a building's 2×2 footprint, salted per unit
    *  so a squad surrounds the walls instead of stacking at the door. */
   private siegeTile(u: Unit, b: Building): Coord {
-    let best: Coord | null = null, bd = 1e9;
-    // fortifications are battered from the unit's own side: a ring tile beyond
-    // a wall is the far side of the very obstacle being attacked, and marching
-    // there is a guaranteed failed full-map search
-    const du = b.def.bulwark ? Math.hypot(b.x + 0.5 - u.tx, b.y + 0.5 - u.ty) : Infinity;
-    for (let y = b.y - 1; y <= b.y + 2; y++) for (let x = b.x - 1; x <= b.x + 2; x++) {
-      if (x >= b.x && x <= b.x + 1 && y >= b.y && y <= b.y + 1) continue;
-      if (!this.world.passable(x, y)) continue;
-      if (Math.hypot(x - u.tx, y - u.ty) > du) continue;
-      const salt = ((x * 31 + y * 17 + u.tx * 7 + u.ty * 3) % 5) * 0.8;
-      const dd = Math.hypot(x - u.tx, y - u.ty) + salt;
-      if (dd < bd) { bd = dd; best = { x, y } }
-    }
-    return best ?? doorTile(b);
+    return this.combatTargeting.siegeTile(u, b);
   }
 
   /** A siege target nobody can path to is walled in (a keep behind ramparts).
