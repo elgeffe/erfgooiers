@@ -11,7 +11,7 @@ import { formationSpots } from '../engine/formations';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
 import { PLAYER_IDS, type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit, type UnitOrder } from '../types';
-import { buildingEntranceTiles, doorTile, unitLabel } from './util';
+import { buildingEntranceTiles, doorTile } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, ownerForFaction } from './ownership';
@@ -23,6 +23,7 @@ import { SeparationSystem } from './SeparationSystem';
 import { UnitSpatialIndex } from './UnitSpatialIndex';
 import { DamageSystem } from './DamageSystem';
 import { EnemySpawner } from './EnemySpawner';
+import { TrainingSystem } from './TrainingSystem';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -107,6 +108,7 @@ export class Game {
   private readonly unitSpatialIndex: UnitSpatialIndex;
   private readonly damageSystem: DamageSystem;
   private readonly enemySpawner: EnemySpawner;
+  private readonly trainingSystem: TrainingSystem;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -211,6 +213,25 @@ export class Game {
       onObjectiveKill: (role, faction) => this.objective?.onKill(role, faction),
       onStructureDestroyed: faction => this.objective?.onStructureDestroyed(faction),
       markDefeat: () => { this.defeat = true; },
+      toast: (message, cls) => this.toast(message, cls),
+      sfx: name => this.sfx(name),
+    });
+    this.trainingSystem = new TrainingSystem(this.mods, {
+      buildings: () => this.buildings,
+      units: () => this.units,
+      storeFor: owner => this.storeFor(owner),
+      storeTotal: (item, owner) => this.storeTotal(item, owner),
+      takeStock: (item, amount, owner) => this.takeStock(item, amount, owner),
+      spawnUnit: (role, color, tile, owner) => this.spawnUnit(role, color, tile, owner),
+      spawnFighter: (kind, tile, owner) => this.spawnFighter(kind, tile, 'player', owner),
+      orderAttackMove: (unit, x, y) => this.orderUnit(unit, 'attackMove', x, y),
+      removeUnit: unit => {
+        this.view.remove(unit.mesh);
+        this.units.splice(this.units.indexOf(unit), 1);
+        if (this.selected === unit) this.select(null);
+      },
+      onTrain: () => this.objective?.onTrain(),
+      onGold: amount => this.onGold(amount),
       toast: (message, cls) => this.toast(message, cls),
       sfx: name => this.sfx(name),
     });
@@ -2304,109 +2325,31 @@ export class Game {
 
   /** Queue a unit at a barracks/guild hall, paying its own cost from the store. */
   trainUnit(b: Building, kind: string): boolean {
-    const spec = b.def.military ?? b.def.trainer;
-    const t = spec?.units.find(s => s.kind === kind);
-    if (!t || !b.active) return false;
-    if (b.owner !== 'p1' && b.owner !== 'p2') return false;
-    if (!this.playerStores.get(b.owner)?.stock) return false;
-    for (const k in t.cost) if (this.storeTotal(k, b.owner) < (t.cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name.toLowerCase() + ' to train a ' + unitLabel(kind).toLowerCase(), 'err'); this.sfx('error'); return false; }
-    for (const k in t.cost) this.takeStock(k, (t.cost as any)[k], b.owner);
-    (b.trainQ ||= []).push(kind);
-    this.sfx('click');
-    return true;
+    return this.trainingSystem.trainUnit(b, kind);
   }
 
   /** Cancel a queued training order by index, refunding its cost to the store. */
   cancelTrain(b: Building, index: number): void {
-    if (!b.trainQ || index < 0 || index >= b.trainQ.length) return;
-    const spec = b.def.military ?? b.def.trainer;
-    const t = spec?.units.find(s => s.kind === b.trainQ![index]);
-    b.trainQ.splice(index, 1);
-    if (index === 0) b.prog = 0;           // scrap progress on the in-flight unit
-    if (t && (b.owner === 'p1' || b.owner === 'p2')) {
-      const store = this.storeFor(b.owner);
-      for (const k in t.cost) store.stock![k] = (store.stock![k] || 0) + (t.cost as any)[k];
-    }
-    this.sfx('click');
+    this.trainingSystem.cancelTrain(b, index);
   }
 
   /** Spawn a civilian worker (serf / laborer / villager) at a tile. */
   private spawnCivilian(role: string, tile: { x: number; y: number }, owner: PlayerId = this.localPlayerId): Unit {
-    if (role === 'serf') return this.spawnUnit('serf', 0xd8c49a, tile, owner);
-    if (role === 'laborer') { const u = this.spawnUnit('laborer', 0xc97b3d, tile, owner); u.roleName = 'Builder'; u.anchor = { x: tile.x, y: tile.y }; return u; }
-    const u = this.spawnUnit('villager', 0xcdbb8f, tile, owner); u.roleName = 'Villager'; u.status = 'Awaiting a post'; return u;
+    return this.trainingSystem.spawnCivilian(role, tile, owner);
   }
 
   /** Barracks & guild halls turn their player-built queue into units over time. */
   private trainQueues(sdt: number): void {
-    for (const b of this.buildings) {
-      const spec = b.def.military ?? b.def.trainer;
-      if (!spec || !b.active) continue;
-      if (!b.trainQ || !b.trainQ.length) { b.prog = 0; continue; }
-      const head = spec.units.find(s => s.kind === b.trainQ![0]);
-      const time = (head?.time ?? 6) * this.mods.trainTime(b.trainQ[0]);
-      b.prog += sdt / time;
-      if (b.prog >= 1) {
-        b.prog = 0;
-        const kind = b.trainQ.shift()!;
-        const d = doorTile(b);
-        if ((UNITS as any)[kind]) {
-          const owner = b.owner === 'p2' ? 'p2' : 'p1';
-          const u = this.spawnFighter(kind as UnitKind, { x: d.x, y: d.y }, 'player', owner);
-          this.objective?.onTrain(); // military drill counts toward produceTrain goals
-          if (b.rally) this.orderUnit(u, 'attackMove', b.rally.x, b.rally.y); // muster at the flag
-        } else this.spawnCivilian(kind, { x: d.x, y: d.y }, b.owner === 'p2' ? 'p2' : 'p1');
-        this.sfx('build');
-      }
-    }
+    this.trainingSystem.updateQueues(sdt);
   }
 
   /** Send an idle villager to become the specialist of each unstaffed building. */
   private staffBuildings(): void {
-    for (const b of this.buildings) {
-      if (b.removed || !b.def.worker || b.worker || b.faction !== 'player') continue;
-      let best: Unit | null = null, bd = 1e9;
-      for (const u of this.units) {
-        if (u.dead || u.owner !== b.owner || u.role !== 'villager' || u.home) continue;
-        const dd = Math.abs(u.tx - b.x) + Math.abs(u.ty - b.y);
-        if (dd < bd) { bd = dd; best = u; }
-      }
-      if (!best) continue;
-      const tile = { x: best.tx, y: best.ty };
-      this.view.remove(best.mesh); this.units.splice(this.units.indexOf(best), 1);
-      if (this.selected === best) this.select(null);
-      const def = b.def;
-      const u = this.spawnUnit(def.worker!.toLowerCase(), def.wcolor!, tile, b.owner === 'p2' ? 'p2' : 'p1');
-      u.home = b; u.wstate = 'goHome'; u.roleName = def.worker!;
-      b.worker = u;
-    }
+    this.trainingSystem.staffBuildings();
   }
 
   /** Taverns burn food on a timer to refill the hunger of workers, up to capacity. */
   private serveTaverns(sdt: number): void {
-    for (const b of this.buildings) {
-      const tv = b.def.tavern;
-      if (!tv || !b.active) continue;
-      b.prog += sdt / tv.time;
-      if (b.prog < 1) continue;
-      b.prog = 0;
-      // hungriest player workers first (fighters don't dine here); unlimited range
-      const eaters = this.units
-        .filter(u => u.owner === b.owner && u.faction === 'player' && !this.isFighter(u) && u.hunger < 90)
-        .sort((a, c) => a.hunger - c.hunger)
-        .slice(0, tv.capacity);
-      const fed: Unit[] = [];
-      for (const u of eaters) {
-        const food = tv.foods.find(f => (b.inp[f] || 0) > 0);
-        if (!food) break;                  // out of provisions this cycle
-        b.inp[food]--;
-        u.hunger = 100;
-        fed.push(u);
-      }
-      b.fedUnits = fed;
-      // tavern tithe: the taproom pays out per meal served
-      const tithe = this.mods.goldPerMeal();
-      if (tithe > 0 && fed.length) { this.onGold(tithe * fed.length); this.sfx('coin'); }
-    }
+    this.trainingSystem.serveTaverns(sdt);
   }
 }
