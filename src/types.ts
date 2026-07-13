@@ -1,4 +1,5 @@
 import type * as THREE from 'three';
+import type { FlowField } from './engine/flowfield';
 
 export type ItemKey =
   | 'trunk' | 'timber' | 'stone' | 'wheat' | 'flour'
@@ -36,6 +37,10 @@ export interface UnitOrder {
   /** Explicit structure focus for a siege order. Kept on queued orders so a
    *  Shift-chained attack cannot degrade into a generic attack-move. */
   building: Building | null;
+  /** Shared flow field of the group order this came from: the whole selection
+   *  derives paths from one flood instead of one A* each. Nulled per unit the
+   *  moment the field cannot serve it (falls back to a budgeted global A*). */
+  field?: FlowField | null;
 }
 
 /** Purely decorative ground scatter (no gameplay effect). */

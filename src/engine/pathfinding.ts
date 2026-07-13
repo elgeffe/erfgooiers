@@ -10,17 +10,17 @@ import type { Coord, Faction } from '../types';
 // admissible. The goal tile is always considered enterable even if occupied
 // (door tiles). The raw path is then string-pulled (`smooth`) so units walk
 // natural straight lines across open ground instead of grid staircases.
-const DIRS: [number, number, number][] = [
+export const DIRS: [number, number, number][] = [
   [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
   [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2],
 ];
 
-interface OpenNode { x: number; y: number; f: number; }
+export interface OpenNode { x: number; y: number; f: number; }
 
 /** Allocation-light binary min-heap. Mass formation orders can enqueue tens
  * of thousands of A* frontier nodes; linear scans of the old open array made
  * that work quadratic. */
-class MinHeap {
+export class MinHeap {
   private readonly a: OpenNode[] = [];
   get length(): number { return this.a.length; }
   push(n: OpenNode): void {
@@ -52,14 +52,33 @@ class MinHeap {
   }
 }
 
-export function findPath(world: World, sx: number, sy: number, ex: number, ey: number, faction?: Faction): Coord[] | null {
+/** An optional fence for the search: neighbours outside it are never expanded.
+ *  Used for the short "take your exact formation slot" hop at the end of a
+ *  flow-field path, where the whole search belongs inside the formation. */
+export interface SearchBox { x0: number; y0: number; x1: number; y1: number; }
+
+// Scratch buffers reused across searches (findPath is synchronous and never
+// re-entered). Fresh ~120 KB allocations per call made the GC, not the search,
+// the dominant cost when flow-field slot hops run in the hundreds per tick.
+let scratchSize = 0;
+let gScratch = new Float64Array(0);
+let cameScratch = new Int32Array(0);
+let closedScratch = new Uint8Array(0);
+
+export function findPath(world: World, sx: number, sy: number, ex: number, ey: number, faction?: Faction, box?: SearchBox): Coord[] | null {
   if (sx === ex && sy === ey) return [];
   const W = world.W, H = world.H;
   const tiles = world.tiles;
   const open = new MinHeap();
   const size = W * H;
-  const gS = new Float64Array(size); gS.fill(Infinity);
-  const came = new Int32Array(size); came.fill(-1);
+  if (size > scratchSize) {
+    scratchSize = size;
+    gScratch = new Float64Array(size);
+    cameScratch = new Int32Array(size);
+    closedScratch = new Uint8Array(size);
+  }
+  const gS = gScratch.subarray(0, size); gS.fill(Infinity);
+  const came = cameScratch.subarray(0, size); came.fill(-1);
   const key = (x: number, y: number) => y * W + x;
   const h = (x: number, y: number) => {
     const dx = Math.abs(x - ex), dy = Math.abs(y - ey);
@@ -67,7 +86,7 @@ export function findPath(world: World, sx: number, sy: number, ex: number, ey: n
   };
   open.push({ x: sx, y: sy, f: h(sx, sy) });
   gS[key(sx, sy)] = 0;
-  const closed = new Uint8Array(size);
+  const closed = closedScratch.subarray(0, size); closed.fill(0);
   while (open.length) {
     const cur = open.pop();
     const ck = key(cur.x, cur.y);
@@ -83,6 +102,7 @@ export function findPath(world: World, sx: number, sy: number, ex: number, ey: n
     for (const [dx, dy, mult] of DIRS) {
       const nx = cur.x + dx, ny = cur.y + dy;
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      if (box && (nx < box.x0 || ny < box.y0 || nx > box.x1 || ny > box.y1)) continue;
       if (!(nx === ex && ny === ey) && !world.passable(nx, ny, faction)) continue;
       // no corner cutting: a diagonal step needs both orthogonal shoulders clear
       if (dx !== 0 && dy !== 0 && (!world.passable(cur.x + dx, cur.y, faction) || !world.passable(cur.x, cur.y + dy, faction))) continue;
@@ -105,13 +125,16 @@ export function findPath(world: World, sx: number, sy: number, ex: number, ey: n
  * Road nodes are never skipped over — a paved detour the A* paid for stays a
  * paved detour, so units keep their road speed bonus.
  */
-function smooth(world: World, sx: number, sy: number, path: Coord[], faction?: Faction): Coord[] {
+export function smooth(world: World, sx: number, sy: number, path: Coord[], faction?: Faction): Coord[] {
   if (path.length <= 1) return path;
   const out: Coord[] = [];
   let ax = sx, ay = sy, i = 0;
   while (i < path.length) {
     let far = i;
-    for (let j = i + 1; j < path.length; j++) {
+    // cap the lookahead: the greedy scan is quadratic in the span it clears,
+    // and a long straight line is just as straight with a node every 32 tiles
+    const jEnd = Math.min(path.length, i + 33);
+    for (let j = i + 1; j < jEnd; j++) {
       // don't cut across intermediate road nodes (keep the detour) and stop
       // extending once the straight line is blocked
       if (world.tiles[path[j - 1].y][path[j - 1].x].road) break;

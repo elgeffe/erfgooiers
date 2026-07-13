@@ -116,7 +116,7 @@ describe('Game siege orders', () => {
     expect(guard.hp).toBeLessThan(guard.maxHp);
   });
 
-  it('budgets path searches when a large host attacks one tower', () => {
+  it('marches a large host on one tower via the shared flow field, not per-unit A*', () => {
     const { game } = openBattleGame(414);
     const tower = game.placeBuilding('enemywatchtower', 36, 24, true, 0, 'enemy');
     tower.hp = tower.maxHp = 1_000_000;
@@ -130,11 +130,51 @@ describe('Game siege orders', () => {
     (game as any).sendTo = (...args: unknown[]) => { searches++; return originalSendTo(...args); };
 
     game.orderGroupAttackBuilding(squad, tower);
+    expect(squad.every(u => u.order?.field)).toBe(true);
+    game.update(0.05);
     game.update(0.05);
 
-    expect(searches).toBeGreaterThan(0);
-    expect(searches).toBeLessThanOrEqual(28);
+    // the whole host derives its march from one flood; on open ground the
+    // global search only returns for the salted shuffle around the walls
+    expect(searches).toBe(0);
+    expect(squad.filter(u => u.path).length).toBe(240);
     expect(squad.every(u => u.order?.building === tower && u.foeB === tower)).toBe(true);
+  });
+
+  it('moves a big formation off one flow field and lands every unit on its slot', () => {
+    const { game } = openBattleGame(418);
+    const squad = Array.from({ length: 96 }, (_, i) => {
+      const u = game.spawnFighter('soldier', { x: 3 + i % 12, y: 3 + Math.floor(i / 12) }, 'player');
+      u.hp = u.maxHp = 1_000;
+      return u;
+    });
+    let searches = 0;
+    const originalSendTo = (game as any).sendTo.bind(game);
+    (game as any).sendTo = (...args: unknown[]) => { searches++; return originalSendTo(...args); };
+
+    game.orderGroup(squad, 'move', 38, 38, null, 'box');
+    const targets = new Set(squad.map(u => `${u.order!.x},${u.order!.y}`));
+    expect(targets.size).toBe(96); // one exact slot per unit
+    game.update(0.05);
+    expect(squad.filter(u => u.path).length).toBe(96); // under way on tick one
+
+    for (let i = 0; i < 800 && squad.some(u => u.order); i++) game.update(0.05);
+
+    expect(searches).toBe(0); // never fell back to a global A* on open ground
+    expect(squad.every(u => u.order === null)).toBe(true);
+    expect(squad.every(u => Math.hypot(u.tx - 38, u.ty - 38) < 14)).toBe(true);
+  });
+
+  it('paths small selections with plain A* — no field is built', () => {
+    const { game } = openBattleGame(419);
+    const pair = [
+      game.spawnFighter('soldier', { x: 4, y: 4 }, 'player'),
+      game.spawnFighter('soldier', { x: 5, y: 4 }, 'player'),
+    ];
+    game.orderGroup(pair, 'move', 30, 30, null, 'box');
+    expect(pair.every(u => u.order && !u.order.field)).toBe(true);
+    for (let i = 0; i < 800 && pair.some(u => u.order); i++) game.update(0.05);
+    expect(pair.every(u => Math.hypot(u.tx - 30, u.ty - 30) <= 3)).toBe(true);
   });
 
   it('chains explicit unit attacks and resumes attack-at-will afterward', () => {

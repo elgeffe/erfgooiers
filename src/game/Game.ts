@@ -6,6 +6,7 @@ import { UNITS, damageMultiplier, formationRank, structureDamage, type UnitKind 
 import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
+import { buildFlowField, fieldPath, type FlowField } from '../engine/flowfield';
 import { formationSpots } from '../engine/formations';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
@@ -20,6 +21,10 @@ import type { GameCommand } from '../net/protocol';
 
 // Gameplay events use the sim stream (reseeded per level), never worldgen/cosmetic.
 const rnd = () => simRng.next();
+
+/** Selections at or above this size share one flow field per order instead of
+ *  running one global A* per unit. Below it the flood costs more than it saves. */
+const FLOW_FIELD_MIN_UNITS = 8;
 
 /** The goods and workers a level hands you at the start (before run upgrades). */
 export interface StartKit {
@@ -1373,11 +1378,24 @@ export class Game {
         // besiege: head for a free tile around the walls, not everyone to the door
         if (!u.path) {
           u.timer -= dt;
-          if (u.timer <= 0 && this.pathBudget > 0) {
-            this.pathBudget--;
-            const s = this.siegeTile(u, bt);
-            this.sendTo(u, s.x, s.y);
-            u.timer = 0.5 + rnd() * 0.4;
+          if (u.timer <= 0) {
+            // an ordered host marches on the ring via its shared flow field;
+            // an empty descent means the ring is reached — drop the field and
+            // let the salted per-unit spread below take over the final shuffle
+            const field = u.order?.building === bt ? u.order.field : null;
+            if (field) {
+              if (this.flowBudget > 0) {
+                this.flowBudget--;
+                const p = fieldPath(this.world, field, u.tx, u.ty, undefined, undefined, u.faction);
+                if (p?.length) { u.path = p; u.pathI = 0; u.timer = 0.5 + rnd() * 0.4; }
+                else u.order!.field = null;
+              }
+            } else if (this.pathBudget > 0) {
+              this.pathBudget--;
+              const s = this.siegeTile(u, bt);
+              this.sendTo(u, s.x, s.y);
+              u.timer = 0.5 + rnd() * 0.4;
+            }
           }
         }
         this.moveUnit(u, dt);
@@ -1393,8 +1411,18 @@ export class Game {
       }
       if (!u.path) {
         if (u.tx === u.order.x && u.ty === u.order.y) { this.advanceOrder(u); }
-        // pathfinding is budgeted per tick: a freshly ordered horde sets off
-        // staggered over a few ticks instead of freezing the sim on one
+        // group orders descend their shared flow field (cheap, own budget);
+        // solo orders and units the field can't serve run a budgeted A* —
+        // either way a freshly ordered horde sets off staggered over a few
+        // ticks instead of freezing the sim on one
+        else if (u.order.field) {
+          if (this.flowBudget > 0) {
+            this.flowBudget--;
+            const p = fieldPath(this.world, u.order.field, u.tx, u.ty, u.order.x, u.order.y, u.faction);
+            if (p?.length) { u.path = p; u.pathI = 0; }
+            else u.order.field = null;
+          }
+        }
         else if (this.pathBudget > 0) {
           this.pathBudget--;
           if (!this.sendTo(u, u.order.x, u.order.y)) this.advanceOrder(u);
@@ -1429,6 +1457,14 @@ export class Game {
     u.foe = null; u.foeB = null;
     if (u.order) {
       if (u.tx === u.order.x && u.ty === u.order.y) this.advanceOrder(u);
+      else if (!u.path && u.order.field) {
+        if (this.flowBudget > 0) {
+          this.flowBudget--;
+          const p = fieldPath(this.world, u.order.field, u.tx, u.ty, u.order.x, u.order.y, u.faction);
+          if (p?.length) { u.path = p; u.pathI = 0; }
+          else u.order.field = null;
+        }
+      }
       else if (!u.path && this.pathBudget > 0) {
         this.pathBudget--;
         if (!this.sendTo(u, u.order.x, u.order.y)) this.advanceOrder(u);
@@ -2003,9 +2039,9 @@ export class Game {
   /** Issue a command to a unit (used by Controls for hero/army orders). With
    *  `queue`, the command is appended behind whatever the unit is already doing
    *  (shift-click chaining) instead of replacing it. */
-  orderUnit(u: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, queue = false): void {
+  orderUnit(u: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, queue = false, field: FlowField | null = null): void {
     if (UNITS[u.role as UnitKind]?.heal && type === 'attack') { type = 'attackMove'; foe = null; }
-    this.queueOrder(u, { type, x, y, foe, building: null }, queue);
+    this.queueOrder(u, { type, x, y, foe, building: null, field }, queue);
   }
 
   /** Store or activate one fully resolved order. Entity references stay inside
@@ -2071,6 +2107,9 @@ export class Game {
       return;
     }
     const spots = formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), this.formationGround, facing);
+    // one flood serves the whole selection — each unit descends it for its
+    // path instead of running its own full-map A* (see engine/flowfield.ts)
+    const field = units.length >= FLOW_FIELD_MIN_UNITS ? buildFlowField(this.world, spots, units[0].faction) : null;
     // spots come back front rank first; march the army in battle order so
     // melee take the leading tiles and ranged/cavalry/siege fall in behind.
     // Stable sort keeps each rank's own order (and same-rank kinds together).
@@ -2081,7 +2120,7 @@ export class Game {
       // If terrain truly cannot provide enough ground, excess units hold their
       // current unique tiles rather than all collapsing onto the final slot.
       const s = spots[i] ?? { x: ordered[i].u.tx, y: ordered[i].u.ty };
-      this.orderUnit(ordered[i].u, type, s.x, s.y, null, queue);
+      this.orderUnit(ordered[i].u, type, s.x, s.y, null, queue, field);
     }
   }
 
@@ -2095,13 +2134,18 @@ export class Game {
    *  walls and locks it as their siege target (no waiting for auto-acquire). */
   orderGroupAttackBuilding(units: Unit[], b: Building, queue = false): void {
     if (b.removed) return;
-    for (const u of units) {
-      const s = this.siegeTile(u, b);
+    const assigned = units.map(u => ({ u, s: this.siegeTile(u, b) }));
+    // the siege ring is a handful of tiles shared by the whole host: seed one
+    // flow field from it and let every besieger descend that instead of A*-ing
+    const ring = new Map<string, Coord>();
+    for (const { s } of assigned) ring.set(`${s.x},${s.y}`, s);
+    const field = units.length >= FLOW_FIELD_MIN_UNITS ? buildFlowField(this.world, [...ring.values()], units[0].faction) : null;
+    for (const { u, s } of assigned) {
       // Support units accompany the army but do not hold a structure target
       // they cannot damage. Every fighter retains the exact target even while
       // this order waits behind earlier Shift-chained commands.
-      if (UNITS[u.role as UnitKind]?.heal) this.orderUnit(u, 'attackMove', s.x, s.y, null, queue);
-      else this.queueOrder(u, { type: 'attackMove', x: s.x, y: s.y, foe: null, building: b }, queue);
+      if (UNITS[u.role as UnitKind]?.heal) this.orderUnit(u, 'attackMove', s.x, s.y, null, queue, field);
+      else this.queueOrder(u, { type: 'attackMove', x: s.x, y: s.y, foe: null, building: b, field }, queue);
     }
   }
 
@@ -2760,9 +2804,15 @@ export class Game {
    *  is fully under way within two seconds, with no single-tick freeze. */
   private pathBudget = 0;
 
+  /** Flow-field descents allowed this tick. A descent is O(path length) —
+   *  ~50× cheaper than a full A* — so group orders get a far bigger budget:
+   *  at 20 ticks/s a 300-strong host is fully under way within 0.1 s. */
+  private flowBudget = 0;
+
   update(sdt: number): void {
     this.elapsed += sdt;
     this.pathBudget = 28;
+    this.flowBudget = 160;
     this.buildUnitHash(); // shared by all proximity queries this tick
     this.updateMarkets(sdt);
     this.dispatchT += sdt;
