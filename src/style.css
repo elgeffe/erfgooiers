@@ -40,7 +40,7 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 #speedctl{display:flex;gap:4px;}
 #speedctl button{background:var(--panel2);color:var(--ink-dim);border:1px solid rgba(255,255,255,.08);border-radius:5px;width:34px;height:26px;cursor:pointer;font-weight:700;font-size:12px;}
 #speedctl button.on{background:var(--accent);color:#241a0e;border-color:var(--accent);}
-#soundctl{display:flex;}
+#soundctl{display:flex;gap:6px;}
 #soundctl button{background:var(--panel2);color:var(--ink-dim);border:1px solid rgba(255,255,255,.08);border-radius:5px;width:30px;height:26px;cursor:pointer;font-size:13px;line-height:1;}
 #soundctl button:hover{border-color:var(--accent);}
 #soundctl button.off{color:var(--ink-dim);opacity:.55;}
@@ -221,7 +221,9 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 /* the spawn bar docks as a scrollable column on the LEFT edge, out of the
    build menu's bottom strip (body.sandbox narrows the menu to match) */
 #sandboxbar{position:absolute;left:12px;bottom:12px;display:none;flex-direction:column;align-items:stretch;gap:6px;width:172px;max-height:calc(100vh - 130px);overflow-y:auto;background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:10px;padding:7px 10px;z-index:12;}
-#sandboxbar .sb-title{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);background:none;border:none;cursor:pointer;padding:4px 2px;text-align:left;}
+/* the collapse toggle stays pinned to the top of the (scrollable) panel so it
+   is always reachable, even on short screens where the spawn groups overflow */
+#sandboxbar .sb-title{position:sticky;top:-7px;z-index:2;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);background:rgba(43,33,25,.97);border:none;cursor:pointer;margin:-7px -10px 0;padding:9px 10px 5px;text-align:left;}
 #sandboxbar .sb-title:hover{color:var(--accent);}
 #sandboxbar .sb-group{display:flex;flex-direction:column;align-items:stretch;gap:5px;}
 #sandboxbar .sb-group+.sb-group{border-top:1px solid rgba(255,255,255,.12);padding-top:7px;}
@@ -439,6 +441,6 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 .scard.contract .mutrow{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 7px;}
 .scard.contract .mutrow .mutchip{flex:none;}
 .scard.contract .mutdesc{font-size:10.5px;line-height:1.35;color:#d8c4b6;opacity:.9;}
-.scard.contract .mutchip.calm{background:rgba(143,191,107,.15);border-color:rgba(143,191,107,.5);color:#d6f0bf;}
+.scard.contract .mutchip.calm{background:rgba(143,191,107,.15);border-color:rgba(143,191,107,.5);color:#d6f0bf;align-self:flex-start;}
 .scard.con-elite{border-color:rgba(217,164,65,.7);box-shadow:0 0 10px rgba(217,164,65,.15);}
 .btns button.disabled{opacity:.5;pointer-events:none;}
