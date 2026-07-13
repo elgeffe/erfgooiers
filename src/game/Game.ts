@@ -1768,7 +1768,12 @@ export class Game {
           // …and compare the stamped indices — no per-pair Map lookups in the
           // hottest loop of the sim.
           if (o.sepI <= u.sepI) continue;
-          if (u.role === 'serf' && o.role === 'serf') continue;
+          // Logistics traffic may pass through itself and through builders.
+          // Builders spend long stretches planted on a site's single door
+          // tile; treating that stationary worker as a solid body repeatedly
+          // shoved passing serfs off their route.
+          if (u.role === 'serf' && (o.role === 'serf' || o.role === 'laborer')) continue;
+          if (o.role === 'serf' && u.role === 'laborer') continue;
           const dx = o.mesh.position.x - u.mesh.position.x, dz = o.mesh.position.z - u.mesh.position.z;
           const r = ru + 0.3 * (o.mesh.scale.x || 1);
           const d2 = dx * dx + dz * dz;

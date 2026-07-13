@@ -222,6 +222,21 @@ describe('Game siege orders', () => {
     expect(marcher.mesh.position.x).toBeLessThanOrEqual(world.wx(20));
   });
 
+  it('lets serfs pass through builders without crowd displacement', () => {
+    const { game } = openBattleGame(422);
+    const serf = game.spawnUnit('serf', 0xffffff, { x: 10, y: 10 });
+    const builder = game.spawnUnit('laborer', 0xffffff, { x: 10, y: 10 });
+    builder.mesh.position.x += 0.2;
+    builder.wstate = 'build';
+    const serfPos = serf.mesh.position.clone();
+    const builderPos = builder.mesh.position.clone();
+
+    (game as any).separate(0.05);
+
+    expect(serf.mesh.position).toEqual(serfPos);
+    expect(builder.mesh.position).toEqual(builderPos);
+  });
+
   it('turns a 500-plus formation through its old ranks without stranding a group', () => {
     const { game } = openBattleGame(421, 96);
     const squad = Array.from({ length: 520 }, (_, i) => {
