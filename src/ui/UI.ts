@@ -468,8 +468,26 @@ export class UI {
     return 'specialist';
   }
 
+  /** Flag the (collapsed) Workers button when a labour pool is short-handed. */
+  private setWorkerWarning(shortage: boolean, metrics: ReturnType<Game['workerMetrics']>): void {
+    const toggle = $('unitsToggle');
+    toggle.classList.toggle('warn', shortage);
+    const labels: Record<'serf' | 'villager' | 'builder', string> = { serf: 'Serfs', villager: 'Villagers', builder: 'Builders' };
+    const bad = (['serf', 'villager', 'builder'] as const).filter(k => metrics[k].status === 'bad');
+    toggle.innerHTML = shortage ? '⚠️ Workers' : 'Workers';
+    toggle.title = bad.length ? 'Short-handed — ' + bad.map(k => `${labels[k]}: ${metrics[k].note}`).join(' · ') : 'Open the worker roster (U)';
+  }
+
+  /** Keep the Workers-button shortage badge live even while the panel is closed. */
+  private updateWorkerWarning(): void {
+    if (!this.game) return;
+    const metrics = this.game.workerMetrics();
+    const shortage = (['serf', 'villager', 'builder'] as const).some(k => metrics[k].status === 'bad');
+    this.setWorkerWarning(shortage, metrics);
+  }
+
   private renderUnits(): void {
-    if (!this.unitsOpen || !this.game) return;
+    if (!this.unitsOpen || !this.game) { this.updateWorkerWarning(); return; }
     const players = this.game.units.filter(u => u.faction === 'player');
     const counts: Record<string, number> = { all: players.length, serf: 0, villager: 0, laborer: 0, specialist: 0, military: 0 };
     for (const u of players) counts[this.unitCat(u.role)]++;

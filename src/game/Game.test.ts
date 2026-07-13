@@ -14,6 +14,7 @@ function headlessView(world: World, caravan?: { created: number; removed: number
   };
   return {
     createBuildingMesh: () => new THREE.Group(),
+    createScaffold: () => ({ group: new THREE.Group(), frame: new THREE.Group() }),
     createUnit: unit,
     add: () => {},
     remove: (mesh: THREE.Object3D) => { if (mesh.userData.traderCaravan && caravan) caravan.removed++; },
@@ -179,3 +180,24 @@ describe('serf hauling from storehouse', () => {
 
 
 
+
+describe('worker logistics metrics', () => {
+  it('reports a healthy pool and flags shortages of villagers and builders', () => {
+    const world = new World({ seed: 407, w: 32, h: 32, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
+    for (const row of world.tiles) for (const t of row) { t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; t.pickup = null; }
+    const game = new Game(world, headlessView(world));
+    game.init({ stock: {}, serfs: 3, laborers: 1, villagers: 2 });
+
+    // Idle village, no sites, no producers: every pool is comfortable.
+    const calm = game.workerMetrics();
+    expect(calm.serf.count).toBe(3);
+    expect(calm.serf.status).toBe('good');
+    expect(calm.villager.status).toBe('good');
+    expect(calm.builder.status).toBe('good');
+
+    // Two open sites with a single builder backs the build pool up.
+    game.placeSite("farm", 10, 10);
+    game.placeSite("farm", 14, 10);
+    expect(game.workerMetrics().builder.status).toBe('bad');
+  });
+});

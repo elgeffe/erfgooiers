@@ -30,8 +30,6 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 ## Features
 
-- add a persistent warning when there are too few villagers or too few serfs. implement a way to visualize both these kpi's as metrics that the user can see in the workers button on the top left. add counts of units, with maybe some metric next to them to indicate if the user has enough of the unit. same for builders.
-
 - let the dragon in the last level restore health very slowly to annoy the player, in higher ascensions restore speed is increased. let the restore start after a minute of last damage received.
 
 
