@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ROAD_STONE_COST, PLOT_RANGE, BASE_SPEED } from '../constants';
 import { DEFS } from '../data/buildings';
-import { ITEMS } from '../data/items';
+import { ITEMS, MARKET_VALUES } from '../data/items';
 import { UNITS, damageMultiplier, formationRank, structureDamage, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
@@ -9,7 +9,7 @@ import { findPath } from '../engine/pathfinding';
 import { formationSpots } from '../engine/formations';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
-import type { Building, BuildingKey, Coord, Faction, Formation, Site, Unit, UnitOrder } from '../types';
+import type { Building, BuildingKey, Coord, Faction, Formation, ItemKey, Site, Unit, UnitOrder } from '../types';
 import { buildingEntranceTiles, doorTile, unitLabel } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
@@ -75,6 +75,8 @@ export class Game {
   onKill: (u: Unit) => void = () => {};
 
   private readonly pickups: { x: number; y: number }[] = [];
+  /** Decorative traders are not Units, so combat cannot target or kill them. */
+  private readonly caravans: { mesh: THREE.Group; market: Building; state: 'arriving' | 'trading' | 'leaving'; edgeX: number; edgeZ: number; wait: number }[] = [];
   private dispatchT = 0;
   private fieldT = 0;
   private roadWarnT = 0;
@@ -133,6 +135,7 @@ export class Game {
       faction, hp: maxHp, maxHp,
     };
     if (def.store) b.stock = {};   // player-built storehouses start empty
+    if (key === 'market') { b.marketItem = 'timber'; b.marketAmount = 0; b.marketTimer = 60; }
     const tiles = this.world.tiles;
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].b = b; if (tiles[y][x].tree) this.removeTree(x, y); if (tiles[y][x].deco) this.removeDeco(x, y); }
     this.buildings.push(b);
@@ -882,6 +885,10 @@ export class Game {
     for (const f of b.fieldsList) { const t = this.world.tiles[f.y][f.x]; if (t.field) { this.view.removeMeshes(t.field.meshes); t.field = null; this.view.refreshTile(f.x, f.y); } }
     for (let y = b.y; y < b.y + 2; y++) for (let x = b.x; x < b.x + 2; x++) this.world.tiles[y][x].b = null;
     if (b.rallyMesh) this.view.remove(b.rallyMesh);
+    for (let i = this.caravans.length - 1; i >= 0; i--) if (this.caravans[i].market === b) {
+      this.view.remove(this.caravans[i].mesh);
+      this.caravans.splice(i, 1);
+    }
     this.view.remove(b.mesh);
     this.buildings.splice(this.buildings.indexOf(b), 1);
     if (this.selected === b) this.select(null);
@@ -2238,6 +2245,78 @@ export class Game {
   // =====================================================================
   private taxT = 0;
 
+  /** Configure how many units of one surplus resource this market offers per visit. */
+  configureMarket(b: Building, item: ItemKey, amount: number): void {
+    if (b.key !== 'market' || b.faction !== 'player' || b.removed || MARKET_VALUES[item] === undefined) return;
+    b.marketItem = item;
+    b.marketAmount = Math.max(0, Math.min(50, Number.isFinite(amount) ? Math.round(amount) : 0));
+  }
+
+  /** Projected income at one scheduled trader visit per minute. */
+  marketIncomePerMinute(b: Building): number {
+    return (MARKET_VALUES[b.marketItem ?? 'timber'] ?? 0) * (b.marketAmount ?? 0);
+  }
+
+  marketCaravansInTransit(b: Building): number {
+    let n = 0;
+    for (const c of this.caravans) if (c.market === b) n++;
+    return n;
+  }
+
+  private spawnMarketCaravan(b: Building): void {
+    const centre = this.buildingCenter(b);
+    const edgeX = centre.x < 0 ? -this.world.W / 2 - 2 : this.world.W / 2 + 2;
+    const mesh = this.view.createTraderCaravan();
+    mesh.position.set(edgeX, 0, centre.z);
+    this.caravans.push({ mesh, market: b, state: 'arriving', edgeX, edgeZ: centre.z, wait: 0 });
+  }
+
+  private updateMarkets(dt: number): void {
+    for (const b of this.buildings) {
+      if (b.key !== 'market' || b.faction !== 'player' || !b.active || b.removed) continue;
+      b.marketTimer = Math.max(0, (b.marketTimer ?? 60) - dt);
+      if (b.marketTimer > 0 || this.marketCaravansInTransit(b)) continue;
+      const item = b.marketItem ?? 'timber';
+      if ((b.marketAmount ?? 0) <= 0) { b.marketTimer = 60; continue; }
+      if (this.storeTotal(item) <= 0) { b.marketTimer = 5; continue; }
+      b.marketTimer = 60;
+      this.spawnMarketCaravan(b);
+    }
+
+    for (let i = this.caravans.length - 1; i >= 0; i--) {
+      const c = this.caravans[i];
+      if (c.market.removed) { this.view.remove(c.mesh); this.caravans.splice(i, 1); continue; }
+      if (c.state === 'trading') {
+        c.wait -= dt;
+        if (c.wait <= 0) c.state = 'leaving';
+        continue;
+      }
+      const centre = this.buildingCenter(c.market);
+      const tx = c.state === 'arriving' ? centre.x : c.edgeX;
+      const tz = c.state === 'arriving' ? centre.z : c.edgeZ;
+      const dx = tx - c.mesh.position.x, dz = tz - c.mesh.position.z;
+      const dist = Math.hypot(dx, dz), step = dt * 3;
+      if (dist > 0.01) c.mesh.rotation.y = Math.atan2(dx, dz);
+      if (dist > step) {
+        c.mesh.position.x += dx / dist * step;
+        c.mesh.position.z += dz / dist * step;
+        continue;
+      }
+      c.mesh.position.set(tx, 0, tz);
+      if (c.state === 'leaving') { this.view.remove(c.mesh); this.caravans.splice(i, 1); continue; }
+
+      const item = c.market.marketItem ?? 'timber';
+      const sold = Math.min(c.market.marketAmount ?? 1, this.storeTotal(item));
+      if (sold > 0 && this.takeStock(item, sold)) {
+        const earned = sold * (MARKET_VALUES[item] ?? 0);
+        this.store.stock!.coin = (this.store.stock!.coin || 0) + earned;
+        this.sfx('coin');
+        this.toast(`Market exported ${sold} ${ITEMS[item].name.toLowerCase()} (+${earned} coin)`);
+      }
+      c.state = 'trading'; c.wait = 2.5;
+    }
+  }
+
   /** Order-following A* searches allowed this tick (see combatUpdate). At 20
    *  ticks/s this streams ~560 fresh paths a second — a thousand-strong army
    *  is fully under way within two seconds, with no single-tick freeze. */
@@ -2247,6 +2326,7 @@ export class Game {
     this.elapsed += sdt;
     this.pathBudget = 28;
     this.buildUnitHash(); // shared by all proximity queries this tick
+    this.updateMarkets(sdt);
     this.dispatchT += sdt;
     if (this.dispatchT > 0.45) { this.dispatchT = 0; this.dispatch(); }
     // the Taxman mutator collects on the minute

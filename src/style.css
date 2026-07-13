@@ -99,6 +99,10 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 .tqchip{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.09);border-radius:6px;padding:5px 9px;font-size:12px;cursor:pointer;text-align:left;}
 .tqchip:hover{border-color:var(--bad);color:#f0c0ac;}
 .tqchip.active{border-color:var(--accent);}
+.marketctl{display:grid;gap:7px;margin:5px 0 8px;}
+.marketctl label{display:grid;gap:3px;color:var(--ink-dim);font-size:10px;}
+.marketctl select,.marketctl input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.14);border-radius:5px;padding:6px;font:inherit;}
+.marketctl select:focus,.marketctl input:focus{outline:none;border-color:var(--accent);}
 .tqchip>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 #closeInsp{position:absolute;top:6px;right:8px;background:none;border:none;color:var(--ink-dim);cursor:pointer;font-size:14px;}
 /* ---------- serf panel ---------- */

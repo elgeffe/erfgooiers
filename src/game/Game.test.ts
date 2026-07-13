@@ -4,7 +4,7 @@ import type { View } from '../render/View';
 import { World } from '../world/World';
 import { Game } from './Game';
 
-function headlessView(world: World): View {
+function headlessView(world: World, caravan?: { created: number; removed: number }): View {
   const unit = (_color: number, _role: string, x: number, y: number) => {
     const group = new THREE.Group();
     group.position.set(world.wx(x), 0, world.wz(y));
@@ -16,10 +16,14 @@ function headlessView(world: World): View {
     createBuildingMesh: () => new THREE.Group(),
     createUnit: unit,
     add: () => {},
-    remove: () => {},
+    remove: (mesh: THREE.Object3D) => { if (mesh.userData.traderCaravan && caravan) caravan.removed++; },
     refreshTile: () => {},
     dirtyTile: () => {},
     removeMeshes: () => {},
+    createTraderCaravan: () => {
+      if (caravan) caravan.created++;
+      const mesh = new THREE.Group(); mesh.userData.traderCaravan = true; return mesh;
+    },
   } as unknown as View;
 }
 
@@ -63,6 +67,51 @@ describe('priest healing', () => {
     expect(ally.hp).toBe(18);
     expect(enemy.hp).toBe(10);
     expect(priest.foe).toBeNull();
+  });
+});
+
+describe('market exports', () => {
+  it('exports configured surplus for physical coin through an invulnerable caravan', () => {
+    const world = new World({ seed: 406, w: 32, h: 32, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
+    for (const row of world.tiles) for (const t of row) { t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; }
+    const caravan = { created: 0, removed: 0 };
+    const game = new Game(world, headlessView(world, caravan));
+    game.init({ stock: { bread: 10, coin: 0 }, serfs: 0, laborers: 0, villagers: 0 });
+    const market = game.placeBuilding('market', 5, 5, true);
+    const enemy = game.spawnFighter('bandit', { x: 8, y: 8 }, 'enemy');
+    enemy.dmg = 0;
+    let runGold = 0; game.onGold = n => { runGold += n; };
+
+    game.configureMarket(market, 'bread', 4);
+    expect(game.marketIncomePerMinute(market)).toBe(12);
+    market.marketTimer = 0.05;
+    game.update(0.05);
+    expect(caravan.created).toBe(1);
+    expect(game.marketCaravansInTransit(market)).toBe(1);
+    expect(game.units).toHaveLength(1); // the caravan is not a targetable Unit
+
+    for (let i = 0; i < 240; i++) game.update(0.05);
+    expect(game.store.stock!.bread).toBe(6);
+    expect(game.store.stock!.coin).toBe(12);
+    expect(runGold).toBe(0);
+    expect(caravan.removed).toBe(1);
+    expect(game.marketCaravansInTransit(market)).toBe(0);
+  });
+
+  it('clamps configuration and sells only stock that actually exists', () => {
+    const world = new World({ seed: 407, w: 32, h: 32, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
+    for (const row of world.tiles) for (const t of row) { t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; }
+    const game = new Game(world, headlessView(world));
+    game.init({ stock: { bread: 2, coin: 0 }, serfs: 0, laborers: 0, villagers: 0 });
+    const market = game.placeBuilding('market', 5, 5, true);
+    game.configureMarket(market, 'bread', 99);
+    expect(market.marketAmount).toBe(50);
+    game.configureMarket(market, 'coin', 3);
+    expect(market.marketItem).toBe('bread');
+    market.marketTimer = 0;
+    for (let i = 0; i < 120; i++) game.update(0.05);
+    expect(game.store.stock!.bread).toBe(0);
+    expect(game.store.stock!.coin).toBe(6);
   });
 });
 
