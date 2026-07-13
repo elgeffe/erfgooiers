@@ -35,8 +35,8 @@ function headlessView(world: World, caravan?: { created: number; removed: number
   } as unknown as View;
 }
 
-function openBattleGame(seed = 404): { game: Game; world: World } {
-  const world = new World({ seed, w: 48, h: 48, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
+function openBattleGame(seed = 404, size = 48): { game: Game; world: World } {
+  const world = new World({ seed, w: size, h: size, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
   for (const row of world.tiles) for (const t of row) {
     t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; t.deco = null; t.pickup = null;
   }
@@ -141,6 +141,41 @@ describe('Game siege orders', () => {
     expect(squad.every(u => u.order?.building === tower && u.foeB === tower)).toBe(true);
   });
 
+  it('diverts a chained siege of a walled keep onto the ramparts instead of storming the pathfinder', () => {
+    const { game } = openBattleGame(909, 64);
+    const tower = game.placeBuilding('enemywatchtower', 40, 20, true, 0, 'enemy');
+    tower.hp = tower.maxHp = 3_000;
+    const keep = game.placeBuilding('enemycastle', 48, 40, true, 0, 'enemy');
+    keep.hp = keep.maxHp = 1_000_000;
+    (game as any).fortifyStronghold(keep); // walls & gate the player cannot pass
+    const squad = Array.from({ length: 120 }, (_, i) => {
+      const u = game.spawnFighter('horsearcher', { x: 4 + i % 12, y: 10 + Math.floor(i / 12) }, 'player');
+      u.hp = u.maxHp = 1_000_000;
+      return u;
+    });
+
+    game.orderGroupAttackBuilding(squad, tower);
+    game.orderGroupAttackBuilding(squad, keep, true);
+
+    let searches = 0;
+    const originalSendTo = (game as any).sendTo.bind(game);
+    (game as any).sendTo = (...args: unknown[]) => { searches++; return originalSendTo(...args); };
+
+    // Before the fallback, every besieger of the unreachable keep re-ran a
+    // failed full-map A* twice a second, forever — the sim froze and the host
+    // never breached the walls. Now they batter the ramparts instead: the keep
+    // must take damage, on a bounded search diet.
+    let reached = false;
+    for (let sec = 0; sec < 180 && !reached; sec++) {
+      searches = 0;
+      for (let i = 0; i < 20; i++) game.update(0.05);
+      expect(searches).toBeLessThan(200); // budgeted marches, not a storm
+      reached = keep.hp < keep.maxHp - 1_000;
+    }
+    expect(tower.removed).toBe(true);
+    expect(reached).toBe(true);
+  }, 60_000);
+
   it('moves a big formation off one flow field and lands every unit on its slot', () => {
     const { game } = openBattleGame(418);
     const squad = Array.from({ length: 96 }, (_, i) => {
@@ -164,6 +199,49 @@ describe('Game siege orders', () => {
     expect(squad.every(u => u.order === null)).toBe(true);
     expect(squad.every(u => Math.hypot(u.tx - 38, u.ty - 38) < 14)).toBe(true);
   });
+
+  it('does not let an arrived ally push a formation marcher away from its path', () => {
+    const { game, world } = openBattleGame(420);
+    const marcher = game.spawnFighter('soldier', { x: 10, y: 10 }, 'player');
+    const holder = game.spawnFighter('soldier', { x: 10, y: 10 }, 'player');
+    holder.mesh.position.x += 0.2;
+    marcher.order = {
+      type: 'move', x: 20, y: 10, foe: null, building: null,
+    };
+    marcher.path = [{ x: 20, y: 10 }];
+    marcher.pathI = 0;
+    const mx = marcher.mesh.position.x;
+    const hx = holder.mesh.position.x;
+
+    (game as any).separate(0.05);
+
+    // The holder keeps its exact formation slot. The marcher may move
+    // sideways to avoid it, but crowd pressure may never send it backwards.
+    expect(holder.mesh.position.x).toBe(hx);
+    expect(marcher.mesh.position.x).toBeGreaterThanOrEqual(mx);
+    expect(marcher.mesh.position.x).toBeLessThanOrEqual(world.wx(20));
+  });
+
+  it('turns a 500-plus formation through its old ranks without stranding a group', () => {
+    const { game } = openBattleGame(421, 96);
+    const squad = Array.from({ length: 520 }, (_, i) => {
+      const u = game.spawnFighter('soldier', { x: 4 + i % 26, y: 10 + Math.floor(i / 26) }, 'player');
+      u.hp = u.maxHp = 1_000;
+      return u;
+    });
+
+    game.orderGroup(squad, 'move', 75, 24, null, 'box', { x: 1, y: 0 });
+    for (let i = 0; i < 1_200 && squad.some(u => u.order); i++) game.update(0.05);
+    expect(squad.every(u => u.order === null)).toBe(true);
+
+    // A right-angle turn sends the rear through ranks that have already
+    // reached their new slots—the dense traffic pattern that used to stall.
+    game.orderGroup(squad, 'move', 68, 72, null, 'box', { x: 0, y: 1 });
+    for (let i = 0; i < 1_200 && squad.some(u => u.order); i++) game.update(0.05);
+
+    expect(squad.every(u => u.order === null)).toBe(true);
+    expect(squad.every(u => Math.hypot(u.tx - 68, u.ty - 72) < 24)).toBe(true);
+  }, 20_000);
 
   it('paths small selections with plain A* — no field is built', () => {
     const { game } = openBattleGame(419);

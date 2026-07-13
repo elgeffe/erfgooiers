@@ -1359,7 +1359,10 @@ export class Game {
 
     // no unit foe: go for a hostile building (the castle for raiders & the dragon,
     // camps for the player army)
-    let bt = orderedBuilding ?? u.foeB;
+    // a live foeB that differs from the ordered target is the rampart the
+    // order is stuck behind (set in siegeBlocked when the ring proves
+    // unreachable): batter it down first, then resume the ordered siege
+    let bt = u.foeB && !u.foeB.removed ? u.foeB : orderedBuilding;
     if (bt && bt.removed) bt = null;
     if (!bt && canSeek) bt = this.buildingTargetFor(u);
     u.foeB = bt;
@@ -1381,20 +1384,23 @@ export class Game {
           if (u.timer <= 0) {
             // an ordered host marches on the ring via its shared flow field;
             // an empty descent means the ring is reached — drop the field and
-            // let the salted per-unit spread below take over the final shuffle
+            // let the salted per-unit spread below take over the final shuffle.
+            // A null descent means the ring is walled off from this unit's
+            // ground entirely — don't fall through to a doomed global search.
             const field = u.order?.building === bt ? u.order.field : null;
             if (field) {
               if (this.flowBudget > 0) {
                 this.flowBudget--;
                 const p = fieldPath(this.world, field, u.tx, u.ty, undefined, undefined, u.faction);
-                if (p?.length) { u.path = p; u.pathI = 0; u.timer = 0.5 + rnd() * 0.4; }
+                if (p === null) { u.order!.field = null; this.siegeBlocked(u, bt); }
+                else if (p.length) { u.path = p; u.pathI = 0; u.timer = 0.5 + rnd() * 0.4; }
                 else u.order!.field = null;
               }
             } else if (this.pathBudget > 0) {
               this.pathBudget--;
               const s = this.siegeTile(u, bt);
-              this.sendTo(u, s.x, s.y);
-              u.timer = 0.5 + rnd() * 0.4;
+              if (this.sendTo(u, s.x, s.y)) u.timer = 0.5 + rnd() * 0.4;
+              else this.siegeBlocked(u, bt);
             }
           }
         }
@@ -1520,14 +1526,31 @@ export class Game {
    *  so a squad surrounds the walls instead of stacking at the door. */
   private siegeTile(u: Unit, b: Building): Coord {
     let best: Coord | null = null, bd = 1e9;
+    // fortifications are battered from the unit's own side: a ring tile beyond
+    // a wall is the far side of the very obstacle being attacked, and marching
+    // there is a guaranteed failed full-map search
+    const du = b.def.bulwark ? Math.hypot(b.x + 0.5 - u.tx, b.y + 0.5 - u.ty) : Infinity;
     for (let y = b.y - 1; y <= b.y + 2; y++) for (let x = b.x - 1; x <= b.x + 2; x++) {
       if (x >= b.x && x <= b.x + 1 && y >= b.y && y <= b.y + 1) continue;
       if (!this.world.passable(x, y)) continue;
+      if (Math.hypot(x - u.tx, y - u.ty) > du) continue;
       const salt = ((x * 31 + y * 17 + u.tx * 7 + u.ty * 3) % 5) * 0.8;
       const dd = Math.hypot(x - u.tx, y - u.ty) + salt;
       if (dd < bd) { bd = dd; best = { x, y } }
     }
     return best ?? doorTile(b);
+  }
+
+  /** A siege target nobody can path to is walled in (a keep behind ramparts).
+   *  Swing at the nearest hostile structure instead — foeB overrides the
+   *  ordered target until the rampart falls — rather than letting every
+   *  besieger re-run a doomed full-map search twice a second (the pathfinder
+   *  storm that froze big chained sieges on fortified keeps). With nothing
+   *  nearby to batter, back off and retry lazily. */
+  private siegeBlocked(u: Unit, bt: Building): void {
+    const blocker = this.buildingTargetFor(u);
+    if (blocker && blocker !== bt) { u.foeB = blocker; return; }
+    u.timer = 3 + rnd() * 2;
   }
 
   private attackBuilding(u: Unit, b: Building): void {
@@ -1758,11 +1781,49 @@ export class Game {
           } else { nx = dx / d; nz = dz / d; }
           // split the correction evenly between the pair
           const overlap = (r - d) * 0.5 * push;
-          this.nudge(u, -nx * overlap, -nz * overlap);
-          this.nudge(o, nx * overlap, nz * overlap);
+          const allied = u.faction === o.faction;
+          const uMarching = allied && this.isFormationMarching(u);
+          const oMarching = allied && this.isFormationMarching(o);
+          if (uMarching || oMarching) {
+            // Friendly units already holding a slot must not become a wall for
+            // the rest of their formation. Keep the holder planted and put
+            // the full sideways correction on the marcher. For two marchers,
+            // retain the normal half correction on each. nudgeMarching strips
+            // only the backwards component, so dense traffic may flow around
+            // or through a knot but can never overpower forward movement.
+            if (uMarching) this.nudgeMarching(u, -nx * overlap * (oMarching ? 1 : 2), -nz * overlap * (oMarching ? 1 : 2));
+            if (oMarching) this.nudgeMarching(o, nx * overlap * (uMarching ? 1 : 2), nz * overlap * (uMarching ? 1 : 2));
+          } else {
+            this.nudge(u, -nx * overlap, -nz * overlap);
+            this.nudge(o, nx * overlap, nz * overlap);
+          }
         }
       }
     }
+  }
+
+  /** A path-backed player formation order is traffic, rather than a unit
+   *  fighting or standing its ground. Kept deliberately narrow so combat
+   *  crowd pressure and ordinary worker separation retain their old feel. */
+  private isFormationMarching(u: Unit): boolean {
+    return u.faction === 'player' && !!u.path && !!u.order
+      && (u.order.type === 'move' || u.order.type === 'attackMove');
+  }
+
+  /** Apply separation to a formation marcher without ever moving it away
+   *  from its next waypoint. This is scalar and allocation-free because it
+   *  runs inside the hottest crowd loop. */
+  private nudgeMarching(u: Unit, dx: number, dz: number): void {
+    const node = u.path?.[u.pathI];
+    if (!node) { this.nudge(u, dx, dz); return; }
+    const px = this.world.wx(node.x) - u.mesh.position.x;
+    const pz = this.world.wz(node.y) - u.mesh.position.z;
+    const l2 = px * px + pz * pz;
+    if (l2 > 1e-8) {
+      const backwards = (dx * px + dz * pz) / l2;
+      if (backwards < 0) { dx -= backwards * px; dz -= backwards * pz; }
+    }
+    this.nudge(u, dx, dz);
   }
 
   /** Shift a unit if the destination isn't water or inside a building/site. */
