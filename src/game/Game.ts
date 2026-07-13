@@ -1,13 +1,12 @@
 import { ITEMS } from '../data/items';
 import { UNITS, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
-import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
 import type { FlowField } from '../engine/flowfield';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
-import { type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit, type UnitOrder } from '../types';
-import { buildingEntranceTiles, doorTile } from './util';
+import { type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit } from '../types';
+import { doorTile } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, ownerForFaction } from './ownership';
@@ -30,12 +29,10 @@ import { OrderSystem } from './OrderSystem';
 import { RefugeSystem } from './RefugeSystem';
 import { EconomyState, type WorkerMetrics } from './EconomyState';
 import { UnitFactory } from './UnitFactory';
+import { InteractionSystem } from './InteractionSystem';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
-
-// Gameplay events use the sim stream (reseeded per level), never worldgen/cosmetic.
-const rnd = () => simRng.next();
 
 /** Selections at or above this size share one flow field per order instead of
  *  running one global A* per unit. Below it the flood costs more than it saves. */
@@ -98,7 +95,6 @@ export class Game {
   /** A combat unit was killed — main updates objectives/tallies. */
   onKill: (u: Unit) => void = () => {};
 
-  private readonly pickups: { x: number; y: number }[] = [];
   private dispatchT = 0;
   private fieldT = 0;
   private nextEntityId = 1;
@@ -121,6 +117,7 @@ export class Game {
   private readonly refugeSystem: RefugeSystem;
   private readonly economyState: EconomyState;
   private readonly unitFactory: UnitFactory;
+  private readonly interactionSystem: InteractionSystem;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -138,14 +135,14 @@ export class Game {
       stores: owner => this.stores(owner),
       pathLength: (from, to) => findPath(this.world, from.x, from.y, to.x, to.y)?.length ?? null,
       spawnCarrier: (owner, at) => this.spawnUnit('carrier', 0x9a7b52, at, owner),
-      setCarrying: (unit, item) => this.setCarrying(unit, item),
+      setCarrying: (unit, item) => this.unitMovement.setCarrying(unit, item),
       despawnCarrier: unit => {
         const index = this.units.indexOf(unit);
         if (index >= 0) { this.view.remove(unit.mesh); this.units.splice(index, 1); }
         if (this.selected === unit) this.select(null);
       },
-      sendTo: (unit, destination) => this.sendTo(unit, destination.x, destination.y),
-      moveUnit: (unit, dt) => { this.moveUnit(unit, dt); },
+      sendTo: (unit, destination) => this.unitMovement.sendTo(unit, destination.x, destination.y),
+      moveUnit: (unit, dt) => { this.unitMovement.moveGround(unit, dt); },
       toast: (message, cls) => this.toast(message, cls),
       sfx: name => this.sfx(name),
     });
@@ -194,12 +191,12 @@ export class Game {
       sfx: name => this.sfx(name),
       forUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
       hostile: (from, to) => this.hostile(from, to),
-      hurtUnit: (shooter, target, damage) => this.hurtUnit(shooter, target, damage),
+      hurtUnit: (shooter, target, damage) => this.damageSystem.hurtUnit(shooter, target, damage),
       buildingCenter: building => this.buildingCenter(building),
       hurtBuilding: (building, damage, x, z) => {
         building.hp -= damage;
         this.onHurt(x, z, building.faction);
-        if (building.hp <= 0) this.destroyBuilding(building);
+        if (building.hp <= 0) this.damageSystem.destroyBuilding(building);
       },
       onHurt: (x, z, faction) => this.onHurt(x, z, faction),
     });
@@ -253,9 +250,9 @@ export class Game {
       units: () => this.units,
       nearestStore: building => this.nearestStore(building),
       storeFor: owner => this.storeFor(owner),
-      setCarrying: (unit, item) => this.setCarrying(unit, item),
-      sendTo: (unit, x, y) => this.sendTo(unit, x, y),
-      moveUnit: (unit, dt) => this.moveUnit(unit, dt),
+      setCarrying: (unit, item) => this.unitMovement.setCarrying(unit, item),
+      sendTo: (unit, x, y) => this.unitMovement.sendTo(unit, x, y),
+      moveUnit: (unit, dt) => this.unitMovement.moveGround(unit, dt),
     });
     this.workerSystem = new WorkerSystem(this.world, this.view, this.mods, {
       buildings: () => this.buildings,
@@ -263,14 +260,14 @@ export class Game {
       guildFor: owner => this.playerGuilds.get(owner) ?? null,
       storeFor: owner => this.storeFor(owner),
       primaryStore: () => this.store,
-      sendTo: (unit, x, y) => this.sendTo(unit, x, y),
-      moveUnit: (unit, dt) => this.moveUnit(unit, dt),
+      sendTo: (unit, x, y) => this.unitMovement.sendTo(unit, x, y),
+      moveUnit: (unit, dt) => this.unitMovement.moveGround(unit, dt),
       completeSite: site => this.completeSite(site),
-      wander: (unit, dt, moving, resting) => this.wander(unit, dt, moving, resting),
+      wander: (unit, dt, moving, resting) => this.unitMovement.wander(unit, dt, moving, resting),
       removeTree: (x, y) => this.removeTree(x, y),
       removeDeposit: (x, y) => this.removeDep(x, y),
       removeDecoration: (x, y) => this.removeDeco(x, y),
-      setCarrying: (unit, item) => this.setCarrying(unit, item),
+      setCarrying: (unit, item) => this.unitMovement.setCarrying(unit, item),
       onProduce: (item, amount) => this.objective?.onProduce(item, amount),
       toast: message => this.toast(message),
       sfx: name => this.sfx(name),
@@ -284,13 +281,13 @@ export class Game {
     });
     this.combatSystem = new CombatSystem(this.world, this.combatTargeting, this.unitMovement, {
       visitUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
-      advanceOrder: unit => this.advanceOrder(unit),
+      advanceOrder: unit => this.orderSystem.advanceOrder(unit),
       buildingCenter: building => this.buildingCenter(building),
-      attackUnit: (attacker, target) => this.attack(attacker, target),
-      attackBuilding: (attacker, target) => this.attackBuilding(attacker, target),
-      fireArrow: (shooter, from, x, y, z, target, damage) => this.fireArrow(shooter, from, x, y, z, target, damage),
-      fireRock: (shooter, from, x, y, z, endX, endZ, damage, radius) => this.fireRock(shooter, from, x, y, z, endX, endZ, damage, radius),
-      fireFlame: (shooter, from, x, y, z, endX, endZ, damage) => this.fireFlame(shooter, from, x, y, z, endX, endZ, damage),
+      attackUnit: (attacker, target) => this.damageSystem.attackUnit(attacker, target),
+      attackBuilding: (attacker, target) => this.damageSystem.attackBuilding(attacker, target),
+      fireArrow: (shooter, from, x, y, z, target, damage) => this.projectileSystem.fireArrow(shooter, from, x, y, z, target, damage),
+      fireRock: (shooter, from, x, y, z, endX, endZ, damage, radius) => this.projectileSystem.fireRock(shooter, from, x, y, z, endX, endZ, damage, radius),
+      fireFlame: (shooter, from, x, y, z, endX, endZ, damage) => this.projectileSystem.fireFlame(shooter, from, x, y, z, endX, endZ, damage),
       sfx: name => this.sfx(name),
     });
     this.placementSystem = new PlacementSystem(
@@ -301,8 +298,8 @@ export class Game {
         takeStock: (item, amount, owner) => this.takeStock(item, amount, owner),
         storeFor: owner => this.storeFor(owner),
         playerStore: owner => this.playerStores.get(owner) ?? null,
-        cancelTask: unit => this.cancelTask(unit),
-        checkSiteReady: site => this.checkSiteReady(site),
+        cancelTask: unit => this.logisticsSystem.cancelTask(unit),
+        checkSiteReady: site => this.logisticsSystem.checkSiteReady(site),
         select: value => this.select(value),
         selected: () => this.selected,
         toast: (message, cls) => this.toast(message, cls),
@@ -310,7 +307,7 @@ export class Game {
       },
     );
     this.orderSystem = new OrderSystem(this.world, this.view, {
-      siegeTile: (unit, building) => this.siegeTile(unit, building),
+      siegeTile: (unit, building) => this.combatTargeting.siegeTile(unit, building),
       toast: message => this.toast(message),
       sfx: name => this.sfx(name),
     });
@@ -318,7 +315,7 @@ export class Game {
       units: () => this.units,
       storeFor: owner => this.storeFor(owner),
       isFighter: unit => this.isFighter(unit),
-      cancelTask: unit => this.cancelTask(unit),
+      cancelTask: unit => this.logisticsSystem.cancelTask(unit),
       toast: (message, cls) => this.toast(message, cls),
       sfx: name => this.sfx(name),
     });
@@ -334,6 +331,17 @@ export class Game {
         if (owner === this.localPlayerId) this.heroUnit = unit;
       },
     });
+    this.interactionSystem = new InteractionSystem(
+      this.world, this.view, this.mods, this.buildings, this.sites, this.units, this.localPlayerId,
+      {
+        visitUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
+        select: value => this.select(value),
+        onCollect: () => this.objective?.onCollect(),
+        onGold: amount => this.onGold(amount),
+        toast: message => this.toast(message),
+        sfx: name => this.sfx(name),
+      },
+    );
   }
 
   entityById(id: number): Building | Site | Unit | null {
@@ -386,10 +394,7 @@ export class Game {
   }
 
   private indexPickups(): void {
-    if (this.pickups.length) return;
-    const { W, H } = this.world;
-    const tiles = this.world.tiles;
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (tiles[y][x].pickup) this.pickups.push({ x, y });
+    this.interactionSystem.indexPickups();
   }
 
   private initSettlement(owner: PlayerId, kit: StartKit, cx: number, cy: number): void {
@@ -464,75 +469,13 @@ export class Game {
     return this.unitFactory.spawnFighter(kind, tile, faction, owner);
   }
 
-  private setCarrying(u: Unit, item: string | null): void {
-    this.unitMovement.setCarrying(u, item);
+  private sendTo(unit: Unit, x: number, y: number): boolean {
+    return this.unitMovement.sendTo(unit, x, y);
   }
 
-  private sendTo(u: Unit, x: number, y: number): boolean {
-    return this.unitMovement.sendTo(u, x, y);
+  private workerUpdate(unit: Unit, dt: number): void {
+    this.workerSystem.updateWorker(unit, dt);
   }
-
-  private moveUnit(u: Unit, dt: number): boolean {
-    return this.unitMovement.moveGround(u, dt);
-  }
-
-  /** Direct steering for flying units (the dragon): no tiles, no paths — just
-   *  glide toward the point, banking to face travel, wings flapping. */
-  private moveFlying(u: Unit, dt: number, wx: number, wz: number): boolean {
-    return this.unitMovement.moveFlying(u, dt, wx, wz);
-  }
-
-  /** Hover bob + wing flap for a flying unit, run every tick whatever it does. */
-  private animateFlight(u: Unit, dt: number): void {
-    this.unitMovement.animateFlight(u, dt);
-  }
-
-  // =====================================================================
-  //  Serf logistics dispatcher
-  // =====================================================================
-  private dispatch(): void {
-    this.logisticsSystem.dispatch();
-  }
-
-  private serfUpdate(u: Unit, dt: number): void {
-    this.logisticsSystem.updateSerf(u, dt);
-  }
-
-  private cancelTask(u: Unit): void {
-    this.logisticsSystem.cancelTask(u);
-  }
-
-  private checkSiteReady(s: Site): void {
-    this.logisticsSystem.checkSiteReady(s);
-  }
-
-  // =====================================================================
-  //  Laborers & specialists
-  // =====================================================================
-  private laborerUpdate(u: Unit, dt: number): void {
-    this.workerSystem.updateLaborer(u, dt);
-  }
-
-  private workerUpdate(u: Unit, dt: number): void {
-    this.workerSystem.updateWorker(u, dt);
-  }
-
-  /**
-   * An unposted villager ambles between spots near the village centre, pausing
-   * between strolls. Purely cosmetic — a villager is plucked out of this loop the
-   * moment `staffBuildings` assigns it to an unstaffed building.
-   */
-  private villagerStroll(u: Unit, dt: number): void {
-    this.workerSystem.updateVillager(u, dt);
-  }
-
-  // =====================================================================
-  //  Growth
-  // =====================================================================
-  private growthUpdate(dt: number): void {
-    this.workerSystem.updateGrowth(dt);
-  }
-  private fieldRecolor(): void { this.workerSystem.recolorFields(); }
 
   // =====================================================================
   //  Queries & placement
@@ -600,85 +543,26 @@ export class Game {
     this.placementSystem.demolishAt(tx, ty, dragOnly, owner);
   }
 
-  private removeSite(site: Site): void {
-    this.placementSystem.removeSite(site);
-  }
-
   private removeBuilding(building: Building): void {
     this.placementSystem.removeBuilding(building);
   }
 
   select(obj: any): void { this.selected = obj; this.onSelect(obj); }
 
-  /** Nearest visible unit to a world-space ground point, or null (used by Controls). */
-  pickUnit(wx: number, wz: number, radius = 0.6): Unit | null {
-    let best: Unit | null = null, bd = radius * radius;
-    for (const u of this.units) {
-      if (!u.mesh.visible) continue;
-      const dx = u.mesh.position.x - wx, dz = u.mesh.position.z - wz;
-      const d2 = dx * dx + dz * dz;
-      if (d2 < bd) { bd = d2; best = u; }
-    }
-    return best;
+  pickUnit(worldX: number, worldZ: number, radius = 0.6): Unit | null {
+    return this.interactionSystem.pickUnit(worldX, worldZ, radius);
   }
 
-  /** Door/entrance tiles of every building and site — highlighted while painting roads. */
   entranceTiles(): Coord[] {
-    const out: Coord[] = [];
-    for (const b of this.buildings) out.push(...buildingEntranceTiles(b));
-    for (const s of this.sites) out.push(...buildingEntranceTiles(s));
-    return out;
+    return this.interactionSystem.entranceTiles();
   }
 
-  /** Click-select a building/site at a tile (used by Controls). Gold piles are
-   *  no longer clicked up — a unit must walk over to fetch them. */
   selectAt(tx: number, ty: number): void {
-    const t = this.world.tiles[ty][tx];
-    if (t.pickup) {
-      const now = Date.now();
-      if (now - this.pickupHintT > 2500) {
-        this.pickupHintT = now;
-        this.toast('Send a unit (or your hero) to the gold pile to collect it');
-      }
-      return;
-    }
-    if (t.b) this.select(t.b);
-    else if (t.site) this.select(t.site);
-    else this.select(null);
-  }
-  private pickupHintT = 0;
-  private pickupScanT = 0;
-
-  /** A unit reached a gold pile; only that unit's owner banks the gold. */
-  collectGoldAt(tx: number, ty: number, owner: PlayerId = this.localPlayerId, by?: Unit): void {
-    const t = this.world.T(tx, ty);
-    if (!t || !t.pickup) return;
-    const gain = Math.max(1, Math.round(t.pickup.gold * this.mods.goldMult()));
-    this.view.removeMeshes(t.pickup.meshes);
-    t.pickup = null;
-    const i = this.pickups.findIndex(p => p.x === tx && p.y === ty);
-    if (i >= 0) this.pickups.splice(i, 1);
-    this.objective?.onCollect();
-    if (owner !== this.localPlayerId) return; // gold and fanfare are personal
-    this.onGold(gain);
-    this.sfx('coin');
-    this.toast(`${by ? by.roleName : 'A unit'} collected a gold pile (+${gain} gold)`);
+    this.interactionSystem.selectAt(tx, ty);
   }
 
-  /** Any player unit standing by a gold pile picks it up — no clicking. Runs a
-   *  few times a second over the (short) pickup list via the spatial hash. */
-  private collectPickups(): void {
-    for (let i = this.pickups.length - 1; i >= 0; i--) {
-      const p = this.pickups[i];
-      let taker: Unit | null = null;
-      this.forUnitsNear(p.x, p.y, 2, u => {
-        if (taker || u.dead || u.faction !== 'player') return;
-        const dx = u.mesh.position.x - this.world.wx(p.x), dz = u.mesh.position.z - this.world.wz(p.y);
-        if (dx * dx + dz * dz <= 1.1 * 1.1) taker = u;
-      });
-      const collector = taker as Unit | null;
-      if (collector) this.collectGoldAt(p.x, p.y, collector.owner === 'p2' ? 'p2' : 'p1', collector);
-    }
+  collectGoldAt(tx: number, ty: number, owner: PlayerId = this.localPlayerId, collector?: Unit): void {
+    this.interactionSystem.collectGoldAt(tx, ty, owner, collector);
   }
 
   // =====================================================================
@@ -693,97 +577,22 @@ export class Game {
   /** True for units that run the combat behavior (soldiers, bandits, boars, dragon…). */
   private isFighter(u: Unit): boolean { return (UNITS as any)[u.role] !== undefined; }
 
-  // ---------------------------------------------------------------------
-  //  Coarse spatial hash (8×8-tile cells), rebuilt once per tick and shared
-  //  by every proximity query: target acquisition, tower fire, fire volleys
-  //  and projectile impacts. Queries pad by one cell so units that moved
-  //  since the tick started are still found. O(n) build instead of the old
-  //  O(n²) every-fighter-scans-every-unit — matters near the 1,600-unit cap.
-  // ---------------------------------------------------------------------
-  private buildUnitHash(): void {
-    this.unitSpatialIndex.rebuild();
-  }
-
-  /** Visit live units whose tick-start tile is within ~r tiles of (tx, ty). */
-  private forUnitsNear(tx: number, ty: number, r: number, fn: (o: Unit) => void): void {
-    this.unitSpatialIndex.visitNear(tx, ty, r, fn);
-  }
-
-  /** Nearest hostile fighter within the given aggro radius, or null. */
-  private acquireTarget(u: Unit, aggro: number): Unit | null {
-    return this.combatTargeting.acquireUnit(u, aggro);
-  }
-
-  /** Apply damage to a unit: hurt feedback, retaliation, death. */
-  private hurtUnit(source: Unit | null, victim: Unit, dmg: number): void {
-    this.damageSystem.hurtUnit(source, victim, dmg);
-  }
-
-  private attack(attacker: Unit, foe: Unit): void {
-    this.damageSystem.attackUnit(attacker, foe);
-  }
-
-  /** The strike sound a melee unit makes, chosen by what it is: light blades
-   *  ring, heavy cavalry and knights clang, the shambling undead land wet
-   *  blunt thuds, beasts snap and bite, demons rake. Archers and siege loose
-   *  projectiles (their own sounds) so they swing silently here. */
-  private meleeSfx(u: Unit): 'sword' | 'clang' | 'maul' | 'bite' | 'claw' | null {
-    return this.damageSystem.meleeSound(u);
-  }
-
-  private combatUpdate(u: Unit, dt: number): void {
-    this.combatSystem.update(u, dt);
-  }
-  /** Idle beasts, camp guards & off-duty builders amble around their anchor. */
-  private wander(u: Unit, dt: number, moving = 'Roaming', resting = 'Grazing'): void {
-    this.unitMovement.wander(u, dt, moving, resting);
+  private forUnitsNear(tx: number, ty: number, radius: number, visit: (unit: Unit) => void): void {
+    this.unitSpatialIndex.visitNear(tx, ty, radius, visit);
   }
 
   private buildingCenter(b: Building): { x: number; z: number } {
     return { x: this.world.wx(b.x) + 0.5, z: this.world.wz(b.y) + 0.5 };
   }
 
-  /** A free tile on the ring around a building's 2×2 footprint, salted per unit
-   *  so a squad surrounds the walls instead of stacking at the door. */
-  private siegeTile(u: Unit, b: Building): Coord {
-    return this.combatTargeting.siegeTile(u, b);
+  private fireArrow(shooter: Unit | null, from: Faction, x: number, y: number, z: number, target: Unit, damage: number): void {
+    this.projectileSystem.fireArrow(shooter, from, x, y, z, target, damage);
   }
 
-  private attackBuilding(u: Unit, b: Building): void {
-    this.damageSystem.attackBuilding(u, b);
+  private fireRock(shooter: Unit | null, from: Faction, x: number, y: number, z: number, endX: number, endZ: number, damage: number, radius: number): void {
+    this.projectileSystem.fireRock(shooter, from, x, y, z, endX, endZ, damage, radius);
   }
 
-  private destroyBuilding(b: Building): void {
-    this.damageSystem.destroyBuilding(b);
-  }
-
-  // =====================================================================
-  //  Projectiles — arrows arc from archers & towers, fire gobs from the dragon
-  // =====================================================================
-  /** Loose an arrow at a unit; damage lands when the arrow does. */
-  private fireArrow(shooter: Unit | null, from: Faction, x: number, y: number, z: number, target: Unit, dmg: number): void {
-    this.projectileSystem.fireArrow(shooter, from, x, y, z, target, dmg);
-  }
-
-  /** Heave an onager rock at a ground point; it splashes over `radius` tiles
-   *  where it lands. Unlike an arrow it does not home — it batters whatever is
-   *  still standing in the target cluster when it comes down. */
-  private fireRock(shooter: Unit | null, from: Faction, x: number, y: number, z: number, ex: number, ez: number, dmg: number, radius: number): void {
-    this.projectileSystem.fireRock(shooter, from, x, y, z, ex, ez, dmg, radius);
-  }
-
-  /** Spit a gob of dragon fire at a ground point; it splashes where it lands. */
-  private fireFlame(shooter: Unit | null, from: Faction, x: number, y: number, z: number, ex: number, ez: number, dmg: number): void {
-    this.projectileSystem.fireFlame(shooter, from, x, y, z, ex, ez, dmg);
-  }
-
-  private updateProjectiles(sdt: number): void {
-    this.projectileSystem.update(sdt);
-  }
-
-  // =====================================================================
-  //  Separation — units softly shoulder each other aside, never stacking
-  // =====================================================================
   private separate(dt: number): void {
     this.separationSystem.update(dt);
   }
@@ -796,10 +605,6 @@ export class Game {
 
   toggleBell(owner: PlayerId = this.localPlayerId): void {
     this.refugeSystem.toggle(owner);
-  }
-
-  private refugeUpdate(unit: Unit, dt: number): void {
-    this.refugeSystem.updateUnit(unit, dt);
   }
 
   // =====================================================================
@@ -829,25 +634,12 @@ export class Game {
     return this.trade.cancelShipment(actor, shipmentId);
   }
 
-  /** Advance every active shipment: loading, the outward haul, or the recall. */
-  private updateTrade(sdt: number): void {
-    this.trade.update(sdt);
-  }
-
   togglePriority(target: Site | Building): void {
     this.orderSystem.togglePriority(target);
   }
 
   orderUnit(unit: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, queue = false, field: FlowField | null = null): void {
     this.orderSystem.orderUnit(unit, type, x, y, foe, queue, field);
-  }
-
-  private queueOrder(unit: Unit, order: UnitOrder, queue: boolean): void {
-    this.orderSystem.queueOrder(unit, order, queue);
-  }
-
-  private advanceOrder(unit: Unit): boolean {
-    return this.orderSystem.advanceOrder(unit);
   }
 
   formationPreview(units: Unit[], x: number, y: number, formation: Formation, facing: Coord): Coord[] {
@@ -1067,17 +859,13 @@ export class Game {
     return this.marketSystem.caravansInTransit(b);
   }
 
-  private updateMarkets(dt: number): void {
-    this.marketSystem.update(dt);
-  }
-
   update(sdt: number): void {
     this.elapsed += sdt;
     this.combatSystem.beginTick();
-    this.buildUnitHash(); // shared by all proximity queries this tick
-    this.updateMarkets(sdt);
+    this.unitSpatialIndex.rebuild();
+    this.marketSystem.update(sdt);
     this.dispatchT += sdt;
-    if (this.dispatchT > 0.45) { this.dispatchT = 0; this.dispatch(); }
+    if (this.dispatchT > 0.45) { this.dispatchT = 0; this.logisticsSystem.dispatch(); }
     // the Taxman mutator collects on the minute
     const tax = this.mods.taxPerMin();
     if (tax > 0) {
@@ -1098,28 +886,27 @@ export class Game {
     for (const u of this.units) {
       if (u.dead) continue;
       u.hunger = Math.max(0, u.hunger - sdt * 100 / 600 * hungerRate);
-      if (this.isFighter(u)) this.combatUpdate(u, sdt);
+      if (this.isFighter(u)) this.combatSystem.update(u, sdt);
       else if (u.role === 'carrier') continue; // trade carts are driven by updateTrade
-      else if ((u.owner === 'p1' || u.owner === 'p2') && this.refugeSystem.active(u.owner) && u.faction === 'player') this.refugeUpdate(u, sdt);
-      else if (u.role === 'serf') this.serfUpdate(u, sdt);
-      else if (u.role === 'laborer') this.laborerUpdate(u, sdt);
-      else if (u.role === 'villager' && !u.home) this.villagerStroll(u, sdt);
-      else this.workerUpdate(u, sdt);
+      else if ((u.owner === 'p1' || u.owner === 'p2') && this.refugeSystem.active(u.owner) && u.faction === 'player') this.refugeSystem.updateUnit(u, sdt);
+      else if (u.role === 'serf') this.logisticsSystem.updateSerf(u, sdt);
+      else if (u.role === 'laborer') this.workerSystem.updateLaborer(u, sdt);
+      else if (u.role === 'villager' && !u.home) this.workerSystem.updateVillager(u, sdt);
+      else this.workerSystem.updateWorker(u, sdt);
     }
-    this.updateTrade(sdt);
-    this.separate(sdt);
-    this.updateProjectiles(sdt);
+    this.trade.update(sdt);
+    this.separationSystem.update(sdt);
+    this.projectileSystem.update(sdt);
     this.sweepDead();
-    this.growthUpdate(sdt);
-    this.serveTaverns(sdt);
-    this.trainQueues(sdt);
-    this.staffBuildings();
+    this.workerSystem.updateGrowth(sdt);
+    this.trainingSystem.serveTaverns(sdt);
+    this.trainingSystem.updateQueues(sdt);
+    this.trainingSystem.staffBuildings();
     this.encounters.update(sdt);
-    this.pickupScanT += sdt;
-    if (this.pickupScanT > 0.3 && this.pickups.length) { this.pickupScanT = 0; this.collectPickups(); }
+    this.interactionSystem.update(sdt);
     this.towerFire(sdt); // towers watch on every level, with or without a director
     this.fieldT += sdt;
-    if (this.fieldT > 0.5) { this.fieldT = 0; this.fieldRecolor(); }
+    if (this.fieldT > 0.5) { this.fieldT = 0; this.workerSystem.recolorFields(); }
   }
 
   /** Queue a unit at a barracks/guild hall, paying its own cost from the store. */
@@ -1137,18 +924,4 @@ export class Game {
     return this.trainingSystem.spawnCivilian(role, tile, owner);
   }
 
-  /** Barracks & guild halls turn their player-built queue into units over time. */
-  private trainQueues(sdt: number): void {
-    this.trainingSystem.updateQueues(sdt);
-  }
-
-  /** Send an idle villager to become the specialist of each unstaffed building. */
-  private staffBuildings(): void {
-    this.trainingSystem.staffBuildings();
-  }
-
-  /** Taverns burn food on a timer to refill the hunger of workers, up to capacity. */
-  private serveTaverns(sdt: number): void {
-    this.trainingSystem.serveTaverns(sdt);
-  }
 }
