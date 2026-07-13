@@ -1,7 +1,7 @@
 fix each of these items, always start with bugs first, then design changes > improvements > features > epics should always be last and first written out as docs/.md file.
 
 ## Bugs
-- i still see that resources are brought to the castle first instead of their respective production building (coal and gold to the mint building.) production chains should always have priority over storage in the castle.
+- i still see that resources are brought to the castle first instead of their respective production building (coal and gold to the mint building.) production chains and consuming buildings should always have priority over storage in the castle.
 
 - builders are very often in the way of serfs moving around, blocking the movement. can we fix this?
 
