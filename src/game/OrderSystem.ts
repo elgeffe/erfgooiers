@@ -88,7 +88,8 @@ export class OrderSystem {
   setRally(target: Building | Site, x: number, y: number): void {
     if (!target.def.military || target.removed) return;
     target.rally = { x, y };
-    if (!target.rallyMesh) target.rallyMesh = this.view.createFlag();
+    // the barracks musters its warband under a purple pennant to tell it apart
+    if (!target.rallyMesh) target.rallyMesh = this.view.createFlag(target.key === 'barracks' ? 0x8a4fbf : undefined);
     target.rallyMesh.position.set(this.world.wx(x), 0, this.world.wz(y));
     this.ports.toast('Rally point set — trained fighters will muster there');
     this.ports.sfx('click');
