@@ -34,7 +34,7 @@ objects once, and rebuilds level-scoped `World` and `Game` instances.
 | Area | Primary files | Responsibility |
 |---|---|---|
 | Lifecycle | `src/main.ts` | Screens, run transitions, level setup/teardown, fixed-step loop |
-| Simulation | `src/game/Game.ts` | Economy, buildings, workers, combat, enemies, training; no DOM |
+| Simulation | `src/game/Game.ts`, `src/game/*System.ts` | `Game` facade/fixed tick plus focused economy, worker, combat, placement, order, encounter, and training systems; no DOM |
 | Rules | `src/game/Modifiers.ts` | All tunable run/meta/hero/mutator effects |
 | Objectives | `src/game/Objectives.ts` | Economy and combat objective progress |
 | Run/save | `src/game/RunState.ts`, `SaveGame.ts` | Run/meta state and versioned persistence |
@@ -51,8 +51,9 @@ objects once, and rebuilds level-scoped `World` and `Game` instances.
 ### Layer boundaries
 
 - `World` is pure tile state. Never import Three.js, DOM, UI, or audio there.
-- `Game` owns simulation behavior. It may ask `View` to create/remove meshes, but it
-  does not manipulate the DOM or own scene bookkeeping.
+- `Game` owns simulation state and tick ordering; focused systems in `src/game/` own
+  subsystem behavior. They may ask `View` to create/remove meshes, but they do not
+  manipulate the DOM or own scene bookkeeping.
 - `View` and `models.ts` own Three.js representation. Visual branching by
   `BuildingKey`/unit kind is allowed here; gameplay branching is not.
 - `UI`/`Shop` own content DOM. `Controls` may manage input-only overlays such as the
@@ -104,9 +105,10 @@ speed is 0/1/3; zero is pause.
   from `ITEMS`) instead of maintaining parallel key lists.
 - Extract logic when it is pure/testable, has a stable API, or has multiple consumers.
   `engine/formations.ts` is the model: no Game/View dependency and direct tests.
-- Do not split a file only because it is long. `Game.ts`, `View.ts`, and `models.ts` are
-  large but cohesive enough today. Likely future seams are combat/enemy direction,
-  ambience lifecycle, and building model builders.
+- `Game.ts` is the stable simulation facade and tick orchestrator. Extend an existing
+  focused system when behavior belongs there; extract another system only when it has a
+  cohesive responsibility and a narrow port API. Likely future seams outside simulation
+  remain ambience lifecycle and building model builders.
 - Avoid framework, ECS, dependency-injection, or state-library migrations without a
   demonstrated feature, correctness, or profiling need.
 

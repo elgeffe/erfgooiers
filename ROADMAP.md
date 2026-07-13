@@ -89,11 +89,11 @@ rendering, input, UI, data, and modifiers have explicit boundaries. Focused clea
 removed duplicated building visual identities, made stock initialization derive from the
 item table, and extracted formation layout into a pure tested engine module.
 
-The two largest implementation files, `Game.ts` and `render/models.ts`, are intentionally
-not being split solely by line count. Extract a subsystem only when it has a stable API,
-independent tests, or multiple consumers. Likely future seams are:
+`Game.ts` is now a sub-1,000-line simulation facade and fixed-tick orchestrator. Stable
+subsystems cover combat, enemy spawning/encounters, projectiles, damage, worker logistics,
+training, placement, orders, trade, markets, refuge, interaction, and unit creation. The
+remaining large-file seams worth evaluating are:
 
-- combat/enemy director state from `Game.ts`;
 - building model builders from general unit/prop models;
 - ambience lifecycle from `View.ts`.
 
