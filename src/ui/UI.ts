@@ -482,7 +482,7 @@ export class UI {
       const m = metrics[k];
       return `<span class="wkpi ${m.status}" title="${label}: ${m.note}"><i class="kpi ${m.status}"></i>${icon} ${m.count}</span>`;
     }).join('');
-    toggle.innerHTML = `<span class="wtitle">${shortage ? '⚠️ ' : ''}Workers</span>${chips}`;
+    toggle.innerHTML = `<span class="wtitle">${shortage ? '⚠️ ' : ''}Workers</span><span class="wkpis">${chips}</span>`;
     const bad = pools.filter(p => metrics[p.k].status === 'bad');
     toggle.title = bad.length ? 'Short-handed — ' + bad.map(p => `${p.label}: ${metrics[p.k].note}`).join(' · ') : 'Open the worker roster (U)';
   }
