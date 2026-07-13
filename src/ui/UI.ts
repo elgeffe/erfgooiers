@@ -562,10 +562,12 @@ export class UI {
         if (!o.active) body += '<div class="hnote">Building still being raised…</div>';
         else {
           for (const t of mil.units) {
-            const cost = Object.entries(t.cost).map(([k, n]) => `<i>${itemIconSVG(k as ItemKey, 13)}${n}</i>`).join('') || '<i>free</i>';
+            const cost = Object.entries(t.cost).map(([k, n]) =>
+              `<i>${itemIconSVG(k as ItemKey, 13)}<span class="tcname">${ITEMS[k as ItemKey].name}</span> ${n}</i>`).join('')
+              || '<i class="tcfree">free</i>';
             body += `<button class="inspbtn train" data-train="${t.kind}" ${t.desc ? `title="${t.desc}"` : ''}>`
-              + `<span class="tname">+ ${unitLabel(t.kind)}</span>`
-              + `<span class="tcost">${cost}<i class="ttime">${t.time}s</i></span></button>`;
+              + `<span class="trow"><span class="tname">+ ${unitLabel(t.kind)}</span><span class="ttime">${t.time}s</span></span>`
+              + `<span class="tcost">${cost}</span></button>`;
             if (t.desc) body += `<div class="tinfo">${t.desc}</div>`;
           }
           if (o.def.military) body += '<div class="hnote">Right-click the map with this building selected to set a rally flag.</div>';
