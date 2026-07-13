@@ -38,7 +38,11 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - improve map tile details to make it look prettier, especially the standard grass tiles
 
+- sometimes maps are produced where a sea and a mountain range are blocking off an area that contains gold or enemies.
+
 ## Improvements
+- increase loudness of background music a bit
+
 - add card to shop: increases carry capacity of serfs to two (uncommon)
 
 - cards cannot stack in the shop or should they?
@@ -153,6 +157,8 @@ the castle is a prime target for serf piling
 ## Epics
 
 - we need to help new players to guide them in the objectives. i'm thinking either a modal at the start of the level with a cute, but slowly evolving brutal story that reads like a japanase anime but with a Het Gooi / Netherlands / Europe kind of vibe. almost like lord of the rings? pick names that sound dutch and english at the same time like Henk the Brave, Pieter the Wise, Koenraad the Merciless. the dragon of het gooi in their journey leads them to the alps as they chase him because he attacked het gooi recently. once they get to the alps the dragon flies over the player into the sky and flies down again on het gooi, it was a trap. in the end the player arrives just in time to defeat or get beaten by the dragon. in the modal you show how to produce the objective briefly with hints, as the levels go by the hints get fewer so the player has to put some effort in. when the player wins the first time against the dragon there is a final modal with a congratulations for the player of saving het gooi. in the hard ascension no more story just gameplay, only have the modal to show the objective and the timer and other stats. let users click the objective panel in the game to revisit the modal with instructions. adapt the biomes to the storyline in the first ascension run.
+
+- Implement next generation enemy AI in (local) skirmish multiplayer to implement later online multiplayer, with 3 exponantially increasing difficulty levels: Easy, Hard, Godlike > use simulations and machine learning + quantum-inspired algorithms to design an AI that feels 'human-like' based on different core strategies: defensive, offensive, balanced. first implement basic AI as baseline. i want to use this feature to innovate on algorithmic design using stuff like tensor networks and new insights from ML to design innovative experimental AI systems in gaming. the game is actually an optimization problem in disguise. the idea is that tensor networks or ML models can play 'adaptively' based on my own actions. we can probably use a ML technique to let me play against the model and record and adapt my actions to fine tune the enemy ai. let users select the type of AI (classic / any experimental model) when configuring the skirmish.
 
 ## Architecture
 - move all tests to a proper folder
