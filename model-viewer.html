@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Erfgooiers · Model Viewer</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font: 13px/1.4 system-ui, sans-serif; }
+  #c { position: fixed; inset: 0; display: block; }
+  #panel {
+    position: fixed; top: 12px; left: 12px; width: 250px; max-height: calc(100vh - 24px);
+    overflow-y: auto; background: rgba(30, 24, 18, .92); border: 1px solid rgba(217, 164, 65, .35);
+    border-radius: 10px; padding: 12px; color: #ece3cf; backdrop-filter: blur(4px); z-index: 10;
+  }
+  #panel h1 { margin: 0 0 8px; font-size: 15px; color: #f0c878; font-weight: 700; }
+  #panel .row { display: flex; gap: 6px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+  #panel label.chk { display: flex; gap: 6px; align-items: center; cursor: pointer; font-size: 12px; }
+  #panel select, #panel input[type=number] {
+    width: 100%; background: #221a12; color: #ece3cf; border: 1px solid rgba(255,255,255,.14);
+    border-radius: 5px; padding: 5px; font: inherit;
+  }
+  #panel input[type=number] { width: 72px; }
+  #panel button {
+    background: #3a2d1a; color: #ece3cf; border: 1px solid rgba(255,255,255,.14); border-radius: 5px;
+    padding: 5px 8px; cursor: pointer; font: inherit; flex: 1 1 auto;
+  }
+  #panel button:hover { border-color: #d9a441; color: #f0c878; }
+  #panel .sect { margin-top: 10px; font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: #b09873; }
+  #readout { margin-top: 8px; font-size: 11px; line-height: 1.5; color: #cdbfa6; white-space: pre-wrap; }
+  #readout .warn { color: #f0a878; }
+  #readout .ok { color: #a6d089; }
+  #legend { margin-top: 10px; font-size: 10.5px; color: #9c8a6a; font-style: italic; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="panel">
+  <h1>🏛️ Model Viewer</h1>
+  <div class="row"><button id="prev">◂ Prev</button><button id="next">Next ▸</button></div>
+  <select id="model"></select>
+  <div class="sect">Camera</div>
+  <div class="row">
+    <button data-view="iso">Iso</button>
+    <button data-view="front">Front</button>
+    <button data-view="back">Back</button>
+  </div>
+  <div class="row">
+    <button data-view="left">Left</button>
+    <button data-view="right">Right</button>
+    <button data-view="top">Top</button>
+  </div>
+  <div class="sect">Options</div>
+  <div class="row">
+    <label class="chk"><input type="checkbox" id="spin">Spin</label>
+    <label class="chk"><input type="checkbox" id="ghost">Ghost</label>
+    <label class="chk"><input type="checkbox" id="wire">Wire</label>
+  </div>
+  <div class="row">
+    <label class="chk"><input type="checkbox" id="footprint" checked>Footprint</label>
+    <label class="chk"><input type="checkbox" id="grid" checked>Grid</label>
+    <label class="chk"><input type="checkbox" id="shadow" checked>Shadow</label>
+  </div>
+  <div class="sect">Scatter seed / biome</div>
+  <div class="row">
+    <input type="number" id="seed" min="1" step="1" value="1">
+    <button id="reseed">🎲</button>
+    <select id="biome" style="width:auto;flex:1"></select>
+  </div>
+  <div id="readout"></div>
+  <div id="legend">The yellow box is the 2×2 tile a building may occupy. Any part poking outside it overlaps a neighbouring walkable tile.</div>
+</div>
+<script type="module" src="/src/dev/modelViewer.ts"></script>
+</body>
+</html>
