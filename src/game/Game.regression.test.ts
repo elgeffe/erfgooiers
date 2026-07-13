@@ -71,4 +71,26 @@ describe('Game deterministic regression guardrails', () => {
     expect(kills).toBe(1);
     expect(game.units).not.toContain(target);
   });
+
+  it('applies rock splash to hostile units and buildings only when it lands', () => {
+    const { game } = makeOpenBattleGame(8812);
+    const onager = game.spawnFighter('onager', { x: 8, y: 10 }, 'player');
+    const target = game.spawnFighter('bandit', { x: 13, y: 10 }, 'enemy');
+    const ally = game.spawnFighter('soldier', { x: 13, y: 11 }, 'player');
+    const camp = game.placeBuilding('banditcamp', 12, 9, true, 0, 'enemy');
+    target.hp = target.maxHp = 100;
+    ally.hp = ally.maxHp = 100;
+    camp.hp = camp.maxHp = 100;
+    onager.dmg = target.dmg = ally.dmg = 0;
+    const x = target.mesh.position.x, z = target.mesh.position.z;
+
+    (game as any).fireRock(onager, 'player', onager.mesh.position.x, 1, onager.mesh.position.z, x, z, 20, 2);
+    game.update(0.05);
+    expect([target.hp, ally.hp, camp.hp]).toEqual([100, 100, 100]);
+
+    for (let tick = 1; tick < 20 && target.hp === 100; tick++) game.update(0.05);
+    expect(target.hp).toBe(80);
+    expect(ally.hp).toBe(100);
+    expect(camp.hp).toBe(80);
+  });
 });
