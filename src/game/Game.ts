@@ -30,6 +30,7 @@ import { CombatSystem } from './CombatSystem';
 import { PlacementSystem } from './PlacementSystem';
 import { OrderSystem } from './OrderSystem';
 import { RefugeSystem } from './RefugeSystem';
+import { EconomyState, type WorkerMetrics } from './EconomyState';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -119,6 +120,7 @@ export class Game {
   private readonly placementSystem: PlacementSystem;
   private readonly orderSystem: OrderSystem;
   private readonly refugeSystem: RefugeSystem;
+  private readonly economyState: EconomyState;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -320,6 +322,7 @@ export class Game {
       toast: (message, cls) => this.toast(message, cls),
       sfx: name => this.sfx(name),
     });
+    this.economyState = new EconomyState(this.buildings, this.sites, this.units, this.mods, owner => this.storeFor(owner), this.localPlayerId);
   }
 
   entityById(id: number): Building | Site | Unit | null {
@@ -578,113 +581,35 @@ export class Game {
   // =====================================================================
   //  Queries & placement
   // =====================================================================
-  /** Total goods sitting in the storehouse (the end-of-level surplus tally). */
-  stockTotal(): number {
-    let n = 0;
-    for (const st of this.stores()) { const stock = st.stock!; for (const k in stock) n += stock[k]; }
-    return n;
-  }
-
-  /** Player workers (non-fighters) currently well fed — the tavern tally. */
-  wellFedWorkers(): number {
-    let n = 0;
-    for (const u of this.units) if (!u.dead && u.faction === 'player' && u.dmg === 0 && u.hunger >= 66) n++;
-    return n;
-  }
+  stockTotal(): number { return this.economyState.stockTotal(); }
+  wellFedWorkers(): number { return this.economyState.wellFedWorkers(); }
 
   countItem(item: string, owner: PlayerId = this.localPlayerId): number {
-    const d = this.itemBreakdown(item, owner);
-    return d.store + d.buildings + d.carried;
+    return this.economyState.countItem(item, owner);
   }
 
-  /**
-   * Live health of the three logistics labour pools — serfs (hauling), villagers
-   * (staffing buildings) and builders (raising sites). Each reports the pool
-   * size, a one-line demand read-out and a traffic-light status the workers panel
-   * colours in and the toggle badges as a persistent shortage warning. */
-  workerMetrics(): Record<'serf' | 'villager' | 'builder', { count: number; status: 'good' | 'warn' | 'bad'; note: string }> {
-    let serfs = 0, idleSerfs = 0, villagers = 0, idleVillagers = 0, builders = 0;
-    for (const u of this.units) {
-      if (u.dead || u.faction !== 'player') continue;
-      if (u.role === 'serf') { serfs++; if (!u.task && !u.collect) idleSerfs++; }
-      else if (u.role === 'villager') { villagers++; if (!u.home) idleVillagers++; }
-      else if (u.role === 'laborer') builders++;
-    }
-
-    // Serfs: count outstanding haul demands (sites awaiting materials, producers
-    // hungry for inputs or backed up with output nobody has fetched).
-    const carryCap = this.mods.carryCap();
-    let haulLoad = 0;
-    for (const s of this.sites) for (const it in s.needs) haulLoad += Math.max(0, s.needs[it] - (s.delivered[it] || 0) - (s.incoming[it] || 0));
-    for (const b of this.buildings) {
-      if (b.removed || !b.active) continue;
-      if (b.def.recipe) for (const it in this.mods.recipeInputs(b.def)) if (((b.inp[it] || 0) + (b.incoming[it] || 0)) < carryCap) haulLoad++;
-      if (!b.def.store) for (const it in b.out) if (b.out[it] > 0) haulLoad++;
-    }
-    const serf = { count: serfs,
-      status: (serfs === 0 && haulLoad > 0) || haulLoad > serfs * 2 ? 'bad' : (haulLoad > 0 && idleSerfs === 0) ? 'warn' : 'good',
-      note: haulLoad === 0 ? 'All caught up' : `${haulLoad} deliver${haulLoad === 1 ? 'y' : 'ies'} waiting` } as const;
-
-    // Villagers: posts left unstaffed for want of a trained villager.
-    let unstaffed = 0;
-    for (const b of this.buildings) if (!b.removed && b.faction === 'player' && b.def.worker && !b.worker) unstaffed++;
-    const villager = { count: villagers,
-      status: unstaffed > 0 ? 'bad' : idleVillagers === 0 ? 'warn' : 'good',
-      note: unstaffed > 0 ? `${unstaffed} building${unstaffed === 1 ? '' : 's'} unstaffed` : idleVillagers === 0 ? 'None spare' : `${idleVillagers} ready to post` } as const;
-
-    // Builders: sites in the ground versus hands to raise them.
-    const openSites = this.sites.length;
-    const builder = { count: builders,
-      status: (builders === 0 && openSites > 0) || openSites > builders ? 'bad' : openSites === builders && openSites > 0 ? 'warn' : 'good',
-      note: openSites === 0 ? 'No sites pending' : `${openSites} site${openSites === 1 ? '' : 's'} to raise` } as const;
-
-    return { serf, villager, builder };
+  workerMetrics(): WorkerMetrics {
+    return this.economyState.workerMetrics();
   }
 
-  /** Every standing storage building (the castle plus any built storehouses). */
   stores(owner?: PlayerId): Building[] {
-    return this.buildings.filter(b => b.def.store && !b.removed && (!owner || b.owner === owner));
+    return this.economyState.stores(owner);
   }
 
-  /** The closest storage building to a producer (surplus hauls go here). */
   private nearestStore(from: { x: number; y: number }): Building {
-    const owner = 'owner' in from && (from.owner === 'p1' || from.owner === 'p2') ? from.owner : this.localPlayerId;
-    let best = this.storeFor(owner), bd = 1e9;
-    for (const st of this.stores(owner)) {
-      const d = Math.abs(st.x - from.x) + Math.abs(st.y - from.y);
-      if (d < bd) { bd = d; best = st; }
-    }
-    return best;
+    return this.economyState.nearestStore(from);
   }
 
-  /** Spend `n` of an item across all storehouses (castle first). False = short. */
-  private takeStock(item: string, n: number, owner?: PlayerId): boolean {
-    const sts = this.stores(owner);
-    let have = 0;
-    for (const st of sts) have += st.stock![item] || 0;
-    if (have < n) return false;
-    for (const st of sts) {
-      const take = Math.min(n, st.stock![item] || 0);
-      st.stock![item] = (st.stock![item] || 0) - take;
-      n -= take;
-      if (n <= 0) break;
-    }
-    return true;
+  private takeStock(item: string, amount: number, owner?: PlayerId): boolean {
+    return this.economyState.takeStock(item, amount, owner);
   }
 
-  /** Total of an item sitting in storehouses. */
   private storeTotal(item: string, owner?: PlayerId): number {
-    let n = 0;
-    for (const st of this.stores(owner)) n += st.stock![item] || 0;
-    return n;
+    return this.economyState.storeTotal(item, owner);
   }
 
-  /** Where an item currently sits: storehouses vs. building inventories vs. in transit. */
   itemBreakdown(item: string, owner: PlayerId = this.localPlayerId): { store: number; buildings: number; carried: number } {
-    let buildings = 0, carried = 0;
-    for (const b of this.buildings) { if (b.owner === owner && !b.def.store) buildings += (b.inp[item] || 0) + (b.out[item] || 0); }
-    for (const u of this.units) if (u.owner === owner && u.carrying === item) carried++;
-    return { store: this.storeTotal(item, owner), buildings, carried };
+    return this.economyState.itemBreakdown(item, owner);
   }
 
   canPaintRoadAt(tx: number, ty: number): boolean {
