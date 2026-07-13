@@ -542,8 +542,10 @@ function smithyBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   const forge = new THREE.Mesh(box(1.65, 0.88, 1.35), mkMat(def.wall, ghost)); forge.position.y = 0.44; forge.castShadow = !ghost; g.add(forge);
   gableRoof(g, 1.95, 1.6, 1.18, def.roof, ghost, 0.45);
-  const hearth = new THREE.Mesh(box(0.78, 0.58, 0.12), mkMat(0x252329, ghost)); hearth.position.set(0.28, 0.3, 0.71); hearth.userData.marker = true; g.add(hearth);
-  const fire = new THREE.Mesh(cone(0.14, 0.32, 7), mkMat(0xe88335, ghost)); fire.position.set(0.28, 0.2, 0.8); fire.userData.marker = true; g.add(fire);
+  const hearth = new THREE.Mesh(box(0.78, 0.58, 0.16), mkMat(0x252329, ghost)); hearth.position.set(0.28, 0.3, 0.69); hearth.userData.marker = true; g.add(hearth);
+  // fire nestles inside the hearth mouth rather than poking out over the sill
+  const embers = new THREE.Mesh(box(0.5, 0.08, 0.14), mkMat(0xd9531f, ghost)); embers.position.set(0.28, 0.12, 0.66); embers.userData.marker = true; g.add(embers);
+  const fire = new THREE.Mesh(cone(0.1, 0.34, 7), mkMat(0xe88335, ghost)); fire.position.set(0.28, 0.3, 0.64); fire.userData.marker = true; g.add(fire);
   const stack = new THREE.Mesh(box(0.38, 1.35, 0.42), mkMat(0x6a5550, ghost)); stack.position.set(-0.55, 1.15, -0.32); stack.castShadow = !ghost; g.add(stack);
   if (!ghost) { mintYard(g); for (const x of [0.65, 0.82]) { const sword = new THREE.Mesh(box(0.035, 0.65, 0.05), mat(0xc6ccd4)); sword.position.set(x, 0.52, 0.74); sword.rotation.z = x === 0.65 ? 0.45 : -0.45; g.add(sword); } }
   return g;
@@ -889,7 +891,11 @@ function mine(key: BuildingKey, def: BuildingDef, ghost: boolean): THREE.Group {
     const steel = mkMat(0x6d6260, ghost);
     const mast = new THREE.Mesh(box(0.16, 1.55, 0.16), steel); mast.position.set(0.5, 1.0, -0.2); g.add(mast);
     const arm = new THREE.Mesh(box(1.0, 0.12, 0.12), steel); arm.position.set(0.08, 1.72, -0.2); arm.rotation.z = -0.18; g.add(arm);
-    const bucket = new THREE.Mesh(box(0.35, 0.3, 0.35), mkMat(0x8a4a30, ghost)); bucket.position.set(-0.36, 0.72, -0.2); g.add(bucket);
+    // hoist the ore skip on a cable from the arm's tip so it hangs above the
+    // mound instead of floating detached in front of it
+    const cable = new THREE.Mesh(cyl(0.015, 0.015, 0.3, 5), mkMat(0x40362c, ghost)); cable.position.set(-0.4, 1.62, -0.2); g.add(cable);
+    const bucket = new THREE.Mesh(box(0.3, 0.28, 0.3), mkMat(0x8a4a30, ghost)); bucket.position.set(-0.4, 1.36, -0.2); bucket.castShadow = !ghost; g.add(bucket);
+    const bail = new THREE.Mesh(torus(0.15, 0.016, 4, 8), steel); bail.position.set(-0.4, 1.5, -0.2); g.add(bail);
   }
   // quarry stacks cut blocks & leans a pickaxe; the mines park an ore-laden cart
   if (!ghost) {
