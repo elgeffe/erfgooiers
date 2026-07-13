@@ -6,7 +6,7 @@ import { UNITS, formationRank, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
-import { buildFlowField, fieldPath, type FlowField } from '../engine/flowfield';
+import { buildFlowField, type FlowField } from '../engine/flowfield';
 import { formationSpots } from '../engine/formations';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
@@ -28,6 +28,7 @@ import { LogisticsSystem } from './LogisticsSystem';
 import { WorkerSystem } from './WorkerSystem';
 import { UnitMovement } from './UnitMovement';
 import { CombatTargeting } from './CombatTargeting';
+import { CombatSystem } from './CombatSystem';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -117,6 +118,7 @@ export class Game {
   private readonly workerSystem: WorkerSystem;
   private readonly unitMovement: UnitMovement;
   private readonly combatTargeting: CombatTargeting;
+  private readonly combatSystem: CombatSystem;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -277,6 +279,17 @@ export class Game {
       visitUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
       hostile: (left, right) => this.hostile(left, right),
       buildingCenter: building => this.buildingCenter(building),
+    });
+    this.combatSystem = new CombatSystem(this.world, this.combatTargeting, this.unitMovement, {
+      visitUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
+      advanceOrder: unit => this.advanceOrder(unit),
+      buildingCenter: building => this.buildingCenter(building),
+      attackUnit: (attacker, target) => this.attack(attacker, target),
+      attackBuilding: (attacker, target) => this.attackBuilding(attacker, target),
+      fireArrow: (shooter, from, x, y, z, target, damage) => this.fireArrow(shooter, from, x, y, z, target, damage),
+      fireRock: (shooter, from, x, y, z, endX, endZ, damage, radius) => this.fireRock(shooter, from, x, y, z, endX, endZ, damage, radius),
+      fireFlame: (shooter, from, x, y, z, endX, endZ, damage) => this.fireFlame(shooter, from, x, y, z, endX, endZ, damage),
+      sfx: name => this.sfx(name),
     });
   }
 
@@ -967,11 +980,6 @@ export class Game {
   /** True for units that run the combat behavior (soldiers, bandits, boars, dragon…). */
   private isFighter(u: Unit): boolean { return (UNITS as any)[u.role] !== undefined; }
 
-  private unitDist(a: Unit, b: Unit): number {
-    const dx = a.mesh.position.x - b.mesh.position.x, dz = a.mesh.position.z - b.mesh.position.z;
-    return Math.hypot(dx, dz);
-  }
-
   // ---------------------------------------------------------------------
   //  Coarse spatial hash (8×8-tile cells), rebuilt once per tick and shared
   //  by every proximity query: target acquisition, tower fire, fire volleys
@@ -993,11 +1001,6 @@ export class Game {
     return this.combatTargeting.acquireUnit(u, aggro);
   }
 
-  private faceUnit(u: Unit, foe: Unit): void {
-    const dx = foe.mesh.position.x - u.mesh.position.x, dz = foe.mesh.position.z - u.mesh.position.z;
-    if (dx || dz) u.mesh.rotation.y = Math.atan2(dx, dz);
-  }
-
   /** Apply damage to a unit: hurt feedback, retaliation, death. */
   private hurtUnit(source: Unit | null, victim: Unit, dmg: number): void {
     this.damageSystem.hurtUnit(source, victim, dmg);
@@ -1016,296 +1019,8 @@ export class Game {
   }
 
   private combatUpdate(u: Unit, dt: number): void {
-    const def = UNITS[u.role as UnitKind];
-    // Explicit targets complete as soon as they fall, including support-unit
-    // orders. Advancing in a loop also skips targets destroyed earlier in the
-    // same tick.
-    while (u.order && (
-      (u.order.type === 'attack' && (!u.order.foe || u.order.foe.dead)) ||
-      (u.order.building?.removed ?? false)
-    )) this.advanceOrder(u);
-    if (def.heal) { this.supportUpdate(u, def.heal, dt); return; }
-    const flying = !!def.flying;
-    u.atkTimer = Math.max(0, u.atkTimer - dt);
-    if (u.lungeT > 0) u.lungeT = Math.max(0, u.lungeT - dt);
-    if (flying) this.animateFlight(u, dt);
-    if (def.fire) this.fireVolley(u, dt);
-
-    // leash: a chase that strays too far from home is abandoned. Wild beasts use
-    // their own short leash; hostile camp guards, now that they spot you from far
-    // off, get a generous one so they defend their camp instead of emptying it to
-    // chase a lone worker across the map. Raiders (marching on the castle) never leash.
-    const leash = u.faction === 'wild' ? def.leash
-      : (u.faction === 'enemy' && !u.raider && u.anchor ? (def.leash ?? 18) : undefined);
-    if (leash && u.anchor) {
-      const da = Math.hypot(u.tx - u.anchor.x, u.ty - u.anchor.y);
-      if (u.wstate === 'leash') {
-        if (da < 3) {
-          u.wstate = 'idle';
-          u.path = null; // FIX: Wipe the return path cleanly
-        }
-        else {
-          if (!u.path) this.sendTo(u, u.anchor.x, u.anchor.y);
-          this.moveUnit(u, dt);
-          u.status = 'Heading home';
-          return;
-        }
-      } else if (da > leash) { u.wstate = 'leash'; u.foe = null; u.path = null; return; }
-    }
-
-    if (u.obeyT > 0) {
-      u.obeyT = Math.max(0, u.obeyT - dt);
-      // while obeying a fresh move order, drop any current fight entirely
-      if (u.order && u.order.type !== 'attack') { u.foe = null; u.foeB = null; }
-    }
-    const orderedBuilding = u.order?.building && !u.order.building.removed ? u.order.building : null;
-    // Retaliation and ambient aggro may not steal an explicit focus target.
-    let foe = u.order?.type === 'attack' ? u.order.foe : (orderedBuilding ? null : u.foe);
-    if (foe && foe.dead) foe = null;
-    // pure 'move' orders don't auto-seek (lets you march past enemies); an
-    // attack-move only re-engages once the obey window has passed
-    const canSeek = (!u.order || u.order.type !== 'move') && u.obeyT <= 0;
-    // wild beasts that hold ground are short-sighted: YOU choose when the fight
-    // starts by walking up to them. Hostile *units* (bandits, orcs, the undead —
-    // even camp guards) stay fully alert and pick you up at their real aggro
-    // range. Raiders and player units always keep their full awareness.
-    const aggro = u.faction === 'wild' && !u.raider ? Math.min(def.aggro, 4.5) : def.aggro;
-    // A locked structure target comes from an explicit siege order or from the
-    // unreachable-guard fallback below. Keep battering that structure instead
-    // of reacquiring the same guard on the next tick and oscillating forever.
-    if (!foe && canSeek && !u.foeB) foe = this.acquireTarget(u, aggro);
-    u.foe = foe;
-
-    if (foe) {
-      // big foes are easier to reach — extend melee reach by their bulk
-      const reach = u.range + 0.1 + Math.max(0, ((foe.mesh.scale.x || 1) - 1)) * 0.4;
-      const d = this.unitDist(u, foe);
-      if (u.order?.type === 'attack' && def.standoff && d < def.standoff) {
-        this.retreatFrom(u, foe, def.standoff, dt);
-      } else if (d <= reach) {
-        u.path = null;
-        this.faceUnit(u, foe);
-        this.groundPose(u, flying);
-        if (u.atkTimer <= 0) {
-          u.atkTimer = u.atkCd;
-          if (def.splash) this.fireRock(u, u.faction, u.mesh.position.x, 0.6, u.mesh.position.z, foe.mesh.position.x, foe.mesh.position.z, u.dmg, def.splash);
-          else if (def.arrows) this.fireArrow(u, u.faction, u.mesh.position.x, 0.6, u.mesh.position.z, foe, u.dmg);
-          else this.attack(u, foe);
-        }
-      } else if (flying) {
-        this.moveFlying(u, dt, foe.mesh.position.x, foe.mesh.position.z);
-      } else {
-        // chase — throttle A* so hundreds of pursuers don't re-path every tick;
-        // charging beasts (boars) put on a burst of speed
-        if (!u.path) {
-          u.timer -= dt;
-          if (u.timer <= 0 && this.pathBudget > 0) {
-            this.pathBudget--;
-            const reached = this.sendTo(u, foe.tx, foe.ty);
-            u.timer = 0.4 + rnd() * 0.35;
-            // the foe is walled in (a garrison behind stronghold ramparts):
-            // don't mill about forever — batter down what stands in the way
-            if (!reached) {
-              const bt = this.buildingTargetFor(u);
-              if (bt) { u.foe = null; u.foeB = bt; return; }
-            }
-          }
-        }
-        this.moveUnit(u, def.charge ? dt * def.charge : dt);
-        u.status = 'Fighting';
-      }
-      return;
-    }
-
-    // no unit foe: go for a hostile building (the castle for raiders & the dragon,
-    // camps for the player army)
-    // a live foeB that differs from the ordered target is the rampart the
-    // order is stuck behind (set in siegeBlocked when the ring proves
-    // unreachable): batter it down first, then resume the ordered siege
-    let bt = u.foeB && !u.foeB.removed ? u.foeB : orderedBuilding;
-    if (bt && bt.removed) bt = null;
-    if (!bt && canSeek) bt = this.buildingTargetFor(u);
-    u.foeB = bt;
-    if (bt) {
-      const c = this.buildingCenter(bt);
-      const dx = c.x - u.mesh.position.x, dz = c.z - u.mesh.position.z;
-      const d = Math.hypot(dx, dz);
-      if (d <= u.range + 1.15) {
-        u.path = null;
-        u.mesh.rotation.y = Math.atan2(dx, dz);
-        this.groundPose(u, flying);
-        if (u.atkTimer <= 0) { u.atkTimer = u.atkCd; u.lungeT = 0.22; this.attackBuilding(u, bt); }
-      } else if (flying) {
-        this.moveFlying(u, dt, c.x, c.z);
-      } else {
-        // besiege: head for a free tile around the walls, not everyone to the door
-        if (!u.path) {
-          u.timer -= dt;
-          if (u.timer <= 0) {
-            // an ordered host marches on the ring via its shared flow field;
-            // an empty descent means the ring is reached — drop the field and
-            // let the salted per-unit spread below take over the final shuffle.
-            // A null descent means the ring is walled off from this unit's
-            // ground entirely — don't fall through to a doomed global search.
-            const field = u.order?.building === bt ? u.order.field : null;
-            if (field) {
-              if (this.flowBudget > 0) {
-                this.flowBudget--;
-                const p = fieldPath(this.world, field, u.tx, u.ty, undefined, undefined, u.faction);
-                if (p === null) { u.order!.field = null; this.siegeBlocked(u, bt); }
-                else if (p.length) { u.path = p; u.pathI = 0; u.timer = 0.5 + rnd() * 0.4; }
-                else u.order!.field = null;
-              }
-            } else if (this.pathBudget > 0) {
-              this.pathBudget--;
-              const s = this.siegeTile(u, bt);
-              if (this.sendTo(u, s.x, s.y)) u.timer = 0.5 + rnd() * 0.4;
-              else this.siegeBlocked(u, bt);
-            }
-          }
-        }
-        this.moveUnit(u, dt);
-      }
-      return;
-    }
-
-    // no foe: follow a move/attack-move order, wander near home, or hold
-    if (u.order && (u.order.type === 'move' || u.order.type === 'attackMove')) {
-      if (flying) {
-        if (this.moveFlying(u, dt, this.world.wx(u.order.x), this.world.wz(u.order.y))) this.advanceOrder(u);
-        return;
-      }
-      if (!u.path) {
-        if (u.tx === u.order.x && u.ty === u.order.y) { this.advanceOrder(u); }
-        // group orders descend their shared flow field (cheap, own budget);
-        // solo orders and units the field can't serve run a budgeted A* —
-        // either way a freshly ordered horde sets off staggered over a few
-        // ticks instead of freezing the sim on one
-        else if (u.order.field) {
-          if (this.flowBudget > 0) {
-            this.flowBudget--;
-            const p = fieldPath(this.world, u.order.field, u.tx, u.ty, u.order.x, u.order.y, u.faction);
-            if (p?.length) { u.path = p; u.pathI = 0; }
-            else u.order.field = null;
-          }
-        }
-        else if (this.pathBudget > 0) {
-          this.pathBudget--;
-          if (!this.sendTo(u, u.order.x, u.order.y)) this.advanceOrder(u);
-        }
-      }
-      if (u.path) this.moveUnit(u, dt); else this.groundPose(u, flying);
-    } else if (def.wander) {
-      this.wander(u, dt);
-    } else {
-      this.groundPose(u, flying);
-    }
+    this.combatSystem.update(u, dt);
   }
-
-  private supportUpdate(u: Unit, heal: { range: number; amount: number; rate: number }, dt: number): void {
-    u.atkTimer = Math.max(0, u.atkTimer - dt);
-    if (u.atkTimer <= 0) {
-      let target: Unit | null = null, ratio = 1;
-      this.forUnitsNear(u.tx, u.ty, Math.ceil(heal.range) + 1, o => {
-        if (o === u || o.dead || o.faction !== u.faction || o.hp >= o.maxHp) return;
-        const dx = o.tx - u.tx, dy = o.ty - u.ty;
-        if (dx * dx + dy * dy > heal.range * heal.range) return;
-        const r = o.hp / o.maxHp;
-        if (r < ratio) { ratio = r; target = o; }
-      });
-      if (target) {
-        const ally = target as Unit;
-        ally.hp = Math.min(ally.maxHp, ally.hp + heal.amount);
-        u.atkTimer = heal.rate;
-        u.status = `Healing ${ally.roleName}`;
-      } else u.status = 'Tending the company';
-    }
-    u.foe = null; u.foeB = null;
-    const orderedFoe = u.order?.type === 'attack' && u.order.foe && !u.order.foe.dead ? u.order.foe : null;
-    if (orderedFoe) {
-      const standoff = UNITS[u.role as UnitKind].standoff ?? heal.range;
-      const d = this.unitDist(u, orderedFoe);
-      if (d < standoff) this.retreatFrom(u, orderedFoe, standoff, dt);
-      else if (d > standoff + 0.75) {
-        if (!u.path && this.pathBudget > 0) {
-          this.pathBudget--;
-          this.sendTo(u, orderedFoe.tx, orderedFoe.ty);
-        }
-        if (u.path) this.moveUnit(u, dt); else this.groundPose(u, false);
-        this.faceUnit(u, orderedFoe);
-        u.status = 'Following at a safe distance';
-      } else {
-        u.path = null;
-        this.faceUnit(u, orderedFoe);
-        this.groundPose(u, false);
-        u.status = 'Holding at a safe distance';
-      }
-      return;
-    }
-    if (u.order) {
-      if (u.tx === u.order.x && u.ty === u.order.y) this.advanceOrder(u);
-      else if (!u.path && u.order.field) {
-        if (this.flowBudget > 0) {
-          this.flowBudget--;
-          const p = fieldPath(this.world, u.order.field, u.tx, u.ty, u.order.x, u.order.y, u.faction);
-          if (p?.length) { u.path = p; u.pathI = 0; }
-          else u.order.field = null;
-        }
-      }
-      else if (!u.path && this.pathBudget > 0) {
-        this.pathBudget--;
-        if (!this.sendTo(u, u.order.x, u.order.y)) this.advanceOrder(u);
-      }
-      if (u.path) this.moveUnit(u, dt); else this.groundPose(u, false);
-    } else this.groundPose(u, false);
-  }
-
-  /** Back away from an explicitly ordered foe until the unit reaches its
-   *  preferred range. Existing safe retreat paths are reused; chase paths
-   *  ending beside the foe are discarded immediately. */
-  private retreatFrom(u: Unit, foe: Unit, standoff: number, dt: number): void {
-    const fx = foe.mesh.position.x, fz = foe.mesh.position.z;
-    const endpoint = u.path?.[u.path.length - 1];
-    if (endpoint && Math.hypot(this.world.wx(endpoint.x) - fx, this.world.wz(endpoint.y) - fz) < standoff) u.path = null;
-
-    if (!u.path && this.pathBudget > 0) {
-      let dx = u.mesh.position.x - fx, dz = u.mesh.position.z - fz;
-      let len = Math.hypot(dx, dz);
-      if (len < 1e-4) {
-        dx = ((u.id + foe.id) & 1) ? 1 : -1;
-        dz = ((u.id ^ foe.id) & 1) ? 1 : -1;
-        len = Math.hypot(dx, dz);
-      }
-      const idealX = fx + dx / len * (standoff + 0.75);
-      const idealZ = fz + dz / len * (standoff + 0.75);
-      const baseX = Math.round(idealX + this.world.W / 2 - 0.5);
-      const baseY = Math.round(idealZ + this.world.H / 2 - 0.5);
-      const currentDistance = this.unitDist(u, foe);
-      let best: Coord | null = null, bestScore = Infinity;
-      for (let oy = -3; oy <= 3; oy++) for (let ox = -3; ox <= 3; ox++) {
-        const x = baseX + ox, y = baseY + oy;
-        if (!this.world.passable(x, y, u.faction)) continue;
-        const wx = this.world.wx(x), wz = this.world.wz(y);
-        const safety = Math.hypot(wx - fx, wz - fz);
-        if (safety <= currentDistance + 0.2) continue;
-        const score = Math.hypot(wx - idealX, wz - idealZ) + Math.abs(safety - standoff) * 0.15;
-        if (score < bestScore) { bestScore = score; best = { x, y }; }
-      }
-      if (best) {
-        this.pathBudget--;
-        this.sendTo(u, best.x, best.y);
-      }
-    }
-    if (u.path) this.moveUnit(u, dt); else this.groundPose(u, false);
-    this.faceUnit(u, foe);
-    u.status = 'Keeping distance';
-  }
-
-  /** Resting pose between swings: melee units hop into each attack, fliers hover. */
-  private groundPose(u: Unit, flying: boolean): void {
-    this.unitMovement.groundPose(u, flying);
-  }
-
   /** Idle beasts, camp guards & off-duty builders amble around their anchor. */
   private wander(u: Unit, dt: number, moving = 'Roaming', resting = 'Grazing'): void {
     this.unitMovement.wander(u, dt, moving, resting);
@@ -1315,29 +1030,10 @@ export class Game {
     return { x: this.world.wx(b.x) + 0.5, z: this.world.wz(b.y) + 0.5 };
   }
 
-  /** The building a fighter should march on: raiders (and the dragon) storm the
-   *  nearest player building, the player army razes the nearest enemy stronghold
-   *  in reach. Non-raiding beasts and camp guards leave walls alone. */
-  private buildingTargetFor(u: Unit): Building | null {
-    return this.combatTargeting.acquireBuilding(u);
-  }
-
   /** A free tile on the ring around a building's 2×2 footprint, salted per unit
    *  so a squad surrounds the walls instead of stacking at the door. */
   private siegeTile(u: Unit, b: Building): Coord {
     return this.combatTargeting.siegeTile(u, b);
-  }
-
-  /** A siege target nobody can path to is walled in (a keep behind ramparts).
-   *  Swing at the nearest hostile structure instead — foeB overrides the
-   *  ordered target until the rampart falls — rather than letting every
-   *  besieger re-run a doomed full-map search twice a second (the pathfinder
-   *  storm that froze big chained sieges on fortified keeps). With nothing
-   *  nearby to batter, back off and retry lazily. */
-  private siegeBlocked(u: Unit, bt: Building): void {
-    const blocker = this.buildingTargetFor(u);
-    if (blocker && blocker !== bt) { u.foeB = blocker; return; }
-    u.timer = 3 + rnd() * 2;
   }
 
   private attackBuilding(u: Unit, b: Building): void {
@@ -1346,30 +1042,6 @@ export class Game {
 
   private destroyBuilding(b: Building): void {
     this.damageSystem.destroyBuilding(b);
-  }
-
-  /** A fire-wielder's periodic volley (dragon breath, demon magic): fire gobs
-   *  spat at whatever it is fighting (or the nearest player building),
-   *  splashing flame where they land. */
-  private fireVolley(u: Unit, dt: number): void {
-    u.special -= dt;
-    if (u.special > 0) return;
-    let tx: number | null = null, tz = 0;
-    const foe = u.foe && !u.foe.dead ? u.foe : this.acquireTarget(u, 8);
-    if (foe) { tx = foe.mesh.position.x; tz = foe.mesh.position.z; }
-    else {
-      const bt = u.foeB && !u.foeB.removed ? u.foeB : null;
-      if (bt) { const c = this.buildingCenter(bt); const d = Math.hypot(c.x - u.mesh.position.x, c.z - u.mesh.position.z); if (d < 9) { tx = c.x; tz = c.z; } }
-    }
-    if (tx === null) { u.special = 1; return; } // nothing worth torching — check again soon
-    const mx = u.mesh.position.x, mz = u.mesh.position.z;
-    const my = 1.6 * (u.mesh.scale.y || 1);
-    for (let i = 0; i < 5; i++) {
-      const ang = rnd() * Math.PI * 2, rr = rnd() * 1.3;
-      this.fireFlame(u, u.faction, mx, my, mz, tx + Math.cos(ang) * rr, tz + Math.sin(ang) * rr, 12);
-    }
-    this.sfx('error');
-    u.special = 5;
   }
 
   // =====================================================================
@@ -1882,20 +1554,9 @@ export class Game {
     this.marketSystem.update(dt);
   }
 
-  /** Order-following A* searches allowed this tick (see combatUpdate). At 20
-   *  ticks/s this streams ~560 fresh paths a second — a thousand-strong army
-   *  is fully under way within two seconds, with no single-tick freeze. */
-  private pathBudget = 0;
-
-  /** Flow-field descents allowed this tick. A descent is O(path length) —
-   *  ~50× cheaper than a full A* — so group orders get a far bigger budget:
-   *  at 20 ticks/s a 300-strong host is fully under way within 0.1 s. */
-  private flowBudget = 0;
-
   update(sdt: number): void {
     this.elapsed += sdt;
-    this.pathBudget = 28;
-    this.flowBudget = 160;
+    this.combatSystem.beginTick();
     this.buildUnitHash(); // shared by all proximity queries this tick
     this.updateMarkets(sdt);
     this.dispatchT += sdt;
