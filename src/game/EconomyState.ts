@@ -5,6 +5,8 @@ export type WorkerMetrics = Record<'serf' | 'villager' | 'builder', {
   count: number;
   status: 'good' | 'warn' | 'bad';
   note: string;
+  /** How many more of this pool are needed right now (villagers: unstaffed buildings). */
+  deficit: number;
 }>;
 
 /** Stock accounting and read-only workforce health metrics. */
@@ -100,9 +102,9 @@ export class EconomyState {
     const openSites = this.sites.length;
     const builderStatus = (builders === 0 && openSites > 0) || openSites > builders ? 'bad' : openSites === builders && openSites > 0 ? 'warn' : 'good';
     return {
-      serf: { count: serfs, status: serfStatus, note: haulLoad === 0 ? 'All caught up' : `${haulLoad} deliver${haulLoad === 1 ? 'y' : 'ies'} waiting` },
-      villager: { count: villagers, status: villagerStatus, note: unstaffed > 0 ? `${unstaffed} building${unstaffed === 1 ? '' : 's'} unstaffed` : idleVillagers === 0 ? 'None spare' : `${idleVillagers} ready to post` },
-      builder: { count: builders, status: builderStatus, note: openSites === 0 ? 'No sites pending' : `${openSites} site${openSites === 1 ? '' : 's'} to raise` },
+      serf: { count: serfs, status: serfStatus, deficit: Math.max(0, haulLoad - serfs), note: haulLoad === 0 ? 'All caught up' : `${haulLoad} deliver${haulLoad === 1 ? 'y' : 'ies'} waiting` },
+      villager: { count: villagers, status: villagerStatus, deficit: unstaffed, note: unstaffed > 0 ? `${unstaffed} building${unstaffed === 1 ? '' : 's'} unstaffed` : idleVillagers === 0 ? 'None spare' : `${idleVillagers} ready to post` },
+      builder: { count: builders, status: builderStatus, deficit: Math.max(0, openSites - builders), note: openSites === 0 ? 'No sites pending' : `${openSites} site${openSites === 1 ? '' : 's'} to raise` },
     };
   }
 }
