@@ -255,7 +255,6 @@ export function sandboxLevel(cfg: SandboxConfig = DEFAULT_SANDBOX): LevelDef {
   ];
   if (cfg.banditCamps) {
     enemies.camps = [{ count: Math.max(2, Math.round(2 * scale)), guards: 5, kinds: ['bandit', 'bandit', 'orc'] }];
-    enemies.commander = { every: 110, kind: 'bandit', count: 3, from: 'camp' };
   }
   if (strongholds > 0) {
     enemies.strongholds = { count: strongholds, guards: 10, towers: 2, kinds: ['orc', 'skeleton', 'skelarcher', 'troll'] };
