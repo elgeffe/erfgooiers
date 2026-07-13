@@ -1,12 +1,11 @@
 import * as THREE from 'three';
 import { BASE_SPEED, MAX_UNITS } from '../constants';
 import { ITEMS } from '../data/items';
-import { UNITS, formationRank, type UnitKind } from '../data/units';
+import { UNITS, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
-import { buildFlowField, type FlowField } from '../engine/flowfield';
-import { formationSpots } from '../engine/formations';
+import type { FlowField } from '../engine/flowfield';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
 import { type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit, type UnitOrder } from '../types';
@@ -29,6 +28,7 @@ import { UnitMovement } from './UnitMovement';
 import { CombatTargeting } from './CombatTargeting';
 import { CombatSystem } from './CombatSystem';
 import { PlacementSystem } from './PlacementSystem';
+import { OrderSystem } from './OrderSystem';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -38,8 +38,6 @@ const rnd = () => simRng.next();
 
 /** Selections at or above this size share one flow field per order instead of
  *  running one global A* per unit. Below it the flood costs more than it saves. */
-const FLOW_FIELD_MIN_UNITS = 8;
-
 /** The goods and workers a level hands you at the start (before run upgrades). */
 export interface StartKit {
   stock: Partial<Record<string, number>>;
@@ -118,6 +116,7 @@ export class Game {
   private readonly combatTargeting: CombatTargeting;
   private readonly combatSystem: CombatSystem;
   private readonly placementSystem: PlacementSystem;
+  private readonly orderSystem: OrderSystem;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -306,6 +305,11 @@ export class Game {
         sfx: name => this.sfx(name),
       },
     );
+    this.orderSystem = new OrderSystem(this.world, this.view, {
+      siegeTile: (unit, building) => this.siegeTile(unit, building),
+      toast: message => this.toast(message),
+      sfx: name => this.sfx(name),
+    });
   }
 
   entityById(id: number): Building | Site | Unit | null {
@@ -983,135 +987,40 @@ export class Game {
     this.trade.update(sdt);
   }
 
-  /** Toggle priority on a construction site (materials & builders go there
-   *  first) or a production building (serfs feed & empty it first). */
-  togglePriority(s: Site | Building): void {
-    s.priority = !s.priority;
-    this.sfx('click');
-    this.toast(s.priority ? s.def.name + ' prioritized' : s.def.name + ' no longer prioritized');
+  togglePriority(target: Site | Building): void {
+    this.orderSystem.togglePriority(target);
   }
 
-  /** Issue a command to a unit (used by Controls for hero/army orders). With
-   *  `queue`, the command is appended behind whatever the unit is already doing
-   *  (shift-click chaining) instead of replacing it. */
-  orderUnit(u: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, queue = false, field: FlowField | null = null): void {
-    this.queueOrder(u, { type, x, y, foe, building: null, field }, queue);
+  orderUnit(unit: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, queue = false, field: FlowField | null = null): void {
+    this.orderSystem.orderUnit(unit, type, x, y, foe, queue, field);
   }
 
-  /** Store or activate one fully resolved order. Entity references stay inside
-   *  the simulation; the network command carries only stable entity ids. */
-  private queueOrder(u: Unit, o: UnitOrder, queue: boolean): void {
-    if (queue && (u.order || u.orderQueue.length)) { u.orderQueue.push(o); return; }
-    u.orderQueue.length = 0;
-    this.applyOrder(u, o);
+  private queueOrder(unit: Unit, order: UnitOrder, queue: boolean): void {
+    this.orderSystem.queueOrder(unit, order, queue);
   }
 
-  /** Make an order the unit's active command, breaking off any current fight. */
-  private applyOrder(u: Unit, o: UnitOrder): void {
-    u.order = o;
-    u.foe = o.type === 'attack' ? o.foe : null;
-    u.foeB = o.building && !o.building.removed ? o.building : null;
-    u.path = null;
-    u.timer = 0;
-    u.obeyT = o.type === 'attack' || o.building ? 0 : 2.5;
-    // A player command always cancels an old AI return-home state. Player
-    // fighters never leash; anchors are only meaningful to wild/enemy guards.
-    if (u.faction === 'player' && u.wstate === 'leash') u.wstate = 'idle';
+  private advanceOrder(unit: Unit): boolean {
+    return this.orderSystem.advanceOrder(unit);
   }
 
-  /** Current command done: pull the next chained order into effect, if any.
-   *  Returns true when a queued order took over, false when the queue is empty
-   *  (leaving `order` cleared exactly as the old `u.order = null` did). */
-  private advanceOrder(u: Unit): boolean {
-    const next = u.orderQueue.shift();
-    if (!next) {
-      u.order = null;
-      u.path = null;
-      u.foe = null;
-      u.foeB = null;
-      u.obeyT = 0;
-      return false;
-    }
-    this.applyOrder(u, next);
-    return true;
+  formationPreview(units: Unit[], x: number, y: number, formation: Formation, facing: Coord): Coord[] {
+    return this.orderSystem.formationPreview(units, x, y, formation, facing);
   }
 
-  /** Ground a formation may stand on (shared by orders and the drag preview).
-   *  Must stay in lock-step with World.passable: a spot the pathfinder can't
-   *  reach (a dense thicket reads as open grass here) makes sendTo fail, and
-   *  that unit silently drops its order instead of marching — the root of
-   *  "not all of my units moved" on big, wooded selections. */
-  private readonly formationGround = (tx: number, ty: number): boolean => {
-    const t = this.world.T(tx, ty);
-    return !!t && t.type === 'grass' && !t.b && !t.site && !t.dep && !t.tree?.dense;
-  };
-
-  /** The tiles a selection would occupy — the right-drag aim preview. `facing`
-   *  is the continuous drag direction. */
-  formationPreview(units: Unit[], x: number, y: number, formation: Formation, facing: { x: number; y: number }): Coord[] {
-    return formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), this.formationGround, facing);
+  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'box', facing?: Coord, queue = false): void {
+    this.orderSystem.orderGroup(units, type, x, y, foe, formation, facing, queue);
   }
 
-  /** Order a whole selection: attacks converge on the foe, moves fan out into a
-   *  loose formation so the squad doesn't pile onto a single tile. An explicit
-   *  `facing` (from the drag-to-aim gesture) overrides the marching direction. */
-  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'box', facing?: { x: number; y: number }, queue = false): void {
-    if (type === 'attack' && foe) {
-      for (const u of units) this.orderUnit(u, 'attack', foe.tx, foe.ty, foe, queue);
-      return;
-    }
-    const spots = formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), this.formationGround, facing);
-    // one flood serves the whole selection — each unit descends it for its
-    // path instead of running its own full-map A* (see engine/flowfield.ts)
-    const field = units.length >= FLOW_FIELD_MIN_UNITS ? buildFlowField(this.world, spots, units[0].faction) : null;
-    // spots come back front rank first; march the army in battle order so
-    // melee take the leading tiles and ranged/cavalry/siege fall in behind.
-    // Stable sort keeps each rank's own order (and same-rank kinds together).
-    const ordered = units
-      .map((u, i) => ({ u, i, r: formationRank(u.role) }))
-      .sort((a, b) => a.r - b.r || a.i - b.i);
-    for (let i = 0; i < ordered.length; i++) {
-      // If terrain truly cannot provide enough ground, excess units hold their
-      // current unique tiles rather than all collapsing onto the final slot.
-      const s = spots[i] ?? { x: ordered[i].u.tx, y: ordered[i].u.ty };
-      this.orderUnit(ordered[i].u, type, s.x, s.y, null, queue, field);
-    }
-  }
-
-  /** The standing building on a tile, or null (Controls asks before ordering). */
   buildingAt(tx: number, ty: number): Building | null {
-    const t = this.world.T(tx, ty);
-    return t && t.b && !t.b.removed ? t.b : null;
+    return this.orderSystem.buildingAt(tx, ty);
   }
 
-  /** Order a selection to raze a hostile building: everyone marches on its
-   *  walls and locks it as their siege target (no waiting for auto-acquire). */
-  orderGroupAttackBuilding(units: Unit[], b: Building, queue = false): void {
-    if (b.removed) return;
-    const assigned = units.map(u => ({ u, s: this.siegeTile(u, b) }));
-    // the siege ring is a handful of tiles shared by the whole host: seed one
-    // flow field from it and let every besieger descend that instead of A*-ing
-    const ring = new Map<string, Coord>();
-    for (const { s } of assigned) ring.set(`${s.x},${s.y}`, s);
-    const field = units.length >= FLOW_FIELD_MIN_UNITS ? buildFlowField(this.world, [...ring.values()], units[0].faction) : null;
-    for (const { u, s } of assigned) {
-      // Support units accompany the army but do not hold a structure target
-      // they cannot damage. Every fighter retains the exact target even while
-      // this order waits behind earlier Shift-chained commands.
-      if (UNITS[u.role as UnitKind]?.heal) this.orderUnit(u, 'attackMove', s.x, s.y, null, queue, field);
-      else this.queueOrder(u, { type: 'attackMove', x: s.x, y: s.y, foe: null, building: b, field }, queue);
-    }
+  orderGroupAttackBuilding(units: Unit[], building: Building, queue = false): void {
+    this.orderSystem.orderGroupAttackBuilding(units, building, queue);
   }
 
-  /** Plant (or move) a military building's rally flag — freshly trained fighters
-   *  march there on their own. */
-  setRally(b: Building | Site, x: number, y: number): void {
-    if (!b.def.military || b.removed) return;
-    b.rally = { x, y };
-    if (!b.rallyMesh) b.rallyMesh = this.view.createFlag();
-    b.rallyMesh.position.set(this.world.wx(x), 0, this.world.wz(y));
-    this.toast('Rally point set — trained fighters will muster there');
-    this.sfx('click');
+  setRally(target: Building | Site, x: number, y: number): void {
+    this.orderSystem.setRally(target, x, y);
   }
 
   /**
