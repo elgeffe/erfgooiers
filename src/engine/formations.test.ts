@@ -5,7 +5,7 @@ const open = () => true;
 
 describe('formationSpots', () => {
   it('returns distinct usable destinations for every shape', () => {
-    for (const shape of ['box', 'line', 'split'] as const) {
+    for (const shape of ['box', 'line', 'column', 'split'] as const) {
       const spots = formationSpots(10, 10, 8, shape, [{ x: 0, y: 10 }], open);
       expect(spots).toHaveLength(8);
       expect(new Set(spots.map(p => `${p.x},${p.y}`)).size).toBe(8);
@@ -13,12 +13,13 @@ describe('formationSpots', () => {
   });
 
   it('holds shape at huge counts: every slot distinct, ranks bounded', () => {
-    for (const shape of ['box', 'line', 'split'] as const) {
+    for (const shape of ['box', 'line', 'column', 'split'] as const) {
       const spots = formationSpots(100, 100, 200, shape, [{ x: 0, y: 100 }], open);
       expect(spots).toHaveLength(200);
       expect(new Set(spots.map(p => `${p.x},${p.y}`)).size).toBe(200);
       // nothing may end up absurdly far from the click point
-      for (const p of spots) expect(Math.hypot(p.x - 100, p.y - 100)).toBeLessThan(60);
+      const maxRadius = shape === 'column' ? 80 : 60;
+      for (const p of spots) expect(Math.hypot(p.x - 100, p.y - 100)).toBeLessThan(maxRadius);
     }
   });
 
@@ -29,6 +30,12 @@ describe('formationSpots', () => {
     expect(xs.size).toBeLessThanOrEqual(3);
     const ys = new Set(line.map(p => p.y));
     expect(ys.size).toBeGreaterThanOrEqual(20);
+  });
+
+  it('caps a column at three files and extends it along travel', () => {
+    const column = formationSpots(50, 50, 60, 'column', [{ x: 0, y: 50 }], open);
+    expect(new Set(column.map(p => p.y)).size).toBeLessThanOrEqual(3);
+    expect(new Set(column.map(p => p.x)).size).toBeGreaterThanOrEqual(20);
   });
 
   it('split forms two groups with a gap between them', () => {
@@ -46,10 +53,37 @@ describe('formationSpots', () => {
     expect(spots).not.toContainEqual({ x: 5, y: 5 });
   });
 
+  it('an explicit facing overrides the origin-derived direction', () => {
+    // the army approaches from the west, but the drag aims it north (-y):
+    // the line must spread across x and stack its ranks along y
+    const spots = formationSpots(50, 50, 30, 'line', [{ x: 0, y: 50 }], open, { x: 0, y: -1 });
+    const xs = new Set(spots.map(p => p.x));
+    expect(xs.size).toBeGreaterThanOrEqual(10);
+    // front rank first: smallest y (furthest north) leads
+    for (let i = 1; i < spots.length; i++) expect(spots[i].y).toBeGreaterThanOrEqual(spots[i - 1].y);
+    // a zero-length facing falls back to the origin-derived direction
+    const fallback = formationSpots(50, 50, 30, 'line', [{ x: 0, y: 50 }], open, { x: 0, y: 0 });
+    expect(fallback).toEqual(formationSpots(50, 50, 30, 'line', [{ x: 0, y: 50 }], open));
+  });
+
+  it('supports continuous 360 degree facing with unique rotated slots', () => {
+    const spots = formationSpots(80, 80, 300, 'line', [{ x: 20, y: 20 }], open, { x: 1, y: 1 });
+    expect(spots).toHaveLength(300);
+    expect(new Set(spots.map(p => `${p.x},${p.y}`)).size).toBe(300);
+    expect(new Set(spots.map(p => p.x)).size).toBeGreaterThan(20);
+    expect(new Set(spots.map(p => p.y)).size).toBeGreaterThan(20);
+  });
+
+  it('does not collapse selections beyond the old fixed fallback capacity', () => {
+    const spots = formationSpots(0, 0, 3000, 'box', [], open);
+    expect(spots).toHaveLength(3000);
+    expect(new Set(spots.map(p => `${p.x},${p.y}`)).size).toBe(3000);
+  });
+
   it('orders spots front rank first, along the direction of travel', () => {
     // approaching from the west (-x): the army faces +x, so the front rank
     // (largest x) must come back before deeper ranks (smaller x)
-    for (const shape of ['box', 'line', 'split'] as const) {
+    for (const shape of ['box', 'line', 'column', 'split'] as const) {
       const spots = formationSpots(50, 50, 30, shape, [{ x: 0, y: 50 }], open);
       const depths = spots.map(p => p.x);
       // non-increasing x: each spot is at or behind the previous one

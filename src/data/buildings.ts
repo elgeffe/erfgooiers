@@ -1,7 +1,7 @@
 import type { BuildingDef, BuildingKey } from '../types';
 
 export const DEFS: Record<BuildingKey, BuildingDef> = {
-  storehouse: { name: 'Storehouse', desc: 'A fortified depot: stores every good and looses arrows at raiders. Your first one is the castle — build more to shorten haul routes', model: 'castle',
+  storehouse: { name: 'Castle', desc: 'A fortified depot: stores every good and looses arrows at raiders. Build more to shorten haul routes', model: 'castle',
     cost: { timber: 12, stone: 16, coin: 10 }, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 500,
     tower: { range: 7, dmg: 8, rate: 1.6 } },
 
@@ -52,9 +52,12 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: { timber: 2, stone: 1 }, roof: 0x3a3a40, wall: 0x8f8a80, accent: 0x2a2a30,
     gather: { node: 'coal', out: 'coal', time: 5.5, range: 9 }, worker: 'Collier', wcolor: 0x44444c },
 
-  mint: { name: 'Mint', desc: 'Gold ore + coal → coins', model: 'cottage',
+  mint: { name: 'Mint', desc: 'Gold ore + coal → coins deposited directly into global stock', model: 'cottage',
     cost: { timber: 2, stone: 3 }, roof: 0xd9a441, wall: 0x9c8a6a, accent: 0xffd24a,
-    recipe: { inp: { goldore: 1, coal: 1 }, out: 'coin', time: 6 }, worker: 'Minter', wcolor: 0xd4af37 },
+    recipe: { inp: { goldore: 1, coal: 1 }, out: 'coin', time: 6, globalOutput: true }, worker: 'Minter', wcolor: 0xd4af37 },
+
+  market: { name: 'Market', desc: 'Assign surplus goods to export; invulnerable horse traders arrive automatically and pay in coin', model: 'cottage',
+    cost: { timber: 4, stone: 2, coin: 2 }, roof: 0xb54f38, wall: 0xc8aa78, accent: 0xffd24a, hp: 180 },
 
   vineyard: { name: 'Vineyard', desc: 'Grows & harvests grapes on its plots', model: 'farm',
     cost: { timber: 3, stone: 1 }, roof: 0x6a3d6e, wall: 0xb08a5c,
@@ -133,9 +136,26 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
         desc: 'The wall-breaker — devastating stones from far off, but crawls' },
     ] } },
 
+  monastery: { name: 'Monastery', desc: 'A stone cloister and chapel that trains priests to heal nearby allies', model: 'cottage',
+    cost: { timber: 4, stone: 6, coin: 2 }, roof: 0x70433a, wall: 0xd8cfba, accent: 0xd9a441, hp: 280,
+    military: { units: [
+      { kind: 'priest', cost: { coin: 3 }, time: 8,
+        desc: 'Humble support unit — automatically heals nearby friendly units and stays at the rear' },
+    ] } },
+
   watchtower: { name: 'Watchtower', desc: 'Looses arrows at raiders in range — build it along their path', model: 'mine',
     cost: { timber: 2, stone: 5 }, roof: 0x6a7076, wall: 0x9aa0a3, accent: 0x3f5aa0, hp: 320,
     tower: { range: 7, dmg: 9, rate: 1.4 } },
+
+  stonetower: { name: 'Stone Watchtower', desc: 'A tall stone tower — tougher and further-seeing than the wooden one', model: 'mine',
+    cost: { timber: 1, stone: 8, coin: 2 }, roof: 0x565c62, wall: 0x8f959a, accent: 0x3f5aa0, hp: 520,
+    tower: { range: 8, dmg: 11, rate: 1.5 } },
+
+  wall: { name: 'Stone Wall', desc: 'A solid stretch of rampart — raiders must batter it down to pass', model: 'mine',
+    cost: { stone: 4 }, roof: 0x8a9095, wall: 0x9aa0a3, accent: 0x6a7076, hp: 600, bulwark: true, entrance: 'none' },
+
+  gate: { name: 'Gate', desc: 'A fortified archway: your own units pass freely, enemies must break it down', model: 'mine',
+    cost: { timber: 2, stone: 3 }, roof: 0x77593a, wall: 0x9aa0a3, accent: 0x6b4a2f, hp: 450, bulwark: true, gate: true, entrance: 'through' },
 
   banditcamp: { name: 'Bandit Camp', desc: 'A den of raiders', model: 'barn',
     cost: {}, roof: 0x4a2e20, wall: 0x6b4a34, accent: 0x3a2a20, hp: 180 },
@@ -147,6 +167,12 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
   enemycastle: { name: 'Enemy Keep', desc: 'The enemy stronghold', model: 'castle',
     cost: {}, roof: 0x3a2a3a, wall: 0x8a8078, accent: 0x5a1a26, hp: 900,
     tower: { range: 7, dmg: 11, rate: 2.2 } },
+
+  enemywall: { name: 'Stronghold Wall', desc: 'The stronghold’s rampart — batter it down or find the gate', model: 'mine',
+    cost: {}, roof: 0x5a5560, wall: 0x777d82, accent: 0x4a5056, hp: 500, bulwark: true, entrance: 'none' },
+
+  enemygate: { name: 'Stronghold Gate', desc: 'The stronghold’s barred gate — its defenders pass, you don’t', model: 'mine',
+    cost: {}, roof: 0x4a3a30, wall: 0x777d82, accent: 0x3a2a20, hp: 400, bulwark: true, gate: true, entrance: 'through' },
 };
 
 /** Build-menu tabs, grouping buildings by the goal / production chain they serve. */
@@ -155,6 +181,6 @@ export interface BuildCategory { id: string; name: string; keys: BuildingKey[]; 
 export const MENU_CATEGORIES: BuildCategory[] = [
   { id: 'materials', name: 'Materials', keys: ['guildhall', 'woodcutter', 'sawmill', 'forester', 'quarry', 'storehouse'] },
   { id: 'food', name: 'Food', keys: ['farm', 'mill', 'bakery', 'pigfarm', 'butcher', 'vineyard', 'winery', 'fishery', 'clamdigger', 'tavern'] },
-  { id: 'coin', name: 'Coin', keys: ['goldmine', 'coalmine', 'mint'] },
-  { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'ironmine', 'smithy', 'armory', 'watchtower'] },
+  { id: 'coin', name: 'Coin', keys: ['goldmine', 'coalmine', 'mint', 'market'] },
+  { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'monastery', 'ironmine', 'smithy', 'armory', 'watchtower', 'stonetower', 'wall', 'gate'] },
 ];

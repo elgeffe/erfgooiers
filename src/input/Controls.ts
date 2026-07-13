@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { DEFS } from '../data/buildings';
 import { MAX_BATCH_CELLS } from '../net/protocol';
+import { isCommandableRole } from '../data/units';
 import type { Game } from '../game/Game';
+import { DEFAULT_SETTINGS, type GameSettings } from '../game/Settings';
 import type { View } from '../render/View';
 import type { UI } from '../ui/UI';
 import type { Coord, Formation, Mode, Unit } from '../types';
@@ -18,6 +20,8 @@ const FWD = new THREE.Vector3(-1, 0, -1).normalize();
 export class Controls {
   private game: Game | null = null;
   private mode: Mode = null;
+  /** Player preferences (main assigns the loaded object; edits apply live). */
+  settings: GameSettings = { ...DEFAULT_SETTINGS };
   private buildRot = 0;
   private ghostTile: { x: number; y: number } | null = null;
 
@@ -50,9 +54,12 @@ export class Controls {
     canvas.addEventListener('dblclick', e => this.doubleClickSelect(e));
     addEventListener('pointermove', e => this.onMove(e));
     addEventListener('pointerup', e => this.onUp(e));
-    canvas.addEventListener('wheel', e => { e.preventDefault(); this.view.zoom(e.deltaY > 0 ? 1.1 : 0.9); }, { passive: false });
+    canvas.addEventListener('wheel', e => { e.preventDefault(); this.view.zoom((e.deltaY > 0) !== this.settings.invertZoom ? 1.1 : 0.9); }, { passive: false });
     addEventListener('keydown', e => this.onKey(e));
     addEventListener('keyup', e => { this.keys[e.key.toLowerCase()] = false; });
+    // a missed keyup / pointerup (focus stolen by a menu, the window blurring
+    // mid-drag) must never leave the camera gliding forever
+    addEventListener('blur', () => this.resetInput());
     this.formationBar?.querySelectorAll<HTMLButtonElement>('button[data-formation]').forEach(button => {
       button.onclick = e => {
         e.stopPropagation();
@@ -63,15 +70,31 @@ export class Controls {
     });
   }
 
+  /** Drop every held key/drag state. Called on window blur and whenever a
+   *  full-screen menu opens, so a swallowed keyup or pointerup can't leave the
+   *  camera stuck panning in one direction. */
+  resetInput(): void {
+    for (const k in this.keys) this.keys[k] = false;
+    this.dragging = false;
+    this.roadPainting = false;
+    this.plotPainting = false;
+    this.demoDragging = false;
+    this.boxStart = null;
+    this.boxing = false;
+    this.orderDraft = null;
+    if (this.selbox) this.selbox.style.display = 'none';
+  }
+
   /** Programmatic selection (e.g. the hero chip) — same as click-selecting. */
   selectUnits(units: Unit[]): void {
-    this.selUnits = units.filter(u => !u.dead && u.faction === 'player' && this.game?.ownedByLocal(u) && u.dmg > 0);
+    this.selUnits = units.filter(u => !u.dead && u.faction === 'player' && this.game?.ownedByLocal(u) && isCommandableRole(u.role));
   }
 
   /** Bind to a level's Game; clears any active build mode and stale squads. */
   setGame(game: Game): void {
     this.game = game;
     this.selUnits = [];
+    this.orderDraft = null;
     for (const k in this.ctrlGroups) delete this.ctrlGroups[k];
     this.setMode(null);
   }
@@ -121,8 +144,9 @@ export class Controls {
     this.lastMouse = { x: e.clientX, y: e.clientY };
     // right-click cancels an active placement mode
     if (e.button === 2 && this.mode) { this.setMode(null); return; }
-    // right-click with an army selected = issue an order (no camera pan)
-    if (e.button === 2 && this.game && this.selUnits.length) { this.orderSelection(e); return; }
+    // right-click with an army selected = issue an order (no camera pan);
+    // holding and dragging drafts the formation's position & facing first
+    if (e.button === 2 && this.game && this.selUnits.length) { this.beginOrder(e); return; }
     // right-click with a barracks selected = plant its rally flag
     if (e.button === 2 && this.game && this.game.selected && this.game.selected.def?.military && this.game.ownedByLocal(this.game.selected)) {
       const rt = this.view.tileAt(e.clientX, e.clientY);
@@ -142,12 +166,17 @@ export class Controls {
   }
 
   private onMove(e: PointerEvent): void {
+    // the button was released somewhere we never heard about (over a menu, off
+    // the window): stop the drag-pan instead of gliding forever
+    if (this.dragging && (e.buttons & 6) === 0) this.dragging = false;
     if (this.dragging && this.lastMouse) {
       const dx = e.clientX - this.lastMouse.x, dy = e.clientY - this.lastMouse.y;
-      const scale = this.view.viewSize * 2 / innerHeight;
+      const scale = this.view.viewSize * 2 / innerHeight * this.settings.panSpeed;
       const v = RIGHT.clone().multiplyScalar(-dx * scale * 0.72).add(FWD.clone().multiplyScalar(dy * scale));
       this.view.pan(v);
     }
+    // grow / redraw a right-drag formation draft
+    if (this.orderDraft) this.moveOrderDraft(e);
     // grow the selection box once the pointer moves past a small threshold
     if (this.boxStart) {
       const dx = e.clientX - this.boxStart.x, dy = e.clientY - this.boxStart.y;
@@ -166,6 +195,7 @@ export class Controls {
     this.dragging = false; this.roadPainting = false; this.plotPainting = false; this.demoDragging = false;
     this.lastDemoTile = null;
     this.flushPaint();
+    if (this.orderDraft && e.button === 2) this.commitOrder(e);
     if (this.boxStart && this.game) {
       if (this.boxing) this.selectBox(this.boxStart.x, this.boxStart.y, e.clientX, e.clientY);
       else this.clickSelect(e);
@@ -217,7 +247,7 @@ export class Controls {
     const u = this.game.pickUnit(gp.x, gp.z);
     if (u) {
       this.game.select(u);
-      this.selUnits = u.faction === 'player' && this.game.ownedByLocal(u) && u.dmg > 0 ? [u] : [];
+      this.selUnits = u.faction === 'player' && this.game.ownedByLocal(u) && isCommandableRole(u.role) ? [u] : [];
       return;
     }
     this.selUnits = [];
@@ -230,10 +260,10 @@ export class Controls {
     e.preventDefault();
     const gp = this.view.groundPoint(e.clientX, e.clientY);
     const clicked = this.game.pickUnit(gp.x, gp.z);
-    if (!clicked || clicked.faction !== 'player' || !this.game.ownedByLocal(clicked) || clicked.dmg <= 0) return;
+    if (!clicked || clicked.faction !== 'player' || !this.game.ownedByLocal(clicked) || !isCommandableRole(clicked.role)) return;
     const picked: Unit[] = [];
     for (const u of this.game.units) {
-      if (u.dead || u.faction !== 'player' || !this.game.ownedByLocal(u) || u.dmg <= 0 || u.role !== clicked.role) continue;
+      if (u.dead || u.faction !== 'player' || !this.game.ownedByLocal(u) || !isCommandableRole(u.role) || u.role !== clicked.role) continue;
       const s = this.view.worldToScreen(u.mesh.position.x, u.mesh.position.y, u.mesh.position.z);
       if (s.x >= 0 && s.x <= innerWidth && s.y >= 0 && s.y <= innerHeight) picked.push(u);
     }
@@ -249,7 +279,7 @@ export class Controls {
     const minY = Math.min(y0, y1), maxY = Math.max(y0, y1);
     const picked: Unit[] = [];
     for (const u of this.game.units) {
-      if (u.faction !== 'player' || !this.game.ownedByLocal(u) || u.dmg <= 0) continue;
+      if (u.faction !== 'player' || !this.game.ownedByLocal(u) || !isCommandableRole(u.role)) continue;
       const s = this.view.worldToScreen(u.mesh.position.x, u.mesh.position.y, u.mesh.position.z);
       if (s.x >= minX && s.x <= maxX && s.y >= minY && s.y <= maxY) picked.push(u);
     }
@@ -257,23 +287,69 @@ export class Controls {
     if (picked.length) this.ui.toast(`${picked.length} selected`);
   }
 
-  /** Right-click order for the current selection: attack a hostile, else
-   *  attack-move in formation (each unit gets its own nearby tile). */
-  private orderSelection(e: PointerEvent): void {
+  /** A pending right-click order: the anchor tile/point, whether the drag has
+   *  grown into a formation draft, and the last drawn facing (to skip redraws). */
+  private orderDraft: { tx: number; ty: number; gx: number; gz: number; active: boolean; angle: number | null; queue: boolean } | null = null;
+
+  /** Right-click down: attack a hostile immediately; on open ground, arm a
+   *  draft — release in place orders as before, holding and dragging previews
+   *  the formation on its tiles and aims it along the drag. Holding Shift chains
+   *  the command behind any already in flight instead of replacing it. */
+  private beginOrder(e: PointerEvent): void {
     if (!this.game) return;
+    const queue = e.shiftKey;
     const gp = this.view.groundPoint(e.clientX, e.clientY);
     // Screen-space picking matches the visible body in the isometric view;
     // ground-only picking can land behind a tall unit when its torso is clicked.
     const foe = this.pickUnitAtPointer(e, true) ?? this.game.pickUnit(gp.x, gp.z);
-    const t = this.view.tileAt(e.clientX, e.clientY);
     const unitIds = this.selUnits.map(u => u.id);
     if (foe && foe.faction !== 'player') {
-      this.game.submitCommand({ type: 'orderUnits', unitIds, order: { type: 'attack', targetId: foe.id }, formation: this.formation });
+      this.game.submitCommand({ type: 'orderUnits', unitIds, order: { type: 'attack', targetId: foe.id }, formation: this.formation, queue });
       this.view.showOrderMarker(foe.mesh.position.x, foe.mesh.position.z, true);
-    } else if (t) {
-      this.game.submitCommand({ type: 'orderUnits', unitIds, order: { type: 'attackMove', x: t.x, y: t.y }, formation: this.formation });
-      this.view.showOrderMarker(gp.x, gp.z);
+      return;
     }
+    const t = this.view.tileAt(e.clientX, e.clientY);
+    if (!t) return;
+    // right-click a hostile building (wall, gate, camp, keep): besiege it
+    const b = this.game.buildingAt(t.x, t.y);
+    if (b && b.faction !== 'player') {
+      this.game.submitCommand({ type: 'orderUnits', unitIds, order: { type: 'attackBuilding', targetId: b.id }, formation: this.formation, queue });
+      this.view.showOrderMarker(gp.x, gp.z, true);
+      this.ui.toast(`${queue ? 'Then attacking' : 'Attacking'} the ${b.name}`);
+      return;
+    }
+    this.orderDraft = { tx: t.x, ty: t.y, gx: gp.x, gz: gp.z, active: false, angle: null, queue };
+  }
+
+  /** Grow / redraw the draft while the right button is held. */
+  private moveOrderDraft(e: PointerEvent): void {
+    const d = this.orderDraft;
+    if (!d || !this.game || !this.selUnits.length) return;
+    const gp = this.view.groundPoint(e.clientX, e.clientY);
+    const fx = gp.x - d.gx, fz = gp.z - d.gz;
+    if (!d.active && fx * fx + fz * fz < 1.2) return; // a plain click, so far
+    d.active = true;
+    const angle = Math.round(Math.atan2(fz, fx) * 36 / Math.PI);
+    if (angle === d.angle) return;
+    d.angle = angle;
+    const spots = this.game.formationPreview(this.selUnits, d.tx, d.ty, this.formation, { x: fx, y: fz });
+    this.view.showFormationPreview(spots, fx, fz);
+  }
+
+  /** Right button released: commit the draft (aimed if dragged, plain if not). */
+  private commitOrder(e: PointerEvent): void {
+    const d = this.orderDraft;
+    this.orderDraft = null;
+    this.view.hideFormationPreview();
+    if (!d || !this.game || !this.selUnits.length) return;
+    const gp = this.view.groundPoint(e.clientX, e.clientY);
+    const facing = d.active ? { x: gp.x - d.gx, y: gp.z - d.gz } : undefined;
+    this.game.submitCommand({
+      type: 'orderUnits', unitIds: this.selUnits.map(u => u.id),
+      order: { type: 'attackMove', x: d.tx, y: d.ty }, formation: this.formation,
+      facing, queue: d.queue,
+    });
+    this.view.showOrderMarker(d.gx, d.gz);
   }
 
   /** Nearest unit body under a pointer, measured in pixels rather than tiles. */
@@ -336,18 +412,28 @@ export class Controls {
       this.paintFlushT += dt;
       if (this.paintFlushT >= 0.15) this.flushPaint();
     }
-    const pan = dt * 14 * (this.view.viewSize / 13);
+    const pan = dt * 14 * (this.view.viewSize / 13) * this.settings.panSpeed;
     let v: THREE.Vector3 | null = null;
     const add = (dir: THREE.Vector3, s: number) => { v = (v || new THREE.Vector3()).add(dir.clone().multiplyScalar(s)); };
     if (this.keys['w'] || this.keys['arrowup']) add(FWD, pan);
     if (this.keys['s'] || this.keys['arrowdown']) add(FWD, -pan);
     if (this.keys['a'] || this.keys['arrowleft']) add(RIGHT, -pan);
     if (this.keys['d'] || this.keys['arrowright']) add(RIGHT, pan);
+    // optional edge panning: the pointer resting at a window edge pans too
+    if (this.settings.edgePan && this.lastMouse && !this.dragging && !this.boxing) {
+      const m = this.lastMouse, edge = 18;
+      if (m.x <= edge) add(RIGHT, -pan);
+      else if (m.x >= innerWidth - edge) add(RIGHT, pan);
+      if (m.y <= edge) add(FWD, pan);
+      else if (m.y >= innerHeight - edge) add(FWD, -pan);
+    }
     if (v) this.view.pan(v);
 
     // keep the selection live: drop any fighters that have died, then draw rings
     if (this.game && this.selUnits.length) {
-      this.selUnits = this.selUnits.filter(u => !u.dead && this.game!.units.indexOf(u) >= 0);
+      // Death is flagged before the simulation sweep. Avoid the former
+      // O(selection × all-units) indexOf scan on every rendered frame.
+      this.selUnits = this.selUnits.filter(u => !u.dead);
     }
     if (this.formationBar) this.formationBar.style.display = this.selUnits.length > 1 ? 'flex' : 'none';
     this.view.showSelection(this.selUnits);

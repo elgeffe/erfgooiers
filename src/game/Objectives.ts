@@ -15,10 +15,55 @@ export type ObjectiveDef =
   | { kind: 'stock'; reqs: StockReq[] }
   | { kind: 'produce'; item: ItemKey; n: number }
   | { kind: 'produceMulti'; reqs: StockReq[] }
+  /** Two goals in one level: hit the production targets AND train fighters —
+   *  military drill before the combat arc begins. */
+  | { kind: 'produceTrain'; reqs: StockReq[]; train: number }
   | { kind: 'collect'; n: number }
   | { kind: 'survive'; waves: number }
   | { kind: 'slay'; unit: UnitKind; n: number }
-  | { kind: 'destroy'; n: number };
+  /** Hunt several kinds at once (higher-difficulty hunts: wolves AND boars). */
+  | { kind: 'slayMulti'; reqs: { unit: UnitKind; n: number }[] }
+  | { kind: 'destroy'; n: number }
+  /** Total war (top ascensions): raze every enemy stronghold, kill every
+   *  hostile unit and outlast every raid still to come. */
+  | { kind: 'clearAll' };
+
+/**
+ * Adapt a level's objective to the run's ascension tier.
+ *  - From Very Hard (a ≥ 2), level 1 opens with a whole-economy multi goal —
+ *    tuned production and a fed workforce, not a single hut.
+ *  - From Absurd (a ≥ 3), economy quantities swell by half, honest to the name.
+ *  Combat and collection goals stay untouched: their counts are bounded by
+ *  what the map actually spawns.
+ */
+/** Combat levels whose goal becomes total annihilation at the top tier. */
+const CLEAR_ALL_LEVELS = new Set([5, 7, 8, 9]);
+
+export function ascendObjective(def: ObjectiveDef, ascension: number, levelIndex: number): ObjectiveDef {
+  // From Absurd (a ≥ 3) the Defend and assault levels stop asking for a fixed
+  // tally and demand the whole map cleared — every stronghold, unit and raid.
+  if (ascension >= 3 && CLEAR_ALL_LEVELS.has(levelIndex)) return { kind: 'clearAll' };
+  if (levelIndex === 1 && ascension >= 2) {
+    def = ascension >= 4
+      ? { kind: 'produceMulti', reqs: [{ item: 'timber', n: 12 }, { item: 'bread', n: 8 }, { item: 'coin', n: 4 }] }
+      : { kind: 'produceMulti', reqs: [{ item: 'timber', n: 10 }, { item: 'bread', n: 6 }] };
+  }
+  // the hunt hardens with the tier: from Hard the quarry is wolves AND boars,
+  // with counts growing every tier (the map spawns matching packs — see main)
+  if (def.kind === 'slay' && ascension >= 1 && (def.unit === 'boar' || def.unit === 'wolf')) {
+    const n = def.n + 2 * (ascension - 1);
+    def = { kind: 'slayMulti', reqs: [{ unit: 'boar', n }, { unit: 'wolf', n }] };
+  }
+  if (ascension < 3) return def;
+  const swell = (n: number) => Math.ceil(n * 1.5);
+  switch (def.kind) {
+    case 'produce': return { ...def, n: swell(def.n) };
+    case 'produceMulti': return { ...def, reqs: def.reqs.map(r => ({ ...r, n: swell(r.n) })) };
+    case 'produceTrain': return { ...def, reqs: def.reqs.map(r => ({ ...r, n: swell(r.n) })), train: swell(def.train) };
+    case 'stock': return { ...def, reqs: def.reqs.map(r => ({ ...r, n: swell(r.n) })) };
+    default: return def;
+  }
+}
 
 const ITEM_LABEL: Record<string, string> = {
   trunk: 'Trunk', timber: 'Timber', stone: 'Stone', wheat: 'Wheat', flour: 'Flour',
@@ -36,6 +81,8 @@ export class Objective {
   private readonly kills: Record<string, number> = {};      // enemy/wild kills per unit kind
   private wavesCleared = 0;
   private structures = 0; // enemy buildings destroyed
+  private trained = 0;    // fighters trained at the player's buildings
+  private clearAllBase = 0; // clearAll: hostile units + strongholds present at first sight
 
   constructor(readonly def: ObjectiveDef) {}
 
@@ -49,6 +96,9 @@ export class Objective {
   onCollect(): void {
     if (this.def.kind === 'collect') this.collected++;
   }
+
+  /** Fired by Game whenever a fighter finishes training at a player building. */
+  onTrain(): void { this.trained++; }
 
   /** Fired by Game when a unit dies (role = its unit kind, faction = its side). */
   onKill(role: string, faction: string): void {
@@ -68,9 +118,12 @@ export class Objective {
     if (d.kind === 'stock') return 'Stock ' + d.reqs.map(r => `${r.n} ${ITEM_LABEL[r.item].toLowerCase()}`).join(' + ');
     if (d.kind === 'produce') return `Produce ${d.n} ${ITEM_LABEL[d.item].toLowerCase()}`;
     if (d.kind === 'produceMulti') return 'Produce ' + d.reqs.map(r => `${r.n} ${ITEM_LABEL[r.item].toLowerCase()}`).join(' + ');
+    if (d.kind === 'produceTrain') return 'Produce ' + d.reqs.map(r => `${r.n} ${ITEM_LABEL[r.item].toLowerCase()}`).join(' + ') + ` · train ${d.train} fighters`;
     if (d.kind === 'survive') return `Survive ${d.waves} raid wave${d.waves > 1 ? 's' : ''}`;
     if (d.kind === 'slay') return `Slay ${d.n} ${UNITS[d.unit].name.toLowerCase()}${d.n > 1 ? 's' : ''}`;
+    if (d.kind === 'slayMulti') return 'Slay ' + d.reqs.map(r => `${r.n} ${UNITS[r.unit].name.toLowerCase()}${r.n > 1 ? 's' : ''}`).join(' + ');
     if (d.kind === 'destroy') return `Destroy ${d.n} enemy ${d.n > 1 ? 'strongholds' : 'stronghold'}`;
+    if (d.kind === 'clearAll') return 'Clear the map — every stronghold, every foe, every raid';
     return `Collect ${d.n} gold piles`;
   }
 
@@ -104,6 +157,22 @@ export class Objective {
       }
       return { done, label: parts.join(' · '), ratio: need ? have / need : 1 };
     }
+    if (d.kind === 'produceTrain') {
+      let have = 0, need = 0, done = true;
+      const parts: string[] = [];
+      for (const r of d.reqs) {
+        const made = this.produced[r.item] || 0;
+        const c = Math.min(r.n, made);
+        parts.push(`${ITEM_LABEL[r.item]} ${c}/${r.n}`);
+        have += c; need += r.n;
+        if (made < r.n) done = false;
+      }
+      const tr = Math.min(d.train, this.trained);
+      parts.push(`Trained ${tr}/${d.train}`);
+      have += tr; need += d.train;
+      if (this.trained < d.train) done = false;
+      return { done, label: parts.join(' · '), ratio: need ? have / need : 1 };
+    }
     if (d.kind === 'collect') {
       const c = Math.min(d.n, this.collected);
       return { done: this.collected >= d.n, label: `Gold piles ${c}/${d.n}`, ratio: c / d.n };
@@ -115,6 +184,28 @@ export class Objective {
     if (d.kind === 'slay') {
       const k = Math.min(d.n, this.kills[d.unit] || 0);
       return { done: (this.kills[d.unit] || 0) >= d.n, label: `${UNITS[d.unit].name} slain ${k}/${d.n}`, ratio: k / d.n };
+    }
+    if (d.kind === 'slayMulti') {
+      let have = 0, need = 0, done = true;
+      const parts: string[] = [];
+      for (const r of d.reqs) {
+        const k = Math.min(r.n, this.kills[r.unit] || 0);
+        parts.push(`${UNITS[r.unit].name}s ${k}/${r.n}`);
+        have += k; need += r.n;
+        if ((this.kills[r.unit] || 0) < r.n) done = false;
+      }
+      return { done, label: parts.join(' · '), ratio: need ? have / need : 1 };
+    }
+    if (d.kind === 'clearAll') {
+      const foes = game.hostileUnitsLeft();
+      const holds = game.enemyStructuresLeft();
+      const pending = game.scheduledWavesPending();
+      // snapshot the starting host the first time we look, for a sensible bar
+      if (this.clearAllBase === 0) this.clearAllBase = Math.max(1, foes + holds);
+      const done = foes === 0 && holds === 0 && !pending;
+      const label = `Foes ${foes} · Strongholds ${holds}` + (pending ? ' · a raid still looms' : '');
+      const ratio = done ? 1 : Math.max(0, Math.min(0.95, 1 - (foes + holds) / this.clearAllBase));
+      return { done, label, ratio };
     }
     // destroy
     const s = Math.min(d.n, this.structures);

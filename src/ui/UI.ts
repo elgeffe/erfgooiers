@@ -1,7 +1,8 @@
 import { DEFS, MENU_CATEGORIES } from '../data/buildings';
-import { ITEMS, RES_SHOWN } from '../data/items';
-import { UPGRADE_BY_ID } from '../data/upgrades';
+import { ITEMS, MARKET_VALUES, RES_SHOWN } from '../data/items';
+import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID } from '../data/upgrades';
 import { META_BY_ID } from '../data/metaUpgrades';
+import { UNITS, type UnitKind } from '../data/units';
 import { ROAD_STONE_COST } from '../constants';
 import { installFavicon, logoSVG } from './logo';
 import { audio } from '../audio/Audio';
@@ -30,6 +31,7 @@ function fmtTime(s: number): string {
  */
 export class UI {
   onMode: (m: Mode) => void = () => {};
+  onSandboxCard: (id: string) => boolean = () => false;
 
   private game: Game | null = null;
   private readonly resEls: Record<string, HTMLElement> = {};
@@ -43,6 +45,7 @@ export class UI {
   private tradeOpen = false;
   private pendingRequestId: string | null = null;
   private speedLocked = false;   // co-op runs at a fixed 1× — a local pause would desync
+  private sandbox = false;
 
   constructor() {
     $('logo').innerHTML = logoSVG(30);
@@ -125,18 +128,30 @@ export class UI {
   /** Refresh the "next raid" countdown banner, or hide it when no wave is pending. */
   updateWave(info: { in: number; count: number; label?: string } | null): void {
     const el = $('wavebar') as HTMLElement;
-    if (!info) { el.style.display = 'none'; return; }
+    if (!info) { el.style.display = 'none'; this.placeToasts(); return; }
     el.style.display = 'flex';
     // muster-triggered raids show what will provoke them instead of a countdown
     $('waveText').textContent = info.label ?? `Next raid in ${fmtTime(info.in)} · ${info.count} raiders`;
     el.classList.toggle('imminent', !info.label && info.in <= 10);
+    this.placeToasts();
+  }
+
+  /** Toast messages and the raid countdown share the top-centre of the screen;
+   *  drop the toast column below the banner whenever it is showing so the two
+   *  never overlay. */
+  private placeToasts(): void {
+    const wave = $('wavebar') as HTMLElement;
+    const showing = wave.style.display !== 'none';
+    ($('toasts') as HTMLElement).style.top = showing ? Math.round(wave.getBoundingClientRect().bottom + 8) + 'px' : '';
   }
 
   /** Toggle sandbox HUD: no objective card, no timer, no debug-win button. */
   setSandbox(on: boolean): void {
+    this.sandbox = on;
     ($('objective') as HTMLElement).style.display = on ? 'none' : '';
     ($('timerChip') as HTMLElement).style.display = on ? 'none' : '';
     ($('btnDebugWin') as HTMLElement).style.display = on ? 'none' : '';
+    if (this.perksOpen) this.renderPerks();
   }
 
   /** Toggle the co-op HUD: the Trade tab appears, the speed stays locked at 1×. */
@@ -262,6 +277,9 @@ export class UI {
     ).join('') : '<div class="tr-empty">Nothing traded yet.</div>';
   }
 
+  /** Refresh modifier-derived HUD after a live sandbox card purchase. */
+  refreshModifiers(): void { this.refreshBuildCosts(); }
+
   // ---------- resource bar & objective ----------
   private buildResbar(): void {
     const bar = $('resbar');
@@ -280,7 +298,7 @@ export class UI {
     for (const k of RES_SHOWN) {
       const d = this.game.itemBreakdown(k);
       this.resEls[k].textContent = String(d.store);
-      this.resRowEls[k].title = `${ITEMS[k].name} — ${d.store} in the storehouse · ${d.buildings} in buildings · ${d.carried} being carried`;
+      this.resRowEls[k].title = `${ITEMS[k].name} — ${d.store} in the castle · ${d.buildings} in buildings · ${d.carried} being carried`;
     }
   }
 
@@ -379,7 +397,10 @@ export class UI {
         return;
       }
       if (t && t.closest('#prioBtn')) {
-        if (o && o.isSite) { this.game!.submitCommand({ type: 'setPriority', siteId: o.id, priority: !o.priority }); this.renderInspector(); }
+        if (o && (o.isSite || (o.def && (o.def.recipe || o.def.gather)))) {
+          this.game!.submitCommand({ type: 'setPriority', siteId: o.id, priority: !o.priority });
+          this.renderInspector();
+        }
         return;
       }
       const trainBtn = t && t.closest('[data-train]') as HTMLElement | null;
@@ -394,6 +415,17 @@ export class UI {
         this.renderInspector();
       }
     });
+    $('inspBody').addEventListener('change', e => {
+      const target = e.target as HTMLInputElement | HTMLSelectElement;
+      if (!target.matches('[data-market-control]')) return;
+      const b = this.game?.selected;
+      if (!b || b.key !== 'market') return;
+      const item = ($('marketItem') as HTMLSelectElement).value as ItemKey;
+      const amount = Number(($('marketAmount') as HTMLInputElement).value);
+      this.game!.configureMarket(b, item, amount);
+      audio.play('click');
+      this.renderInspector();
+    });
   }
   showInspector(obj: any): void {
     $('inspector').style.display = obj ? 'block' : 'none';
@@ -404,24 +436,40 @@ export class UI {
     for (const k in obj) { if (!obj[k]) continue; s += `<div class="invrow">${itemIconSVG(k as ItemKey, 14)}${ITEMS[k as keyof typeof ITEMS].name}<b>${obj[k]}</b></div>`; }
     return s || '<div class="invrow" style="color:var(--ink-dim)">empty</div>';
   }
+  /** Keep the inspector clear of the objective card above it: the card's
+   *  height varies (long objective text, mutator chips) and a fixed top made
+   *  the two panels touch. */
+  private placeInspector(): void {
+    const obj = $('objective');
+    const visible = obj.style.display !== 'none' && obj.offsetParent !== null;
+    $('inspector').style.top = visible ? Math.round(obj.getBoundingClientRect().bottom + 10) + 'px' : '84px';
+  }
   private renderInspector(): void {
     const o = this.game?.selected; if (!o) return;
+    this.placeInspector();
     // A selected unit has no building `def` — show its live stats instead.
     if (o.role !== undefined && !o.def) {
       $('inspName').textContent = o.roleName;
-      // fighters show combat stats; workers show hunger & task
-      if (o.dmg > 0) {
-        $('inspSub').textContent = o.faction === 'player'
-          ? this.game?.ownedByLocal(o) ? 'Fighter — right-click to order, drag to box-select' : 'Allied fighter'
-          : 'Hostile';
+      const support = UNITS[o.role as UnitKind]?.heal;
+      if (o.dmg > 0 || support) {
+        $('inspSub').textContent = o.faction !== 'player'
+          ? 'Hostile'
+          : !this.game?.ownedByLocal(o)
+            ? support ? 'Allied support' : 'Allied fighter'
+            : support ? 'Support — automatically heals nearby allies' : 'Fighter — right-click to order, drag to box-select';
         const hp = Math.max(0, Math.round(o.hp)), ratio = Math.max(0, o.hp / o.maxHp);
         const hcol2 = ratio > 0.5 ? 'var(--good)' : ratio > 0.25 ? 'var(--accent)' : 'var(--bad)';
         let fb = '<div class="sect">Status</div><div class="invrow">' + o.status + '</div>';
         fb += `<div class="sect">Health</div><div class="invrow">HP<b>${hp} / ${o.maxHp}</b></div>`;
         fb += `<div class="bar"><div style="width:${Math.round(ratio * 100)}%;background:${hcol2}"></div></div>`;
-        fb += `<div class="sect">Combat</div><div class="invrow">Damage<b>${Math.round(o.dmg * 10) / 10}</b></div>`;
-        fb += `<div class="invrow">${o.range > 1.6 ? 'Range' : 'Reach'}<b>${Math.round(o.range * 10) / 10} tiles</b></div>`;
-        fb += `<div class="invrow">Attack every<b>${o.atkCd}s</b></div>`;
+        if (support) {
+          fb += `<div class="sect">Healing</div><div class="invrow">Restores<b>${support.amount} HP</b></div>`;
+          fb += `<div class="invrow">Radius<b>${support.range} tiles</b></div><div class="invrow">Prayer every<b>${support.rate}s</b></div>`;
+        } else {
+          fb += `<div class="sect">Combat</div><div class="invrow">Damage<b>${Math.round(o.dmg * 10) / 10}</b></div>`;
+          fb += `<div class="invrow">${o.range > 1.6 ? 'Range' : 'Reach'}<b>${Math.round(o.range * 10) / 10} tiles</b></div>`;
+          fb += `<div class="invrow">Attack every<b>${o.atkCd}s</b></div>`;
+        }
         $('inspBody').innerHTML = fb;
         return;
       }
@@ -454,12 +502,34 @@ export class UI {
       body += '<div class="sect">Stock</div>' + this.invRowsHTML(o.stock);
     } else {
       if (!o.active) body += o.def.worker ? '<div class="hnote">Waiting for a trained villager to staff it…</div>' : '<div class="hnote">Waiting for worker to arrive…</div>';
+      if (o.key === 'market') {
+        const selected = (o.marketItem ?? 'timber') as ItemKey;
+        const amount = o.marketAmount ?? 0;
+        const options = (Object.keys(MARKET_VALUES) as ItemKey[]).map(k =>
+          `<option value="${k}"${k === selected ? ' selected' : ''}>${ITEMS[k].name} · ${MARKET_VALUES[k]} coin each</option>`).join('');
+        const delivered = o.inp[selected] || 0, incoming = o.incoming[selected] || 0;
+        const transit = this.game!.marketCaravansInTransit(o);
+        body += '<div class="sect">Export surplus</div>';
+        body += `<div class="marketctl"><label>Resource<select id="marketItem" data-market-control>${options}</select></label>`;
+        body += `<label>Units per caravan<input id="marketAmount" data-market-control type="number" min="0" max="50" step="1" value="${amount}"></label></div>`;
+        body += `<div class="invrow">Ready at market<b>${delivered} / ${amount}</b></div>`;
+        body += `<div class="invrow">Being delivered<b>${incoming}</b></div>`;
+        body += `<div class="invrow">Expected income<b>${this.game!.marketIncomePerMinute(o)} coin / min</b></div>`;
+        body += `<div class="invrow">${transit ? 'Trader caravan' : amount > 0 ? 'Next caravan' : 'Exports paused'}<b>${transit ? 'in transit' : amount > 0 ? `${Math.ceil(o.marketTimer ?? 60)}s` : 'set an amount'}</b></div>`;
+        body += '<div class="sect">Market inventory</div>' + this.invRowsHTML(o.inp);
+        body += '<div class="sect">Coin awaiting pickup</div>' + this.invRowsHTML(o.out);
+        body += '<div class="hnote">Serfs carry assigned goods here before sale, then carry the proceeds back to storage. Caravans are neutral and cannot be attacked.</div>';
+      }
       if (o.def.recipe) {
         body += `<div class="sect">Production</div><div class="bar"><div style="width:${Math.round(o.prog * 100)}%"></div></div>`;
         body += '<div class="sect">Inputs</div>' + this.invRowsHTML(o.inp);
-        body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
+        body += o.def.recipe.globalOutput
+          ? `<div class="sect">Output</div><div class="hnote">${ITEMS[o.def.recipe.out as ItemKey].name} enters global stock immediately — no serf pickup required.</div>`
+          : '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
+        body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize'}</button>`;
       } else if (o.def.gather) {
         body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
+        body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize'}</button>`;
       } else if (o.def.tavern) {
         const tv = o.def.tavern;
         body += `<div class="sect">Provisions (any food · serves up to ${tv.capacity} workers)</div>` + this.invRowsHTML(o.inp);
@@ -490,8 +560,10 @@ export class UI {
         if (!o.active) body += '<div class="hnote">Building still being raised…</div>';
         else {
           for (const t of mil.units) {
-            const cost = Object.entries(t.cost).map(([k, n]) => `${itemIconSVG(k as ItemKey, 12)}${n}`).join('') || ' free';
-            body += `<button class="inspbtn" data-train="${t.kind}" ${t.desc ? `title="${t.desc}"` : ''}>+ ${unitLabel(t.kind)}${cost} · ${t.time}s</button>`;
+            const cost = Object.entries(t.cost).map(([k, n]) => `<i>${itemIconSVG(k as ItemKey, 13)}${n}</i>`).join('') || '<i>free</i>';
+            body += `<button class="inspbtn train" data-train="${t.kind}" ${t.desc ? `title="${t.desc}"` : ''}>`
+              + `<span class="tname">+ ${unitLabel(t.kind)}</span>`
+              + `<span class="tcost">${cost}<i class="ttime">${t.time}s</i></span></button>`;
             if (t.desc) body += `<div class="tinfo">${t.desc}</div>`;
           }
           if (o.def.military) body += '<div class="hnote">Right-click the map with this building selected to set a rally flag.</div>';
@@ -515,11 +587,11 @@ export class UI {
   // ---------- worker panel ----------
   private wireUnitPanel(): void {
     const toggle = $('unitsToggle'), panel = $('unitpanel');
-    toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; if (this.unitsOpen && this.perksOpen) this.setPerksOpen(false); panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : 'block'; this.renderUnits(); };
+    toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; if (this.unitsOpen && this.perksOpen) this.setPerksOpen(false); panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : ''; this.renderUnits(); };
     document.addEventListener('keydown', e => { if (e.key === 'u') toggle.click(); });
     const h3 = $('unitTitle');
     h3.style.cursor = 'pointer'; h3.title = 'Click to collapse';
-    h3.onclick = () => { this.unitsOpen = false; panel.style.display = 'none'; toggle.style.display = 'block'; };
+    h3.onclick = () => { this.unitsOpen = false; panel.style.display = 'none'; toggle.style.display = ''; };
     $('unitTabs').addEventListener('click', e => {
       const b = (e.target as HTMLElement).closest('.utab') as HTMLElement | null;
       if (b) { this.unitTab = b.dataset.tab!; this.renderUnits(); }
@@ -531,16 +603,49 @@ export class UI {
     if (role === 'serf') return 'serf';
     if (role === 'villager') return 'villager';
     if (role === 'laborer') return 'laborer';
-    if (['soldier', 'pikeman', 'archer', 'knight', 'lancer', 'horseknight', 'horsearcher', 'ballista', 'onager', 'trebuchet', 'hero'].includes(role)) return 'military';
+    if (role in UNITS) return 'military';
     return 'specialist';
   }
 
+  /** Always show the three labour-pool KPIs on the (collapsed) Workers button so
+   *  their health is visible at a glance, and pulse it when one runs short. */
+  private setWorkerWarning(shortage: boolean, metrics: ReturnType<Game['workerMetrics']>): void {
+    const toggle = $('unitsToggle');
+    toggle.classList.toggle('warn', shortage);
+    const pools = [
+      { k: 'serf', label: 'Serfs' },
+      { k: 'builder', label: 'Builders' },
+      { k: 'villager', label: 'Villagers' },
+    ] as const;
+    const chips = pools.map(({ k, label }) => {
+      const m = metrics[k];
+      return `<span class="utab${m.status === 'bad' ? ' short' : ''}" title="${label}: ${m.note}">${label} <b>${m.count}</b> <i class="kpi ${m.status}"></i></span>`;
+    }).join('');
+    const total = this.game ? this.game.units.filter(u => !u.dead && u.faction === 'player').length : 0;
+    toggle.innerHTML = `<h3 class="serif wtitle">${shortage ? '⚠️ ' : ''}Workers · ${total}</h3><div class="wkpis">${chips}</div>`;
+    const bad = pools.filter(p => metrics[p.k].status === 'bad');
+    toggle.title = bad.length ? 'Short-handed — ' + bad.map(p => `${p.label}: ${metrics[p.k].note}`).join(' · ') : 'Open the worker roster (U)';
+  }
+
+  /** Keep the Workers-button shortage badge live even while the panel is closed. */
+  private updateWorkerWarning(): void {
+    if (!this.game) return;
+    const metrics = this.game.workerMetrics();
+    const shortage = (['serf', 'villager', 'builder'] as const).some(k => metrics[k].status === 'bad');
+    this.setWorkerWarning(shortage, metrics);
+  }
+
   private renderUnits(): void {
-    if (!this.unitsOpen || !this.game) return;
+    if (!this.unitsOpen || !this.game) { this.updateWorkerWarning(); return; }
     const players = this.game.units.filter(u => u.faction === 'player' && this.game!.ownedByLocal(u));
     const counts: Record<string, number> = { all: players.length, serf: 0, villager: 0, laborer: 0, specialist: 0, military: 0 };
     for (const u of players) counts[this.unitCat(u.role)]++;
+    // Live logistics KPIs: which of the labour pools is short-handed.
+    const metrics = this.game.workerMetrics();
+    const metricFor = (id: string) => id === 'serf' ? metrics.serf : id === 'laborer' ? metrics.builder : id === 'villager' ? metrics.villager : null;
+    const shortage = (['serf', 'villager', 'builder'] as const).some(k => metrics[k].status === 'bad');
     $('unitTitle').textContent = `Workers · ${players.length}`;
+    this.setWorkerWarning(shortage, metrics);
     const tabsDef: { id: string; label: string }[] = [
       { id: 'all', label: 'All' },
       { id: 'serf', label: 'Serfs' },
@@ -554,7 +659,10 @@ export class UI {
     let tabs = '';
     for (const c of tabsDef) {
       if (c.id !== 'all' && counts[c.id] === 0 && this.unitTab !== c.id) continue;
-      tabs += `<button class="utab${this.unitTab === c.id ? ' on' : ''}" data-tab="${c.id}">${c.label} <b>${counts[c.id]}</b></button>`;
+      const m = metricFor(c.id);
+      // a small traffic-light dot + hover note flags an under-supplied pool
+      const kpi = m ? ` <i class="kpi ${m.status}" title="${m.note}"></i>` : '';
+      tabs += `<button class="utab${this.unitTab === c.id ? ' on' : ''}${m && m.status === 'bad' ? ' short' : ''}" data-tab="${c.id}"${m ? ` title="${m.note}"` : ''}>${c.label} <b>${counts[c.id]}</b>${kpi}</button>`;
     }
     if (tabs !== this.lastTabsHTML) { $('unitTabs').innerHTML = tabs; this.lastTabsHTML = tabs; }
 
@@ -607,13 +715,27 @@ export class UI {
     if (ids.length) {
       for (const id of ids) { const d = UPGRADE_BY_ID[id]; if (d) s += this.perkRow(d.icon, d.name + (counts[id] > 1 ? ` ×${counts[id]}` : ''), d.desc); }
     } else {
-      s += '<div class="invrow" style="color:var(--ink-dim)">No shop power-ups yet — buy some between levels.</div>';
+      s += `<div class="invrow" style="color:var(--ink-dim)">${this.sandbox ? 'Choose free cards below.' : 'No shop power-ups yet — buy some between levels.'}</div>`;
+    }
+    if (this.sandbox) {
+      const full = this.perkUpgrades.length >= MAX_CARDS;
+      s += `<div class="sect">Free sandbox cards (${this.perkUpgrades.length}/${MAX_CARDS})</div>`;
+      for (const d of UPGRADES) {
+        const disabled = full || !!d.unique && this.perkUpgrades.includes(d.id);
+        s += `<button class="perkrow perkbuy" data-card="${d.id}"${disabled ? ' disabled' : ''}><span class="pk-icon">${d.icon}</span><span class="pk-body"><span class="pk-name">${d.name} · free</span><span class="pk-desc">${d.desc}</span></span></button>`;
+      }
     }
     $('perklist').innerHTML = s;
+    if (this.sandbox) $('perklist').querySelectorAll<HTMLButtonElement>('[data-card]').forEach(button => {
+      button.onclick = () => {
+        if (this.onSandboxCard(button.dataset.card!)) this.renderPerks();
+      };
+    });
   }
 
   // ---------- toasts ----------
   toast(msg: string, cls?: string): void {
+    this.placeToasts();
     const el = document.createElement('div'); el.className = 'toast' + (cls ? ' ' + cls : ''); el.textContent = msg;
     $('toasts').appendChild(el);
     setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .4s'; setTimeout(() => el.remove(), 400); }, 3200);
@@ -624,7 +746,8 @@ export class UI {
     if (!this.game) return;
     this.refreshResbar();
     this.renderUnits();
-    if (this.game.selected) this.renderInspector();
+    const focused = document.activeElement as HTMLElement | null;
+    if (this.game.selected && !focused?.matches('[data-market-control]')) this.renderInspector();
     if (this.tradeOpen) this.renderTrade();
   }
 }

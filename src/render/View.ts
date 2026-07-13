@@ -5,7 +5,7 @@ import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, BuildingKey, Coord, Deco, Deposit, Field, Pickup, Tree, Unit } from '../types';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeHero, makeRock, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTree, makeUnit, noOutline, setActiveBiome, sphere, stdMat, withSeededScatter, type CritterKind } from './models';
+import { bakeGroupInto, box, circle, cone, cyl, makeArrow, makeBuilding, makeUnitCorpse, makeCritter, makeDeco, makeDeposit, makeFieldCrop, makeFireball, makeFish, makeFlag, makeFlame, makeHero, makeRock, makeMountain, makePickup, makePig, makePlotMarker, makeRuinWall, makeScaffold, makeSkyBird, makeTraderCaravan, makeTree, makeUnit, noOutline, setActiveBiome, sphere, stdMat, withSeededScatter, type CritterKind } from './models';
 
 // Cosmetic scatter only — must not touch worldgen/gameplay streams.
 const rnd = () => uiRng.next();
@@ -84,6 +84,12 @@ export class View {
   private readonly critters: Critter[] = [];
   private readonly skyBirds: SkyBird[] = [];
   private nextBirdT = 0;
+  // the horizon whale (island seas only), cruising in real time
+  private whale: THREE.Group | null = null;
+  // right-drag formation draft: pooled tile discs + a facing chevron
+  private formPreview: THREE.Group | null = null;
+  private formPreviewMarks: THREE.Mesh[] = [];
+  private formPreviewArrow: THREE.Group | null = null;
 
   // short-lived flags marking where the player just ordered units to go
   private readonly orderPings: { mesh: THREE.Group; life: number; max: number; mats: THREE.Material[] }[] = [];
@@ -233,6 +239,10 @@ this.skyBirds.length = 0;
     this.lakeTiles = [];
     this.millSails.length = 0;
     this.beacons.length = 0;
+    this.whale = null;
+    this.formPreview = null;           // its meshes died with the worldGroup
+    this.formPreviewMarks.length = 0;
+    this.formPreviewArrow = null;
     this.ghostKey = null;
     this.clearGore();
   }
@@ -453,11 +463,58 @@ this.skyBirds.length = 0;
   createFireball(): THREE.Group { const m = makeFireball(); this.worldGroup.add(m); return m; }
   createFlame(): THREE.Group { const m = makeFlame(); this.worldGroup.add(m); return m; }
   createFlag(): THREE.Group { const m = makeFlag(); this.worldGroup.add(m); return m; }
+  createTraderCaravan(): THREE.Group { const m = makeTraderCaravan(); this.worldGroup.add(m); this.freeze(m, false); return m; }
   /** Marker parented onto a building mesh (not the world) so it follows it. */
   createPlotMarker(): THREE.Group { return makePlotMarker(); }
 
   /** Plant a short-lived flag for a unit order. Focus-fire uses red; movement
    *  uses blue. Both fade in and out without touching shared scene materials. */
+  /** Draft positioning: ghost discs on every tile the formation would take,
+   *  plus a chevron showing which way the ranks face. Meshes are pooled and
+   *  reused across drags; the whole group hides when the drag ends. */
+  showFormationPreview(spots: Coord[], fx: number, fz: number): void {
+    if (!this.formPreview) {
+      this.formPreview = new THREE.Group();
+      this.formPreview.userData.dynamic = true;
+      this.worldGroup.add(this.formPreview);
+      const arrow = new THREE.Group();
+      const head = new THREE.Mesh(cone(0.34, 0.8, 4), stdMat({ color: 0xffd24a, transparent: true, opacity: 0.85 }, false));
+      head.rotation.x = Math.PI / 2;   // apex forward along the group's +z
+      head.position.y = 0.1;
+      arrow.add(head);
+      this.formPreview.add(arrow);
+      this.formPreviewArrow = arrow;
+    }
+    this.formPreview.visible = true;
+    const discMat = stdMat({ color: 0xffd24a, transparent: true, opacity: 0.4 }, false);
+    const n = Math.min(spots.length, 600); // pool cap — plenty to read the shape
+    while (this.formPreviewMarks.length < n) {
+      const m = new THREE.Mesh(circle(0.3, 10), discMat);
+      m.rotation.x = -Math.PI / 2;
+      this.formPreview.add(m);
+      this.formPreviewMarks.push(m);
+    }
+    let cx = 0, cz = 0;
+    for (let i = 0; i < this.formPreviewMarks.length; i++) {
+      const m = this.formPreviewMarks[i];
+      m.visible = i < n;
+      if (i >= n) continue;
+      const wx = this.world.wx(spots[i].x), wz = this.world.wz(spots[i].y);
+      m.position.set(wx, 0.06, wz);
+      cx += wx; cz += wz;
+    }
+    if (this.formPreviewArrow && n) {
+      const len = Math.hypot(fx, fz) || 1;
+      const ux = fx / len, uz = fz / len;
+      this.formPreviewArrow.position.set(cx / n + ux * 1.6, 0, cz / n + uz * 1.6);
+      this.formPreviewArrow.rotation.y = Math.atan2(ux, uz);
+    }
+  }
+
+  hideFormationPreview(): void {
+    if (this.formPreview) this.formPreview.visible = false;
+  }
+
   showOrderMarker(wx: number, wz: number, attack = false): void {
     const m = makeFlag(attack ? 0xc83232 : 0x3f5aa0, true);
     m.userData.dynamic = true;
@@ -1003,8 +1060,9 @@ this.skyBirds.length = 0;
     const foliage = [0x4a7350, 0x3f6a5e, 0x577d48, 0x426b43].map(c => stdMat({ color: c }));
     const trunkM = stdMat({ color: 0x5b4433 });
     // the Black Forest closes in: a far denser, near-solid ring of dark pines
-    // (island boards rise straight from the beach: barely any treeline at all)
-    const ringCount = biome.ambiance.forestRing ? 260 : seaAmb === 'all' ? 24 : 90;
+    // (island boards get none at all — past the beach the plain IS the sea,
+    // and a treeline there reads as trees standing in the water)
+    const ringCount = biome.ambiance.forestRing ? 260 : seaAmb === 'all' ? 0 : 90;
     for (let i = 0; i < ringCount; i++) {
       const ang = rnd() * Math.PI * 2;
       if (seaAmb === 'coast' && seaward(ang)) continue;
@@ -1106,6 +1164,27 @@ this.skyBirds.length = 0;
       this.beacons.push(beam);
     }
 
+    // A great whale cruises the horizon sea in a slow circle, its back arching
+    // out of the water and sliding under again (real-time, like the beacons).
+    if (biome.ambiance.whale && seaAmb) {
+      const w = new THREE.Group();
+      const bodyM = stdMat({ color: 0x46525e }), bellyM = stdMat({ color: 0x9fb3bd });
+      const body = new THREE.Mesh(sphere(1, 16, 10), bodyM);
+      body.scale.set(1.35, 1.2, 3.4); w.add(body);                 // nose along +z
+      const belly = new THREE.Mesh(sphere(1, 14, 9), bellyM);
+      belly.scale.set(1.2, 1.0, 3.1); belly.position.y = -0.3; w.add(belly);
+      const fin = new THREE.Mesh(cone(0.5, 1.0, 5), bodyM);
+      fin.position.set(0, 1.25, -0.5); w.add(fin);
+      for (const s of [1, -1]) {                                   // tail flukes
+        const fl = new THREE.Mesh(sphere(1, 10, 7), bodyM);
+        fl.scale.set(1.0, 0.18, 0.6); fl.position.set(s * 0.6, 0.3, -3.3);
+        fl.rotation.y = s * 0.6; w.add(fl);
+      }
+      w.userData = { ang: rnd() * Math.PI * 2, rad: boardR + GAP + 22 + rnd() * 14, t: rnd() * 20 };
+      this.worldGroup.add(w);
+      this.whale = w;
+    }
+
     // Two or three detailed cloud banks drift high above the board. Layered
     // blue-grey undersides and bright crowns give them volume without turning
     // the playfield into a ceiling of white blobs.
@@ -1176,12 +1255,28 @@ this.skyBirds.length = 0;
     }
     for (const s of this.millSails) s.rotation.z += dt * 0.45;
     for (const b of this.beacons) b.rotation.y += dt * 0.7;
+    this.updateWhale(dt);
     this.updatePigs(dt, buildings);
     this.updateFish(dt);
     this.updateCritters(dt);
 this.updateSkyBirds(dt);
     this.updateOrderPings(dt);
     this.ageGore(dt);
+  }
+
+  /** The horizon whale: a slow circular cruise with a breach-and-dive cycle. */
+  private updateWhale(dt: number): void {
+    const w = this.whale;
+    if (!w) return;
+    const u = w.userData as { ang: number; rad: number; t: number };
+    u.ang += dt * 0.045;
+    u.t += dt;
+    const cycle = Math.sin(u.t * 0.35);          // >0 back above the surf, <0 diving
+    const x = Math.cos(u.ang) * u.rad, z = Math.sin(u.ang) * u.rad;
+    w.position.set(x, -3.4 + cycle * 1.6, z);
+    // nose (+z) points along the direction of travel
+    w.lookAt(Math.cos(u.ang + 0.02) * u.rad, w.position.y, Math.sin(u.ang + 0.02) * u.rad);
+    w.rotateX(Math.cos(u.t * 0.35) * 0.3);       // pitch up surfacing, down diving
   }
 
   /** Scatter cute fish across the lake's water tiles (not the small ponds). */
@@ -1434,9 +1529,13 @@ this.updateSkyBirds(dt);
     if (this.ghostKey !== key) {
       this.scene.remove(this.ghost);
       this.ghost = makeBuilding(key, def, true);
-      const mk = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), noOutline(new THREE.MeshBasicMaterial({ color: 0xd9a441, transparent: true, opacity: 0.7, side: THREE.DoubleSide })));
-      mk.rotation.x = -Math.PI / 2; mk.position.set(-0.5, 0.04, 1.5); mk.userData.marker = true;
-      this.ghost.add(mk);
+      const offsets = def.entrance === 'none' ? [] : def.entrance === 'through'
+        ? [[-0.5, -1.5], [0.5, -1.5], [-0.5, 1.5], [0.5, 1.5]] : [[-0.5, 1.5]];
+      for (const [x, z] of offsets) {
+        const mk = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), noOutline(new THREE.MeshBasicMaterial({ color: 0xd9a441, transparent: true, opacity: 0.7, side: THREE.DoubleSide })));
+        mk.rotation.x = -Math.PI / 2; mk.position.set(x, 0.04, z); mk.userData.marker = true;
+        this.ghost.add(mk);
+      }
       this.scene.add(this.ghost); this.ghostKey = key;
     }
     this.ghost.visible = true;
@@ -1526,7 +1625,20 @@ this.updateSkyBirds(dt);
   /** MSAA + pixelRatio 2 is expensive on 4K laptops: when frames sustain over
    *  ~20 ms, step the pixel ratio down (never below 1); step back up once
    *  frames run comfortably fast again. Re-evaluated at most every 2 s. */
+  /** Settings: pin the pixel ratio high or low, or let adaptQuality steer it. */
+  setQualityMode(mode: 'auto' | 'high' | 'low'): void {
+    this.qualityMode = mode;
+    if (mode === 'auto') return; // adaptQuality resumes from wherever it stands
+    const pr = mode === 'high' ? this.maxPixelRatio : 1;
+    if (this.renderer.getPixelRatio() !== pr) {
+      this.renderer.setPixelRatio(pr);
+      this.renderer.setSize(innerWidth, innerHeight);
+    }
+  }
+  private qualityMode: 'auto' | 'high' | 'low' = 'auto';
+
   private adaptQuality(): void {
+    if (this.qualityMode !== 'auto') return; // pinned from the settings screen
     const now = performance.now();
     if (this.qLastT) this.qFrameMs += (Math.min(100, now - this.qLastT) - this.qFrameMs) * 0.04;
     this.qLastT = now;

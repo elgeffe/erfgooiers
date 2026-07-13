@@ -43,7 +43,11 @@ function specialMark(key: BuildingKey): string {
     case 'stable': return '<path d="M7 18v-6c0-4 4-6 7-4 2 1 3 3 3 5l2-1v4l-2 1v1h-3v-2h-4v2H7z"/><circle cx="14.5" cy="10.5" r=".9" fill="#2b2119"/>';
     case 'engineer': return '<path d="M5 19l7-9M12 10l6 9M12 10V5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="4" r="1.6"/><path d="M4 19h16v2H4z"/>';
     case 'barracks': return '<path d="M6 19l12-14M6 5l12 14M5 7l3-3M16 4l3 3M5 17l3 3M16 20l3-3" fill="none" stroke="currentColor" stroke-width="2.3"/>';
-    case 'watchtower': case 'enemywatchtower': return '<path d="M8 20h8l-1-11H9zM7 6h10v4H7zM6 5h3v3H6zM11 5h3v3h-3zM16 5h3v3h-3z"/><path d="M12 10v10" stroke="#493727"/>';
+    case 'monastery': return '<path d="M6 20V9h12v11zM9 9V6h6v3"/><path d="M12 3v8M9 6h6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 20v-5c0-3 4-3 4 0v5" fill="#493727"/>';
+    case 'market': return '<path d="M4 10h16l-2-5H6zM5 10v10h14V10"/><path d="M8 10v10M16 10v10M5 14h14" fill="none" stroke="#493727"/><circle cx="12" cy="16" r="2" fill="#ffd24a"/>';
+    case 'watchtower': case 'enemywatchtower': case 'stonetower': return '<path d="M8 20h8l-1-11H9zM7 6h10v4H7zM6 5h3v3H6zM11 5h3v3h-3zM16 5h3v3h-3z"/><path d="M12 10v10" stroke="#493727"/>';
+    case 'wall': case 'enemywall': return '<path d="M4 20V9h16v11z"/><path d="M4 6h4v3H4zM10 6h4v3h-4zM16 6h4v3h-4z"/><path d="M4 13h16M9 9v4M15 9v4M6 13v4M12 13v4M18 13v4" fill="none" stroke="#2b2119"/>';
+    case 'gate': case 'enemygate': return '<path d="M4 20V6h4v14zM16 20V6h4v14z"/><path d="M8 6h8v4H8z"/><path d="M9 20v-8c0-4 6-4 6 0v8z" fill="#493727"/><path d="M12 12v8M10 14h4M10 17h4" fill="none" stroke="#2b2119"/>';
     case 'banditcamp': return '<path d="M5 19L12 5l7 14z"/><circle cx="10" cy="14" r="1.5" fill="#2b2119"/><circle cx="14" cy="14" r="1.5" fill="#2b2119"/><path d="M10 18l2-2 2 2" fill="none" stroke="#2b2119"/>';
     case 'enemycastle': return '<path d="M5 20V8h3V5h3v3h3V5h3v3h2v12z"/><path d="M10 20v-5c0-3 4-3 4 0v5" fill="#2b2119"/>';
     default: return '<path d="M6 19V9l6-5 6 5v10z"/>';

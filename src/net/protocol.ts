@@ -66,7 +66,8 @@ export interface RoomSummary {
 
 export type NetUnitOrder =
   | { type: 'move' | 'attackMove'; x: number; y: number }
-  | { type: 'attack'; targetId: EntityId };
+  | { type: 'attack'; targetId: EntityId }
+  | { type: 'attackBuilding'; targetId: EntityId };
 
 export type GameCommand =
   | { type: 'placeBuilding'; key: BuildingKey; x: number; y: number; rot: number }
@@ -79,7 +80,8 @@ export type GameCommand =
   | { type: 'queueTraining'; buildingId: EntityId; unit: string }
   | { type: 'cancelTraining'; buildingId: EntityId; index: number }
   | { type: 'setRally'; buildingId: EntityId; x: number; y: number }
-  | { type: 'orderUnits'; unitIds: EntityId[]; order: NetUnitOrder; formation: Formation }
+  | { type: 'orderUnits'; unitIds: EntityId[]; order: NetUnitOrder; formation: Formation;
+      facing?: { x: number; y: number }; queue?: boolean }
   | { type: 'collectPickup'; x: number; y: number }
   | { type: 'setBell'; active: boolean }
   | { type: 'requestTrade'; item: ItemKey; amount: number; destinationId: EntityId }
@@ -141,7 +143,9 @@ function validCommand(value: unknown): value is GameCommand {
     case 'orderUnits': {
       if (!Array.isArray(value.unitIds) || value.unitIds.length > MAX_ORDER_UNITS || !value.unitIds.every(integer)) return false;
       if (!shortString(value.formation, 16) || !object(value.order) || !shortString(value.order.type, 16)) return false;
-      return value.order.type === 'attack'
+      if (value.queue !== undefined && typeof value.queue !== 'boolean') return false;
+      if (value.facing !== undefined && (!object(value.facing) || !finite(value.facing.x) || !finite(value.facing.y))) return false;
+      return value.order.type === 'attack' || value.order.type === 'attackBuilding'
         ? integer(value.order.targetId)
         : (value.order.type === 'move' || value.order.type === 'attackMove') && integer(value.order.x) && integer(value.order.y);
     }

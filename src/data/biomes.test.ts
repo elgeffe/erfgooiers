@@ -19,8 +19,9 @@ describe('campaignBiome', () => {
       1: ['polder', 'ardennes', 'ardennes', 'ardennes', 'ardennes', 'ardennes'],
       2: ['polder', 'ardennes', 'seaside', 'blackforest', 'blackforest', 'blackforest'],
       3: ['polder', 'island', 'seaside', 'blackforest', 'alps', 'alps'],
-      4: ['polder', 'island', 'seaside', 'blackforest', 'winter', 'alps'],
-      5: ['polder', 'island', 'seaside', 'blackforest', 'winter', 'hell'],
+      // Grim: winter claims the whole combat arc (5-9); the finale stays high
+      4: ['winter', 'winter', 'winter', 'winter', 'winter', 'alps'],
+      5: ['winter', 'winter', 'winter', 'winter', 'winter', 'hell'],
     };
     for (const [a, biomes] of Object.entries(journey)) {
       for (let i = 0; i < 6; i++) expect(campaignBiome(Number(a), 5 + i), `A${a} level ${5 + i}`).toBe(biomes[i]);
@@ -43,7 +44,7 @@ describe('campaignBiome', () => {
         for (const obj of level.objectives) {
           const items: ItemKey[] =
             obj.kind === 'produce' ? [obj.item]
-              : obj.kind === 'produceMulti' || obj.kind === 'stock' ? obj.reqs.map(r => r.item)
+              : obj.kind === 'produceMulti' || obj.kind === 'produceTrain' || obj.kind === 'stock' ? obj.reqs.map(r => r.item)
                 : [];
           for (const item of items) {
             expect(chainBuildable(item, banned), `A${a} level ${level.index} (${biome.key}): ${item}`).toBe(true);

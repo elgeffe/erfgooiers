@@ -61,6 +61,8 @@ export interface BiomeDef {
     /** Hellscape: peaks smoulder instead of snowing, water is lava (no fish,
      *  no reeds), and the flora reads as scorched. */
     scorched?: boolean;
+    /** No mountain tiles ever form here, whatever the level asks for (Texel). */
+    flatland?: boolean;
   };
   ambiance: {
     windmill: boolean;      // the horizon postcard windmill (Het Gooi)
@@ -72,6 +74,7 @@ export interface BiomeDef {
     sea?: 'coast' | 'all';
     lighthouse?: boolean;   // a red-banded light turning on the coast (Texel)
     dunes?: boolean;        // a near ring of sandy marram dunes instead of green hills
+    whale?: boolean;        // a great whale cruising the horizon sea (Texel)
   };
 }
 
@@ -245,9 +248,10 @@ export const BIOMES: Record<BiomeKey, BiomeDef> = {
     // nothing tall survives the North Sea wind
     disabledBuildings: ['vineyard', 'winery'],
     oreWeights: ['stone', 'stone', 'gold', 'iron', 'coal'],
-    gen: { mountainsAdd: 0, treeMult: 0.5, denseThickets: 0, snowline: false, coast: 'island' },
+    // dune country is flat as a pancake: no mountain ever breaks the skyline
+    gen: { mountainsAdd: 0, treeMult: 0.5, denseThickets: 0, snowline: false, coast: 'island', flatland: true },
     // no horizon village: past the beach there is only the sea
-    ambiance: { windmill: false, village: false, forestRing: false, peakRing: false, hillBumps: false, sea: 'all', lighthouse: true, dunes: true },
+    ambiance: { windmill: false, village: false, forestRing: false, peakRing: false, hillBumps: false, sea: 'all', lighthouse: true, dunes: true, whale: true },
   },
 
   hell: {
@@ -282,17 +286,22 @@ export const BIOMES: Record<BiomeKey, BiomeDef> = {
  *   Hard      → the march leaves home: the Polder (5), then the Ardennes
  *   Very Hard → level 7 follows the Delta coast; the Black Forest swallows 8+
  *   Absurd    → the hunt crosses to Texel (6), and the run ends in the Alps
- *   Grim      → winter falls on the high march (level 9 freezes over)
+ *   Grim      → winter falls on the WHOLE combat arc: every level from the
+ *               first raid to the high march (5–9) plays under snow. The
+ *               economy arc (1–4) stays in Het Gooi — winter bans the very
+ *               farm/bakery/vineyard chains those objectives demand.
  *   Infernal  → the dragon's hoard lies at the gates of Hell (level 10)
  */
 export function campaignBiome(ascension: number, levelIndex: number): BiomeKey {
   if (levelIndex <= 4 || ascension <= 0) return 'gooi';
+  // Grim's long winter: the combat levels' goals (survive/slay/destroy) are
+  // biome-proof, so the snow can claim them all without stranding an objective
+  if (ascension >= 4 && levelIndex >= 5 && levelIndex <= 9) return 'winter';
   if (levelIndex === 5) return 'polder';
   if (levelIndex === 6) return ascension >= 3 ? 'island' : 'ardennes';
   if (levelIndex === 7) return ascension >= 2 ? 'seaside' : 'ardennes';
   if (levelIndex === 8) return ascension >= 2 ? 'blackforest' : 'ardennes';
   if (levelIndex === 9) {
-    if (ascension >= 4) return 'winter';
     if (ascension >= 3) return 'alps';
     return ascension >= 2 ? 'blackforest' : 'ardennes';
   }

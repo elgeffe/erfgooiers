@@ -1,16 +1,16 @@
 import * as THREE from 'three';
 import { ROAD_STONE_COST, PLOT_RANGE, BASE_SPEED } from '../constants';
 import { DEFS } from '../data/buildings';
-import { ITEMS } from '../data/items';
-import { UNITS, damageMultiplier, formationRank, type UnitKind } from '../data/units';
+import { ITEMS, MARKET_VALUES } from '../data/items';
+import { UNITS, damageMultiplier, formationRank, structureDamage, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
 import { formationSpots } from '../engine/formations';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
-import { PLAYER_IDS, type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit } from '../types';
-import { doorTile, unitLabel } from './util';
+import { PLAYER_IDS, type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit, type UnitOrder } from '../types';
+import { buildingEntranceTiles, doorTile, unitLabel } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, ownerForFaction } from './ownership';
@@ -82,6 +82,8 @@ export class Game {
   onKill: (u: Unit) => void = () => {};
 
   private readonly pickups: { x: number; y: number }[] = [];
+  /** Decorative traders are not Units, so combat cannot target or kill them. */
+  private readonly caravans: { mesh: THREE.Group; market: Building; item: ItemKey; amount: number; state: 'arriving' | 'trading' | 'leaving'; edgeX: number; edgeZ: number; wait: number }[] = [];
   private dispatchT = 0;
   private fieldT = 0;
   private roadWarnT = 0;
@@ -171,7 +173,11 @@ export class Game {
     const serfs = kit.serfs + this.mods.extraSerfs();
     const laborers = kit.laborers + this.mods.extraLaborers();
     for (let i = 0; i < serfs; i++) this.spawnUnit('serf', 0xd8c49a, { x: d.x - 2 + (i % 4), y: d.y + Math.floor(i / 4) }, owner);
-    for (let i = 0; i < laborers; i++) { const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + (i % 3), y: d.y + Math.floor(i / 3) }, owner); u.roleName = 'Builder'; }
+    for (let i = 0; i < laborers; i++) {
+      const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + (i % 3), y: d.y + Math.floor(i / 3) }, owner);
+      u.roleName = 'Builder';
+      u.anchor = { x: u.tx, y: u.ty };
+    }
     // the Guild Hall trains the villagers who staff your buildings (separate from storage)
     const guild = this.placeBuilding('guildhall', cx + 3, cy, true, 0, 'player', owner);
     this.playerGuilds.set(owner, guild);
@@ -201,6 +207,7 @@ export class Game {
       faction, hp: maxHp, maxHp,
     };
     if (def.store) b.stock = {};   // player-built storehouses start empty
+    if (key === 'market') { b.marketItem = 'timber'; b.marketAmount = 0; b.marketTimer = 60; }
     const tiles = this.world.tiles;
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].b = b; if (tiles[y][x].tree) this.removeTree(x, y); if (tiles[y][x].deco) this.removeDeco(x, y); }
     this.buildings.push(b);
@@ -295,7 +302,7 @@ export class Game {
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
       home: null, wstate: 'idle', timer: 0, target: null, hunger: 70 + rnd() * 30, bob: 0, status: 'Idle',
       faction: 'player', spd: BASE_SPEED, hp: 20, maxHp: 20, dmg: 0, range: 0, atkCd: 1, atkTimer: 0,
-      dead: false, raider: false, foe: null, foeB: null, order: null, obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null,
+      dead: false, raider: false, foe: null, foeB: null, order: null, orderQueue: [], obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null, sepI: 0,
     };
     this.units.push(u);
     return u;
@@ -325,7 +332,7 @@ export class Game {
       maxHp: Math.round(def.hp * this.mods.combatMult('hp', 'hero')),
       dmg: def.dmg * this.mods.combatMult('damage', 'hero'),
       range: def.range, atkCd: def.atkCd, atkTimer: 0,
-      dead: false, raider: false, foe: null, foeB: null, order: null, obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null,
+      dead: false, raider: false, foe: null, foeB: null, order: null, orderQueue: [], obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null, sepI: 0,
     };
     this.units.push(u);
     this.playerHeroes.set(owner, u);
@@ -361,7 +368,7 @@ export class Game {
   }
 
   private sendTo(u: Unit, x: number, y: number): boolean {
-    const p = findPath(this.world, u.tx, u.ty, x, y);
+    const p = findPath(this.world, u.tx, u.ty, x, y, u.faction);
     if (p === null) { u.path = null; return false; }
     u.path = p; u.pathI = 0; return true;
   }
@@ -448,7 +455,7 @@ export class Game {
       if (b.owner !== owner || !b.active || !b.def.recipe) continue;
       for (const it in this.mods.recipeInputs(b.def)) {
         const have = (b.inp[it] || 0) + (b.incoming[it] || 0);
-        if (have < carryCap) demands.push({ pri: 1, to: b, item: it });
+        if (have < carryCap) demands.push({ pri: b.priority ? 0.75 : 1, to: b, item: it });
       }
     }
     for (const b of this.buildings) {
@@ -461,12 +468,30 @@ export class Game {
         if (have < 2) demands.push({ pri: 1, to: b, item: it });
       }
     }
+    // Commercial exports are deliberately lower priority than construction
+    // and production inputs. Serfs must physically stock the market before a
+    // caravan can buy anything.
+    for (const b of this.buildings) {
+      if (!b.active || b.key !== 'market' || b.faction !== 'player') continue;
+      const item = b.marketItem ?? 'timber', target = b.marketAmount ?? 0;
+      const missing = target - (b.inp[item] || 0) - (b.incoming[item] || 0);
+      for (let i = 0; i < missing; i++) demands.push({ pri: 1.5, to: b, item });
+    }
     for (const b of this.buildings) {
       if (b.owner !== owner || !b.active || b.def.store) continue;
       for (const it in b.out) {
         if (b.out[it] > 0) {
           const wanted = demands.some(d => d.item === it);
-          if (!wanted || b.out[it] >= outCap - 1) demands.push({ pri: 2, to: this.nearestStore(b), item: it, from: b });
+          // A producer at (or nearing) the output cap has STOPPED working —
+          // draining it un-halts production, but an outstanding consumer for
+          // this item must receive it directly. Creating a storage task here
+          // used to reserve the item before the consumer demand ran, causing
+          // full coal/gold mines to send goods to the castle ahead of a mint.
+          // Urgent drains beat unrelated input top-ups so a capped producer
+          // cannot starve forever. `wanted` remains the stronger item-specific
+          // rule: output never goes to storage while any destination wants it.
+          if (!wanted && b.out[it] >= outCap - 1) demands.push({ pri: b.priority ? 0.4 : 0.5, to: this.nearestStore(b), item: it, from: b });
+          else if (!wanted) demands.push({ pri: 2, to: this.nearestStore(b), item: it, from: b });
         }
       }
     }
@@ -575,7 +600,9 @@ export class Game {
     let target: Site | null = null;
     for (const s of this.sites) { if (claimable(s) && s.priority) { target = s; break; } }
     if (!target) for (const s of this.sites) { if (claimable(s)) { target = s; break; } }
-    if (target) { target.builder = u; u.target = target; u.wstate = 'build'; }
+    if (target) { target.builder = u; u.target = target; u.wstate = 'build'; u.path = null; }
+    // nothing to build: stroll about instead of standing as a fixed obstacle
+    else this.wander(u, dt, 'Strolling', 'Idle');
   }
 
   private outTotal(b: Building): number { let n = 0; for (const k in b.out) n += b.out[k]; return n; }
@@ -649,7 +676,13 @@ export class Game {
         u.status = 'Working';
         u.bob += dt * 10; u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.05;
         b.prog += dt / this.mods.recipeTime(def);
-        if (b.prog >= 1) { b.prog = 0; b.working = false; b.out[def.recipe.out] = (b.out[def.recipe.out] || 0) + 1; this.objective?.onProduce(def.recipe.out, this.mods.objectiveWeight(def.recipe.out)); }
+        if (b.prog >= 1) {
+          b.prog = 0; b.working = false;
+          const out = def.recipe.out;
+          if (def.recipe.globalOutput) this.store.stock![out] = (this.store.stock![out] || 0) + 1;
+          else b.out[out] = (b.out[out] || 0) + 1;
+          this.objective?.onProduce(out, this.mods.objectiveWeight(out));
+        }
       } else {
         u.status = 'Waiting for materials';
         if (this.outTotal(b) < this.mods.outCap()) {
@@ -793,6 +826,50 @@ export class Game {
     return d.store + d.buildings + d.carried;
   }
 
+  /**
+   * Live health of the three logistics labour pools — serfs (hauling), villagers
+   * (staffing buildings) and builders (raising sites). Each reports the pool
+   * size, a one-line demand read-out and a traffic-light status the workers panel
+   * colours in and the toggle badges as a persistent shortage warning. */
+  workerMetrics(): Record<'serf' | 'villager' | 'builder', { count: number; status: 'good' | 'warn' | 'bad'; note: string }> {
+    let serfs = 0, idleSerfs = 0, villagers = 0, idleVillagers = 0, builders = 0;
+    for (const u of this.units) {
+      if (u.dead || u.faction !== 'player') continue;
+      if (u.role === 'serf') { serfs++; if (!u.task && !u.collect) idleSerfs++; }
+      else if (u.role === 'villager') { villagers++; if (!u.home) idleVillagers++; }
+      else if (u.role === 'laborer') builders++;
+    }
+
+    // Serfs: count outstanding haul demands (sites awaiting materials, producers
+    // hungry for inputs or backed up with output nobody has fetched).
+    const carryCap = this.mods.carryCap();
+    let haulLoad = 0;
+    for (const s of this.sites) for (const it in s.needs) haulLoad += Math.max(0, s.needs[it] - (s.delivered[it] || 0) - (s.incoming[it] || 0));
+    for (const b of this.buildings) {
+      if (b.removed || !b.active) continue;
+      if (b.def.recipe) for (const it in this.mods.recipeInputs(b.def)) if (((b.inp[it] || 0) + (b.incoming[it] || 0)) < carryCap) haulLoad++;
+      if (!b.def.store) for (const it in b.out) if (b.out[it] > 0) haulLoad++;
+    }
+    const serf = { count: serfs,
+      status: (serfs === 0 && haulLoad > 0) || haulLoad > serfs * 2 ? 'bad' : (haulLoad > 0 && idleSerfs === 0) ? 'warn' : 'good',
+      note: haulLoad === 0 ? 'All caught up' : `${haulLoad} deliver${haulLoad === 1 ? 'y' : 'ies'} waiting` } as const;
+
+    // Villagers: posts left unstaffed for want of a trained villager.
+    let unstaffed = 0;
+    for (const b of this.buildings) if (!b.removed && b.faction === 'player' && b.def.worker && !b.worker) unstaffed++;
+    const villager = { count: villagers,
+      status: unstaffed > 0 ? 'bad' : idleVillagers === 0 ? 'warn' : 'good',
+      note: unstaffed > 0 ? `${unstaffed} building${unstaffed === 1 ? '' : 's'} unstaffed` : idleVillagers === 0 ? 'None spare' : `${idleVillagers} ready to post` } as const;
+
+    // Builders: sites in the ground versus hands to raise them.
+    const openSites = this.sites.length;
+    const builder = { count: builders,
+      status: (builders === 0 && openSites > 0) || openSites > builders ? 'bad' : openSites === builders && openSites > 0 ? 'warn' : 'good',
+      note: openSites === 0 ? 'No sites pending' : `${openSites} site${openSites === 1 ? '' : 's'} to raise` } as const;
+
+    return { serf, villager, builder };
+  }
+
   /** Every standing storage building (the castle plus any built storehouses). */
   stores(owner?: PlayerId): Building[] {
     return this.buildings.filter(b => b.def.store && !b.removed && (!owner || b.owner === owner));
@@ -867,8 +944,8 @@ export class Game {
       if (!t || t.type !== 'grass' || t.b || t.site || t.dep || t.road || t.field) return false;
       if (t.tree?.dense) return false;    // old-growth is not for clearing
     }
-    const d = doorTile({ x: tx, y: ty, rot });
-    return this.world.passable(d.x, d.y);
+    return buildingEntranceTiles({ x: tx, y: ty, rot, def: DEFS[key] })
+      .every(d => this.world.passable(d.x, d.y));
   }
 
   private depositInRange(kind: string, tx: number, ty: number, range: number): boolean {
@@ -987,6 +1064,10 @@ export class Game {
     for (const f of b.fieldsList) { const t = this.world.tiles[f.y][f.x]; if (t.field) { this.view.removeMeshes(t.field.meshes); t.field = null; this.view.refreshTile(f.x, f.y); } }
     for (let y = b.y; y < b.y + 2; y++) for (let x = b.x; x < b.x + 2; x++) this.world.tiles[y][x].b = null;
     if (b.rallyMesh) this.view.remove(b.rallyMesh);
+    for (let i = this.caravans.length - 1; i >= 0; i--) if (this.caravans[i].market === b) {
+      this.view.remove(this.caravans[i].mesh);
+      this.caravans.splice(i, 1);
+    }
     this.view.remove(b.mesh);
     this.buildings.splice(this.buildings.indexOf(b), 1);
     if (this.selected === b) this.select(null);
@@ -1009,22 +1090,32 @@ export class Game {
   /** Door/entrance tiles of every building and site — highlighted while painting roads. */
   entranceTiles(): Coord[] {
     const out: Coord[] = [];
-    for (const b of this.buildings) out.push(doorTile(b));
-    for (const s of this.sites) out.push(doorTile(s));
+    for (const b of this.buildings) out.push(...buildingEntranceTiles(b));
+    for (const s of this.sites) out.push(...buildingEntranceTiles(s));
     return out;
   }
 
-  /** Click-select a building/site at a tile, or collect a gold pile (used by Controls). */
+  /** Click-select a building/site at a tile (used by Controls). Gold piles are
+   *  no longer clicked up — a unit must walk over to fetch them. */
   selectAt(tx: number, ty: number): void {
     const t = this.world.tiles[ty][tx];
-    if (t.pickup) { this.submitCommand({ type: 'collectPickup', x: tx, y: ty }); return; }
+    if (t.pickup) {
+      const now = Date.now();
+      if (now - this.pickupHintT > 2500) {
+        this.pickupHintT = now;
+        this.toast('Send a unit (or your hero) to the gold pile to collect it');
+      }
+      return;
+    }
     if (t.b) this.select(t.b);
     else if (t.site) this.select(t.site);
     else this.select(null);
   }
+  private pickupHintT = 0;
+  private pickupScanT = 0;
 
-  /** A player collects a gold pile; only the collector banks the gold. */
-  collectGoldAt(tx: number, ty: number, owner: PlayerId = this.localPlayerId): void {
+  /** A unit reached a gold pile; only that unit's owner banks the gold. */
+  collectGoldAt(tx: number, ty: number, owner: PlayerId = this.localPlayerId, by?: Unit): void {
     const t = this.world.T(tx, ty);
     if (!t || !t.pickup) return;
     const gain = Math.max(1, Math.round(t.pickup.gold * this.mods.goldMult()));
@@ -1036,7 +1127,23 @@ export class Game {
     if (owner !== this.localPlayerId) return; // gold and fanfare are personal
     this.onGold(gain);
     this.sfx('coin');
-    this.toast('Collected a gold pile (+' + gain + ' gold)');
+    this.toast(`${by ? by.roleName : 'A unit'} collected a gold pile (+${gain} gold)`);
+  }
+
+  /** Any player unit standing by a gold pile picks it up — no clicking. Runs a
+   *  few times a second over the (short) pickup list via the spatial hash. */
+  private collectPickups(): void {
+    for (let i = this.pickups.length - 1; i >= 0; i--) {
+      const p = this.pickups[i];
+      let taker: Unit | null = null;
+      this.forUnitsNear(p.x, p.y, 2, u => {
+        if (taker || u.dead || u.faction !== 'player') return;
+        const dx = u.mesh.position.x - this.world.wx(p.x), dz = u.mesh.position.z - this.world.wz(p.y);
+        if (dx * dx + dz * dz <= 1.1 * 1.1) taker = u;
+      });
+      const collector = taker as Unit | null;
+      if (collector) this.collectGoldAt(p.x, p.y, collector.owner === 'p2' ? 'p2' : 'p1', collector);
+    }
   }
 
   // =====================================================================
@@ -1117,15 +1224,26 @@ export class Game {
 
   private attack(attacker: Unit, foe: Unit): void {
     attacker.lungeT = 0.22; // little hop into the swing
-    if (this.swingsSteel(attacker)) this.sfx('sword');
+    const s = this.meleeSfx(attacker);
+    if (s) this.sfx(s);
     const mult = damageMultiplier(attacker.role as UnitKind, foe.role as UnitKind);
     this.hurtUnit(attacker, foe, attacker.dmg * mult);
   }
 
-  /** Melee humans (soldiers, knights, bandits) clash steel; beasts stay mute. */
-  private swingsSteel(u: Unit): boolean {
+  /** The strike sound a melee unit makes, chosen by what it is: light blades
+   *  ring, heavy cavalry and knights clang, the shambling undead land wet
+   *  blunt thuds, beasts snap and bite, demons rake. Archers and siege loose
+   *  projectiles (their own sounds) so they swing silently here. */
+  private meleeSfx(u: Unit): 'sword' | 'clang' | 'maul' | 'bite' | 'claw' | null {
     const def = UNITS[u.role as UnitKind];
-    return !!def && def.model === 'human' && !def.arrows;
+    if (!def || def.arrows) return null;
+    if (def.model === 'beast' || def.model === 'wolf' || def.model === 'dragon') return 'bite';
+    if (def.model === 'demon') return 'claw';
+    switch (u.role) {
+      case 'zombie': case 'brute': return 'maul';
+      case 'knight': case 'horseknight': case 'hero': case 'lancer': case 'orc': return 'clang';
+      default: return 'sword';
+    }
   }
 
   private killUnit(u: Unit): void {
@@ -1139,24 +1257,33 @@ export class Game {
 
   private combatUpdate(u: Unit, dt: number): void {
     const def = UNITS[u.role as UnitKind];
+    if (def.heal) { this.supportUpdate(u, def.heal, dt); return; }
     const flying = !!def.flying;
     u.atkTimer = Math.max(0, u.atkTimer - dt);
     if (u.lungeT > 0) u.lungeT = Math.max(0, u.lungeT - dt);
     if (flying) this.animateFlight(u, dt);
     if (def.fire) this.fireVolley(u, dt);
 
-    // wild beasts leash: a chase that strays too far from home is abandoned
-    if (u.faction === 'wild' && def.leash && u.anchor) {
+    // leash: a chase that strays too far from home is abandoned. Wild beasts use
+    // their own short leash; hostile camp guards, now that they spot you from far
+    // off, get a generous one so they defend their camp instead of emptying it to
+    // chase a lone worker across the map. Raiders (marching on the castle) never leash.
+    const leash = u.faction === 'wild' ? def.leash
+      : (!u.raider && u.anchor ? (def.leash ?? 18) : undefined);
+    if (leash && u.anchor) {
       const da = Math.hypot(u.tx - u.anchor.x, u.ty - u.anchor.y);
       if (u.wstate === 'leash') {
-        if (da < 3) { u.wstate = 'idle'; }
+        if (da < 3) {
+          u.wstate = 'idle';
+          u.path = null; // FIX: Wipe the return path cleanly
+        }
         else {
           if (!u.path) this.sendTo(u, u.anchor.x, u.anchor.y);
           this.moveUnit(u, dt);
           u.status = 'Heading home';
           return;
         }
-      } else if (da > def.leash) { u.wstate = 'leash'; u.foe = null; u.path = null; return; }
+      } else if (da > leash) { u.wstate = 'leash'; u.foe = null; u.path = null; return; }
     }
 
     if (u.obeyT > 0) {
@@ -1166,15 +1293,21 @@ export class Game {
     }
     let foe = u.foe;
     if (foe && foe.dead) foe = null;
+    // a chained attack order whose target has fallen hands off to the next command
+    if (u.order && u.order.type === 'attack' && (!u.order.foe || u.order.foe.dead) && u.orderQueue.length && this.advanceOrder(u)) foe = u.foe;
     if (u.order && u.order.type === 'attack' && u.order.foe && !u.order.foe.dead) foe = u.order.foe;
     // pure 'move' orders don't auto-seek (lets you march past enemies); an
     // attack-move only re-engages once the obey window has passed
     const canSeek = (!u.order || u.order.type !== 'move') && u.obeyT <= 0;
-    // enemies that hold ground (wild beasts, camp guards) are short-sighted:
-    // YOU choose when the fight starts by walking up to them. Raiders and
-    // player units keep their full awareness.
-    const aggro = u.faction !== 'player' && !u.raider ? Math.min(def.aggro, 4.5) : def.aggro;
-    if (!foe && canSeek) foe = this.acquireTarget(u, aggro);
+    // wild beasts that hold ground are short-sighted: YOU choose when the fight
+    // starts by walking up to them. Hostile *units* (bandits, orcs, the undead —
+    // even camp guards) stay fully alert and pick you up at their real aggro
+    // range. Raiders and player units always keep their full awareness.
+    const aggro = u.faction === 'wild' && !u.raider ? Math.min(def.aggro, 4.5) : def.aggro;
+    // A locked structure target comes from an explicit siege order or from the
+    // unreachable-guard fallback below. Keep battering that structure instead
+    // of reacquiring the same guard on the next tick and oscillating forever.
+    if (!foe && canSeek && !u.foeB) foe = this.acquireTarget(u, aggro);
     u.foe = foe;
 
     if (foe) {
@@ -1196,7 +1329,19 @@ export class Game {
       } else {
         // chase — throttle A* so hundreds of pursuers don't re-path every tick;
         // charging beasts (boars) put on a burst of speed
-        if (!u.path) { u.timer -= dt; if (u.timer <= 0) { this.sendTo(u, foe.tx, foe.ty); u.timer = 0.4 + rnd() * 0.35; } }
+        if (!u.path) {
+          u.timer -= dt;
+          if (u.timer <= 0) {
+            const reached = this.sendTo(u, foe.tx, foe.ty);
+            u.timer = 0.4 + rnd() * 0.35;
+            // the foe is walled in (a garrison behind stronghold ramparts):
+            // don't mill about forever — batter down what stands in the way
+            if (!reached) {
+              const bt = this.buildingTargetFor(u);
+              if (bt) { u.foe = null; u.foeB = bt; return; }
+            }
+          }
+        }
         this.moveUnit(u, def.charge ? dt * def.charge : dt);
         u.status = 'Fighting';
       }
@@ -1231,12 +1376,17 @@ export class Game {
     // no foe: follow a move/attack-move order, wander near home, or hold
     if (u.order && (u.order.type === 'move' || u.order.type === 'attackMove')) {
       if (flying) {
-        if (this.moveFlying(u, dt, this.world.wx(u.order.x), this.world.wz(u.order.y))) u.order = null;
+        if (this.moveFlying(u, dt, this.world.wx(u.order.x), this.world.wz(u.order.y))) this.advanceOrder(u);
         return;
       }
       if (!u.path) {
-        if (u.tx === u.order.x && u.ty === u.order.y) { u.order = null; }
-        else if (!this.sendTo(u, u.order.x, u.order.y)) { u.order = null; }
+        if (u.tx === u.order.x && u.ty === u.order.y) { this.advanceOrder(u); }
+        // pathfinding is budgeted per tick: a freshly ordered horde sets off
+        // staggered over a few ticks instead of freezing the sim on one
+        else if (this.pathBudget > 0) {
+          this.pathBudget--;
+          if (!this.sendTo(u, u.order.x, u.order.y)) this.advanceOrder(u);
+        }
       }
       if (u.path) this.moveUnit(u, dt); else this.groundPose(u, flying);
     } else if (def.wander) {
@@ -1246,17 +1396,46 @@ export class Game {
     }
   }
 
+  private supportUpdate(u: Unit, heal: { range: number; amount: number; rate: number }, dt: number): void {
+    u.atkTimer = Math.max(0, u.atkTimer - dt);
+    if (u.atkTimer <= 0) {
+      let target: Unit | null = null, ratio = 1;
+      this.forUnitsNear(u.tx, u.ty, Math.ceil(heal.range) + 1, o => {
+        if (o === u || o.dead || o.faction !== u.faction || o.hp >= o.maxHp) return;
+        const dx = o.tx - u.tx, dy = o.ty - u.ty;
+        if (dx * dx + dy * dy > heal.range * heal.range) return;
+        const r = o.hp / o.maxHp;
+        if (r < ratio) { ratio = r; target = o; }
+      });
+      if (target) {
+        const ally = target as Unit;
+        ally.hp = Math.min(ally.maxHp, ally.hp + heal.amount);
+        u.atkTimer = heal.rate;
+        u.status = `Healing ${ally.roleName}`;
+      } else u.status = 'Tending the company';
+    }
+    u.foe = null; u.foeB = null;
+    if (u.order) {
+      if (u.tx === u.order.x && u.ty === u.order.y) this.advanceOrder(u);
+      else if (!u.path && this.pathBudget > 0) {
+        this.pathBudget--;
+        if (!this.sendTo(u, u.order.x, u.order.y)) this.advanceOrder(u);
+      }
+      if (u.path) this.moveUnit(u, dt); else this.groundPose(u, false);
+    } else this.groundPose(u, false);
+  }
+
   /** Resting pose between swings: melee units hop into each attack, fliers hover. */
   private groundPose(u: Unit, flying: boolean): void {
     if (flying) return; // animateFlight owns the y of a flier
     u.mesh.position.y = u.lungeT > 0 ? Math.sin((1 - u.lungeT / 0.22) * Math.PI) * 0.12 : 0;
   }
 
-  /** Idle beasts & camp guards amble around their anchor, pausing to root & graze. */
-  private wander(u: Unit, dt: number): void {
-    if (u.path) { this.moveUnit(u, dt); u.status = 'Roaming'; return; }
+  /** Idle beasts, camp guards & off-duty builders amble around their anchor. */
+  private wander(u: Unit, dt: number, moving = 'Roaming', resting = 'Grazing'): void {
+    if (u.path) { this.moveUnit(u, dt); u.status = moving; return; }
     u.mesh.position.y = 0;
-    u.status = 'Grazing';
+    u.status = resting;
     u.timer -= dt;
     if (u.timer > 0) return;
     u.timer = 4 + rnd() * 7;
@@ -1304,8 +1483,9 @@ export class Game {
   }
 
   private attackBuilding(u: Unit, b: Building): void {
-    if (this.swingsSteel(u)) this.sfx('sword');
-    b.hp -= u.dmg;
+    const s = this.meleeSfx(u);
+    if (s) this.sfx(s);
+    b.hp -= structureDamage(u.role as UnitKind, u.dmg);
     this.onHurt(this.buildingCenter(b).x, this.buildingCenter(b).z, b.faction);
     if (b.hp <= 0) this.destroyBuilding(b);
   }
@@ -1314,7 +1494,8 @@ export class Game {
     if (b.removed) return;
     const c = this.buildingCenter(b);
     for (let i = 0; i < 4; i++) this.onDeath(c.x + (rnd() - 0.5) * 1.4, c.z + (rnd() - 0.5) * 1.4, b.faction, b.def.roof, 'serf', 1);
-    this.objective?.onStructureDestroyed(b.faction);
+    // walls & gates are fortifications, not strongholds — no objective credit
+    if (!b.def.bulwark) this.objective?.onStructureDestroyed(b.faction);
     for (const o of this.units) if (o.foeB === b) o.foeB = null;
     const isCastle = (b.owner === 'p1' || b.owner === 'p2') && this.playerStores.get(b.owner) === b;
     this.removeBuilding(b);
@@ -1494,6 +1675,7 @@ export class Game {
     const list: Unit[] = [];
     for (const u of this.units) {
       if (u.dead || !u.mesh.visible) continue;
+      u.sepI = list.length;            // stamp the crowd index on the unit itself…
       list.push(u);
       const k = u.ty * W + u.tx;
       let c = cells.get(k);
@@ -1510,7 +1692,12 @@ export class Game {
         const c = cells.get((u.ty + oy) * W + (u.tx + ox));
         if (!c) continue;
         for (const o of c) {
-          if (o === u) continue;
+          // Resolve each pair once and push both participants. The old loop
+          // evaluated every overlap twice, dominating large moving armies.
+          // …and compare the stamped indices — no per-pair Map lookups in the
+          // hottest loop of the sim.
+          if (o.sepI <= u.sepI) continue;
+          if (u.role === 'serf' && o.role === 'serf') continue;
           const dx = o.mesh.position.x - u.mesh.position.x, dz = o.mesh.position.z - u.mesh.position.z;
           const r = ru + 0.3 * (o.mesh.scale.x || 1);
           const d2 = dx * dx + dz * dz;
@@ -1521,9 +1708,10 @@ export class Game {
             const ax = ((u.tx + o.ty) % 2) * 2 - 1, az = ((u.ty + o.tx) % 2) * 2 - 1;
             const l = Math.hypot(ax, az); nx = ax / l; nz = az / l;
           } else { nx = dx / d; nz = dz / d; }
-          // each of the pair sees the other and steps back its own half
+          // split the correction evenly between the pair
           const overlap = (r - d) * 0.5 * push;
           this.nudge(u, -nx * overlap, -nz * overlap);
+          this.nudge(o, nx * overlap, nz * overlap);
         }
       }
     }
@@ -1792,35 +1980,75 @@ export class Game {
     if (u.path) this.moveUnit(u, sdt); else u.mesh.position.y = 0;
   }
 
-  /** Toggle a construction site's priority (materials & builders go there first). */
-  togglePriority(s: Site): void {
+  /** Toggle priority on a construction site (materials & builders go there
+   *  first) or a production building (serfs feed & empty it first). */
+  togglePriority(s: Site | Building): void {
     s.priority = !s.priority;
     this.sfx('click');
     this.toast(s.priority ? s.def.name + ' prioritized' : s.def.name + ' no longer prioritized');
   }
 
-  /** Issue a command to a unit (used by Controls for hero/army orders). */
-  orderUnit(u: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null): void {
-    u.order = { type, x, y, foe };
-    u.foe = type === 'attack' ? foe : null;
+  /** Issue a command to a unit (used by Controls for hero/army orders). With
+   *  `queue`, the command is appended behind whatever the unit is already doing
+   *  (shift-click chaining) instead of replacing it. */
+  orderUnit(u: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, queue = false): void {
+    if (UNITS[u.role as UnitKind]?.heal && type === 'attack') { type = 'attackMove'; foe = null; }
+    const o: UnitOrder = { type, x, y, foe };
+    if (queue && (u.order || u.orderQueue.length)) { u.orderQueue.push(o); return; }
+    u.orderQueue.length = 0;
+    this.applyOrder(u, o);
+  }
+
+  /** Make an order the unit's active command, breaking off any current fight. */
+  private applyOrder(u: Unit, o: UnitOrder): void {
+    u.order = o;
+    u.foe = o.type === 'attack' ? o.foe : null;
     u.foeB = null;
     u.path = null;
-    // a fresh move/attack-move overrules whatever fight the unit was in:
-    // suppress re-aggro (and retaliation) long enough to break off and march
-    u.obeyT = type === 'attack' ? 0 : 2.5;
+    u.obeyT = o.type === 'attack' ? 0 : 2.5;
+
+    // FIX: Shift their home anchor to their new destination
+    // so they don't tether back to their old barracks/spawn grid
+    if (u.faction === 'player' && u.anchor) {
+      u.anchor = { x: o.x, y: o.y };
+    }
+  }
+
+  /** Current command done: pull the next chained order into effect, if any.
+   *  Returns true when a queued order took over, false when the queue is empty
+   *  (leaving `order` cleared exactly as the old `u.order = null` did). */
+  private advanceOrder(u: Unit): boolean {
+    const next = u.orderQueue.shift();
+    if (!next) { u.order = null; return false; }
+    this.applyOrder(u, next);
+    return true;
+  }
+
+  /** Ground a formation may stand on (shared by orders and the drag preview).
+   *  Must stay in lock-step with World.passable: a spot the pathfinder can't
+   *  reach (a dense thicket reads as open grass here) makes sendTo fail, and
+   *  that unit silently drops its order instead of marching — the root of
+   *  "not all of my units moved" on big, wooded selections. */
+  private readonly formationGround = (tx: number, ty: number): boolean => {
+    const t = this.world.T(tx, ty);
+    return !!t && t.type === 'grass' && !t.b && !t.site && !t.dep && !t.tree?.dense;
+  };
+
+  /** The tiles a selection would occupy — the right-drag aim preview. `facing`
+   *  is the continuous drag direction. */
+  formationPreview(units: Unit[], x: number, y: number, formation: Formation, facing: { x: number; y: number }): Coord[] {
+    return formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), this.formationGround, facing);
   }
 
   /** Order a whole selection: attacks converge on the foe, moves fan out into a
-   *  loose formation so the squad doesn't pile onto a single tile. */
-  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'box'): void {
+   *  loose formation so the squad doesn't pile onto a single tile. An explicit
+   *  `facing` (from the drag-to-aim gesture) overrides the marching direction. */
+  orderGroup(units: Unit[], type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, formation: Formation = 'box', facing?: { x: number; y: number }, queue = false): void {
     if (type === 'attack' && foe) {
-      for (const u of units) this.orderUnit(u, 'attack', foe.tx, foe.ty, foe);
+      for (const u of units) this.orderUnit(u, 'attack', foe.tx, foe.ty, foe, queue);
       return;
     }
-    const spots = formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), (tx, ty) => {
-      const t = this.world.T(tx, ty);
-      return !!t && t.type === 'grass' && !t.b && !t.site && !t.dep;
-    });
+    const spots = formationSpots(x, y, units.length, formation, units.map(u => ({ x: u.tx, y: u.ty })), this.formationGround, facing);
     // spots come back front rank first; march the army in battle order so
     // melee take the leading tiles and ranged/cavalry/siege fall in behind.
     // Stable sort keeps each rank's own order (and same-rank kinds together).
@@ -1828,8 +2056,30 @@ export class Game {
       .map((u, i) => ({ u, i, r: formationRank(u.role) }))
       .sort((a, b) => a.r - b.r || a.i - b.i);
     for (let i = 0; i < ordered.length; i++) {
-      const s = spots[Math.min(i, spots.length - 1)];
-      this.orderUnit(ordered[i].u, type, s.x, s.y);
+      // If terrain truly cannot provide enough ground, excess units hold their
+      // current unique tiles rather than all collapsing onto the final slot.
+      const s = spots[i] ?? { x: ordered[i].u.tx, y: ordered[i].u.ty };
+      this.orderUnit(ordered[i].u, type, s.x, s.y, null, queue);
+    }
+  }
+
+  /** The standing building on a tile, or null (Controls asks before ordering). */
+  buildingAt(tx: number, ty: number): Building | null {
+    const t = this.world.T(tx, ty);
+    return t && t.b && !t.b.removed ? t.b : null;
+  }
+
+  /** Order a selection to raze a hostile building: everyone marches on its
+   *  walls and locks it as their siege target (no waiting for auto-acquire). */
+  orderGroupAttackBuilding(units: Unit[], b: Building, queue = false): void {
+    if (b.removed) return;
+    for (const u of units) {
+      const s = this.siegeTile(u, b);
+      this.orderUnit(u, 'attackMove', s.x, s.y, null, queue);
+      // A chained siege can't lock the target yet (the unit is still finishing
+      // earlier orders); it re-engages on arrival through normal aggro. A direct
+      // order engages at once — this IS the fight they were sent to.
+      if (!queue) { u.obeyT = 0; u.foeB = b; }
     }
   }
 
@@ -1842,6 +2092,48 @@ export class Game {
     b.rallyMesh.position.set(this.world.wx(x), 0, this.world.wz(y));
     this.toast('Rally point set — trained fighters will muster there');
     this.sfx('click');
+  }
+
+  /**
+   * Muster the level's granted army OUTSIDE the castle: a tidy parade grid on
+   * the open ground in front of the gate, ranks extending away from the walls
+   * as the army grows. Blocked tiles dent a rank locally (tryTile skips them);
+   * anything that can't fit in the parade ground falls back to a ring spawn.
+   */
+  spawnStartArmy(groups: { kind: UnitKind; count: number }[]): Unit[] {
+    const total = groups.reduce((s, g) => s + g.count, 0);
+    if (total <= 0) return [];
+    const d = doorTile(this.store);
+    // march direction: straight out through the castle's door side
+    // (rot 0 = south, 1 = west, 2 = north, 3 = east — see doorTile)
+    const [dirX, dirY] = [[0, 1], [-1, 0], [0, -1], [1, 0]][this.store.rot || 0];
+    const cols = Math.max(4, Math.ceil(Math.sqrt(total * 1.8)));
+    const out: Unit[] = [];
+    const queue: UnitKind[] = [];
+    for (const g of groups) for (let i = 0; i < g.count; i++) queue.push(g.kind);
+    const tryTile = (x: number, y: number): void => {
+      if (!queue.length || this.units.length >= MAX_UNITS) return;
+      const t = this.world.T(x, y);
+      if (!t || t.type !== 'grass' || t.b || t.site || t.dep || t.tree || t.field) return;
+      out.push(this.spawnFighter(queue.shift()!, { x, y }, 'player'));
+    };
+    // first rank stands two tiles clear of the door; each following rank steps
+    // one further from the castle
+    for (let rank = 0; queue.length && rank < 40; rank++) {
+      const rx = d.x + dirX * (2 + rank), ry = d.y + dirY * (2 + rank);
+      for (let c = 0; queue.length && c < cols; c++) {
+        const off = (c % 2 === 0 ? 1 : -1) * Math.ceil(c / 2); // centre-out
+        tryTile(rx + (dirY !== 0 ? off : 0), ry + (dirX !== 0 ? off : 0));
+      }
+    }
+    // whatever the parade ground couldn't hold spawns around the door instead
+    for (const kind of queue.splice(0)) {
+      const spare = this.spawnSquad(kind, 1, this.world.wx(d.x) + dirX * 2, this.world.wz(d.y) + dirY * 2, 'player');
+      out.push(...spare);
+    }
+    // face the ranks away from the castle, toward the field
+    for (const u of out) u.mesh.rotation.y = Math.atan2(dirX, dirY);
+    return out;
   }
 
   /** Scatter `count` fighters of a kind around a world point (sandbox/level spawner). */
@@ -1891,9 +2183,39 @@ export class Game {
     // the commander's first raid gets extra grace beyond its usual cadence
     if (setup.commander) this.commanderT = -setup.commander.every * 0.75;
     if (setup.wild) for (const w of setup.wild) this.spawnWild(w.kind, w.count);
-    if (setup.camps) for (const c of setup.camps) for (let i = 0; i < c.count; i++) this.spawnStronghold('banditcamp', c.guards);
-    if (setup.keep) { const camp = this.spawnStronghold('enemycastle', setup.keep.guards); if (camp && setup.towers) for (let i = 0; i < setup.towers; i++) this.spawnTowerNear(camp); }
-    if (setup.boss) this.spawnBoss(setup.boss);
+    // gate garrisons: a camp planted ON each frontier pass — the enemy position
+    // that must fall before the army can travel through into the walled quarter
+    if (setup.gatecamps) {
+      for (const ez of this.world.enemyZones) {
+        const total = Math.round(setup.gatecamps.guards * this.garrisonMult);
+        this.spawnCampNear(ez.pass.x, ez.pass.y, total, setup.gatecamps.kinds ?? ['bandit']);
+      }
+    }
+    if (setup.camps) for (const c of setup.camps) for (let i = 0; i < c.count; i++) this.spawnStronghold('banditcamp', c.guards, c.kinds);
+    if (setup.keep) {
+      const camp = this.spawnStronghold('enemycastle', setup.keep.guards, setup.keep.kinds);
+      if (camp && setup.towers) for (let i = 0; i < setup.towers; i++) this.spawnTowerNear(camp);
+      if (camp && setup.keep.fortified) this.fortifyStronghold(camp);
+    }
+    // several fortified castles — each a walled keep ringed with watchtowers,
+    // dealt round-robin into the map's walled corners / mountain pockets
+    // (spawnStronghold already scales the garrison by garrisonMult)
+    if (setup.strongholds) {
+      const s = setup.strongholds;
+      for (let i = 0; i < s.count; i++) {
+        const keep = this.spawnStronghold('enemycastle', s.guards, s.kinds);
+        if (!keep) continue;
+        this.fortifyStronghold(keep);
+        for (let t = 0; t < (s.towers ?? 2); t++) this.spawnTowerNear(keep);
+      }
+    }
+    this.pendingBoss = null;
+    if (setup.boss) {
+      if (this.deferBoss && this.enemyStructuresLeft() > 0) {
+        this.pendingBoss = setup.boss;
+        this.toast(`Raze every enemy stronghold first — only then will the ${UNITS[setup.boss].name} reveal itself`, 'err');
+      } else this.spawnBoss(setup.boss);
+    }
   }
 
   /** Player-faction fighters currently alive (arming muster-triggered raids). */
@@ -1920,6 +2242,12 @@ export class Game {
 
   private combatDirector(sdt: number): void {
     if (!this.enemy) return;
+    // two-phase boss: once the whole enemy garrison is razed, the held-back
+    // dragon reveals itself and sweeps in from the edge for the final fight
+    if (this.pendingBoss && this.enemyStructuresLeft() === 0) {
+      const kind = this.pendingBoss; this.pendingBoss = null;
+      this.spawnBoss(kind, true);
+    }
     // launch scheduled raid waves at the castle. Waves are sequential: the
     // head wave launches on its trigger (a timestamp, or the player's muster
     // reaching size + a grace delay), then the next takes its place.
@@ -1946,9 +2274,14 @@ export class Game {
       if (wv.cleared || !wv.units.length) continue;
       if (wv.units.every(u => u.dead)) { wv.cleared = true; this.objective?.onWaveCleared(); this.toast('Raid repelled!'); }
     }
-    // the enemy commander sends fresh squads on a timer
+    // the enemy commander sends fresh squads on a timer — but reinforcements
+    // that muster "from camp" dry up once every camp and keep has been razed,
+    // so a cleared map stays cleared (and the clear-all objective can be won)
     const cmd = this.enemy.commander;
-    if (cmd) { this.commanderT += sdt; if (this.commanderT >= cmd.every) { this.commanderT = 0; this.spawnRaid(cmd.kind, cmd.count, cmd.from ?? 'camp'); } }
+    if (cmd && (cmd.from !== 'camp' || this.enemyStructuresLeft() > 0)) {
+      this.commanderT += sdt;
+      if (this.commanderT >= cmd.every) { this.commanderT = 0; this.spawnRaid(cmd.kind, cmd.count, cmd.from ?? 'camp'); }
+    }
   }
 
   /** Every tower (any faction) looses arrows at the nearest hostile fighter in range. */
@@ -2004,6 +2337,37 @@ export class Game {
   /** Extra wild presence from a level mutator (e.g. Wolf Country's packs). */
   spawnMutatorWild(kind: UnitKind, count: number): void { this.spawnWild(kind, count); }
 
+  /** Sandbox wave console: a raid of any size from the map edge, marching on
+   *  the castle. Returns how many actually spawned. */
+  summonWave(kind: UnitKind, count: number): number {
+    return this.spawnRaid(kind, count, 'edge').length;
+  }
+
+  /** Sandbox waves put on a timer: each entry marches when the sim clock hits
+   *  its hour. Works with or without a level enemy director. */
+  private readonly pendingWaves: { kind: UnitKind; count: number; at: number }[] = [];
+
+  /** Queue a sandbox wave `delay` sim-seconds from now (0 = at once). */
+  scheduleWave(kind: UnitKind, count: number, delay: number): void {
+    if (delay <= 0) { this.summonWave(kind, count); return; }
+    this.pendingWaves.push({ kind, count, at: this.elapsed + delay });
+    this.pendingWaves.sort((a, b) => a.at - b.at);
+  }
+
+  /** Seconds until the earliest scheduled sandbox wave, or null. */
+  nextScheduledWave(): { in: number; count: number } | null {
+    const w = this.pendingWaves[0];
+    return w ? { in: Math.max(0, w.at - this.elapsed), count: w.count } : null;
+  }
+
+  private launchPendingWaves(): void {
+    while (this.pendingWaves.length && this.elapsed >= this.pendingWaves[0].at) {
+      const w = this.pendingWaves.shift()!;
+      const n = this.summonWave(w.kind, w.count);
+      if (n) { this.toast(`The scheduled wave marches — ${n} ${unitLabel(w.kind).toLowerCase()}${n > 1 ? 's' : ''}!`, 'err'); this.sfx('error'); }
+    }
+  }
+
   /** Scatter wild beasts across the map's OUTER band, far from the starting
    *  settlement — hunting them is a deliberate expedition, never an ambush. */
   private spawnWild(kind: UnitKind, count: number): void {
@@ -2020,15 +2384,62 @@ export class Game {
     }
   }
 
-  /** Place an enemy stronghold away from the centre and post guards around it. */
-  private spawnStronghold(key: BuildingKey, guards: number): Building | null {
+  /** Extra weight on stronghold garrisons at higher ascensions (set by main). */
+  garrisonMult = 1;
+
+  /** Place an enemy stronghold away from the centre and post guards around it.
+   *  `kinds` mixes the garrison round-robin; the default is all bandits. */
+  private spawnStronghold(key: BuildingKey, guards: number, kinds: UnitKind[] = ['bandit']): Building | null {
     const spot = this.findStrongholdSpot();
     if (!spot) return null;
     const b = this.placeBuilding(key, spot.x, spot.y, true, 0, 'enemy');
     b.active = true;
     this.camps.push(b);
-    this.spawnSquad('bandit', guards, this.world.wx(spot.x), this.world.wz(spot.y), 'enemy');
+    const total = Math.round(guards * this.garrisonMult);
+    const per = new Map<UnitKind, number>();
+    for (let i = 0; i < total; i++) { const k = kinds[i % kinds.length]; per.set(k, (per.get(k) ?? 0) + 1); }
+    for (const [k, n] of per) this.spawnSquad(k, n, this.world.wx(spot.x), this.world.wz(spot.y), 'enemy');
     return b;
+  }
+
+  /** A camp as close as the ground allows to a given tile (frontier passes):
+   *  the camp building may sit just off the gap, but its garrison stands ON
+   *  the pass so nothing slips through without a fight. */
+  private spawnCampNear(px: number, py: number, guards: number, kinds: UnitKind[]): void {
+    let spot: { x: number; y: number } | null = null;
+    outer: for (let r = 0; r < 8 && !spot; r++) {
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        if (this.areaClear(px + dx, py + dy)) { spot = { x: px + dx, y: py + dy }; break outer; }
+      }
+    }
+    if (spot) {
+      const b = this.placeBuilding('banditcamp', spot.x, spot.y, true, 0, 'enemy');
+      b.active = true;
+      this.camps.push(b);
+    }
+    const per = new Map<UnitKind, number>();
+    for (let i = 0; i < guards; i++) { const k = kinds[i % kinds.length]; per.set(k, (per.get(k) ?? 0) + 1); }
+    for (const [k, n] of per) this.spawnSquad(k, n, this.world.wx(px), this.world.wz(py), 'enemy');
+  }
+
+  /** Ring a keep with walls and one barred gate facing the player's town.
+   *  Terrain that refuses a segment simply leaves a rough gap. */
+  private fortifyStronghold(b: Building): void {
+    const cx = this.world.W / 2, cy = this.world.H / 2;
+    const dirx = cx - b.x, diry = cy - b.y;
+    const side = Math.abs(dirx) > Math.abs(diry) ? (dirx > 0 ? 'e' : 'w') : (diry > 0 ? 's' : 'n');
+    const R = 4;
+    for (let dy = -R; dy <= R; dy += 2) for (let dx = -R; dx <= R; dx += 2) {
+      if (Math.abs(dx) !== R && Math.abs(dy) !== R) continue; // perimeter only
+      const gate = (side === 'e' && dx === R && dy === 0) || (side === 'w' && dx === -R && dy === 0)
+        || (side === 's' && dy === R && dx === 0) || (side === 'n' && dy === -R && dx === 0);
+      const x = b.x + dx, y = b.y + dy;
+      if (!this.areaClear(x, y)) continue;
+      const rot = gate && (side === 'e' || side === 'w') ? 1 : 0;
+      const w = this.placeBuilding(gate ? 'enemygate' : 'enemywall', x, y, true, rot, 'enemy');
+      w.active = true;
+    }
   }
 
   private spawnTowerNear(b: Building): void {
@@ -2040,19 +2451,60 @@ export class Game {
     }
   }
 
-  private spawnBoss(kind: UnitKind): void {
+  /** Boss health multiplier for the run's difficulty tier (set by main). */
+  bossHpMult = 1;
+
+  /** The dragon level's two-phase fight (set by main for higher ascensions):
+   *  the boss is held back until every enemy encampment and fortress has been
+   *  razed, then it reveals itself and sweeps in from the map edge. */
+  deferBoss = false;
+  private pendingBoss: UnitKind | null = null;
+
+  /** Standing enemy garrison structures — camps, keeps and their towers. The
+   *  deferred boss and the clear-all objective wait for this to reach zero.
+   *  Walls & gates don't count: they're fortifications to breach, not
+   *  strongholds to raze. */
+  enemyStructuresLeft(): number {
+    let n = 0;
+    for (const b of this.buildings) {
+      if (b.removed || b.faction !== 'enemy') continue;
+      if (b.key === 'banditcamp' || b.key === 'enemycastle' || b.key === 'enemywatchtower') n++;
+    }
+    return n;
+  }
+
+  /** Living hostile units on the map (clear-all objective). */
+  hostileUnitsLeft(): number {
+    let n = 0;
+    for (const u of this.units) if (!u.dead && u.faction !== 'player') n++;
+    return n;
+  }
+
+  /** True while the level still has scheduled raid waves yet to launch. */
+  scheduledWavesPending(): boolean {
+    const w = this.enemy?.waves;
+    return !!w && this.waveIdx < w.length;
+  }
+
+  private spawnBoss(kind: UnitKind, fromEdge = false): void {
     // on frontier maps the boss broods in the walled-off enemy quarter and
-    // stays there — the player picks when to march in and start that fight
-    const ez = this.world.enemyZone;
+    // stays there — the player picks when to march in and start that fight.
+    // `fromEdge` overrides that (the deferred two-phase reveal): the boss
+    // sweeps in from the map edge and bears down on the town.
+    const ez = fromEdge ? null : this.world.enemyZone;
     if (ez) {
-      this.spawnSquad(kind, 1, this.world.wx(ez.x), this.world.wz(ez.y), UNITS[kind].faction);
+      const squad = this.spawnSquad(kind, 1, this.world.wx(ez.x), this.world.wz(ez.y), UNITS[kind].faction);
+      for (const u of squad) u.hp = u.maxHp = Math.round(u.maxHp * this.bossHpMult);
       this.toast(`The ${UNITS[kind].name} broods in its mountain lair — muster before you march`, 'err');
       return;
     }
     const e = this.randomEdge();
     const squad = this.spawnSquad(kind, 1, e.x, e.z, UNITS[kind].faction);
     const castle = this.raidTarget();
-    for (const u of squad) { u.raider = true; if (castle) this.orderUnit(u, 'attackMove', castle.x + 1, castle.y + 1); }
+    for (const u of squad) {
+      u.hp = u.maxHp = Math.round(u.maxHp * this.bossHpMult);
+      u.raider = true; if (castle) this.orderUnit(u, 'attackMove', castle.x + 1, castle.y + 1);
+    }
     this.toast(`The ${UNITS[kind].name} descends upon Het Gooi!`, 'err');
   }
 
@@ -2064,23 +2516,89 @@ export class Game {
     return true;
   }
 
+  /** Deals strongholds round-robin across the map's walled enemy quarters. */
+  private zoneIdx = 0;
+  /** Tiles an army can walk to from the town centre (lazy, one BFS per level). */
+  private reachMask: Uint8Array | null = null;
+  private reachable(x: number, y: number): boolean {
+    const W = this.world.W, H = this.world.H;
+    if (x < 0 || y < 0 || x >= W || y >= H) return false;
+    if (!this.reachMask) {
+      // Reachable *for a besieging army*: enemy buildings can be razed, so
+      // they don't wall ground off. Gate garrisons planted ON a frontier pass
+      // used to plug the strict walk-mask, marking the whole quarter behind
+      // them unreachable — every stronghold then fell back to random ground in
+      // the player's half of the map, right next to the castle.
+      const walk = (tx: number, ty: number): boolean => {
+        if (this.world.passable(tx, ty)) return true;
+        const t = this.world.T(tx, ty);
+        return !!t && t.type === 'grass' && !!t.b && t.b.faction !== 'player' && !t.dep && !t.tree?.dense;
+      };
+      const seen = new Uint8Array(W * H);
+      const qx: number[] = [], qy: number[] = [];
+      const cx = Math.floor(W / 2), cy = Math.floor(H / 2);
+      // seed at the first walkable tile near the centre (the castle sits on it)
+      outer: for (let r = 1; r < 10; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (this.world.passable(cx + dx, cy + dy)) { qx.push(cx + dx); qy.push(cy + dy); seen[(cy + dy) * W + cx + dx] = 1; break outer; }
+      }
+      for (let i = 0; i < qx.length; i++) {
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = qx[i] + dx, ny = qy[i] + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H || seen[ny * W + nx]) continue;
+          if (!walk(nx, ny)) continue;
+          seen[ny * W + nx] = 1; qx.push(nx); qy.push(ny);
+        }
+      }
+      this.reachMask = seen;
+    }
+    return !!this.reachMask[y * W + x];
+  }
+
   private findStrongholdSpot(): { x: number; y: number } | null {
     const W = this.world.W, H = this.world.H, cx = W / 2, cy = H / 2;
-    // frontier maps: strongholds live inside the walled-off enemy quarter
-    const ez = this.world.enemyZone;
+    const spaced = (x: number, y: number) => this.camps.every(c => Math.hypot(c.x - x, c.y - y) >= 6);
+    // a keep no army can walk to is no objective: demand a reachable doorstep
+    const open = (x: number, y: number): boolean => {
+      if (!this.areaClear(x, y) || !spaced(x, y)) return false;
+      for (let oy = -1; oy <= 2; oy++) for (let ox = -1; ox <= 2; ox++) {
+        if ((ox === -1 || ox === 2 || oy === -1 || oy === 2) && this.reachable(x + ox, y + oy)) return true;
+      }
+      return false;
+    };
+    // frontier maps: strongholds live inside the walled-off enemy quarters
+    // (dealt round-robin when several corners are walled), crowning the
+    // deepest ground in the corner rather than lining the pass
+    const zones = this.world.enemyZones;
+    const ez = zones.length ? zones[this.zoneIdx++ % zones.length] : null;
     if (ez) {
-      for (let tries = 0; tries < 400; tries++) {
+      let best: { x: number; y: number } | null = null, bd = -1;
+      for (let tries = 0; tries < 500; tries++) {
         const x = ez.x + Math.floor((rnd() * 2 - 1) * ez.r), y = ez.y + Math.floor((rnd() * 2 - 1) * ez.r);
         if (x < 2 || y < 2 || x > W - 4 || y > H - 4) continue;
         if (Math.hypot(x - ez.x, y - ez.y) > ez.r) continue;
-        if (this.areaClear(x, y)) return { x, y };
+        if (!open(x, y)) continue;
+        const d = Math.hypot(x - cx, y - cy);
+        if (d > bd) { bd = d; best = { x, y }; }
       }
+      if (best) return best;
       // the quarter can be waterlogged on a wet seed — fall through to anywhere
     }
-    for (let tries = 0; tries < 400; tries++) {
-      const x = 2 + Math.floor(rnd() * (W - 5)), y = 2 + Math.floor(rnd() * (H - 5));
-      if (Math.abs(x - cx) < 12 && Math.abs(y - cy) < 12) continue; // keep clear of the player's start
-      if (this.areaClear(x, y)) return { x, y };
+    // prefer walk-reachable ground; only settle for anywhere if none exists.
+    // Keep WELL clear of the player's start (scaled to the map — a flat 12
+    // tiles put fallback camps in the middle of the town on big maps) and take
+    // the farthest candidate rather than the first, so a fallback camp still
+    // reads as frontier trouble, never a squatter beside the castle.
+    const clear = Math.max(12, Math.round(Math.min(W, H) * 0.22));
+    for (const anywhere of [false, true]) {
+      let best: { x: number; y: number } | null = null, bd = -1;
+      for (let tries = 0; tries < 400; tries++) {
+        const x = 2 + Math.floor(rnd() * (W - 5)), y = 2 + Math.floor(rnd() * (H - 5));
+        const d = Math.hypot(x - cx, y - cy);
+        if (d < clear) continue; // keep clear of the player's start
+        if (!(anywhere ? this.areaClear(x, y) : open(x, y))) continue;
+        if (d > bd) { bd = d; best = { x, y }; }
+      }
+      if (best) return best;
     }
     return null;
   }
@@ -2115,9 +2633,92 @@ export class Game {
   // =====================================================================
   private taxT = 0;
 
+  /** Configure how many units of one surplus resource this market offers per visit. */
+  configureMarket(b: Building, item: ItemKey, amount: number): void {
+    if (b.key !== 'market' || b.faction !== 'player' || b.removed || MARKET_VALUES[item] === undefined) return;
+    b.marketItem = item;
+    b.marketAmount = Math.max(0, Math.min(50, Number.isFinite(amount) ? Math.round(amount) : 0));
+  }
+
+  /** Projected income at one scheduled trader visit per minute. */
+  marketIncomePerMinute(b: Building): number {
+    return (MARKET_VALUES[b.marketItem ?? 'timber'] ?? 0) * (b.marketAmount ?? 0);
+  }
+
+  marketCaravansInTransit(b: Building): number {
+    let n = 0;
+    for (const c of this.caravans) if (c.market === b) n++;
+    return n;
+  }
+
+  private spawnMarketCaravan(b: Building, item: ItemKey, amount: number): void {
+    const centre = this.buildingCenter(b);
+    const edgeX = centre.x < 0 ? -this.world.W / 2 - 2 : this.world.W / 2 + 2;
+    const mesh = this.view.createTraderCaravan();
+    mesh.position.set(edgeX, 0, centre.z);
+    this.caravans.push({ mesh, market: b, item, amount, state: 'arriving', edgeX, edgeZ: centre.z, wait: 0 });
+  }
+
+  private updateMarkets(dt: number): void {
+    for (const b of this.buildings) {
+      if (b.key !== 'market' || b.faction !== 'player' || !b.active || b.removed) continue;
+      b.marketTimer = Math.max(0, (b.marketTimer ?? 60) - dt);
+      if (b.marketTimer > 0 || this.marketCaravansInTransit(b)) continue;
+      const item = b.marketItem ?? 'timber';
+      const amount = b.marketAmount ?? 0;
+      if (amount <= 0) { b.marketTimer = 60; continue; }
+      if ((b.inp[item] || 0) < amount) { b.marketTimer = 5; continue; }
+      b.marketTimer = 60;
+      this.spawnMarketCaravan(b, item, amount);
+    }
+
+    for (let i = this.caravans.length - 1; i >= 0; i--) {
+      const c = this.caravans[i];
+      if (c.market.removed) { this.view.remove(c.mesh); this.caravans.splice(i, 1); continue; }
+      if (c.state === 'trading') {
+        c.wait -= dt;
+        if (c.wait <= 0) c.state = 'leaving';
+        continue;
+      }
+      const centre = this.buildingCenter(c.market);
+      const tx = c.state === 'arriving' ? centre.x : c.edgeX;
+      const tz = c.state === 'arriving' ? centre.z : c.edgeZ;
+      const dx = tx - c.mesh.position.x, dz = tz - c.mesh.position.z;
+      const dist = Math.hypot(dx, dz), step = dt * 3;
+      if (dist > 0.01) c.mesh.rotation.y = Math.atan2(dx, dz);
+      if (dist > step) {
+        c.mesh.position.x += dx / dist * step;
+        c.mesh.position.z += dz / dist * step;
+        continue;
+      }
+      c.mesh.position.set(tx, 0, tz);
+      if (c.state === 'leaving') { this.view.remove(c.mesh); this.caravans.splice(i, 1); continue; }
+
+      const item = c.item;
+      const sold = Math.min(c.amount, c.market.inp[item] || 0);
+      if (sold > 0) {
+        c.market.inp[item] -= sold;
+        const earned = sold * (MARKET_VALUES[item] ?? 0);
+        // Coin starts at the market as output. The normal dispatcher sends a
+        // serf to carry each coin back to the nearest storehouse.
+        c.market.out.coin = (c.market.out.coin || 0) + earned;
+        this.sfx('coin');
+        this.toast(`Market exported ${sold} ${ITEMS[item].name.toLowerCase()} (+${earned} coin)`);
+      }
+      c.state = 'trading'; c.wait = 2.5;
+    }
+  }
+
+  /** Order-following A* searches allowed this tick (see combatUpdate). At 20
+   *  ticks/s this streams ~560 fresh paths a second — a thousand-strong army
+   *  is fully under way within two seconds, with no single-tick freeze. */
+  private pathBudget = 0;
+
   update(sdt: number): void {
     this.elapsed += sdt;
+    this.pathBudget = 28;
     this.buildUnitHash(); // shared by all proximity queries this tick
+    this.updateMarkets(sdt);
     this.dispatchT += sdt;
     if (this.dispatchT > 0.45) { this.dispatchT = 0; this.dispatch(); }
     // the Taxman mutator collects on the minute
@@ -2158,6 +2759,9 @@ export class Game {
     this.trainQueues(sdt);
     this.staffBuildings();
     this.combatDirector(sdt);
+    this.launchPendingWaves();
+    this.pickupScanT += sdt;
+    if (this.pickupScanT > 0.3 && this.pickups.length) { this.pickupScanT = 0; this.collectPickups(); }
     this.towerFire(sdt); // towers watch on every level, with or without a director
     this.fieldT += sdt;
     if (this.fieldT > 0.5) { this.fieldT = 0; this.fieldRecolor(); }
@@ -2194,7 +2798,7 @@ export class Game {
   /** Spawn a civilian worker (serf / laborer / villager) at a tile. */
   private spawnCivilian(role: string, tile: { x: number; y: number }, owner: PlayerId = this.localPlayerId): Unit {
     if (role === 'serf') return this.spawnUnit('serf', 0xd8c49a, tile, owner);
-    if (role === 'laborer') { const u = this.spawnUnit('laborer', 0xc97b3d, tile, owner); u.roleName = 'Builder'; return u; }
+    if (role === 'laborer') { const u = this.spawnUnit('laborer', 0xc97b3d, tile, owner); u.roleName = 'Builder'; u.anchor = { x: tile.x, y: tile.y }; return u; }
     const u = this.spawnUnit('villager', 0xcdbb8f, tile, owner); u.roleName = 'Villager'; u.status = 'Awaiting a post'; return u;
   }
 
@@ -2214,6 +2818,7 @@ export class Game {
         if ((UNITS as any)[kind]) {
           const owner = b.owner === 'p2' ? 'p2' : 'p1';
           const u = this.spawnFighter(kind as UnitKind, { x: d.x, y: d.y }, 'player', owner);
+          this.objective?.onTrain(); // military drill counts toward produceTrain goals
           if (b.rally) this.orderUnit(u, 'attackMove', b.rally.x, b.rally.y); // muster at the flag
         } else this.spawnCivilian(kind, { x: d.x, y: d.y }, b.owner === 'p2' ? 'p2' : 'p1');
         this.sfx('build');

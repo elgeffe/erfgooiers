@@ -110,6 +110,45 @@
   <button id="sbToggle" class="sb-title" title="Collapse / expand the spawn bar">Sandbox ▾</button>
   <div class="sb-group" id="sbFriendly"><span class="sb-label">Friendly</span></div>
   <div class="sb-group" id="sbEnemy"><span class="sb-label">Enemy</span></div>
+  <div class="sb-group" id="sbWave"><span class="sb-label">Raids</span>
+    <button id="sbWaveOpen" title="Compose a raid wave — pick the units, the size and an optional timer">⚔️ Summon wave…</button>
+  </div>
+  <div class="sb-group" id="sbCards"><span class="sb-label">Cards</span>
+    <button id="sbCardsOpen" title="Add or remove heritage and power-up cards freely">🃏 Cards…</button>
+  </div>
+</div>
+
+<!-- ---------- sandbox wave composer (modal) ---------- -->
+<div id="wavemodal" class="screen">
+  <div class="card">
+    <h1 class="serif">Summon a wave</h1>
+    <div class="tag">Set how many of each kind should arrive — the wave marches from the map edge onto your castle. Optionally put it on a timer.</div>
+    <div class="optlabel">Raiders — set a count for each kind you want in the wave</div>
+    <div id="waveKinds" class="wavekinds"></div>
+    <div class="waverow">
+      <span class="wavetotal">Total: <b id="waveTotal">0</b> raiders</span>
+      <label>Arrives in <input id="waveDelay" type="number" min="0" max="3600" step="5" value="0"> s <span class="whint">(0 = at once)</span></label>
+    </div>
+    <div class="btns row">
+      <button id="waveCancel" class="ghost">Cancel</button>
+      <button id="waveGo">⚔️ Summon</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- sandbox card picker (modal) ---------- -->
+<div id="sbcardmodal" class="screen">
+  <div class="card sbcard-card">
+    <h1 class="serif">Heritage &amp; power-ups</h1>
+    <div class="tag">Stack your run however you like — click a card below to add it, click one of your cards to remove it. No gold, no limits but the five card slots.</div>
+    <div class="shopsect" id="sbcardOwnedLabel">Your cards</div>
+    <div id="sbcardOwned" class="shopgrid"></div>
+    <div class="shopsect">Power-ups — click to add</div>
+    <div id="sbcardAvail" class="shopgrid"></div>
+    <div class="btns row">
+      <button id="sbcardDone">Done</button>
+    </div>
+  </div>
 </div>
 <div id="minimapWrap"><canvas id="minimap" width="160" height="160"></canvas></div>
 </div><!-- /#hud -->
@@ -119,7 +158,9 @@
   <span>Formation</span>
   <button class="on" data-formation="box" title="Box formation — a solid block">▦</button>
   <button data-formation="line" title="Line formation — a broad wall, 3 ranks deep">━</button>
+  <button data-formation="column" title="Column formation — a marching column, 3 files wide">┃</button>
   <button data-formation="split" title="Split formation — two flanking groups">╬</button>
+  <span class="fhint" title="Hold the right mouse button and drag to preview the formation and aim its facing before releasing">hold RMB + drag to aim</span>
 </div>
 <div id="toasts"></div>
 <div id="perfhud"></div>
@@ -142,6 +183,7 @@
       <button id="btnHeritage" class="ghost">Heritage — spend Erfgoed</button>
       <button id="btnSandbox" class="ghost">Sandbox — free build</button>
       <button id="btnHelp" class="ghost">How to play</button>
+      <button id="btnSettings" class="ghost">Settings</button>
       <button id="btnClearSave" class="danger" title="Wipe the saved run and all meta-progress">Clear save data</button>
     </div>
   </div>
@@ -190,16 +232,74 @@
   </div>
 </div>
 
+<!-- ---------- settings (main menu & pause menu) ---------- -->
+<div id="settings" class="screen">
+  <div class="card shopcard">
+    <h1 class="serif">Settings</h1>
+    <div class="setcols">
+      <div class="setcol">
+        <div class="shopsect">Audio</div>
+        <label class="setrow">Music volume<input id="setMusic" type="range" min="0" max="100" step="5"><b id="setMusicVal"></b></label>
+        <label class="setrow">Effects volume<input id="setSfx" type="range" min="0" max="100" step="5"><b id="setSfxVal"></b></label>
+        <div class="shopsect">Camera &amp; graphics</div>
+        <label class="setrow">Camera pan speed<input id="setPan" type="range" min="50" max="200" step="10"><b id="setPanVal"></b></label>
+        <label class="setrow chk"><input id="setInvZoom" type="checkbox">Invert scroll zoom</label>
+        <label class="setrow chk"><input id="setEdgePan" type="checkbox">Edge panning — the pointer at a screen edge pans the camera</label>
+        <label class="setrow chk"><input id="setAutoPause" type="checkbox">Pause when the window loses focus</label>
+        <label class="setrow">Render quality<select id="setQuality">
+          <option value="auto">Auto — adapts to your frame rate</option>
+          <option value="high">High — full resolution, always</option>
+          <option value="low">Low — saves battery &amp; old GPUs</option>
+        </select></label>
+        <div class="shopsect">Save data</div>
+        <div class="btns">
+          <button id="btnExportSave" class="ghost" title="Download your run and Heritage progress as a file">Export save to file</button>
+          <button id="btnImportSave" class="ghost" title="Restore a previously exported save file">Import save from file</button>
+          <input id="importFile" type="file" accept="application/json,.json" style="display:none">
+          <button id="btnSettingsClear" class="danger" title="Wipe the saved run and all meta-progress">Clear save data</button>
+        </div>
+      </div>
+      <div class="setcol">
+        <div class="shopsect">Keybindings</div>
+        <table id="keytable">
+          <tr><td><b>W A S D</b> / <b>arrows</b></td><td>pan the camera</td></tr>
+          <tr><td><b>right-drag</b> (nothing selected)</td><td>pan the camera</td></tr>
+          <tr><td><b>mouse wheel</b></td><td>zoom</td></tr>
+          <tr><td><b>left-click</b></td><td>select a unit or building</td></tr>
+          <tr><td><b>left-drag</b></td><td>box-select fighters</td></tr>
+          <tr><td><b>double-click</b> a fighter</td><td>select every visible fighter of that type</td></tr>
+          <tr><td><b>right-click</b></td><td>order the selected army (attack / move)</td></tr>
+          <tr><td><b>hold right-click + drag</b></td><td>preview the formation and aim its facing</td></tr>
+          <tr><td><b>Shift + right-click</b></td><td>chain orders — queue waypoints and attacks in sequence</td></tr>
+          <tr><td><b>Shift + 1–5</b></td><td>assign the selection to a squad</td></tr>
+          <tr><td><b>1–5</b></td><td>recall a squad (again: centre the camera on it)</td></tr>
+          <tr><td><b>R</b></td><td>rotate the building being placed</td></tr>
+          <tr><td><b>Shift</b> while placing</td><td>keep placing more of the same</td></tr>
+          <tr><td><b>B</b></td><td>ring the castle bell — workers take refuge</td></tr>
+          <tr><td><b>U</b></td><td>open / close the workers panel</td></tr>
+          <tr><td><b>Space</b></td><td>pause / resume</td></tr>
+          <tr><td><b>Esc</b></td><td>cancel placement · deselect</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="btns row">
+      <button id="btnSettingsBack">Back</button>
+    </div>
+  </div>
+</div>
+
 <!-- ---------- hero select (start of a run) ---------- -->
 <div id="heroselect" class="screen">
   <div class="card shopcard">
-    <h1 class="serif">Choose your hero</h1>
+    <h1 class="serif">Start a run</h1>
     <div id="heroMeta" class="metaline"></div>
-    <div class="shopsect">Every hero past the Erfgooier gives with one hand and takes with the other</div>
+    <div class="shopsect">1 · Choose your hero — every hero past the Erfgooier gives with one hand and takes with the other</div>
     <div id="heroGrid" class="shopgrid"></div>
+    <div class="shopsect">2 · Choose your difficulty</div>
     <div id="ascensionRow"></div>
     <div class="btns row">
       <button id="btnHeroBack" class="ghost">Back to menu</button>
+      <button id="btnStartRun">Start run →</button>
     </div>
   </div>
 </div>
@@ -266,6 +366,7 @@
     <div class="tag">The game is paused. Resume when you are ready, or abandon this run to return to the main menu.</div>
     <div class="btns">
       <button id="btnResume">Resume game</button>
+      <button id="btnPauseSettings" class="ghost">Settings</button>
       <button id="btnAbandon" class="danger" title="Abandon this run and return to the menu">Abandon run</button>
     </div>
   </div>
@@ -276,14 +377,14 @@
     <h1 class="serif"><span id="introLogo"></span>How to play</h1>
     <div class="tag">A cozy physical economy — every plank, loaf and coin is carried by hand.</div>
     <ul>
-      <li><span class="k">Build</span><span>Place buildings from the bottom menu. Serfs haul timber &amp; stone from your storehouse to the site, then a laborer constructs it.</span></li>
+      <li><span class="k">Build</span><span>Place buildings from the bottom menu. Serfs haul timber &amp; stone from your castle to the site, then a laborer constructs it.</span></li>
       <li><span class="k">Watch</span><span>Specialists gather and craft; serfs automatically carry goods between buildings. Nothing teleports.</span></li>
       <li><span class="k">Roads</span><span>Paint roads for 1 stone each — workers prefer them and walk 30% faster on them.</span></li>
       <li><span class="k">Plots</span><span>Farms, vineyards &amp; pig farms need plots — use the <b>Plot</b> tool to add crop &amp; pasture tiles around them (each building has a plot limit); demolish to clear them.</span></li>
       <li><span class="k">Chains</span><span>Trees → trunks → timber · Farm → mill → bakery (bread) · Vineyard → winery (wine) · Pig farm → butchery (sausage) · Gold + coal → the Mint (coins) · Fishery nets fish from the lake shore.</span></li>
-      <li><span class="k">Gold</span><span>Click gold piles glinting in the grass to collect them straight into your purse.</span></li>
+      <li><span class="k">Gold</span><span>Gold piles glint in the grass — send any unit (or your hero) over one and it is scooped straight into your purse.</span></li>
       <li><span class="k">War</span><span>Iron mine → weaponsmith (weapons) &amp; armorer (armor) → the Barracks trains soldiers, archers &amp; knights. Watchtowers shoot raiders on their own.</span></li>
-      <li><span class="k">Army</span><span>Drag a box over fighters to select them · right-click to attack or move (they fan out) · <b>Shift+1–5</b> saves a squad, <b>1–5</b> recalls it · right-click with a barracks selected plants its rally flag.</span></li>
+      <li><span class="k">Army</span><span>Drag a box over fighters to select them · right-click to attack or move (they fan out) · right-click an enemy wall, gate, or stronghold to besiege it · <b>Shift+1–5</b> saves a squad, <b>1–5</b> recalls it · right-click with a barracks selected plants its rally flag.</span></li>
       <li><span class="k">Run</span><span>Clear each level to reach the shop; a failed level ends the run. Debug “✓ Win” advances a level for now.</span></li>
       <li><span class="k">Controls</span><span>WASD / arrows or right-drag to pan · wheel to zoom · <b>R</b> rotates a building while placing · click a building to inspect · Esc cancels.</span></li>
     </ul>

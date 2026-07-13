@@ -6,9 +6,8 @@ export interface FormationOrigin { x: number; y: number; }
  * Lay out formation destinations around a target, facing away from the
  * selected group's average origin.
  *
- * Built to survive HUGE selections: shapes are exact integer lattices (the
- * facing snaps to the nearest cardinal so ranks never collapse onto shared
- * tiles through rounding), rank depth is capped so a 200-unit line is a wide
+ * Built to survive HUGE selections: rotated slots are claimed through a
+ * collision-safe lattice projection, rank depth is capped so a 200-unit line is a wide
  * wall three ranks deep rather than one absurd 200-tile string, and a blocked
  * slot is refilled from a small spiral around ITSELF — holes in the ground
  * dent a rank locally instead of dumping half the army into a blob at the
@@ -17,6 +16,7 @@ export interface FormationOrigin { x: number; y: number; }
  * Shapes:
  *  - box:   a solid block, ~1.8× wider than deep
  *  - line:  a broad wall at most 3 ranks deep
+ *  - column: a marching column, at most 3 files wide
  *  - split: two half-strength boxes flanking a gap (envelopment / pincer)
  *
  * The returned spots are ordered front rank first (nearest the foe, furthest
@@ -32,6 +32,7 @@ export function formationSpots(
   formation: Formation,
   origins: FormationOrigin[],
   canUse: (x: number, y: number) => boolean,
+  facing?: FormationOrigin,
 ): Coord[] {
   if (count <= 0) return [];
   const out: Coord[] = [];
@@ -58,14 +59,19 @@ export function formationSpots(
         }
   };
 
-  // face away from the group's average origin, snapped to the nearest
-  // cardinal so (col, row) offsets stay exact integer lattice vectors
-  let ax = 0, ay = 0;
-  for (const p of origins) { ax += p.x; ay += p.y; }
-  ax /= Math.max(1, origins.length); ay /= Math.max(1, origins.length);
-  const dx = cx - ax, dy = cy - ay;
-  const fx = Math.abs(dx) >= Math.abs(dy) ? (Math.sign(dx) || 1) : 0;
-  const fy = fx === 0 ? (Math.sign(dy) || 1) : 0;
+  // Keep the full facing vector for genuine 360° right-drag aiming. claimNear
+  // resolves duplicates produced by projecting a rotated shape to tiles.
+  let dx: number, dy: number;
+  if (facing && (facing.x || facing.y)) {
+    dx = facing.x; dy = facing.y;
+  } else {
+    let ax = 0, ay = 0;
+    for (const p of origins) { ax += p.x; ay += p.y; }
+    ax /= Math.max(1, origins.length); ay /= Math.max(1, origins.length);
+    dx = cx - ax; dy = cy - ay;
+  }
+  const fl = Math.hypot(dx, dy) || 1;
+  const fx = dx / fl, fy = dy / fl;
   const rxv = -fy, ryv = fx; // the rank axis (perpendicular to facing)
 
   /** Fill `n` slots as a block `cols` wide, ranks marching backward from the
@@ -84,6 +90,8 @@ export function formationSpots(
   if (formation === 'line') {
     // a broad wall: never deeper than 3 ranks
     block(count, Math.max(1, Math.ceil(count / 3)), 0);
+  } else if (formation === 'column') {
+    block(count, Math.min(3, count), 0);
   } else if (formation === 'split') {
     // two half-boxes flanking a central gap — the pincer
     const half = Math.ceil(count / 2), rest = count - half;
@@ -96,8 +104,10 @@ export function formationSpots(
     block(count, Math.max(1, Math.round(Math.sqrt(count * 1.8))), 0);
   }
 
-  // last resort for anything still unplaced (surrounded click point etc.)
-  for (let r = 0; r < 24 && out.length < count; r++)
+  // Grow with the requested army. The old fixed radius silently collapsed
+  // selections above its capacity onto the final destination.
+  const fallbackRadius = Math.max(32, Math.ceil(Math.sqrt(count)) * 4);
+  for (let r = 0; r <= fallbackRadius && out.length < count; r++)
     for (let ox = -r; ox <= r && out.length < count; ox++)
       for (let oy = -r; oy <= r && out.length < count; oy++) {
         if (r > 0 && Math.abs(ox) !== r && Math.abs(oy) !== r) continue;

@@ -54,7 +54,8 @@ Menu → hero rule-set selection → level → shop + next contract → … → 
 
 - Generic gatherer/producer dispatch with physically carried goods.
 - Construction sites, laborers, specialist staffing, worker hunger, taverns, roads,
-  plots, and production timing.
+  plots, production timing, and configurable physically supplied surplus-export markets
+  with neutral caravans and hauled coin proceeds.
 - Objectives: stock, produce, multi-produce, collect, survive, slay, and destroy.
 - Gold rewards, speed bonuses, five-card run inventory, rarity, shops, drafts, rerolls,
   and hero-exclusive cards.
@@ -64,13 +65,13 @@ Menu → hero rule-set selection → level → shop + next contract → … → 
 
 ### Combat and control
 
-- Player soldiers, pikemen, archers, and knights; bandits, boars, wolves, orcs, trolls, demons,
-  and a dragon.
+- Player infantry, cavalry, siege engines, and monastery-trained healing priests; bandits,
+  boars, wolves, orcs, trolls, demons, undead, and a dragon.
 - Unit/building HP, melee and ranged combat, projectiles, towers, training queues,
   rallies, enemy waves, camps, commanders, strongholds, and boss behavior.
 - Eight-directional A* with line-of-sight smoothing and deterministic soft separation.
 - Box select, visible-type double-click select, minimap selection highlighting,
-  right-click orders, attack-move, five control groups, and four formations.
+  right-click orders, 360-degree hold-to-aim, attack-move, five control groups, and four formations.
 
 ### Presentation
 

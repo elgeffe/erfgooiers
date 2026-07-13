@@ -1,4 +1,5 @@
 import { DEFS } from '../data/buildings';
+import { isCommandableRole } from '../data/units';
 import type { GameCommand } from '../net/protocol';
 import type { Building, Formation, PlayerId, Site, Unit } from '../types';
 import type { Game } from './Game';
@@ -15,18 +16,12 @@ export interface CommandResult { ok: boolean; reason?: string }
 const ok: CommandResult = { ok: true };
 const fail = (reason: string): CommandResult => ({ ok: false, reason });
 
-const FORMATIONS: readonly Formation[] = ['box', 'line', 'split'];
+const FORMATIONS: readonly Formation[] = ['box', 'line', 'column', 'split'];
 
 function buildingOwnedBy(game: Game, id: number, owner: PlayerId): Building | null {
   const e = game.entityById(id);
   if (!e || !('def' in e) || e.isSite || e.removed || e.owner !== owner) return null;
   return e as Building;
-}
-
-function siteOwnedBy(game: Game, id: number, owner: PlayerId): Site | null {
-  const e = game.entityById(id);
-  if (!e || !('isSite' in e) || !e.isSite || e.removed || e.owner !== owner) return null;
-  return e as Site;
 }
 
 export function applyGameCommand(game: Game, playerId: PlayerId, command: GameCommand): CommandResult {
@@ -51,9 +46,11 @@ export function applyGameCommand(game: Game, playerId: PlayerId, command: GameCo
       return ok;
     }
     case 'setPriority': {
-      const s = siteOwnedBy(game, command.siteId, playerId);
-      if (!s) return fail('not_your_site');
-      if (!!s.priority !== command.priority) game.togglePriority(s);
+      const entity = game.entityById(command.siteId);
+      if (!entity || !('def' in entity) || entity.removed || entity.owner !== playerId) return fail('not_your_building');
+      const prioritizable = entity.isSite || !!(entity.def.recipe || entity.def.gather);
+      if (!prioritizable) return fail('not_prioritizable');
+      if (!!entity.priority !== command.priority) game.togglePriority(entity as Site | Building);
       return ok;
     }
     case 'queueTraining': {
@@ -80,7 +77,7 @@ export function applyGameCommand(game: Game, playerId: PlayerId, command: GameCo
         const e = game.entityById(id);
         if (!e || !('role' in e)) continue;
         const u = e as Unit;
-        if (u.dead || u.owner !== playerId || u.faction !== 'player' || u.dmg <= 0) continue;
+        if (u.dead || u.owner !== playerId || u.faction !== 'player' || !isCommandableRole(u.role)) continue;
         units.push(u);
       }
       if (!units.length) return fail('no_owned_units');
@@ -91,10 +88,16 @@ export function applyGameCommand(game: Game, playerId: PlayerId, command: GameCo
         if (!target || !('role' in target)) return fail('bad_target');
         const foe = target as Unit;
         if (foe.dead || foe.faction === 'player') return fail('bad_target');
-        game.orderGroup(units, 'attack', foe.tx, foe.ty, foe, formation);
+        game.orderGroup(units, 'attack', foe.tx, foe.ty, foe, formation, undefined, !!command.queue);
         return ok;
       }
-      game.orderGroup(units, order.type, order.x, order.y, null, formation);
+      if (order.type === 'attackBuilding') {
+        const target = game.entityById(order.targetId);
+        if (!target || !('def' in target) || target.isSite || target.removed || target.faction === 'player') return fail('bad_target');
+        game.orderGroupAttackBuilding(units, target as Building, !!command.queue);
+        return ok;
+      }
+      game.orderGroup(units, order.type, order.x, order.y, null, formation, command.facing, !!command.queue);
       return ok;
     }
     case 'collectPickup': {

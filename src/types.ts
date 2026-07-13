@@ -11,7 +11,9 @@ export type BuildingKey =
   | 'farm' | 'mill' | 'bakery' | 'goldmine' | 'coalmine' | 'mint'
   | 'vineyard' | 'winery' | 'pigfarm' | 'butcher' | 'tavern' | 'fishery' | 'clamdigger'
   | 'barracks' | 'stable' | 'engineer' | 'ironmine' | 'smithy' | 'armory' | 'watchtower'
-  | 'banditcamp' | 'enemywatchtower' | 'enemycastle';
+  | 'stonetower' | 'wall' | 'gate' | 'monastery'
+  | 'market'
+  | 'banditcamp' | 'enemywatchtower' | 'enemycastle' | 'enemywall' | 'enemygate';
 
 export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'iron' | 'field' | 'fish';
 
@@ -24,7 +26,7 @@ export type OwnerId = PlayerId | 'enemy' | 'wild';
 
 /** Which side a unit or building belongs to. Economy workers are always 'player'. */
 export type Faction = 'player' | 'enemy' | 'wild';
-export type Formation = 'box' | 'line' | 'split';
+export type Formation = 'box' | 'line' | 'column' | 'split';
 
 /** A player-issued command to a controllable unit (hero / soldiers). */
 export interface UnitOrder {
@@ -44,7 +46,13 @@ export type ModelKind = 'cottage' | 'windmill' | 'farm' | 'barn' | 'mine' | 'tav
 export interface ItemDef { name: string; color: string; hex: number; }
 
 export interface GatherDef { node: NodeKind; out: ItemKey | null; time: number; range: number; }
-export interface RecipeDef { inp: Partial<Record<ItemKey, number>>; out: ItemKey; time: number; }
+export interface RecipeDef {
+  inp: Partial<Record<ItemKey, number>>;
+  out: ItemKey;
+  time: number;
+  /** Completed output enters global storage immediately instead of requiring a serf haul. */
+  globalOutput?: boolean;
+}
 /** A tavern feeds nearby workers any of several foods; capacity caps how many it serves. */
 export interface TavernDef { foods: ItemKey[]; capacity: number; time: number; }
 
@@ -77,6 +85,9 @@ export interface BuildingDef {
   military?: MilitaryDef;      // barracks: trainable military units
   trainer?: MilitaryDef;       // guild hall: trainable civilian workers
   tower?: TowerDef;            // watchtowers/keeps: automatic arrow fire
+  bulwark?: boolean;           // fortification: razing it never counts as a stronghold
+  gate?: boolean;              // its own faction walks through; enemies must break it
+  entrance?: 'none' | 'through'; // default front door; through = two-wide on both faces
 }
 
 export interface Coord { x: number; y: number; }
@@ -133,7 +144,11 @@ export interface Building {
   trainQ?: string[];           // barracks: queued unit kinds being trained
   rally?: Coord;               // barracks: where freshly trained fighters march to
   rallyMesh?: THREE.Object3D;  // the flag marking the rally point
+  priority?: boolean;          // player-flagged: serfs feed & empty this building first
   removed?: boolean;
+  marketItem?: ItemKey;
+  marketAmount?: number;
+  marketTimer?: number;
   isSite?: false;
 }
 
@@ -194,11 +209,13 @@ export interface Unit {
   foe: Unit | null;     // current combat target (unit)
   foeB: Building | null; // current combat target (building)
   order: UnitOrder | null;
+  orderQueue: UnitOrder[]; // shift-chained commands, pulled in as each order completes
   obeyT: number;        // seconds a fresh move order suppresses re-aggro (commands overrule combat)
   special: number;      // boss ability cooldown (dragon fire breath)
   anchor: Coord | null; // wild beasts & camp guards roam around (and leash to) this
   lungeT: number;       // melee swing animation timer (little hop toward the foe)
   hpBar: THREE.Object3D | null;
+  sepI: number;         // transient index within the crowd-separation pass (avoids a per-tick Map)
 }
 
 /** UI/Controls interaction mode. */

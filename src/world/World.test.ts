@@ -141,4 +141,5 @@ describe('Biome worldgen', () => {
       expect(reached, `seed ${seed}`).toBe(true);
     }
   });
+
 });
