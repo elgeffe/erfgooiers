@@ -577,11 +577,15 @@ function quarryBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
 /** A true military barracks: gatehouse, curtain walls, four turrets and yard. */
 function barracksBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group(), stone = mkMat(def.wall, ghost), roofM = mkMat(def.roof, ghost), wood = mkMat(0x443327, ghost);
-  const hall = new THREE.Mesh(box(1.25, 1.15, 1.15), stone); hall.position.set(0, 0.58, -0.25); hall.castShadow = !ghost; g.add(hall);
-  gableRoof(g, 1.48, 1.38, 1.48, def.roof, ghost, 0.62);
+  // inner keep grown to meet the corner turrets so the walls read as one block
+  const hall = new THREE.Mesh(box(1.55, 1.2, 1.5), stone); hall.position.set(0, 0.6, -0.1); hall.castShadow = !ghost; hall.receiveShadow = !ghost; g.add(hall);
+  gableRoof(g, 1.72, 1.6, 1.52, def.roof, ghost, 0.6);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const tower = new THREE.Mesh(cyl(0.23, 0.27, 1.25, 8), stone); tower.position.set(sx * 0.73, 0.63, sz * 0.65); tower.castShadow = !ghost; g.add(tower); const cap = new THREE.Mesh(cone(0.31, 0.46, 8), roofM); cap.position.set(sx * 0.73, 1.48, sz * 0.65); g.add(cap); }
-  for (const x of [-0.4, 0, 0.4]) { const crenel = new THREE.Mesh(box(0.24, 0.24, 0.18), stone); crenel.position.set(x, 1.1, 0.72); g.add(crenel); }
-  const gate = new THREE.Mesh(box(0.52, 0.72, 0.14), wood); gate.position.set(0, 0.36, 0.75); gate.userData.marker = true; g.add(gate);
+  for (const x of [-0.4, 0, 0.4]) { const crenel = new THREE.Mesh(box(0.24, 0.24, 0.18), stone); crenel.position.set(x, 1.15, 0.68); g.add(crenel); }
+  const gate = new THREE.Mesh(box(0.52, 0.72, 0.14), wood); gate.position.set(0, 0.36, 0.72); gate.userData.marker = true; g.add(gate);
+  // warm lit windows in the curtain wall, like the castle keep
+  for (const wx of [-0.46, 0.46]) { const win = new THREE.Mesh(box(0.16, 0.3, 0.05), mkMat(0xf4d98a, ghost)); win.position.set(wx, 0.66, 0.66); win.userData.marker = true; g.add(win); }
+  for (const sx of [-1, 1]) { const win = new THREE.Mesh(box(0.05, 0.3, 0.16), mkMat(0xf4d98a, ghost)); win.position.set(sx * 0.78, 0.66, -0.1); win.userData.marker = true; g.add(win); }
   if (!ghost) { const rack = new THREE.Mesh(box(0.62, 0.08, 0.08), mat(0x65472d)); rack.position.set(0, 0.72, 0.83); g.add(rack); for (const x of [-0.22, 0, 0.22]) { const spear = new THREE.Mesh(cyl(0.014, 0.014, 0.75, 5), mat(0x6b4a2f)); spear.position.set(x, 0.55, 0.86); g.add(spear); } }
   return g;
 }
