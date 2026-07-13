@@ -29,6 +29,7 @@ import { CombatTargeting } from './CombatTargeting';
 import { CombatSystem } from './CombatSystem';
 import { PlacementSystem } from './PlacementSystem';
 import { OrderSystem } from './OrderSystem';
+import { RefugeSystem } from './RefugeSystem';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -117,6 +118,7 @@ export class Game {
   private readonly combatSystem: CombatSystem;
   private readonly placementSystem: PlacementSystem;
   private readonly orderSystem: OrderSystem;
+  private readonly refugeSystem: RefugeSystem;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -308,6 +310,14 @@ export class Game {
     this.orderSystem = new OrderSystem(this.world, this.view, {
       siegeTile: (unit, building) => this.siegeTile(unit, building),
       toast: message => this.toast(message),
+      sfx: name => this.sfx(name),
+    });
+    this.refugeSystem = new RefugeSystem(this.world, this.unitMovement, {
+      units: () => this.units,
+      storeFor: owner => this.storeFor(owner),
+      isFighter: unit => this.isFighter(unit),
+      cancelTask: unit => this.cancelTask(unit),
+      toast: (message, cls) => this.toast(message, cls),
       sfx: name => this.sfx(name),
     });
   }
@@ -897,62 +907,18 @@ export class Game {
     this.separationSystem.update(dt);
   }
 
-  // =====================================================================
-  //  The castle bell — ring it and every non-combat worker drops what they
-  //  are doing and shelters inside the castle (AOE town-bell style); ring
-  //  again to send them back out.
-  // =====================================================================
-  private readonly bells = new Set<PlayerId>();
-  get bell(): boolean { return this.bells.has(this.localPlayerId); }
+  get bell(): boolean { return this.refugeSystem.active(this.localPlayerId); }
 
-  /** Command-path bell control: apply the requested state if it differs. */
   setBell(owner: PlayerId, active: boolean): void {
-    if (this.bells.has(owner) !== active) this.toggleBell(owner);
+    this.refugeSystem.set(owner, active);
   }
 
   toggleBell(owner: PlayerId = this.localPlayerId): void {
-    if (this.bells.has(owner)) this.bells.delete(owner); else this.bells.add(owner);
-    const active = this.bells.has(owner);
-    this.sfx('bell');
-    if (active) {
-      this.toast('The bell tolls — workers run for the castle!', 'err');
-      for (const u of this.units) {
-        if (u.dead || u.owner !== owner || u.faction !== 'player' || this.isFighter(u) || u.role === 'carrier') continue;
-        if (u.task) this.cancelTask(u);
-        const site = u.target as Site | null;
-        if (site && site.isSite && site.builder === u) site.builder = null;
-        u.path = null; u.target = null;
-        u.mesh.visible = true;
-        u.wstate = 'toRefuge';
-      }
-    } else {
-      this.toast('The bell falls silent — back to work');
-      const d = doorTile(this.storeFor(owner));
-      for (const u of this.units) {
-        if (u.dead || u.owner !== owner || u.faction !== 'player' || this.isFighter(u)) continue;
-        if (u.wstate !== 'refuge' && u.wstate !== 'toRefuge') continue;
-        u.mesh.visible = true;
-        u.mesh.position.set(this.world.wx(d.x) + (rnd() - 0.5) * 0.8, 0, this.world.wz(d.y) + (rnd() - 0.5) * 0.8);
-        u.tx = d.x; u.ty = d.y;
-        u.path = null; u.target = null;
-        u.wstate = u.home ? 'goHome' : 'idle';
-        u.status = 'Idle';
-      }
-    }
+    this.refugeSystem.toggle(owner);
   }
 
-  /** While the bell tolls: run for the castle door, then vanish inside. */
-  private refugeUpdate(u: Unit, dt: number): void {
-    if (u.wstate === 'refuge') { u.mesh.visible = false; return; }
-    const owner = u.owner === 'p2' ? 'p2' : 'p1';
-    const d = doorTile(this.storeFor(owner));
-    if (u.tx === d.x && u.ty === d.y && !u.path) {
-      u.wstate = 'refuge'; u.mesh.visible = false; u.status = 'Sheltering in the castle';
-      return;
-    }
-    u.status = 'Running for the castle';
-    if (!u.path) { if (!this.sendTo(u, d.x, d.y)) { u.mesh.position.y = 0; return; } }
-    this.moveUnit(u, dt);
+  private refugeUpdate(unit: Unit, dt: number): void {
+    this.refugeSystem.updateUnit(unit, dt);
   }
 
   // =====================================================================
@@ -1310,7 +1276,7 @@ export class Game {
       u.hunger = Math.max(0, u.hunger - sdt * 100 / 600 * hungerRate);
       if (this.isFighter(u)) this.combatUpdate(u, sdt);
       else if (u.role === 'carrier') continue; // trade carts are driven by updateTrade
-      else if ((u.owner === 'p1' || u.owner === 'p2') && this.bells.has(u.owner) && u.faction === 'player') this.refugeUpdate(u, sdt);
+      else if ((u.owner === 'p1' || u.owner === 'p2') && this.refugeSystem.active(u.owner) && u.faction === 'player') this.refugeUpdate(u, sdt);
       else if (u.role === 'serf') this.serfUpdate(u, sdt);
       else if (u.role === 'laborer') this.laborerUpdate(u, sdt);
       else if (u.role === 'villager' && !u.home) this.villagerStroll(u, sdt);
