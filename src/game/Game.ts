@@ -20,6 +20,7 @@ import { EncounterDirector } from './EncounterDirector';
 import { ProjectileSystem } from './ProjectileSystem';
 import { MarketSystem } from './MarketSystem';
 import { SeparationSystem } from './SeparationSystem';
+import { UnitSpatialIndex } from './UnitSpatialIndex';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -101,6 +102,7 @@ export class Game {
   private readonly projectileSystem: ProjectileSystem;
   private readonly marketSystem: MarketSystem;
   private readonly separationSystem: SeparationSystem;
+  private readonly unitSpatialIndex: UnitSpatialIndex;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -182,6 +184,7 @@ export class Game {
       toast: message => this.toast(message),
     });
     this.separationSystem = new SeparationSystem(this.world, this.units);
+    this.unitSpatialIndex = new UnitSpatialIndex(this.world, this.units);
   }
 
   entityById(id: number): Building | Site | Unit | null {
@@ -1263,30 +1266,13 @@ export class Game {
   //  since the tick started are still found. O(n) build instead of the old
   //  O(n²) every-fighter-scans-every-unit — matters near the 1,600-unit cap.
   // ---------------------------------------------------------------------
-  private hashCols = 0;
-  private readonly unitHash = new Map<number, Unit[]>();
-
   private buildUnitHash(): void {
-    this.unitHash.clear();
-    this.hashCols = (this.world.W >> 3) + 2;
-    for (const u of this.units) {
-      if (u.dead) continue;
-      const k = (u.ty >> 3) * this.hashCols + (u.tx >> 3);
-      let c = this.unitHash.get(k);
-      if (!c) { c = []; this.unitHash.set(k, c); }
-      c.push(u);
-    }
+    this.unitSpatialIndex.rebuild();
   }
 
   /** Visit live units whose tick-start tile is within ~r tiles of (tx, ty). */
   private forUnitsNear(tx: number, ty: number, r: number, fn: (o: Unit) => void): void {
-    const c0 = Math.max(0, tx - r) >> 3, c1 = Math.max(0, tx + r) >> 3;
-    const r0 = Math.max(0, ty - r) >> 3, r1 = Math.max(0, ty + r) >> 3;
-    for (let cy = r0; cy <= r1; cy++) for (let cx = c0; cx <= c1; cx++) {
-      const cell = this.unitHash.get(cy * this.hashCols + cx);
-      if (!cell) continue;
-      for (const o of cell) fn(o);
-    }
+    this.unitSpatialIndex.visitNear(tx, ty, r, fn);
   }
 
   /** Nearest hostile fighter within the given aggro radius, or null. */
