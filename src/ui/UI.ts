@@ -1,5 +1,5 @@
 import { DEFS, MENU_CATEGORIES } from '../data/buildings';
-import { ITEMS, RES_SHOWN } from '../data/items';
+import { ITEMS, MARKET_VALUES, RES_SHOWN } from '../data/items';
 import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID } from '../data/upgrades';
 import { META_BY_ID } from '../data/metaUpgrades';
 import { UNITS, type UnitKind } from '../data/units';
@@ -282,6 +282,17 @@ export class UI {
         this.renderInspector();
       }
     });
+    $('inspBody').addEventListener('change', e => {
+      const target = e.target as HTMLInputElement | HTMLSelectElement;
+      if (!target.matches('[data-market-control]')) return;
+      const b = this.game?.selected;
+      if (!b || b.key !== 'market') return;
+      const item = ($('marketItem') as HTMLSelectElement).value as ItemKey;
+      const amount = Number(($('marketAmount') as HTMLInputElement).value);
+      this.game!.configureMarket(b, item, amount);
+      audio.play('click');
+      this.renderInspector();
+    });
   }
   showInspector(obj: any): void {
     $('inspector').style.display = obj ? 'block' : 'none';
@@ -354,6 +365,24 @@ export class UI {
       body += '<div class="sect">Stock</div>' + this.invRowsHTML(o.stock);
     } else {
       if (!o.active) body += o.def.worker ? '<div class="hnote">Waiting for a trained villager to staff it…</div>' : '<div class="hnote">Waiting for worker to arrive…</div>';
+      if (o.key === 'market') {
+        const selected = (o.marketItem ?? 'timber') as ItemKey;
+        const amount = o.marketAmount ?? 0;
+        const options = (Object.keys(MARKET_VALUES) as ItemKey[]).map(k =>
+          `<option value="${k}"${k === selected ? ' selected' : ''}>${ITEMS[k].name} · ${MARKET_VALUES[k]} coin each</option>`).join('');
+        const delivered = o.inp[selected] || 0, incoming = o.incoming[selected] || 0;
+        const transit = this.game!.marketCaravansInTransit(o);
+        body += '<div class="sect">Export surplus</div>';
+        body += `<div class="marketctl"><label>Resource<select id="marketItem" data-market-control>${options}</select></label>`;
+        body += `<label>Units per caravan<input id="marketAmount" data-market-control type="number" min="0" max="50" step="1" value="${amount}"></label></div>`;
+        body += `<div class="invrow">Ready at market<b>${delivered} / ${amount}</b></div>`;
+        body += `<div class="invrow">Being delivered<b>${incoming}</b></div>`;
+        body += `<div class="invrow">Expected income<b>${this.game!.marketIncomePerMinute(o)} coin / min</b></div>`;
+        body += `<div class="invrow">${transit ? 'Trader caravan' : amount > 0 ? 'Next caravan' : 'Exports paused'}<b>${transit ? 'in transit' : amount > 0 ? `${Math.ceil(o.marketTimer ?? 60)}s` : 'set an amount'}</b></div>`;
+        body += '<div class="sect">Market inventory</div>' + this.invRowsHTML(o.inp);
+        body += '<div class="sect">Coin awaiting pickup</div>' + this.invRowsHTML(o.out);
+        body += '<div class="hnote">Serfs carry assigned goods here before sale, then carry the proceeds back to storage. Caravans are neutral and cannot be attacked.</div>';
+      }
       if (o.def.recipe) {
         body += `<div class="sect">Production</div><div class="bar"><div style="width:${Math.round(o.prog * 100)}%"></div></div>`;
         body += '<div class="sect">Inputs</div>' + this.invRowsHTML(o.inp);
@@ -542,6 +571,7 @@ export class UI {
     if (!this.game) return;
     this.refreshResbar();
     this.renderUnits();
-    if (this.game.selected) this.renderInspector();
+    const focused = document.activeElement as HTMLElement | null;
+    if (this.game.selected && !focused?.matches('[data-market-control]')) this.renderInspector();
   }
 }

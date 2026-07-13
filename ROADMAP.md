@@ -54,7 +54,8 @@ Menu → hero rule-set selection → level → shop + next contract → … → 
 
 - Generic gatherer/producer dispatch with physically carried goods.
 - Construction sites, laborers, specialist staffing, worker hunger, taverns, roads,
-  plots, and production timing.
+  plots, production timing, and configurable physically supplied surplus-export markets
+  with neutral caravans and hauled coin proceeds.
 - Objectives: stock, produce, multi-produce, collect, survive, slay, and destroy.
 - Gold rewards, speed bonuses, five-card run inventory, rarity, shops, drafts, rerolls,
   and hero-exclusive cards.

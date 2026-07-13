@@ -56,6 +56,9 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: { timber: 2, stone: 3 }, roof: 0xd9a441, wall: 0x9c8a6a, accent: 0xffd24a,
     recipe: { inp: { goldore: 1, coal: 1 }, out: 'coin', time: 6 }, worker: 'Minter', wcolor: 0xd4af37 },
 
+  market: { name: 'Market', desc: 'Assign surplus goods to export; invulnerable horse traders arrive automatically and pay in coin', model: 'cottage',
+    cost: { timber: 4, stone: 2, coin: 2 }, roof: 0xb54f38, wall: 0xc8aa78, accent: 0xffd24a, hp: 180 },
+
   vineyard: { name: 'Vineyard', desc: 'Grows & harvests grapes on its plots', model: 'farm',
     cost: { timber: 3, stone: 1 }, roof: 0x6a3d6e, wall: 0xb08a5c,
     gather: { node: 'field', out: 'grape', time: 2.5, range: 0 }, worker: 'Vintner', wcolor: 0x7a4b8a, fields: true, plots: 6 },
@@ -178,6 +181,6 @@ export interface BuildCategory { id: string; name: string; keys: BuildingKey[]; 
 export const MENU_CATEGORIES: BuildCategory[] = [
   { id: 'materials', name: 'Materials', keys: ['guildhall', 'woodcutter', 'sawmill', 'forester', 'quarry', 'storehouse'] },
   { id: 'food', name: 'Food', keys: ['farm', 'mill', 'bakery', 'pigfarm', 'butcher', 'vineyard', 'winery', 'fishery', 'clamdigger', 'tavern'] },
-  { id: 'coin', name: 'Coin', keys: ['goldmine', 'coalmine', 'mint'] },
+  { id: 'coin', name: 'Coin', keys: ['goldmine', 'coalmine', 'mint', 'market'] },
   { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'monastery', 'ironmine', 'smithy', 'armory', 'watchtower', 'stonetower', 'wall', 'gate'] },
 ];
