@@ -231,7 +231,8 @@ function addChimney(g: THREE.Group, ghost: boolean): void {
 function addLogpile(g: THREE.Group, ghost: boolean): void {
   const logMat = mkMat(0x8a5a2b, ghost);
   const ends = mkMat(0xcaa06a, ghost);
-  const rows = [[-0.75, 0.55, 0.28], [-0.75, 0.55, 0.5], [-0.75, 0.73, 0.39]];
+  // sit the pile clear of the cabin's log walls (x = ±0.7) instead of through them
+  const rows = [[-0.92, 0.55, 0.28], [-0.92, 0.55, 0.5], [-0.92, 0.73, 0.39]];
   for (const [x, , z] of rows) {
     const log = new THREE.Mesh(cyl(0.11, 0.11, 0.7, 8), logMat);
     log.rotation.x = Math.PI / 2; log.position.set(x, 0.14, z as number); log.castShadow = !ghost; log.userData.marker = true;
@@ -270,9 +271,10 @@ function woodcutterYard(g: THREE.Group): void {
 function sawmillYard(g: THREE.Group): void {
   const plankMat = mat(0xd2a35c);
   for (let i = 0; i < 4; i++) { const p = new THREE.Mesh(box(0.72, 0.05, 0.26), plankMat); p.position.set(-0.72, 0.07 + i * 0.06, 0.42); p.rotation.y = 0.08 * (i % 2 ? 1 : -1); p.castShadow = true; g.add(p); }
+  // sawbuck + log rest in the open front bay, clear of the shed's corner posts
   const buckMat = mat(0x6b4a2f);
-  for (const sx of [-0.9, -0.5]) for (const rz of [0.35, -0.35]) { const leg = new THREE.Mesh(box(0.04, 0.42, 0.04), buckMat); leg.position.set(sx, 0.2, -0.5); leg.rotation.z = rz; g.add(leg); }
-  const log = new THREE.Mesh(cyl(0.09, 0.09, 0.62, 8), mat(0x8a5a2b)); log.rotation.x = Math.PI / 2; log.position.set(-0.7, 0.42, -0.5); log.castShadow = true; g.add(log);
+  for (const sx of [-0.5, -0.12]) for (const rz of [0.35, -0.35]) { const leg = new THREE.Mesh(box(0.04, 0.42, 0.04), buckMat); leg.position.set(sx, 0.2, 0.86); leg.rotation.z = rz; g.add(leg); }
+  const log = new THREE.Mesh(cyl(0.09, 0.09, 0.62, 8), mat(0x8a5a2b)); log.rotation.z = Math.PI / 2; log.position.set(-0.31, 0.44, 0.86); log.castShadow = true; g.add(log);
 }
 
 function foresterYard(g: THREE.Group): void {
