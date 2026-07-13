@@ -473,16 +473,17 @@ export class UI {
   private setWorkerWarning(shortage: boolean, metrics: ReturnType<Game['workerMetrics']>): void {
     const toggle = $('unitsToggle');
     toggle.classList.toggle('warn', shortage);
-    const pools: { k: 'serf' | 'builder' | 'villager'; label: string; icon: string }[] = [
-      { k: 'serf', label: 'Serfs', icon: '🧺' },
-      { k: 'builder', label: 'Builders', icon: '🔨' },
-      { k: 'villager', label: 'Villagers', icon: '🧑' },
-    ];
-    const chips = pools.map(({ k, label, icon }) => {
+    const pools = [
+      { k: 'serf', label: 'Serfs' },
+      { k: 'builder', label: 'Builders' },
+      { k: 'villager', label: 'Villagers' },
+    ] as const;
+    const chips = pools.map(({ k, label }) => {
       const m = metrics[k];
-      return `<span class="wkpi ${m.status}" title="${label}: ${m.note}"><i class="kpi ${m.status}"></i>${icon} ${m.count}</span>`;
+      return `<span class="utab${m.status === 'bad' ? ' short' : ''}" title="${label}: ${m.note}">${label} <b>${m.count}</b> <i class="kpi ${m.status}"></i></span>`;
     }).join('');
-    toggle.innerHTML = `<span class="wtitle">${shortage ? '⚠️ ' : ''}Workers</span><span class="wkpis">${chips}</span>`;
+    const total = this.game ? this.game.units.filter(u => !u.dead && u.faction === 'player').length : 0;
+    toggle.innerHTML = `<h3 class="serif wtitle">${shortage ? '⚠️ ' : ''}Workers · ${total}</h3><div class="wkpis">${chips}</div>`;
     const bad = pools.filter(p => metrics[p.k].status === 'bad');
     toggle.title = bad.length ? 'Short-handed — ' + bad.map(p => `${p.label}: ${metrics[p.k].note}`).join(' · ') : 'Open the worker roster (U)';
   }
