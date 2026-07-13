@@ -129,7 +129,6 @@ function startLevel(): void {
   game.sfx = name => audio.play(name as any);
   audio.setBiome(biomeKey); // before setLevel: a biome signature owns the score
   audio.setLevel(level.index);
-  audio.setDynamic(sandbox && sandboxCfg.biome === 'gooi');
   game.onGold = amt => { if (run) { run.gold = Math.max(0, run.gold + amt); if (amt > 0) goldEarnedThisRun += amt; ui.setGold(run.gold); } };
   game.onHurt = (x, z) => view.spawnHurt(x, z);
   game.onDeath = (x, z, _fac, color, role, scale) => view.spawnCorpse(x, z, color, role, scale);
@@ -252,9 +251,9 @@ function disposeLevel(): void {
 function goMenu(): void {
   phase = 'menu';
   sandbox = false;
+  audio.rerollHarmony(); // one new pads/chords identity per home-screen visit
   audio.setBiome('gooi'); // release any biome signature before the menu mood
   audio.setLevel(0);
-  audio.setDynamic(true); // the menu plays the evolving score, drifting through every mood
   renderMenu();
   showScreen('menu');
 }

@@ -1,8 +1,8 @@
 /* =====================================================================
    Erfgooiers — audio.
    A self-contained Web Audio engine: no asset files, everything is
-   synthesised at runtime. It provides a gentle, idyllic pastoral loop
-   (soft harp/lute melody over a warm pad, folk I–V–vi–IV progression)
+   synthesised at runtime. It provides a gentle, idyllic pastoral score
+   (slow extended chords, warm pads, and evolving ambient texture)
    and a handful of small, period-flavoured sound effects (wooden thud,
    axe on timber, harvest swish, coin, a raised-building chime).
 
@@ -32,8 +32,8 @@ const hz = (midi: number): number => 440 * Math.pow(2, (midi - 69) / 12);
  */
 interface Mood {
   bpm: number;                                       // tempo (bar length & drum)
-  prog: { bass: number; chord: number[] }[];         // one sustained chord per bar
-  variants?: { bass: number; chord: number[] }[][];  // alt progressions, picked per play
+  prog: ChordCell[];                                 // one sustained chord per bar
+  variants?: ChordCell[][];                          // alternate harmonic identities
   pad: number;                                       // pad voice level (× base)
   fb: number;                                        // delay feedback (space)
   shimmer: number;                                   // high octave sparkle (0 = none)
@@ -42,24 +42,29 @@ interface Mood {
   drum: number;                                      // frame-drum hits per bar (0 = none)
 }
 
-// Shared C-major chord voicings, kept around C4 for smooth voice-leading.
-const C = { bass: 48, chord: [60, 64, 67] };  // I
-const G = { bass: 43, chord: [55, 59, 62] };  // V
-const Am = { bass: 45, chord: [57, 60, 64] }; // vi
-const F = { bass: 41, chord: [53, 57, 60] };  // IV
-const Em = { bass: 40, chord: [55, 59, 64] }; // iii
+type ChordCell = { bass: number; chord: number[] };
 
-// Tier 0 — sunlit C major: warm, clean, idyllic. Pads only. A handful of
-// bright progressions are shuffled between so no two games open the same way.
+// Shared C-major extended voicings, kept around C4 for smooth voice-leading.
+// The extra seventh/ninth colours provide motion without introducing a lead.
+const C: ChordCell = { bass: 48, chord: [60, 64, 67, 71, 74] };  // Cmaj9 (I)
+const G: ChordCell = { bass: 43, chord: [55, 59, 62, 65, 69] };  // G13 (V)
+const Am: ChordCell = { bass: 45, chord: [57, 60, 64, 67, 71] }; // Am9 (vi)
+const F: ChordCell = { bass: 41, chord: [53, 57, 60, 64, 67] };  // Fmaj9 (IV)
+const Em: ChordCell = { bass: 40, chord: [55, 59, 62, 64] };     // Em7 (iii)
+const Dm: ChordCell = { bass: 38, chord: [57, 60, 64, 65] };     // Dm9 (ii)
+const Fm: ChordCell = { bass: 41, chord: [53, 56, 60, 62] };     // Fm6/9 (iv minor)
+
+// Tier 0 — sunlit C major: warm, clean, idyllic. Pads only. One of these
+// harmonic identities is selected per home-screen visit and held into the run.
 const MOOD_MAJOR: Mood = {
   bpm: 60, pad: 1, fb: 0.16, shimmer: 0, air: 0, drone: 0, drum: 0,
   prog: [C, G, Am, F],
   variants: [
-    [C, G, Am, F],  // I–V–vi–IV
-    [C, Am, F, G],  // I–vi–IV–V
-    [C, F, G, Am],  // I–IV–V–vi
-    [C, Em, F, G],  // I–iii–IV–V
-    [C, G, F, Am],  // I–V–IV–vi
+    [C, G, Am, F],      // Imaj9–V13–vi9–IVmaj9
+    [C, Am, Dm, G],     // Imaj9–vi9–ii9–V13
+    [C, F, Em, Am],     // Imaj9–IVmaj9–iii7–vi9
+    [C, Em, F, G],      // Imaj9–iii7–IVmaj9–V13
+    [C, G, Fm, C],      // Imaj9–V13–iv6/9–Imaj9 (borrowed minor iv)
   ],
 };
 
@@ -68,10 +73,10 @@ const MOOD_MAJOR: Mood = {
 const MOOD_WISTFUL: Mood = {
   bpm: 60, pad: 1.05, fb: 0.24, shimmer: 0.4, air: 0.03, drone: 0, drum: 0,
   prog: [
-    { bass: 45, chord: [57, 60, 64] }, // Am
-    { bass: 41, chord: [53, 57, 60] }, // F
-    { bass: 48, chord: [60, 64, 67] }, // C
-    { bass: 43, chord: [55, 59, 62] }, // G
+    { bass: 45, chord: [57, 60, 64, 67, 71] }, // Am9
+    { bass: 41, chord: [53, 57, 60, 64] },     // Fmaj7
+    { bass: 48, chord: [60, 64, 67, 71] },     // Cmaj7
+    { bass: 43, chord: [55, 59, 62, 65] },     // G7
   ],
 };
 
@@ -80,10 +85,10 @@ const MOOD_WISTFUL: Mood = {
 const MOOD_MINOR: Mood = {
   bpm: 66, pad: 1.1, fb: 0.32, shimmer: 0.5, air: 0.06, drone: 0.08, drum: 2,
   prog: [
-    { bass: 38, chord: [62, 65, 69] }, // Dm
-    { bass: 46, chord: [58, 62, 65] }, // Bb
-    { bass: 41, chord: [53, 57, 60] }, // F
-    { bass: 48, chord: [60, 64, 67] }, // C
+    { bass: 38, chord: [62, 65, 69, 72, 76] }, // Dm9
+    { bass: 46, chord: [58, 62, 65, 69] },     // Bbmaj7
+    { bass: 41, chord: [53, 57, 60, 64] },     // Fmaj7
+    { bass: 48, chord: [60, 64, 67, 70] },     // C7
   ],
 };
 
@@ -92,14 +97,12 @@ const MOOD_MINOR: Mood = {
 const MOOD_URGENT: Mood = {
   bpm: 76, pad: 1.15, fb: 0.4, shimmer: 0.6, air: 0.09, drone: 0.12, drum: 4,
   prog: [
-    { bass: 40, chord: [64, 67, 71] }, // Em
-    { bass: 48, chord: [60, 64, 67] }, // C
-    { bass: 45, chord: [57, 60, 64] }, // Am
-    { bass: 47, chord: [59, 63, 66] }, // B (D# leading tone)
+    { bass: 40, chord: [64, 66, 67, 71] },     // Em(add9)
+    { bass: 48, chord: [60, 64, 67, 71] },     // Cmaj7
+    { bass: 45, chord: [57, 60, 64, 71] },     // Am9
+    { bass: 47, chord: [59, 63, 66, 69, 72] }, // B7(b9)
   ],
 };
-
-const MOODS: Mood[] = [MOOD_MAJOR, MOOD_WISTFUL, MOOD_MINOR, MOOD_URGENT];
 
 // =====================================================================
 //  Biome moods — each landscape has its own musical signature. When a
@@ -110,14 +113,14 @@ const MOODS: Mood[] = [MOOD_MAJOR, MOOD_WISTFUL, MOOD_MINOR, MOOD_URGENT];
 const MOOD_ARDENNES: Mood = {
   bpm: 68, pad: 1.05, fb: 0.22, shimmer: 0.3, air: 0.04, drone: 0, drum: 2,
   prog: [
-    { bass: 38, chord: [62, 65, 69] }, // Dm
-    { bass: 41, chord: [60, 65, 69] }, // F
-    { bass: 48, chord: [64, 67, 72] }, // C
-    { bass: 43, chord: [62, 67, 71] }, // G
+    { bass: 38, chord: [62, 65, 69, 72, 76] }, // Dm9
+    { bass: 41, chord: [60, 64, 65, 69] },     // Fmaj7
+    { bass: 48, chord: [64, 67, 71, 72] },     // Cmaj7
+    { bass: 43, chord: [62, 65, 67, 71] },     // G7
   ],
   variants: [
-    [{ bass: 38, chord: [62, 65, 69] }, { bass: 41, chord: [60, 65, 69] }, { bass: 48, chord: [64, 67, 72] }, { bass: 43, chord: [62, 67, 71] }],
-    [{ bass: 38, chord: [62, 65, 69] }, { bass: 48, chord: [64, 67, 72] }, { bass: 43, chord: [62, 67, 71] }, { bass: 41, chord: [60, 65, 69] }],
+    [{ bass: 38, chord: [62, 65, 69, 72, 76] }, { bass: 41, chord: [60, 64, 65, 69] }, { bass: 48, chord: [64, 67, 71, 72] }, { bass: 43, chord: [62, 65, 67, 71] }],
+    [{ bass: 38, chord: [62, 65, 69, 72, 76] }, { bass: 48, chord: [64, 67, 71, 72] }, { bass: 43, chord: [62, 65, 67, 71] }, { bass: 41, chord: [60, 64, 65, 69] }],
   ],
 };
 
@@ -126,10 +129,10 @@ const MOOD_ARDENNES: Mood = {
 const MOOD_BLACKFOREST: Mood = {
   bpm: 52, pad: 0.95, fb: 0.38, shimmer: 0.2, air: 0.09, drone: 0.14, drum: 0,
   prog: [
-    { bass: 40, chord: [59, 64, 67] }, // Em
-    { bass: 45, chord: [60, 64, 69] }, // Am
-    { bass: 48, chord: [60, 64, 67] }, // C
-    { bass: 47, chord: [59, 63, 66] }, // B — the raised leading tone glints in the dark
+    { bass: 40, chord: [59, 62, 64, 67] },     // Em7
+    { bass: 45, chord: [60, 64, 67, 69] },     // Am7
+    { bass: 48, chord: [60, 64, 67, 71] },     // Cmaj7
+    { bass: 47, chord: [59, 63, 66, 69, 72] }, // B7(b9) — the leading tone glints
   ],
 };
 
@@ -139,10 +142,10 @@ const MOOD_BLACKFOREST: Mood = {
 const MOOD_ALPS: Mood = {
   bpm: 48, pad: 1.1, fb: 0.3, shimmer: 0.7, air: 0.12, drone: 0.1, drum: 0,
   prog: [
-    { bass: 45, chord: [61, 64, 69] }, // A
-    { bass: 40, chord: [59, 64, 68] }, // E
-    { bass: 42, chord: [61, 66, 69] }, // F#m
-    { bass: 38, chord: [62, 66, 69] }, // D
+    { bass: 45, chord: [61, 64, 68, 69] }, // Amaj7
+    { bass: 40, chord: [59, 62, 64, 68] }, // E7
+    { bass: 42, chord: [61, 64, 66, 69] }, // F#m7
+    { bass: 38, chord: [61, 62, 66, 69] }, // Dmaj7
   ],
 };
 
@@ -151,10 +154,10 @@ const MOOD_ALPS: Mood = {
 const MOOD_WINTER: Mood = {
   bpm: 46, pad: 1.0, fb: 0.3, shimmer: 0.75, air: 0.1, drone: 0.06, drum: 0,
   prog: [
-    { bass: 45, chord: [57, 64, 71] }, // Am(add9), wide and cold
-    { bass: 41, chord: [53, 60, 69] }, // Fmaj7 colours
-    { bass: 43, chord: [55, 62, 71] }, // G(add9)
-    { bass: 40, chord: [52, 59, 67] }, // Em7
+    { bass: 45, chord: [57, 60, 64, 71] }, // Am9, wide and cold
+    { bass: 41, chord: [53, 57, 60, 64] }, // Fmaj7
+    { bass: 43, chord: [55, 59, 62, 69] }, // G(add9)
+    { bass: 40, chord: [52, 55, 59, 62] }, // Em7
   ],
 };
 
@@ -163,10 +166,10 @@ const MOOD_WINTER: Mood = {
 const MOOD_POLDER: Mood = {
   bpm: 63, pad: 1.0, fb: 0.2, shimmer: 0.35, air: 0.04, drone: 0, drum: 2,
   prog: [
-    { bass: 41, chord: [53, 57, 60] }, // F
-    { bass: 46, chord: [58, 62, 65] }, // Bb
-    { bass: 48, chord: [60, 64, 67] }, // C
-    { bass: 41, chord: [53, 57, 60] }, // F
+    { bass: 41, chord: [53, 57, 60, 64] }, // Fmaj7
+    { bass: 46, chord: [58, 62, 65, 69] }, // Bbmaj7
+    { bass: 48, chord: [60, 64, 67, 70] }, // C7
+    { bass: 41, chord: [53, 57, 60, 67] }, // F(add9)
   ],
 };
 
@@ -175,10 +178,10 @@ const MOOD_POLDER: Mood = {
 const MOOD_SEASIDE: Mood = {
   bpm: 70, pad: 1.05, fb: 0.26, shimmer: 0.4, air: 0.09, drone: 0.04, drum: 2,
   prog: [
-    { bass: 43, chord: [59, 62, 67] }, // G
-    { bass: 41, chord: [57, 60, 65] }, // F — the mixolydian wave
-    { bass: 48, chord: [60, 64, 67] }, // C
-    { bass: 43, chord: [59, 62, 67] }, // G
+    { bass: 43, chord: [59, 62, 65, 67] }, // G7
+    { bass: 41, chord: [57, 60, 64, 65] }, // Fmaj7 — the mixolydian wave
+    { bass: 48, chord: [60, 64, 67, 70] }, // C7
+    { bass: 43, chord: [59, 62, 67, 69] }, // G(add9)
   ],
 };
 
@@ -187,10 +190,10 @@ const MOOD_SEASIDE: Mood = {
 const MOOD_ISLAND: Mood = {
   bpm: 56, pad: 1.05, fb: 0.28, shimmer: 0.55, air: 0.11, drone: 0.06, drum: 0,
   prog: [
-    { bass: 38, chord: [57, 62, 66] }, // D
-    { bass: 43, chord: [59, 62, 67] }, // G
-    { bass: 45, chord: [61, 64, 69] }, // A
-    { bass: 47, chord: [59, 62, 66] }, // Bm
+    { bass: 38, chord: [57, 61, 62, 66] }, // Dmaj7
+    { bass: 43, chord: [59, 62, 66, 67] }, // Gmaj7
+    { bass: 45, chord: [61, 64, 67, 69] }, // A7
+    { bass: 47, chord: [59, 62, 66, 69] }, // Bm7
   ],
 };
 
@@ -199,10 +202,10 @@ const MOOD_ISLAND: Mood = {
 const MOOD_HELL: Mood = {
   bpm: 58, pad: 1.1, fb: 0.45, shimmer: 0.15, air: 0.12, drone: 0.2, drum: 4,
   prog: [
-    { bass: 40, chord: [59, 64, 67] }, // Em
-    { bass: 41, chord: [60, 65, 69] }, // F — the phrygian shadow a half-step up
-    { bass: 40, chord: [59, 64, 67] }, // Em
-    { bass: 47, chord: [59, 63, 66] }, // B — a glint of heat in the dark
+    { bass: 40, chord: [59, 62, 64, 67] },     // Em7
+    { bass: 41, chord: [60, 64, 65, 69] },     // Fmaj7 — phrygian shadow
+    { bass: 40, chord: [59, 64, 66, 67] },     // Em(add9)
+    { bass: 47, chord: [59, 63, 66, 69, 72] }, // B7(b9)
   ],
 };
 
@@ -217,77 +220,6 @@ const BIOME_MOODS: Record<string, Mood> = {
   hell: MOOD_HELL,
 };
 
-// =====================================================================
-//  Opening motifs — an actual melody line, unlike the moods (which are
-//  pure harmonic texture). A random motif is chosen at the menu and the
-//  first few levels of a run to give each playthrough its own signature
-//  tune, then it falls silent so the later levels stay ambient.
-// =====================================================================
-/** One melodic event: a MIDI pitch held for a number of quarter-note beats. */
-interface MotifNote { midi: number; beats: number; }
-
-/**
- * A short looping theme laid over the pads. `voice` selects the timbre
- * (a warm jazz rhodes, a retro square-wave chip lead, or a dark reed for the
- * tritone theme); `bars` is one note-list per bar, cycled over the run's
- * progression. Jazz motifs swing their eighths.
- */
-interface Motif {
-  voice: 'jazz' | 'chip' | 'tritone';
-  bars: MotifNote[][];
-  swing?: boolean;
-  gain?: number;
-}
-
-// Two modal jazz motifs — loose, noodling lines that sit easily over the
-// bright C-major pads. Swung eighths give them a lazy, after-hours lilt.
-const MOTIF_JAZZ_A: Motif = {
-  voice: 'jazz', swing: true, gain: 0.15,
-  bars: [
-    [{ midi: 64, beats: 0.5 }, { midi: 65, beats: 0.5 }, { midi: 67, beats: 1 }, { midi: 69, beats: 0.5 }, { midi: 67, beats: 0.5 }, { midi: 65, beats: 1 }],
-    [{ midi: 64, beats: 1 }, { midi: 62, beats: 0.5 }, { midi: 64, beats: 0.5 }, { midi: 60, beats: 2 }],
-    [{ midi: 67, beats: 0.5 }, { midi: 69, beats: 0.5 }, { midi: 71, beats: 1 }, { midi: 69, beats: 0.5 }, { midi: 67, beats: 0.5 }, { midi: 65, beats: 1 }],
-    [{ midi: 64, beats: 2 }, { midi: 62, beats: 2 }],
-  ],
-};
-
-const MOTIF_JAZZ_B: Motif = {
-  voice: 'jazz', swing: true, gain: 0.14,
-  bars: [
-    [{ midi: 72, beats: 0.5 }, { midi: 71, beats: 0.5 }, { midi: 69, beats: 0.5 }, { midi: 67, beats: 0.5 }, { midi: 69, beats: 1 }, { midi: 67, beats: 1 }],
-    [{ midi: 65, beats: 1 }, { midi: 64, beats: 1 }, { midi: 62, beats: 2 }],
-    [{ midi: 67, beats: 0.5 }, { midi: 69, beats: 0.5 }, { midi: 72, beats: 1 }, { midi: 71, beats: 0.5 }, { midi: 69, beats: 0.5 }, { midi: 67, beats: 1 }],
-    [{ midi: 69, beats: 2 }, { midi: 67, beats: 2 }],
-  ],
-};
-
-// A retro 8-bit lead — steady square-wave eighths arpeggiating the chords,
-// bright and chiptune-plucky. No swing; it marches.
-const MOTIF_CHIP: Motif = {
-  voice: 'chip', gain: 0.11,
-  bars: [
-    [{ midi: 72, beats: 0.5 }, { midi: 76, beats: 0.5 }, { midi: 79, beats: 0.5 }, { midi: 76, beats: 0.5 }, { midi: 74, beats: 0.5 }, { midi: 77, beats: 0.5 }, { midi: 81, beats: 0.5 }, { midi: 79, beats: 0.5 }],
-    [{ midi: 67, beats: 0.5 }, { midi: 71, beats: 0.5 }, { midi: 74, beats: 0.5 }, { midi: 71, beats: 0.5 }, { midi: 69, beats: 0.5 }, { midi: 72, beats: 0.5 }, { midi: 76, beats: 0.5 }, { midi: 74, beats: 0.5 }],
-    [{ midi: 69, beats: 0.5 }, { midi: 72, beats: 0.5 }, { midi: 76, beats: 0.5 }, { midi: 72, beats: 0.5 }, { midi: 65, beats: 0.5 }, { midi: 69, beats: 0.5 }, { midi: 72, beats: 0.5 }, { midi: 69, beats: 0.5 }],
-    [{ midi: 60, beats: 0.5 }, { midi: 64, beats: 0.5 }, { midi: 67, beats: 0.5 }, { midi: 72, beats: 0.5 }, { midi: 67, beats: 0.5 }, { midi: 64, beats: 0.5 }, { midi: 62, beats: 0.5 }, { midi: 60, beats: 0.5 }],
-  ],
-};
-
-// The devil's-interval theme — a slow, ominous reed line built on the
-// tritone (A↔D♯, B↔F). Classical phrasing; when chosen its tempo quickens
-// level by level (handled in pickMotif). Evil, and getting impatient.
-const MOTIF_TRITONE: Motif = {
-  voice: 'tritone', gain: 0.13,
-  bars: [
-    [{ midi: 69, beats: 1 }, { midi: 72, beats: 1 }, { midi: 75, beats: 1 }, { midi: 71, beats: 1 }],
-    [{ midi: 68, beats: 2 }, { midi: 65, beats: 2 }],
-    [{ midi: 69, beats: 1 }, { midi: 75, beats: 1 }, { midi: 69, beats: 0.5 }, { midi: 68, beats: 0.5 }, { midi: 69, beats: 1 }],
-    [{ midi: 71, beats: 2 }, { midi: 65, beats: 2 }],
-  ],
-};
-
-const OPENING_MOTIFS: Motif[] = [MOTIF_JAZZ_A, MOTIF_JAZZ_B, MOTIF_CHIP, MOTIF_TRITONE];
-
 /** Map a 1-based level within a run to a mood tier. */
 function moodForLevel(level: number): Mood {
   if (level <= 3) return MOOD_MAJOR;
@@ -296,10 +228,22 @@ function moodForLevel(level: number): Mood {
   return MOOD_URGENT;
 }
 
-/** Choose a progression for a mood — a random variant if it has any. */
-function pickProg(m: Mood): { bass: number; chord: number[] }[] {
-  if (m.variants && m.variants.length) return m.variants[Math.floor(Math.random() * m.variants.length)];
-  return m.prog;
+const HARMONY_VARIANTS = MOOD_MAJOR.variants!.length;
+
+/** Select the same harmonic identity deterministically in every mood. */
+export function selectProgression<T>(variants: readonly T[], harmonyIndex: number): T {
+  return variants[((harmonyIndex % variants.length) + variants.length) % variants.length];
+}
+
+/** Pick a genuinely different identity when possible. Injected RNG keeps this testable. */
+export function nextHarmonyIndex(current: number, count: number, random: () => number = Math.random): number {
+  if (count <= 1) return 0;
+  if (current < 0) return Math.floor(random() * count);
+  return (current + 1 + Math.floor(random() * (count - 1))) % count;
+}
+
+function progressionFor(m: Mood, harmonyIndex: number): ChordCell[] {
+  return selectProgression(m.variants?.length ? m.variants : [m.prog], harmonyIndex);
 }
 
 export class AudioEngine {
@@ -322,13 +266,12 @@ export class AudioEngine {
   private mood: Mood = MOOD_MAJOR;        // mood the current bar is playing in
   private pendingMood: Mood = MOOD_MAJOR; // mood to switch to at the next bar
   private biomeMood: Mood | null = null;  // biome signature overriding level moods
-  private activeProg = MOOD_MAJOR.prog;   // the chosen progression for this play
-  private dynamic = false;                // sandbox: drift through the moods over time
-  private motif: Motif | null = null;     // opening melody laid over the pads (menu/early levels)
-  private motifBpm = 0;                    // >0: motif drives the bar tempo (tritone's evolving pace)
+  private activeProg = MOOD_MAJOR.prog;   // the selected progression for this play
+  private harmonyIndex = -1;              // one arrangement identity, stable through a run
+  private pendingHarmonyIndex = -1;       // rerolls land cleanly on the next bar boundary
 
   constructor() {
-    this.muted = localStorage.getItem(MUTE_KEY) === '1';
+    this.muted = typeof localStorage !== 'undefined' && localStorage.getItem(MUTE_KEY) === '1';
   }
 
   get isMuted(): boolean { return this.muted; }
@@ -351,11 +294,10 @@ export class AudioEngine {
    * omit) to return to the bright menu mood.
    */
   setLevel(level = 0): void {
-    this.pickMotif(level); // opening melody is independent of the biome/level pad tier
     if (this.biomeMood) return; // a biome signature owns the score while active
     this.pendingMood = level > 0 ? moodForLevel(level) : MOOD_MAJOR;
     // If nothing is playing yet, adopt it straight away.
-    if (!this.timer) { this.mood = this.pendingMood; this.activeProg = pickProg(this.mood); }
+    if (!this.timer) { this.mood = this.pendingMood; this.activeProg = progressionFor(this.mood, this.harmonyIndex); }
   }
 
   /**
@@ -367,28 +309,23 @@ export class AudioEngine {
     this.biomeMood = BIOME_MOODS[biome] ?? null;
     if (this.biomeMood) {
       this.pendingMood = this.biomeMood;
-      if (!this.timer) { this.mood = this.pendingMood; this.activeProg = pickProg(this.mood); }
+      if (!this.timer) { this.mood = this.pendingMood; this.activeProg = progressionFor(this.mood, this.harmonyIndex); }
     }
   }
 
   /**
-   * Sandbox mode: let the score drift through every mood tier over time so a
-   * long free-build session slowly evolves from sunlit major to urgent minor
-   * and back, rather than sitting on one texture.
+   * Choose a new pads-and-chords arrangement. Main calls this only when the
+   * page first reaches home or returns there; level, biome, mute, and screen
+   * transitions retain the current identity. An active score adopts the new
+   * arrangement on its next bar boundary.
    */
-  setDynamic(on: boolean): void { this.dynamic = on; }
-
-  /**
-   * Choose the opening motif. A random theme plays at the menu (level 0) and
-   * the first three levels of a run, then falls silent so the later levels stay
-   * purely ambient. The tritone theme carries its own tempo, quickening a step
-   * each level for a "classical, and closing in" feel.
-   */
-  private pickMotif(level: number): void {
-    if (level > 3) { this.motif = null; this.motifBpm = 0; return; }
-    const m = OPENING_MOTIFS[Math.floor(Math.random() * OPENING_MOTIFS.length)];
-    this.motif = m;
-    this.motifBpm = m.voice === 'tritone' ? 66 + Math.max(0, level - 1) * 10 : 0;
+  rerollHarmony(): void {
+    const current = this.pendingHarmonyIndex >= 0 ? this.pendingHarmonyIndex : this.harmonyIndex;
+    this.pendingHarmonyIndex = nextHarmonyIndex(current, HARMONY_VARIANTS);
+    if (!this.timer) {
+      this.harmonyIndex = this.pendingHarmonyIndex;
+      this.activeProg = progressionFor(this.mood, this.harmonyIndex);
+    }
   }
 
   /** Create the context on the first user gesture and (if unmuted) start music. */
@@ -401,7 +338,7 @@ export class AudioEngine {
   /** Toggle sound; returns the new muted state. Persists the choice. */
   toggleMute(): boolean {
     this.muted = !this.muted;
-    localStorage.setItem(MUTE_KEY, this.muted ? '1' : '0');
+    if (typeof localStorage !== 'undefined') localStorage.setItem(MUTE_KEY, this.muted ? '1' : '0');
     if (this.muted) this.stopMusic();
     else { this.unlock(); this.startMusic(); }
     if (this.master) this.master.gain.value = this.muted ? 0 : 0.9;
@@ -446,7 +383,8 @@ export class AudioEngine {
     if (!this.ctx || this.timer) return;
     this.nextNote = this.ctx.currentTime + 0.1;
     this.step = 0;
-    this.activeProg = pickProg(this.mood); // fresh progression variant each start
+    if (this.harmonyIndex < 0) this.rerollHarmony();
+    this.activeProg = progressionFor(this.mood, this.harmonyIndex);
     // Lookahead scheduler: queue notes a fraction of a second ahead of the
     // audio clock so timing stays rock-steady regardless of frame rate.
     this.timer = window.setInterval(() => this.schedule(), 25);
@@ -461,22 +399,21 @@ export class AudioEngine {
     // Bars are long and overlapping, so schedule one whole bar a little ahead
     // of the audio clock and let its sustained voices ring across the next.
     while (this.nextNote < ctx.currentTime + 0.4) {
-      // Sandbox: every 4 bars drift to the next mood tier, cycling endlessly
-      // (unless a biome signature owns the score).
-      if (this.dynamic && !this.biomeMood && this.step % 4 === 0) {
-        this.pendingMood = MOODS[((this.step / 4) | 0) % MOODS.length];
+      // A return to the home screen may queue a new arrangement. Nothing else
+      // mutates this identity, so menu → hero select → gameplay stays seamless.
+      if (this.pendingHarmonyIndex !== this.harmonyIndex) {
+        this.harmonyIndex = this.pendingHarmonyIndex;
+        this.activeProg = progressionFor(this.mood, this.harmonyIndex);
       }
       // Adopt any queued mood change at the bar boundary so shifts glide in.
       if (this.pendingMood !== this.mood) {
         this.mood = this.pendingMood;
-        this.activeProg = pickProg(this.mood);
+        this.activeProg = progressionFor(this.mood, this.harmonyIndex);
         if (this.fbGain) this.fbGain.gain.value = this.mood.fb;
       }
       const m = this.mood;
       const prog = this.activeProg;
-      // A motif with its own tempo (the quickening tritone theme) drives the bar.
-      const bpm = this.motifBpm || m.bpm;
-      const barLen = (60 / bpm) * 4;
+      const barLen = (60 / m.bpm) * 4;
       const bar = this.step % prog.length;
       const cell = prog[bar];
       const t = this.nextNote;
@@ -494,9 +431,6 @@ export class AudioEngine {
         for (let i = 0; i < m.drum; i++) this.drum(t + i * beat, i === 0 ? 0.3 : 0.18);
       }
 
-      // Opening melody, if one is playing this run.
-      if (this.motif) this.playMotifBar(this.motif, this.step, t, barLen);
-
       this.nextNote += barLen;
       this.step++;
     }
@@ -513,7 +447,9 @@ export class AudioEngine {
     o.type = 'sine';
     o.frequency.value = hz(midi);
     const g = ctx.createGain();
-    const peak = 0.075 * this.mood.pad * level;
+    // Extended voicings use four or five oscillators, so keep each voice
+    // lighter than the old triads to preserve headroom and a soft pad blend.
+    const peak = 0.052 * this.mood.pad * level;
     g.gain.setValueAtTime(0.0001, t);
     g.gain.linearRampToValueAtTime(peak, t + 0.5);
     g.gain.setValueAtTime(peak, t + Math.max(0.5, dur - 0.6));
@@ -575,86 +511,6 @@ export class AudioEngine {
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
     src.connect(lp); lp.connect(g); g.connect(this.music);
     src.start(t); src.stop(t + 0.18);
-  }
-
-  /** Play one bar of the opening motif, walking its notes across the bar. */
-  private playMotifBar(motif: Motif, step: number, t: number, barLen: number): void {
-    const bar = motif.bars[step % motif.bars.length];
-    const beatLen = barLen / 4;
-    let pos = 0;
-    for (const note of bar) {
-      let start = t + pos * beatLen;
-      // Swing: nudge the off-beat eighths a touch late for a lazy lilt.
-      if (motif.swing && Math.round(pos / 0.5) % 2 === 1) start += beatLen * 0.12;
-      this.melodyNote(note.midi, start, note.beats * beatLen, motif);
-      pos += note.beats;
-    }
-  }
-
-  /** A single melody note, voiced per the motif's timbre. */
-  private melodyNote(midi: number, t: number, dur: number, motif: Motif): void {
-    const ctx = this.ctx!;
-    const level = motif.gain ?? 0.14;
-
-    if (motif.voice === 'chip') {
-      // Retro square-wave lead — bright and staccato.
-      const o = ctx.createOscillator();
-      o.type = 'square'; o.frequency.value = hz(midi);
-      const g = ctx.createGain();
-      const d = Math.min(dur, 0.2);
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.linearRampToValueAtTime(level, t + 0.008);
-      g.gain.setValueAtTime(level, t + d * 0.6);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-      o.connect(g); g.connect(this.music);
-      o.start(t); o.stop(t + d + 0.02);
-      return;
-    }
-
-    if (motif.voice === 'tritone') {
-      // Dark reed — two detuned saws under a lowpass, with a hall of delay.
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass'; lp.frequency.value = 1400;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.linearRampToValueAtTime(level, t + 0.06);
-      g.gain.setValueAtTime(level, t + Math.max(0.06, dur - 0.15));
-      g.gain.linearRampToValueAtTime(0.0001, t + dur);
-      lp.connect(g); g.connect(this.music);
-      const send = ctx.createGain(); send.gain.value = 0.35;
-      g.connect(send); send.connect(this.delay);
-      for (const det of [1, 0.5]) {
-        const o = ctx.createOscillator();
-        o.type = 'sawtooth'; o.frequency.value = hz(midi) * det;
-        const og = ctx.createGain(); og.gain.value = det === 1 ? 1 : 0.5;
-        o.connect(og); og.connect(lp);
-        o.start(t); o.stop(t + dur + 0.05);
-      }
-      return;
-    }
-
-    // Jazz — warm rhodes: a triangle + sine pair with a gentle vibrato.
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(level, t + 0.02);
-    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, level * 0.5), t + dur * 0.5);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    g.connect(this.music);
-    const send = ctx.createGain(); send.gain.value = 0.25;
-    g.connect(send); send.connect(this.delay);
-    const vib = ctx.createOscillator();
-    vib.type = 'sine'; vib.frequency.value = 5;
-    const vibGain = ctx.createGain(); vibGain.gain.value = 4;
-    vib.connect(vibGain);
-    for (const [type, lv] of [['triangle', 1], ['sine', 0.5]] as [OscillatorType, number][]) {
-      const o = ctx.createOscillator();
-      o.type = type; o.frequency.value = hz(midi);
-      vibGain.connect(o.frequency);
-      const og = ctx.createGain(); og.gain.value = lv;
-      o.connect(og); og.connect(g);
-      o.start(t); o.stop(t + dur + 0.05);
-    }
-    vib.start(t); vib.stop(t + dur + 0.05);
   }
 
   /** Rounded bass note. */
