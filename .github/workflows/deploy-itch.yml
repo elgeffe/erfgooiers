@@ -1,0 +1,60 @@
+name: Deploy to itch.io
+
+# Manually builds the browser game and publishes it with itch.io's Butler CLI.
+# The itch.io project must already exist, and BUTLER_API_KEY must be configured
+# as a repository Actions secret.
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_slug:
+        description: itch.io project slug
+        required: true
+        default: erfgooiers
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: itch-io-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build for itch.io
+        run: npm run build
+        env:
+          # itch.io serves browser uploads from a generated subdirectory.
+          BASE_PATH: ./
+
+      - name: Install Butler
+        run: |
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/butler.zip" \
+            https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default
+          unzip -q "$RUNNER_TEMP/butler.zip" -d "$RUNNER_TEMP/butler"
+          chmod +x "$RUNNER_TEMP/butler/butler"
+
+      - name: Push browser build to itch.io
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+          ITCH_PROJECT: ${{ inputs.project_slug }}
+        run: |
+          "$RUNNER_TEMP/butler/butler" push dist \
+            "elgeffe/$ITCH_PROJECT:html5" \
+            --userversion "$GITHUB_SHA"

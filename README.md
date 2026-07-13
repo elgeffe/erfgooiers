@@ -41,6 +41,19 @@ npm run build  # TypeScript typecheck, then production bundle
 npm run preview
 ```
 
+## Deploy to itch.io
+
+The `Deploy to itch.io` GitHub Actions workflow can be started manually from the
+repository's Actions tab. Before running it:
+
+1. Create the itch.io project under the `elgeffe` account.
+2. Add its Butler API key as a repository Actions secret named `BUTLER_API_KEY`.
+3. Run the workflow, changing the default `erfgooiers` project slug if necessary.
+
+The workflow tests and builds the game with relative assets, then pushes `dist` to
+the project's `html5` channel. After the first upload, set the itch.io project kind to
+HTML and mark that upload as playable in the browser.
+
 ## Controls
 
 | Action | Control |
