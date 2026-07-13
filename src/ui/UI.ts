@@ -624,7 +624,7 @@ export class UI {
       return `<span class="utab${m.status === 'bad' ? ' short' : ''}" title="${label}: ${m.note}">${label} <b>${m.count}</b> <i class="kpi ${m.status}"></i></span>`;
     }).join('');
     const total = this.game ? this.game.units.filter(u => !u.dead && u.faction === 'player').length : 0;
-    toggle.innerHTML = `<h3 class="serif wtitle">${shortage ? '⚠️ ' : ''}Workers · ${total}</h3><div class="wkpis">${chips}</div>`;
+    toggle.innerHTML = `<h3 class="serif wtitle">${shortage ? '' : ''}Workers · ${total}</h3><div class="wkpis">${chips}</div>`;
     const bad = pools.filter(p => metrics[p.k].status === 'bad');
     toggle.title = bad.length ? 'Short-handed — ' + bad.map(p => `${p.label}: ${metrics[p.k].note}`).join(' · ') : 'Open the worker roster (U)';
   }
