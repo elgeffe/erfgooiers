@@ -17,6 +17,7 @@ import type { Objective } from './Objectives';
 import { canControl, ownerForFaction } from './ownership';
 import { TradeSystem } from './TradeSystem';
 import { EncounterDirector } from './EncounterDirector';
+import { ProjectileSystem } from './ProjectileSystem';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -97,6 +98,7 @@ export class Game {
   private nextEntityId = 1;
   private readonly trade: TradeSystem;
   private readonly encounters: EncounterDirector;
+  private readonly projectileSystem: ProjectileSystem;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -147,6 +149,26 @@ export class Game {
       onWaveCleared: () => this.objective?.onWaveCleared(),
       toast: (message, cls) => this.toast(message, cls),
       sfx: name => this.sfx(name),
+    });
+    this.projectileSystem = new ProjectileSystem({
+      worldSize: () => ({ width: this.world.W, height: this.world.H }),
+      buildings: () => this.buildings,
+      createArrow: () => this.view.createArrow(),
+      createRock: () => this.view.createRock(),
+      createFireball: () => this.view.createFireball(),
+      createFlame: () => this.view.createFlame(),
+      remove: mesh => this.view.remove(mesh),
+      sfx: name => this.sfx(name),
+      forUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
+      hostile: (from, to) => this.hostile(from, to),
+      hurtUnit: (shooter, target, damage) => this.hurtUnit(shooter, target, damage),
+      buildingCenter: building => this.buildingCenter(building),
+      hurtBuilding: (building, damage, x, z) => {
+        building.hp -= damage;
+        this.onHurt(x, z, building.faction);
+        if (building.hp <= 0) this.destroyBuilding(building);
+      },
+      onHurt: (x, z, faction) => this.onHurt(x, z, faction),
     });
   }
 
@@ -1725,140 +1747,25 @@ export class Game {
   // =====================================================================
   //  Projectiles — arrows arc from archers & towers, fire gobs from the dragon
   // =====================================================================
-  private readonly projectiles: {
-    mesh: THREE.Object3D;
-    sx: number; sy: number; sz: number;
-    ex: number; ey: number; ez: number;
-    t: number; dur: number; arc: number;
-    from: Faction; shooter: Unit | null; target: Unit | null;
-    dmg: number; kind: 'arrow' | 'fire' | 'rock'; radius?: number;
-  }[] = [];
-  private readonly flames: { mesh: THREE.Object3D; life: number; max: number }[] = [];
-
   /** Loose an arrow at a unit; damage lands when the arrow does. */
   private fireArrow(shooter: Unit | null, from: Faction, x: number, y: number, z: number, target: Unit, dmg: number): void {
-    const tx = target.mesh.position.x, tz = target.mesh.position.z;
-    const dist = Math.hypot(tx - x, tz - z);
-    const mesh = this.view.createArrow();
-    mesh.position.set(x, y, z);
-    this.sfx('arrow');
-    this.projectiles.push({
-      mesh, sx: x, sy: y, sz: z, ex: tx, ey: 0.35, ez: tz,
-      t: 0, dur: Math.max(0.16, dist / 11), arc: Math.min(1.3, 0.15 + dist * 0.08),
-      from, shooter, target, dmg, kind: 'arrow',
-    });
+    this.projectileSystem.fireArrow(shooter, from, x, y, z, target, dmg);
   }
 
   /** Heave an onager rock at a ground point; it splashes over `radius` tiles
    *  where it lands. Unlike an arrow it does not home — it batters whatever is
    *  still standing in the target cluster when it comes down. */
   private fireRock(shooter: Unit | null, from: Faction, x: number, y: number, z: number, ex: number, ez: number, dmg: number, radius: number): void {
-    const dist = Math.hypot(ex - x, ez - z);
-    const mesh = this.view.createRock();
-    mesh.position.set(x, y, z);
-    this.sfx('arrow');
-    this.projectiles.push({
-      mesh, sx: x, sy: y, sz: z, ex, ey: 0.1, ez,
-      t: 0, dur: Math.max(0.3, dist / 9), arc: Math.min(2.2, 0.6 + dist * 0.12),
-      from, shooter, target: null, dmg, kind: 'rock', radius,
-    });
+    this.projectileSystem.fireRock(shooter, from, x, y, z, ex, ez, dmg, radius);
   }
 
   /** Spit a gob of dragon fire at a ground point; it splashes where it lands. */
   private fireFlame(shooter: Unit | null, from: Faction, x: number, y: number, z: number, ex: number, ez: number, dmg: number): void {
-    const dist = Math.hypot(ex - x, ez - z);
-    const mesh = this.view.createFireball();
-    mesh.position.set(x, y, z);
-    this.projectiles.push({
-      mesh, sx: x, sy: y, sz: z, ex, ey: 0.1, ez,
-      t: 0, dur: Math.max(0.25, dist / 8), arc: 0.5,
-      from, shooter, target: null, dmg, kind: 'fire',
-    });
+    this.projectileSystem.fireFlame(shooter, from, x, y, z, ex, ez, dmg);
   }
 
   private updateProjectiles(sdt: number): void {
-    for (let i = this.projectiles.length - 1; i >= 0; i--) {
-      const p = this.projectiles[i];
-      // arrows home gently onto their moving target so shots connect
-      if (p.target && !p.target.dead) { p.ex = p.target.mesh.position.x; p.ez = p.target.mesh.position.z; }
-      p.t += sdt;
-      const k = Math.min(1, p.t / p.dur);
-      const x = p.sx + (p.ex - p.sx) * k;
-      const z = p.sz + (p.ez - p.sz) * k;
-      const y = p.sy + (p.ey - p.sy) * k + Math.sin(k * Math.PI) * p.arc;
-      const dx = x - p.mesh.position.x, dy = y - p.mesh.position.y, dz = z - p.mesh.position.z;
-      if (dx || dz) { p.mesh.rotation.y = Math.atan2(dx, dz); p.mesh.rotation.x = -Math.atan2(dy, Math.hypot(dx, dz)); }
-      p.mesh.position.set(x, y, z);
-      if (k < 1) continue;
-      this.view.remove(p.mesh);
-      this.projectiles.splice(i, 1);
-      this.impact(p);
-    }
-  }
-
-  private impact(p: { ex: number; ez: number; from: Faction; shooter: Unit | null; target: Unit | null; dmg: number; kind: 'arrow' | 'fire' | 'rock'; radius?: number }): void {
-    const W = this.world.W, H = this.world.H;
-    const itx = Math.max(0, Math.min(W - 1, Math.round(p.ex + W / 2 - 0.5)));
-    const ity = Math.max(0, Math.min(H - 1, Math.round(p.ez + H / 2 - 0.5)));
-    if (p.kind === 'rock') {
-      // splash: batter hostile units & buildings within the blast radius (no fire)
-      const rad = p.radius ?? 1.6, rad2 = rad * rad, cells = Math.ceil(rad) + 2;
-      this.forUnitsNear(itx, ity, cells, o => {
-        if (o.dead || !this.hostile(p.from, o.faction)) return;
-        const dx = o.mesh.position.x - p.ex, dz = o.mesh.position.z - p.ez;
-        if (dx * dx + dz * dz <= rad2) this.hurtUnit(p.shooter, o, p.dmg);
-      });
-      for (const b of this.buildings) {
-        if (b.removed || !this.hostile(p.from, b.faction)) continue;
-        const c = this.buildingCenter(b);
-        const dx = c.x - p.ex, dz = c.z - p.ez;
-        if (dx * dx + dz * dz <= (rad + 0.4) * (rad + 0.4)) { b.hp -= p.dmg; this.onHurt(c.x, c.z, b.faction); if (b.hp <= 0) this.destroyBuilding(b); }
-      }
-      this.onHurt(p.ex, p.ez, p.from === 'player' ? 'enemy' : 'player');
-      return;
-    }
-    if (p.kind === 'fire') {
-      // splash: scorch hostile units & buildings around the landing point
-      this.forUnitsNear(itx, ity, 4, o => {
-        if (o.dead || !this.hostile(p.from, o.faction)) return;
-        const dx = o.mesh.position.x - p.ex, dz = o.mesh.position.z - p.ez;
-        if (dx * dx + dz * dz <= 1.3 * 1.3) this.hurtUnit(p.shooter, o, p.dmg);
-      });
-      for (const b of this.buildings) {
-        if (b.removed || !this.hostile(p.from, b.faction)) continue;
-        const c = this.buildingCenter(b);
-        const dx = c.x - p.ex, dz = c.z - p.ez;
-        if (dx * dx + dz * dz <= 1.7 * 1.7) { b.hp -= p.dmg; this.onHurt(c.x, c.z, b.faction); if (b.hp <= 0) this.destroyBuilding(b); }
-      }
-      const mesh = this.view.createFlame();
-      mesh.position.set(p.ex, 0, p.ez);
-      this.flames.push({ mesh, life: 1.1, max: 1.1 });
-      return;
-    }
-    // arrow: hit the tracked target if it's still close, else whoever is standing there
-    if (p.target && !p.target.dead && Math.hypot(p.target.mesh.position.x - p.ex, p.target.mesh.position.z - p.ez) < 0.7) {
-      this.hurtUnit(p.shooter, p.target, p.dmg);
-      return;
-    }
-    let best: Unit | null = null, bd = 0.6 * 0.6;
-    this.forUnitsNear(itx, ity, 3, o => {
-      if (o.dead || !this.hostile(p.from, o.faction)) return;
-      const dx = o.mesh.position.x - p.ex, dz = o.mesh.position.z - p.ez, d2 = dx * dx + dz * dz;
-      if (d2 < bd) { bd = d2; best = o; }
-    });
-    if (best) this.hurtUnit(p.shooter, best as Unit, p.dmg);
-  }
-
-  /** Flames flare where dragon fire lands, then gutter out. */
-  private updateFlames(sdt: number): void {
-    for (let i = this.flames.length - 1; i >= 0; i--) {
-      const f = this.flames[i];
-      f.life -= sdt;
-      if (f.life <= 0) { this.view.remove(f.mesh); this.flames.splice(i, 1); continue; }
-      const k = f.life / f.max;
-      f.mesh.scale.setScalar(0.6 + 0.7 * Math.sin(Math.min(1, (1 - k) * 3) * Math.PI * 0.5));
-      f.mesh.traverse((o: any) => { if (o.material && o.material.transparent) o.material.opacity = 0.9 * k; });
-    }
+    this.projectileSystem.update(sdt);
   }
 
   // =====================================================================
@@ -2758,7 +2665,6 @@ export class Game {
     this.updateTrade(sdt);
     this.separate(sdt);
     this.updateProjectiles(sdt);
-    this.updateFlames(sdt);
     this.sweepDead();
     this.growthUpdate(sdt);
     this.serveTaverns(sdt);
