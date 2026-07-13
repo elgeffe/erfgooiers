@@ -2584,13 +2584,17 @@ export class Game {
   /** Scatter wild beasts across the map's OUTER band, far from the starting
    *  settlement — hunting them is a deliberate expedition, never an ambush. */
   private spawnWild(kind: UnitKind, count: number): void {
-    const W = this.world.W, H = this.world.H, cx = W / 2, cy = H / 2;
+    const W = this.world.W, H = this.world.H;
     const keep = Math.max(15, Math.floor(Math.min(W, H) * 0.32));
+    const homes = [...this.playerStores.values()]
+      .filter(b => !b.removed)
+      .map(b => ({ x: b.x + 1, y: b.y + 1 }));
+    if (!homes.length) homes.push({ x: this.world.playerStart.x + 1, y: this.world.playerStart.y + 1 });
     let placed = 0, tries = 0;
     while (placed < count && tries < count * 40) {
       tries++;
       const x = 2 + Math.floor(rnd() * (W - 4)), y = 2 + Math.floor(rnd() * (H - 4));
-      if (Math.hypot(x - cx, y - cy) < keep) continue;
+      if (homes.some(home => Math.hypot(x - home.x, y - home.y) < keep)) continue;
       const t = this.world.T(x, y);
       if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
       this.spawnFighter(kind, { x, y }, 'wild'); placed++;

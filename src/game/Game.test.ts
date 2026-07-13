@@ -46,6 +46,24 @@ function openBattleGame(seed = 404, size = 48): { game: Game; world: World } {
 }
 
 describe('Game siege orders', () => {
+  it('spawns wild animals far from a corner castle rather than the map centre', () => {
+    const world = new World({
+      seed: 2, w: 64, h: 64, treeStands: 11, oreVeins: 9,
+      waterScale: 1, meadows: 6, mountains: 2, frontier: true,
+    });
+    const game = new Game(world, headlessView(world));
+    game.init({ stock: {}, serfs: 0, laborers: 0, villagers: 0 });
+    simRng.reseed(2);
+
+    game.setEnemies({ wild: [{ kind: 'wolf', count: 4 }] });
+    simRng.reseed(1337); // keep the file's pre-existing shared-stream baseline
+
+    const wolves = game.units.filter(u => u.role === 'wolf');
+    const keep = Math.max(15, Math.floor(Math.min(world.W, world.H) * 0.32));
+    expect(wolves).toHaveLength(4);
+    expect(wolves.every(u => Math.hypot(u.tx - (game.store.x + 1), u.ty - (game.store.y + 1)) >= keep)).toBe(true);
+  });
+
   it('keeps attacking the ordered building despite a nearby guard', () => {
     const world = new World({ seed: 404, w: 32, h: 32, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
     // A controlled open battlefield keeps this regression about target

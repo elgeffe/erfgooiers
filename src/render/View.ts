@@ -1365,9 +1365,17 @@ this.updateSkyBirds(dt);
     for (let i = 0; i < 40; i++) {
       const x = 2 + Math.floor(uiRng.next() * (this.world.W - 4)), y = 2 + Math.floor(uiRng.next() * (this.world.H - 4));
       const t = this.world.tiles[y][x];
-      if (t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep) return { x, y };
+      if (t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep && this.critterClearOfTown(x, y)) return { x, y };
     }
     return null;
+  }
+
+  /** Ambient animals never begin or wander through the castle's town apron.
+   *  Frontier maps move that castle into a corner, so map-centre checks are
+   *  not a valid proxy for settlement distance. */
+  private critterClearOfTown(x: number, y: number): boolean {
+    const sx = this.world.playerStart.x + 1, sy = this.world.playerStart.y + 1;
+    return Math.hypot(x - sx, y - sy) >= 12;
   }
 
   private critterShoreSpot(): { x: number; y: number } | null {
@@ -1387,7 +1395,7 @@ this.updateSkyBirds(dt);
     const banks: { x: number; y: number }[] = [];
     for (let y = 1; y < this.world.H - 1; y++) for (let x = 1; x < this.world.W - 1; x++) {
       const t = this.world.tiles[y][x];
-      if (t.type !== 'grass' || t.b || t.site || t.tree || t.dep) continue;
+      if (t.type !== 'grass' || t.b || t.site || t.tree || t.dep || !this.critterClearOfTown(x, y)) continue;
       if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
         const w = this.world.T(x + dx, y + dy);
         return !!w && w.type === 'water' && !w.lake;
@@ -1407,7 +1415,7 @@ this.updateSkyBirds(dt);
           for (let i = 0; i < 8; i++) {
             const nx = cur.x + Math.round((uiRng.next() - 0.5) * 7), ny = cur.y + Math.round((uiRng.next() - 0.5) * 7);
             const t = this.world.T(nx, ny);
-            if (!t || t.type !== 'grass' || t.b || t.site || t.tree || t.dep) continue;
+            if (!t || t.type !== 'grass' || t.b || t.site || t.tree || t.dep || !this.critterClearOfTown(nx, ny)) continue;
             if (c.shore && ![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([ox, oy]) => {
               const w = this.world.T(nx + ox, ny + oy);
               return !!w && w.type === 'water' && (!c.pond || !w.lake);
