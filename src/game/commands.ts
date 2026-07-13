@@ -66,9 +66,11 @@ export function applyGameCommand(game: Game, playerId: PlayerId, command: GameCo
       return ok;
     }
     case 'setRally': {
-      const b = buildingOwnedBy(game, command.buildingId, playerId);
-      if (!b || !b.def.military) return fail('not_your_barracks');
-      game.setRally(b, command.x, command.y);
+      const entity = game.entityById(command.buildingId);
+      if (!entity || !('def' in entity) || entity.removed || entity.owner !== playerId || !entity.def.military) {
+        return fail('not_your_barracks');
+      }
+      game.setRally(entity as Building | Site, command.x, command.y);
       return ok;
     }
     case 'orderUnits': {

@@ -493,6 +493,7 @@ export class UI {
       for (const k in o.needs) body += `<div class="invrow">${itemIconSVG(k as ItemKey, 14)}${ITEMS[k as keyof typeof ITEMS].name}<b>${o.delivered[k] || 0} / ${o.needs[k]}</b></div>`;
       if (o.ready) body += `<div class="sect">Construction</div><div class="bar"><div style="width:${Math.round(o.progress * 100)}%"></div></div>`;
       else body += '<div class="hnote">Waiting for serfs to deliver materials…</div>';
+      if (o.def.military) body += '<div class="hnote">Right-click the map to set the rally flag now; it will remain after construction.</div>';
       body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize construction'}</button>`;
     } else if (o.def.store) {
       if (o === this.game!.store) {

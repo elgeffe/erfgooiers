@@ -287,6 +287,8 @@ export class Game {
     this.view.remove(s.mesh);
     this.sites.splice(this.sites.indexOf(s), 1);
     const b = this.placeBuilding(s.key, s.x, s.y, false, s.rot, 'player', s.owner);
+    b.rally = s.rally;
+    b.rallyMesh = s.rallyMesh;
     this.toast(s.def.name + ' completed');
     this.sfx('build');
     // worker buildings stay unstaffed until a trained villager reports in (staffBuildings)
@@ -1054,6 +1056,7 @@ export class Game {
     for (const u of this.units) if (u.task && (u.task.to === s || u.task.from === s)) this.cancelTask(u);
     if (s.builder) { s.builder.wstate = 'idle'; s.builder.target = null; s.builder.status = 'Idle'; }
     for (let y = s.y; y < s.y + 2; y++) for (let x = s.x; x < s.x + 2; x++) this.world.tiles[y][x].site = null;
+    if (s.rallyMesh) this.view.remove(s.rallyMesh);
     this.view.remove(s.mesh);
     this.sites.splice(this.sites.indexOf(s), 1);
     if (this.selected === s) this.select(null);
@@ -2281,7 +2284,7 @@ export class Game {
 
   /** Plant (or move) a military building's rally flag — freshly trained fighters
    *  march there on their own. */
-  setRally(b: Building, x: number, y: number): void {
+  setRally(b: Building | Site, x: number, y: number): void {
     if (!b.def.military || b.removed) return;
     b.rally = { x, y };
     if (!b.rallyMesh) b.rallyMesh = this.view.createFlag();

@@ -176,6 +176,8 @@ export interface Site {
   frame: THREE.Group;
   isSite: true;
   name: string;
+  rally?: Coord;               // military site: retained by the completed building
+  rallyMesh?: THREE.Object3D;  // pre-construction rally flag
   priority?: boolean;          // player-flagged: get materials & a builder first
   removed?: boolean;
 }

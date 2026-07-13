@@ -36,6 +36,30 @@ describe('command application and ownership boundaries', () => {
     expect(guild.trainQ).toEqual(['serf']);
   });
 
+  it('retains a military site rally point through completion and training', () => {
+    const { game } = makeTestGame();
+    const store = game.storeFor('p1');
+    const site = game.placeSite('barracks', store.x + 5, store.y + 5, 0, 'p1');
+    const rally = { x: store.x + 9, y: store.y + 7 };
+
+    expect(applyGameCommand(game, 'p2', { type: 'setRally', buildingId: site.id, ...rally }).ok).toBe(false);
+    expect(applyGameCommand(game, 'p1', { type: 'setRally', buildingId: site.id, ...rally }).ok).toBe(true);
+    const flag = site.rallyMesh;
+    expect(site.rally).toEqual(rally);
+
+    (game as any).completeSite(site);
+    const barracks = game.buildings.find(b => b.key === 'barracks' && b.owner === 'p1')!;
+    expect(barracks.rally).toEqual(rally);
+    expect(barracks.rallyMesh).toBe(flag);
+
+    const previousIds = new Set(game.units.map(u => u.id));
+    barracks.trainQ = ['archer'];
+    barracks.prog = 0.999;
+    game.update(0.05);
+    const trained = game.units.find(u => !previousIds.has(u.id) && u.role === 'archer')!;
+    expect(trained.order).toMatchObject({ type: 'attackMove', ...rally });
+  });
+
   it('refuses orders for units the player does not own', () => {
     const { game } = makeTestGame();
     const store = game.storeFor('p2');
