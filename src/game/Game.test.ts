@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import type { View } from '../render/View';
 import { World } from '../world/World';
+import { LEVELS } from '../data/levels';
+import { simRng } from '../engine/rng';
 import { Game } from './Game';
 
 function headlessView(world: World, caravan?: { created: number; removed: number }): View {
@@ -16,6 +18,11 @@ function headlessView(world: World, caravan?: { created: number; removed: number
     createBuildingMesh: () => new THREE.Group(),
     createScaffold: () => ({ group: new THREE.Group(), frame: new THREE.Group() }),
     createUnit: unit,
+    createArrow: () => new THREE.Group(),
+    createRock: () => new THREE.Group(),
+    createFireball: () => new THREE.Group(),
+    createFlame: () => new THREE.Group(),
+    createFlag: () => new THREE.Group(),
     add: () => {},
     remove: (mesh: THREE.Object3D) => { if (mesh.userData.traderCaravan && caravan) caravan.removed++; },
     refreshTile: () => {},
@@ -26,6 +33,16 @@ function headlessView(world: World, caravan?: { created: number; removed: number
       const mesh = new THREE.Group(); mesh.userData.traderCaravan = true; return mesh;
     },
   } as unknown as View;
+}
+
+function openBattleGame(seed = 404): { game: Game; world: World } {
+  const world = new World({ seed, w: 48, h: 48, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
+  for (const row of world.tiles) for (const t of row) {
+    t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; t.deco = null; t.pickup = null;
+  }
+  const game = new Game(world, headlessView(world));
+  game.init({ stock: {}, serfs: 0, laborers: 0, villagers: 0 });
+  return { game, world };
 }
 
 describe('Game siege orders', () => {
@@ -51,6 +68,107 @@ describe('Game siege orders', () => {
 
     expect(camp.removed).toBe(true);
     expect(guard.dead).toBe(false);
+  });
+
+  it('retains a Shift-queued tower target for every unit', () => {
+    const { game } = openBattleGame(412);
+    const decoy = game.placeBuilding('banditcamp', 20, 18, true, 0, 'enemy');
+    const tower = game.placeBuilding('enemywatchtower', 30, 24, true, 0, 'enemy');
+    tower.hp = tower.maxHp = 1_000_000;
+    const guard = game.spawnFighter('bandit', { x: 27, y: 24 }, 'enemy');
+    guard.dmg = 0; guard.hp = guard.maxHp = 1_000_000;
+    const squad = Array.from({ length: 48 }, (_, i) => {
+      const u = game.spawnFighter('soldier', { x: 5 + i % 8, y: 20 + Math.floor(i / 8) }, 'player');
+      u.hp = u.maxHp = 1_000_000;
+      return u;
+    });
+
+    game.orderGroup(squad, 'move', 15, 24, null, 'box');
+    game.orderGroupAttackBuilding(squad, tower, true);
+
+    expect(squad.every(u => u.orderQueue[0]?.building === tower)).toBe(true);
+    for (let i = 0; i < 500 && squad.some(u => u.order?.building !== tower); i++) game.update(0.05);
+
+    expect(squad.every(u => u.order?.building === tower)).toBe(true);
+    expect(squad.every(u => u.foeB === tower)).toBe(true);
+    expect(squad.every(u => u.foe !== guard)).toBe(true);
+    expect(decoy.removed).not.toBe(true);
+  });
+
+  it('continues the chain after a structure falls, then attacks at will', () => {
+    const { game } = openBattleGame(413);
+    const tower = game.placeBuilding('enemywatchtower', 18, 24, true, 0, 'enemy');
+    tower.hp = tower.maxHp = 1;
+    const guard = game.spawnFighter('bandit', { x: 28, y: 24 }, 'enemy');
+    guard.dmg = 0; guard.hp = guard.maxHp = 1_000;
+    const soldier = game.spawnFighter('soldier', { x: 8, y: 24 }, 'player');
+    soldier.hp = soldier.maxHp = 1_000;
+
+    game.orderUnit(soldier, 'move', 12, 24);
+    game.orderGroupAttackBuilding([soldier], tower, true);
+    game.orderUnit(soldier, 'move', 26, 24, null, true);
+
+    for (let i = 0; i < 800 && (soldier.order || guard.hp === guard.maxHp); i++) game.update(0.05);
+
+    expect(tower.removed).toBe(true);
+    expect(soldier.order).toBeNull();
+    expect(Math.hypot(soldier.tx - 26, soldier.ty - 24)).toBeLessThanOrEqual(1);
+    expect(guard.hp).toBeLessThan(guard.maxHp);
+  });
+
+  it('budgets path searches when a large host attacks one tower', () => {
+    const { game } = openBattleGame(414);
+    const tower = game.placeBuilding('enemywatchtower', 36, 24, true, 0, 'enemy');
+    tower.hp = tower.maxHp = 1_000_000;
+    const squad = Array.from({ length: 240 }, (_, i) => {
+      const u = game.spawnFighter('soldier', { x: 3 + i % 16, y: 8 + Math.floor(i / 16) }, 'player');
+      u.hp = u.maxHp = 1_000_000;
+      return u;
+    });
+    let searches = 0;
+    const originalSendTo = (game as any).sendTo.bind(game);
+    (game as any).sendTo = (...args: unknown[]) => { searches++; return originalSendTo(...args); };
+
+    game.orderGroupAttackBuilding(squad, tower);
+    game.update(0.05);
+
+    expect(searches).toBeGreaterThan(0);
+    expect(searches).toBeLessThanOrEqual(28);
+    expect(squad.every(u => u.order?.building === tower && u.foeB === tower)).toBe(true);
+  });
+
+  it('chains explicit unit attacks and resumes attack-at-will afterward', () => {
+    const { game } = openBattleGame(415);
+    const first = game.spawnFighter('bandit', { x: 14, y: 24 }, 'enemy');
+    const second = game.spawnFighter('bandit', { x: 17, y: 24 }, 'enemy');
+    const ambient = game.spawnFighter('bandit', { x: 20, y: 24 }, 'enemy');
+    first.hp = second.hp = 1;
+    first.dmg = second.dmg = ambient.dmg = 0;
+    ambient.hp = ambient.maxHp = 1_000;
+    const soldier = game.spawnFighter('soldier', { x: 10, y: 24 }, 'player');
+    soldier.hp = soldier.maxHp = 1_000;
+
+    game.orderGroup([soldier], 'attack', first.tx, first.ty, first);
+    game.orderGroup([soldier], 'attack', second.tx, second.ty, second, 'box', undefined, true);
+    for (let i = 0; i < 500 && (soldier.order || ambient.hp === ambient.maxHp); i++) game.update(0.05);
+
+    expect(first.dead).toBe(true);
+    expect(second.dead).toBe(true);
+    expect(soldier.order).toBeNull();
+    expect(ambient.hp).toBeLessThan(ambient.maxHp);
+  });
+
+  it('never applies an AI home leash to a commanded player fighter', () => {
+    const { game } = openBattleGame(416);
+    const soldier = game.spawnFighter('soldier', { x: 3, y: 3 }, 'player');
+    const enemy = game.spawnFighter('bandit', { x: 38, y: 38 }, 'enemy');
+    enemy.dmg = 0;
+
+    game.orderGroup([soldier], 'attack', enemy.tx, enemy.ty, enemy);
+    for (let i = 0; i < 20; i++) game.update(0.05);
+
+    expect(soldier.wstate).not.toBe('leash');
+    expect(soldier.order?.foe).toBe(enemy);
   });
 });
 
@@ -280,5 +398,31 @@ describe('worker logistics metrics', () => {
     game.placeSite("farm", 10, 10);
     game.placeSite("farm", 14, 10);
     expect(game.workerMetrics().builder.status).toBe('bad');
+  });
+});
+
+describe('Dragon\u2019s Hoard encounter route', () => {
+  it('places a camp, fortress, walled fortress, then dragon in increasing depth', () => {
+    const level = LEVELS[9];
+    const seed = 424242;
+    simRng.reseed(seed ^ 0x5bd1e995);
+    const world = new World({ seed, ...level.world, biome: 'gooi' });
+    const game = new Game(world, headlessView(world));
+    game.init({ stock: {}, serfs: 0, laborers: 0, villagers: 0 });
+    game.setEnemies(level.enemies!);
+
+    const camp = game.buildings.find(b => b.key === 'banditcamp')!;
+    const keeps = game.buildings.filter(b => b.key === 'enemycastle');
+    const dragon = game.units.find(u => u.role === 'dragon')!;
+    const depth = (x: number, y: number) => Math.hypot(x - game.store.x, y - game.store.y);
+
+    expect(camp).toBeTruthy();
+    expect(keeps).toHaveLength(2);
+    keeps.sort((a, b) => depth(a.x, a.y) - depth(b.x, b.y));
+    expect(depth(keeps[0].x, keeps[0].y)).toBeGreaterThan(depth(camp.x, camp.y) + 8);
+    expect(depth(keeps[1].x, keeps[1].y)).toBeGreaterThan(depth(keeps[0].x, keeps[0].y) + 8);
+    expect(depth(dragon.tx, dragon.ty)).toBeGreaterThan(depth(keeps[1].x, keeps[1].y) + 8);
+    expect(game.buildings.some(b => b.key === 'enemywall' || b.key === 'enemygate')).toBe(true);
+    expect(game.buildings.filter(b => b.key === 'enemywatchtower').length).toBeGreaterThanOrEqual(3);
   });
 });

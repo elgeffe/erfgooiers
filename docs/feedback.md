@@ -1,7 +1,7 @@
 fix each of these items, always start with bugs first, then design changes > improvements > features > epics should always be last and first written out as docs/.md file.
 
 ## Bugs
-- the way military unit commands work is sometimes resulting in units not adhering to commands when a lot of them have been selected. for example, i select a large group, give them move commands, then chain an attack on a tower (which seems to cause performance issues somehow), a small number of units attack, another set of units walks away? investigate probably causes and fix the issues. i need to be able to command, chain movements, chain attacks and have my units automatically follow orders or attack at will when the chain ends. this should work smoothly as its a core mechanic of the strategic side of the game.
+- the way military unit commands work is sometimes resulting in units not adhering to commands when a lot of them have been selected. for example, i select a large group, give them move commands, then chain an attack on a tower (which seems to cause performance issues somehow), a small number of units attack, another set of units walks away? investigate probably causes and fix the issues. i need to be able to command, chain movements, chain attacks and have my units automatically follow orders or attack at will when the chain ends. this should work smoothly as its a core mechanic of the strategic side of the game. DOING
 
 - no Coal has spawned on the map, this should not be possible. make sure to increase the default amount of coal to accomodate coin and military equipment.
 
@@ -53,6 +53,8 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 ## Improvements
 
+- redesign hero's > update effects and names
+
 - shift+click on train buttons should set 5 units in the queue.
 
 - each tree should give 2 trunks
@@ -75,7 +77,7 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - improve the cloud designs, make them look more like real clouds, improve the fidelity of the animal shapes that sometimes pass by.
 
-- make the mouth of the mountain range wider for levels with enemies, also get more creative with the shape of the mountain range instead of just a circle. > the main castle of ours does not have to be dead center, it can also be in the opposite corner of the enemy.
+- make the mouth of the mountain range wider for levels with enemies, also get more creative with the shape of the mountain range instead of just a circle. > the main castle of ours does not have to be dead center, it can also be in the opposite corner of the enemy. DOING
 
 - remove clear save data button from main menu
 

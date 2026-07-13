@@ -1,13 +1,17 @@
 import { isPlayerId } from '../game/ownership';
+import { MAX_UNITS } from '../constants';
 import type { BuildingKey, Coord, Formation, ItemKey, PlayerId } from '../types';
 
 export const PROTOCOL_VERSION = 1;
 export const CONTENT_VERSION = 1;
-export const MAX_MESSAGE_BYTES = 64 * 1024;
+export const MAX_MESSAGE_BYTES = 256 * 1024;
 export const MAX_ROOM_NAME = 48;
 export const MAX_PLAYER_NAME = 24;
 export const MAX_BATCH_CELLS = 128;
-export const MAX_ORDER_UNITS = 256;
+// One selection is one deterministic formation command. Splitting it into
+// transport-sized chunks would independently overlap each chunk's formation,
+// so the relay accepts the same upper bound as the simulation itself.
+export const MAX_ORDER_UNITS = MAX_UNITS;
 export const MAX_TRADE_AMOUNT = 999;
 
 export type EntityId = number;

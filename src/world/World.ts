@@ -26,6 +26,9 @@ export interface WorldParams {
   /** How many corners get walled off (default 1 when `frontier` is set). The
    *  hardest maps wall several corners, each with its own pass and garrison. */
   frontiers?: number;
+  /** Build a staged, directional chain of open mountain pockets instead of
+   *  corner arcs. Used by boss maps whose encounters should form a route. */
+  lairStages?: number;
   /** The landscape this map is cut from (palette, flora, fauna, gen character). */
   biome?: BiomeKey;
 }
@@ -50,6 +53,9 @@ export class World {
   enemyZones: { x: number; y: number; r: number; pass: { x: number; y: number } }[] = [];
   /** The first walled-off quarter, or null — kept for single-zone callers. */
   enemyZone: { x: number; y: number; r: number; pass: { x: number; y: number } } | null = null;
+  /** Top-left tile for the player's starting castle. Hostile frontier maps put
+   *  it toward the corner opposite the enemy instead of forcing mid-map. */
+  playerStart: { x: number; y: number };
   /** The biome this map was generated in (View/models read its palette). */
   readonly biome: BiomeDef;
   /** On single-coast maps: unit vector from the map centre toward the open sea
@@ -72,6 +78,7 @@ export class World {
       ruins: params.ruins ?? 0,
       frontier: params.frontier ?? false,
       frontiers: params.frontiers ?? (params.frontier ? 1 : 0),
+      lairStages: params.lairStages ?? 0,
       biome: params.biome ?? 'gooi',
     };
     this.biome = BIOMES[this.p.biome];
@@ -81,6 +88,7 @@ export class World {
     this.p.treeStands = Math.round(this.p.treeStands * this.biome.gen.treeMult);
     this.W = this.p.w;
     this.H = this.p.h;
+    this.playerStart = { x: Math.floor(this.W / 2) - 1, y: Math.floor(this.H / 2) - 1 };
     this.seed = this.p.seed;
     worldRng.reseed(this.p.seed);
     for (let y = 0; y < this.H; y++) {
@@ -260,10 +268,10 @@ export class World {
       if (kind === 'peak' && nearWater(x, y)) return;
       t.type = 'rock'; t.rock = kind;
     };
-    // ---- the frontier: mountain arcs wall off corners as enemy land ----
-    // A thick rock band sweeps a quarter-circle around each chosen corner,
-    // with one clear pass (plus any lake gaps) — the only ways in on foot. The
-    // enclosed quarters are exposed as `enemyZones` for stronghold placement.
+    // ---- the frontier: directional ranges wall off enemy land ----
+    // Ordinary frontier maps use broad, irregular corner crescents. Boss lairs
+    // use a chain of open U-shaped pockets, turning the map into a readable
+    // route of successively deeper encounters rather than a set of circles.
     const frontierCount = Math.max(this.p.frontiers, this.p.frontier ? 1 : 0);
     if (frontierCount > 0) {
       // on a single-coast map the enemy quarters keep to the landward corners,
@@ -277,27 +285,81 @@ export class World {
         const j = Math.floor(rnd() * (i + 1));
         [corners[i], corners[j]] = [corners[j], corners[i]];
       }
-      const zones = Math.min(frontierCount, corners.length);
-      for (let z = 0; z < zones; z++) {
-      const [cx0, cy0] = corners[z];
+      if (this.p.lairStages > 0) {
+        const [ex, ey] = corners[0];
+        const inset = Math.max(8, Math.round(Math.min(W, H) * 0.1));
+        const enemyEnd = { x: ex === 0 ? inset : W - 1 - inset, y: ey === 0 ? inset : H - 1 - inset };
+        const startCentre = { x: ex === 0 ? W - 1 - inset : inset, y: ey === 0 ? H - 1 - inset : inset };
+        this.playerStart = { x: startCentre.x - 1, y: startCentre.y - 1 };
+        const vx = enemyEnd.x - startCentre.x, vy = enemyEnd.y - startCentre.y;
+        const vl = Math.max(1, Math.hypot(vx, vy));
+        const nx = vx / vl, ny = vy / vl, pxv = -ny, pyv = nx;
+        const bend = (rnd() < 0.5 ? -1 : 1) * Math.min(W, H) * (0.07 + rnd() * 0.025);
+        const stages = Math.max(1, this.p.lairStages);
+        for (let z = 0; z < stages; z++) {
+          const t = stages === 1 ? 0.72 : 0.32 + z * 0.55 / (stages - 1);
+          const stagger = (z % 2 === 0 ? -1 : 1) * Math.min(W, H) * 0.025;
+          const curve = Math.sin(t * Math.PI) * bend + stagger;
+          const zx = Math.round(startCentre.x + vx * t + pxv * curve);
+          const zy = Math.round(startCentre.y + vy * t + pyv * curve);
+          const R = Math.max(7, Math.round(Math.min(W, H) * 0.085 + z * 0.55));
+          const phase = rnd() * Math.PI * 2;
+          const lairRock = (x: number, y: number): void => {
+            // The authored silhouette wins over a wandering lake. Give every
+            // peak its usual grass foot so ranges remain continuous and never
+            // rise directly out of water.
+            for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+              const t = this.T(x + ox, y + oy);
+              if (t?.type === 'water') { t.type = 'grass'; t.lake = false; t.deco = null; }
+            }
+            rockTile(x, y, 'peak');
+          };
+          // A craggy U: long unequal arms and an irregular back wall. Its broad
+          // mouth faces the player's previous encounter along the route.
+          for (let y = Math.max(0, zy - R - 4); y <= Math.min(H - 1, zy + R + 4); y++) {
+            for (let x = Math.max(0, zx - R - 4); x <= Math.min(W - 1, zx + R + 4); x++) {
+              const dx = x - zx, dy = y - zy;
+              const along = dx * nx + dy * ny;
+              const across = dx * pxv + dy * pyv;
+              const half = R * (0.72 + Math.sin(along * 0.42 + phase) * 0.09);
+              const leftArm = Math.abs(across + half) < 1.2 && along > -R * 0.62 && along < R * 0.9;
+              const rightArm = Math.abs(across - half) < 1.2 && along > -R * 0.42 && along < R * 0.9;
+              const back = R * 0.86 + Math.sin(across * 0.55 + phase) * 1.4;
+              const backWall = Math.abs(along - back) < 1.2 && Math.abs(across) <= half + 0.8;
+              if (leftArm || rightArm || backWall) lairRock(x, y);
+            }
+          }
+          const pass = {
+            x: Math.round(zx - nx * R * 0.58),
+            y: Math.round(zy - ny * R * 0.58),
+          };
+          this.enemyZones.push({ x: zx, y: zy, r: Math.max(4, Math.round(R * 0.48)), pass });
+        }
+        // Single-zone callers (notably boss placement) want the deepest lair.
+        this.enemyZone = this.enemyZones[this.enemyZones.length - 1];
+      } else {
+        const zones = Math.min(frontierCount, corners.length);
+        for (let z = 0; z < zones; z++) {
+        const [cx0, cy0] = corners[z];
       // several walled quarters must not merge: shrink the arcs a touch
       const R = Math.round(Math.min(W, H) * (zones > 1 ? 0.36 : 0.42));
       const sgnX = cx0 === 0 ? 1 : -1, sgnY = cy0 === 0 ? 1 : -1;
       // the pass: a gap somewhere along the arc, kept off the arc's ends
       const passAng = 0.25 + rnd() * (Math.PI / 2 - 0.5);
-      const passHalf = 2.5 / R;                               // ≈5 walkable tiles of gap
-      // the range's character varies per seed so frontiers don't all read as
-      // the same neat circle: a clean arc, a wobbling ridge line, or a wobbling
-      // ridge whose pass extends into a guarded corridor
+      const passHalf = 4.5 / R;                               // ≈9 walkable tiles of gap
+      // Every range meanders. Two harmonics and a lopsided shoulder stop the
+      // boundary reading as a clean quarter-circle from the isometric camera.
       const style = rnd();
-      const amp = style < 0.34 ? 0 : 2 + rnd() * 2.5;
+      const amp = 2.2 + rnd() * 3;
       const wobF = 3 + rnd() * 3, wobP = rnd() * Math.PI * 2;
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         const dx = (x - cx0) * sgnX, dy = (y - cy0) * sgnY;   // fold every corner into quadrant I
         if (dx < 0 || dy < 0) continue;
         const d = Math.hypot(dx, dy);
         const ang = Math.atan2(dy, dx);
-        const Ra = R + Math.sin(ang * wobF + wobP) * amp;     // the ridge line meanders
+        const shoulder = (ang - Math.PI / 4) * (style < 0.5 ? -3 : 3);
+        const Ra = R + Math.sin(ang * wobF + wobP) * amp
+          + Math.sin(ang * (wobF * 0.47 + 1.3) - wobP) * 1.6 + shoulder;
         if (d < Ra - 1.2 || d > Ra + 1.2) continue;
         if (Math.abs(ang - passAng) < passHalf) continue;      // leave the pass open
         const t = this.tiles[y][x];
@@ -329,12 +391,27 @@ export class World {
         pass: { x: px, y: py },
       });
       }
-      this.enemyZone = this.enemyZones[0];
+        this.enemyZone = this.enemyZones[0];
+        const inset = Math.max(8, Math.round(Math.min(W, H) * 0.12));
+        const starts = [
+          { x: inset, y: inset }, { x: W - inset - 1, y: inset },
+          { x: inset, y: H - inset - 1 }, { x: W - inset - 1, y: H - inset - 1 },
+        ];
+        // Pick the corner whose nearest enemy quarter is farthest away. This
+        // also behaves sensibly when two different corners are fortified.
+        const start = starts.reduce((best, candidate) => {
+          const clearance = Math.min(...this.enemyZones.map(z => Math.hypot(candidate.x - z.x, candidate.y - z.y)));
+          const bestClearance = Math.min(...this.enemyZones.map(z => Math.hypot(best.x - z.x, best.y - z.y)));
+          return clearance > bestClearance ? candidate : best;
+        });
+        this.playerStart = { x: start.x - 1, y: start.y - 1 };
+      }
     }
 
     // ridges read as RANGES: long chains of overlapping blobs holding one
     // heading with only gentle drift, seeded away from the water
-    for (let i = 0; i < this.p.mountains; i++) {
+    const freeRanges = this.p.lairStages ? Math.min(2, this.p.mountains) : this.p.mountains;
+    for (let i = 0; i < freeRanges; i++) {
       let mx = 0, my = 0, seedGuard = 0;
       do { mx = 4 + rnd() * (W - 8); my = 4 + rnd() * (H - 8); }
       while (nearWater(Math.round(mx), Math.round(my)) && seedGuard++ < 30);
@@ -366,11 +443,18 @@ export class World {
 
     // ---- guarantee every frontier's pass: water (a delta arm, the wandering
     // lake) can conspire with the arcs and the ridges to seal an enemy
-    // quarter. If a zone can't be walked to from the centre, carve a
+    // quarter. If a zone can't be walked to from the player start, carve a
     // causeway to it so the assault is always possible on foot.
     for (const ez of this.enemyZones) {
+      // Later free-running ridges must not accidentally narrow the authored
+      // frontier opening. Clear a seven-tile mouth before path validation.
+      for (let oy = -3; oy <= 3; oy++) for (let ox = -3; ox <= 3; ox++) {
+        if (Math.hypot(ox, oy) > 3.5) continue;
+        const t = this.T(ez.pass.x + ox, ez.pass.y + oy);
+        if (t) { t.type = 'grass'; t.lake = false; t.rock = undefined; t.deco = null; }
+      }
       const seen = new Uint8Array(W * H);
-      const qx = [Math.floor(W / 2)], qy = [Math.floor(H / 2)];
+      const qx = [this.playerStart.x + 1], qy = [this.playerStart.y + 1];
       seen[qy[0] * W + qx[0]] = 1;
       let nearest = { x: qx[0], y: qy[0], d: Math.hypot(qx[0] - ez.x, qy[0] - ez.y) };
       let reached = false;
@@ -526,6 +610,45 @@ export class World {
       if (t && t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep && !t.field && !t.pickup && !t.deco && !central(x, y)) {
         t.pickup = { gold: 3 + Math.floor(rnd() * 5), reserved: false, meshes: [] };
         piles++;
+      }
+    }
+
+    // Hostile maps open with the town in the corner opposite the enemy route.
+    // Reserve a real muster/build apron there after every terrain/deco pass so
+    // a lake, ridge, ore heap or thicket cannot strand the starting army.
+    if (frontierCount > 0) {
+      const sx = this.playerStart.x + 1, sy = this.playerStart.y + 1;
+      for (let y = Math.max(0, sy - 7); y <= Math.min(H - 1, sy + 7); y++) {
+        for (let x = Math.max(0, sx - 7); x <= Math.min(W - 1, sx + 7); x++) {
+          if (Math.hypot(x - sx, y - sy) > 7.5) continue;
+          const t = this.tiles[y][x];
+          t.type = 'grass'; t.lake = false; t.rock = undefined;
+          t.tree = null; t.dep = null; t.deco = null; t.pickup = null;
+        }
+      }
+
+      // Deposits and biome thickets are generated after the terrain causeway.
+      // Reserve one grass route through each authored mouth so those late
+      // blockers cannot silently turn an assault map into an island.
+      for (const ez of this.enemyZones) {
+        const parent = new Int32Array(W * H); parent.fill(-2);
+        const start = sy * W + sx, queue = [start]; parent[start] = -1;
+        let goal = -1;
+        for (let i = 0; i < queue.length && goal < 0; i++) {
+          const id = queue[i], x = id % W, y = Math.floor(id / W);
+          if (Math.hypot(x - ez.x, y - ez.y) <= ez.r) { goal = id; break; }
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nx = x + dx, ny = y + dy, nid = ny * W + nx;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H || parent[nid] !== -2) continue;
+            if (this.tiles[ny][nx].type !== 'grass') continue;
+            parent[nid] = id; queue.push(nid);
+          }
+        }
+        for (let id = goal; id >= 0; id = parent[id]) {
+          const t = this.tiles[Math.floor(id / W)][id % W];
+          t.dep = null;
+          if (t.tree?.dense) t.tree = null;
+        }
       }
     }
 

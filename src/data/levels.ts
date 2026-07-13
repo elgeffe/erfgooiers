@@ -34,6 +34,10 @@ export interface EnemySetup {
   waves?: WaveDef[];                                       // raids marching on the castle
   boss?: UnitKind;                                         // a single boss unit
   commander?: { every: number; kind: UnitKind; count: number; from?: 'edge' | 'camp' };
+  /** Ordered encounters for maps with a staged mountain route. Each entry is
+   *  placed in the matching `World.enemyZones` pocket, from town to lair. */
+  stages?: ({ structure: 'camp' | 'fortress' | 'walledFortress'; guards: number; kinds?: UnitKind[]; towers?: number }
+    | { boss: UnitKind })[];
 }
 
 /**
@@ -166,17 +170,17 @@ export const LEVELS: LevelDef[] = [
 
   { index: 10, name: 'Dragon\u2019s Hoard', type: 'Boss',
     objectives: [{ kind: 'slay', unit: 'dragon', n: 1 }],
-    world: { w: 86, h: 86, treeStands: 16, oreVeins: 13, waterScale: 1.1, meadows: 7, goldPiles: 9, mountains: 4, frontier: true, frontiers: 2 },
+    world: { w: 86, h: 86, treeStands: 16, oreVeins: 13, waterScale: 1.1, meadows: 7, goldPiles: 9, mountains: 4, frontier: true, lairStages: 4 },
     kit: { stock: { timber: 24, stone: 18, bread: 20, coin: 28, weapon: 5, armor: 2 }, serfs: 3, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 17 }, { kind: 'archer', count: 12 }, { kind: 'knight', count: 6 }],
-    // the dragon sleeps in its walled cul-de-sac behind undead vanguard camps —
-    // and every mountain pass into its land is barred by a gate garrison that
-    // must fall before the army can march through (higher ascensions wall off
-    // more corners, each with its own barred pass — see main). Raids trickle
-    // in late while you build the massed army its hoard demands.
-    enemies: { boss: 'dragon',
-      gatecamps: { guards: 8, kinds: ['skeleton', 'skelarcher', 'orc'] },
-      camps: [{ count: 2, guards: 10, kinds: ['skeleton', 'skelarcher', 'zombie', 'brute'] }],
+    // Four open mountain pockets form one escalating road: an outlying camp,
+    // a fortress, a walled fortress, and finally the dragon's own lair.
+    enemies: { stages: [
+      { structure: 'camp', guards: 8, kinds: ['skeleton', 'skelarcher', 'orc'] },
+      { structure: 'fortress', guards: 12, towers: 2, kinds: ['orc', 'skeleton', 'skelarcher', 'zombie'] },
+      { structure: 'walledFortress', guards: 18, towers: 4, kinds: ['orc', 'troll', 'skeleton', 'skelarcher', 'zombie', 'brute'] },
+      { boss: 'dragon' },
+    ],
       waves: [{ at: 300, kind: 'boar', count: 6 }, { at: 520, kind: 'orc', count: 5 }, { at: 760, kind: 'troll', count: 2 }, { at: 950, kind: 'zombie', count: 8 }] },
     timeTarget: 1200, hardTimer: 1000, reward: 160 },
 ];

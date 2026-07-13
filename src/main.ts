@@ -85,6 +85,8 @@ let coopAdvanceTimer: number | null = null;
 // per-run tallies for the summary screen (reset when a run starts)
 let clearedThisRun = 0;
 let goldEarnedThisRun = 0;
+let levelGoldStart = 0;          // restored when the pause menu restarts a level
+let levelGoldEarnedStart = 0;    // prevents restart-farming pickups in the run tally
 let summaryNote = '';            // extra line on the summary (ascension unlocks)
 let levelHardTimer = 0;          // the current level's hard timer, post-ascension
 
@@ -93,6 +95,8 @@ const shop = new Shop(shopContinue);
 // ---------- level lifecycle ----------
 function startLevel(): void {
   if (!run) return;
+  levelGoldStart = run.gold;
+  levelGoldEarnedStart = goldEarnedThisRun;
   const level = sandbox ? sandboxLevel(sandboxCfg) : levelFor(run.levelIndex);
   currentLevel = level;
   const seed = currentLevelSeed(run);
@@ -117,10 +121,11 @@ function startLevel(): void {
     worldParams.oreVeins = Math.round((level.world.oreVeins ?? 6) * 1.8);
     worldParams.goldPiles = (level.world.goldPiles ?? 4) + 8;
   }
-  // the road to the dragon: higher tiers wall off MORE corners on the boss
-  // map, each behind its own barred pass and gate garrison (see gatecamps)
+  // The road to the dragon always has four successive mountain pockets. The
+  // encounter data below strengthens those same stages at higher tiers rather
+  // than scattering extra corners around the map.
   if (!sandbox && level.index === 10) {
-    worldParams.frontiers = Math.max(worldParams.frontiers ?? 2, 2 + Math.min(2, run.ascension));
+    worldParams.lairStages = 4;
   }
   // the hunt spreads out on higher ascensions: a bigger range for the growing
   // packs (see ascendObjective) so the chase takes real ground to run down
@@ -166,20 +171,21 @@ function startLevel(): void {
   game.bossHpMult = sandbox ? 1 : 1 + 0.5 * run.ascension;
   // hell's extra strongholds: great undead hosts in every walled corner
   // (a fresh object each time — the static LEVELS table stays untouched)
-  let enemies = hellFinale && level.enemies
+  let enemies = hellFinale && level.enemies && !level.enemies.stages
     ? { ...level.enemies, camps: [...(level.enemies.camps ?? []), { count: 4, guards: 14, kinds: ['skeleton', 'skelarcher', 'zombie', 'brute'] as UnitKind[] }] }
     : level.enemies ?? null;
-  // The dragon level turns into a two-phase siege on higher ascensions: the
-  // dragon stays hidden until its whole host is razed, and that host swells
-  // with extra camps and fortified strongholds (garrisonMult scales the guards
-  // further still). See Game.deferBoss / enemyGarrisonLeft.
-  if (!sandbox && level.index === 10 && run.ascension > 0 && enemies) {
-    game.deferBoss = true;
-    const a = Math.min(3, run.ascension);
+  // Ascension reinforces the same readable camp → fortress → walled fortress
+  // route; garrisonMult supplies most of the pressure and the walls gain a few
+  // additional towers. The dragon remains visible in the deepest pocket.
+  if (!sandbox && level.index === 10 && run.ascension > 0 && enemies?.stages) {
+    const a = Math.min(4, run.ascension);
     enemies = {
       ...enemies,
-      camps: [...(enemies.camps ?? []), { count: 1 + a, guards: 8 + a * 2, kinds: ['orc', 'zombie', 'skeleton', 'skelarcher'] as UnitKind[] }],
-      strongholds: { count: a, guards: 12, towers: 2, kinds: ['orc', 'troll', 'skeleton', 'skelarcher', 'zombie'] as UnitKind[] },
+      stages: enemies.stages.map(stage => 'boss' in stage ? stage : {
+        ...stage,
+        guards: stage.guards + a * 2,
+        towers: (stage.towers ?? 0) + (stage.structure === 'camp' ? 0 : Math.ceil(a / 2)),
+      }),
     };
   }
   // the hunt's quarry grows with the tier: enough wolves AND boars on the map
@@ -716,6 +722,7 @@ function openPauseMenu(): void {
   if (phase !== 'playing') return;
   if (!coopRun) ui.setSpeed(0);
   controls.resetInput();
+  $('btnRestart').style.display = coopRun ? 'none' : '';
   $('pausemenu').style.display = 'flex';
 }
 
@@ -723,6 +730,19 @@ function openPauseMenu(): void {
 function resumeGame(): void {
   $('pausemenu').style.display = 'none';
   if (phase === 'playing') ui.setSpeed(1);
+}
+
+/** Discard only the active level and rebuild it from its deterministic start.
+ *  Run-wide cards, contract, hero and seed remain intact. Co-op deliberately
+ *  has no local restart: both peers would need a relay/checkpoint command. */
+function restartLevel(): void {
+  if (phase !== 'playing' || !run || coopRun) return;
+  run.gold = levelGoldStart;
+  goldEarnedThisRun = levelGoldEarnedStart;
+  $('pausemenu').style.display = 'none';
+  disposeLevel();
+  startLevel();
+  ui.toast(`Level ${run.levelIndex} restarted`);
 }
 
 function clearSaveData(): void {
@@ -1301,6 +1321,7 @@ addEventListener('blur', () => { if (settings.autoPauseOnBlur) openPauseMenu(); 
 ($('btnHeritageBack') as HTMLButtonElement).onclick = goMenu;
 ($('btnToMenu') as HTMLButtonElement).onclick = openPauseMenu;
 ($('btnResume') as HTMLButtonElement).onclick = resumeGame;
+($('btnRestart') as HTMLButtonElement).onclick = restartLevel;
 ($('btnAbandon') as HTMLButtonElement).onclick = () => { resumeGame(); abandonRun(); };
 
 // ---------- audio ----------

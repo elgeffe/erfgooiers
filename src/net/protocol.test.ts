@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONTENT_VERSION, MAX_BATCH_CELLS, PROTOCOL_VERSION, parseClientMessage, roomCompatible } from './protocol';
+import { CONTENT_VERSION, MAX_BATCH_CELLS, MAX_ORDER_UNITS, PROTOCOL_VERSION, parseClientMessage, roomCompatible } from './protocol';
 
 describe('network protocol validation', () => {
   it('accepts bounded gameplay commands', () => {
@@ -16,6 +16,15 @@ describe('network protocol validation', () => {
     expect(parseClientMessage({ type: 'command', commandId: 'x', command: { type: 'sendTrade', item: 'timber', amount: 0, sourceId: 4, destinationId: 9 } }).ok).toBe(false);
     expect(parseClientMessage({ type: 'command', commandId: 'x', command: { type: 'paintRoad', cells: Array.from({ length: MAX_BATCH_CELLS + 1 }, () => ({ x: 1, y: 1 })) } }).ok).toBe(false);
     expect(parseClientMessage({ type: 'command', commandId: 'x', command: { type: 'winNow' } }).ok).toBe(false);
+  });
+
+  it('accepts a whole large army as one formation command', () => {
+    const command = (unitIds: number[]) => ({
+      type: 'command', commandId: 'p1-army',
+      command: { type: 'orderUnits', unitIds, order: { type: 'attackMove', x: 20, y: 20 }, formation: 'box' },
+    });
+    expect(parseClientMessage(command(Array.from({ length: 1000 }, (_, i) => i + 1))).ok).toBe(true);
+    expect(parseClientMessage(command(Array.from({ length: MAX_ORDER_UNITS + 1 }, (_, i) => i + 1))).ok).toBe(false);
   });
 
   it('bounds checkpoint payloads and validates control messages', () => {

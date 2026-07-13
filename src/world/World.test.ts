@@ -124,9 +124,9 @@ describe('Biome worldgen', () => {
       const w = new World({ seed, w: 64, h: 64, treeStands: 11, oreVeins: 9, waterScale: 1.0, meadows: 6, mountains: 2, ruins: 2, frontier: true, biome: 'seaside' });
       expect(w.enemyZone).not.toBeNull();
       const ez = w.enemyZone!;
-      // BFS over passable tiles from the map centre
+      // BFS over passable tiles from the campaign's (possibly offset) castle
       const seen = new Set<number>();
-      const queue: [number, number][] = [[Math.floor(w.W / 2), Math.floor(w.H / 2)]];
+      const queue: [number, number][] = [[w.playerStart.x + 1, w.playerStart.y + 1]];
       seen.add(queue[0][1] * w.W + queue[0][0]);
       let reached = false;
       while (queue.length && !reached) {
@@ -139,6 +139,29 @@ describe('Biome worldgen', () => {
         }
       }
       expect(reached, `seed ${seed}`).toBe(true);
+    }
+  });
+
+  it('builds the dragon lair as four broad-mouthed stages away from the castle', () => {
+    for (const seed of [1, 7, 42, 31337]) {
+      const w = new World({
+        seed, w: 86, h: 86, treeStands: 16, oreVeins: 13, waterScale: 1.1,
+        meadows: 7, goldPiles: 9, mountains: 4, frontier: true, lairStages: 4,
+      });
+      expect(w.enemyZones).toHaveLength(4);
+      const start = { x: w.playerStart.x + 1, y: w.playerStart.y + 1 };
+      const depths = w.enemyZones.map(z => Math.hypot(z.x - start.x, z.y - start.y));
+      expect(depths[0]).toBeGreaterThan(25);
+      for (let i = 1; i < depths.length; i++) expect(depths[i]).toBeGreaterThan(depths[i - 1] + 10);
+      expect(depths[3]).toBeGreaterThan(Math.min(w.W, w.H) * 0.85);
+
+      for (const zone of w.enemyZones) {
+        for (let y = zone.pass.y - 2; y <= zone.pass.y + 2; y++) {
+          for (let x = zone.pass.x - 2; x <= zone.pass.x + 2; x++) {
+            expect(w.T(x, y)?.type, `seed ${seed}, mouth ${zone.pass.x},${zone.pass.y}`).toBe('grass');
+          }
+        }
+      }
     }
   });
 

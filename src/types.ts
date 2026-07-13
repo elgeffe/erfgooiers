@@ -33,6 +33,9 @@ export interface UnitOrder {
   type: 'move' | 'attack' | 'attackMove';
   x: number; y: number;
   foe: Unit | null;
+  /** Explicit structure focus for a siege order. Kept on queued orders so a
+   *  Shift-chained attack cannot degrade into a generic attack-move. */
+  building: Building | null;
 }
 
 /** Purely decorative ground scatter (no gameplay effect). */
