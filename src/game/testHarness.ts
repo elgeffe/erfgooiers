@@ -58,6 +58,23 @@ export function makeTestGame(options: TestGameOptions = {}): { game: Game; world
   return { game, world };
 }
 
+/** Deterministic empty grass map for combat timing tests. */
+export function makeOpenBattleGame(seed = 404, size = 40): { game: Game; world: World } {
+  simRng.reseed(seed);
+  const world = new World({ seed, w: size, h: size, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
+  for (const row of world.tiles) for (const tile of row) {
+    tile.type = 'grass';
+    tile.rock = undefined;
+    tile.tree = null;
+    tile.dep = null;
+    tile.deco = null;
+    tile.pickup = null;
+  }
+  const game = new Game(world, stubView(world), new Modifiers());
+  game.init({ stock: {}, serfs: 0, laborers: 0, villagers: 0 });
+  return { game, world };
+}
+
 /** Step the fixed 20 Hz simulation `seconds` forward. */
 export function tick(game: Game, seconds: number): void {
   const steps = Math.round(seconds * 20);
