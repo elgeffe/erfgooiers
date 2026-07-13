@@ -404,9 +404,10 @@ export class Game {
           // this item must receive it directly. Creating a storage task here
           // used to reserve the item before the consumer demand ran, causing
           // full coal/gold mines to send goods to the castle ahead of a mint.
-          // Urgent drains still beat markets and routine storage, but never
-          // construction or production inputs.
-          if (!wanted && b.out[it] >= outCap - 1) demands.push({ pri: b.priority ? 1.1 : 1.25, to: this.nearestStore(b), item: it, from: b });
+          // Urgent drains beat unrelated input top-ups so a capped producer
+          // cannot starve forever. `wanted` remains the stronger item-specific
+          // rule: output never goes to storage while any destination wants it.
+          if (!wanted && b.out[it] >= outCap - 1) demands.push({ pri: b.priority ? 0.4 : 0.5, to: this.nearestStore(b), item: it, from: b });
           else if (!wanted) demands.push({ pri: 2, to: this.nearestStore(b), item: it, from: b });
         }
       }
@@ -589,7 +590,13 @@ export class Game {
         u.status = 'Working';
         u.bob += dt * 10; u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.05;
         b.prog += dt / this.mods.recipeTime(def);
-        if (b.prog >= 1) { b.prog = 0; b.working = false; b.out[def.recipe.out] = (b.out[def.recipe.out] || 0) + 1; this.objective?.onProduce(def.recipe.out, this.mods.objectiveWeight(def.recipe.out)); }
+        if (b.prog >= 1) {
+          b.prog = 0; b.working = false;
+          const out = def.recipe.out;
+          if (def.recipe.globalOutput) this.store.stock![out] = (this.store.stock![out] || 0) + 1;
+          else b.out[out] = (b.out[out] || 0) + 1;
+          this.objective?.onProduce(out, this.mods.objectiveWeight(out));
+        }
       } else {
         u.status = 'Waiting for materials';
         if (this.outTotal(b) < this.mods.outCap()) {

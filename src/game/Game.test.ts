@@ -179,6 +179,28 @@ describe('serf hauling from storehouse', () => {
 });
 
 describe('production-chain routing priority', () => {
+  it('deposits completed mint coins directly into spendable global stock', () => {
+    const world = new World({ seed: 410, w: 32, h: 32, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
+    for (const row of world.tiles) for (const t of row) { t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; }
+    const game = new Game(world, headlessView(world));
+    game.init({ stock: { coin: 0 }, serfs: 0, laborers: 0, villagers: 0 });
+    const mint = game.placeBuilding('mint', 7, 10, true);
+    const minter = game.spawnUnit('minter', 0xd4af37, { x: 7, y: 10 });
+    minter.home = mint;
+    mint.worker = minter;
+    mint.working = true;
+    mint.prog = 0.99;
+
+    game.update(0.1);
+
+    expect(game.store.stock!.coin).toBe(1);
+    expect(game.countItem('coin')).toBe(1);
+    expect(mint.out.coin || 0).toBe(0);
+    expect(mint.working).toBe(false);
+    expect(game.trainUnit(game.guild, 'serf')).toBe(true);
+    expect(game.store.stock!.coin).toBe(0);
+  });
+
   it('routes capped gold and coal output directly to a waiting mint before storage', () => {
     const world = new World({ seed: 408, w: 32, h: 32, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
     for (const row of world.tiles) for (const t of row) { t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; }
@@ -213,6 +235,24 @@ describe('production-chain routing priority', () => {
     game.update(0.5);
 
     const serf = game.units.find(u => u.role === 'serf')!;
+    expect(serf.task?.from).toBe(goldMine);
+    expect(serf.task?.to).toBe(game.store);
+    expect(serf.task?.item).toBe('goldore');
+  });
+
+  it('clears an unwanted capped output before unrelated input refills can starve it', () => {
+    const world = new World({ seed: 411, w: 32, h: 32, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
+    for (const row of world.tiles) for (const t of row) { t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; }
+    const game = new Game(world, headlessView(world));
+    game.init({ stock: { flour: 5 }, serfs: 1, laborers: 0, villagers: 0 });
+    const bakery = game.placeBuilding('bakery', 10, 10, true);
+    const goldMine = game.placeBuilding('goldmine', 5, 5, true);
+    goldMine.out.goldore = 5;
+
+    game.update(0.5);
+
+    const serf = game.units.find(u => u.role === 'serf')!;
+    expect(bakery.incoming.flour || 0).toBe(0);
     expect(serf.task?.from).toBe(goldMine);
     expect(serf.task?.to).toBe(game.store);
     expect(serf.task?.item).toBe('goldore');

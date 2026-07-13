@@ -52,9 +52,9 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: { timber: 2, stone: 1 }, roof: 0x3a3a40, wall: 0x8f8a80, accent: 0x2a2a30,
     gather: { node: 'coal', out: 'coal', time: 5.5, range: 9 }, worker: 'Collier', wcolor: 0x44444c },
 
-  mint: { name: 'Mint', desc: 'Gold ore + coal → coins', model: 'cottage',
+  mint: { name: 'Mint', desc: 'Gold ore + coal → coins deposited directly into global stock', model: 'cottage',
     cost: { timber: 2, stone: 3 }, roof: 0xd9a441, wall: 0x9c8a6a, accent: 0xffd24a,
-    recipe: { inp: { goldore: 1, coal: 1 }, out: 'coin', time: 6 }, worker: 'Minter', wcolor: 0xd4af37 },
+    recipe: { inp: { goldore: 1, coal: 1 }, out: 'coin', time: 6, globalOutput: true }, worker: 'Minter', wcolor: 0xd4af37 },
 
   market: { name: 'Market', desc: 'Assign surplus goods to export; invulnerable horse traders arrive automatically and pay in coin', model: 'cottage',
     cost: { timber: 4, stone: 2, coin: 2 }, roof: 0xb54f38, wall: 0xc8aa78, accent: 0xffd24a, hp: 180 },

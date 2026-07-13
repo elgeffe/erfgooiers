@@ -39,7 +39,13 @@ export type ModelKind = 'cottage' | 'windmill' | 'farm' | 'barn' | 'mine' | 'tav
 export interface ItemDef { name: string; color: string; hex: number; }
 
 export interface GatherDef { node: NodeKind; out: ItemKey | null; time: number; range: number; }
-export interface RecipeDef { inp: Partial<Record<ItemKey, number>>; out: ItemKey; time: number; }
+export interface RecipeDef {
+  inp: Partial<Record<ItemKey, number>>;
+  out: ItemKey;
+  time: number;
+  /** Completed output enters global storage immediately instead of requiring a serf haul. */
+  globalOutput?: boolean;
+}
 /** A tavern feeds nearby workers any of several foods; capacity caps how many it serves. */
 export interface TavernDef { foods: ItemKey[]; capacity: number; time: number; }
 

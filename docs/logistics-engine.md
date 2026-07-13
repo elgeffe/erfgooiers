@@ -12,8 +12,8 @@ The castle is storage and a fallback destination; it is not an obligatory hub.
    example, gold ore and coal move from their mines to a waiting mint, not through the
    castle first.
 2. Storage receives surplus output only when there is no outstanding demand for that
-   item. Output near the cap is urgent surplus, but it remains subordinate to
-   construction and production input delivery.
+   item. Output near the cap is an urgent liveness job: it outranks unrelated input
+   refills so a producer cannot remain blocked forever.
 3. Routing is physical. Serfs walk to the source, pick up one reserved item, then walk
    to the destination. Roads affect travel speed and path choice, not demand priority.
 4. Assignment is deterministic. The dispatcher runs every 0.5 simulation seconds,
@@ -21,6 +21,9 @@ The castle is storage and a fallback destination; it is not an obligatory hub.
    serfs without random choice.
 5. `Modifiers` owns tunable buffer sizes. `carryCap()` is the target input buffer per
    recipe item; `outCap()` is the total output limit that stops a producer.
+6. Recipes may declare `globalOutput`. Their completed output enters global storage
+   immediately and never occupies a building output buffer or creates a serf task. The
+   mint uses this for coins, making each minted coin immediately spendable.
 
 ## Demand priority
 
@@ -31,10 +34,10 @@ their ordering is a gameplay contract.
 |---:|---|---:|---|
 | 1 | Prioritized construction | -1 | Every missing material unit creates a demand. Player priority wins over all automatic work. |
 | 2 | Construction | 0 | Keeps placed sites supplied before routine production and storage. |
-| 3 | Prioritized recipe input | 0.75 | Fills each missing recipe input toward `carryCap()`. |
-| 4 | Recipe and tavern input | 1 | Normal consuming-building demand. Taverns request eligible foods while below capacity. |
-| 5 | Prioritized near-cap output to storage | 1.1 | Clears a prioritized producer only when no destination currently wants that item. |
-| 6 | Near-cap output to storage | 1.25 | Prevents a producer from remaining output-blocked, subject to the same no-consumer rule. |
+| 3 | Prioritized near-cap output to storage | 0.4 | Clears a prioritized blocked producer only when no destination currently wants that item. |
+| 4 | Near-cap output to storage | 0.5 | Prevents output deadlock ahead of unrelated input top-ups, subject to the same no-consumer rule. |
+| 5 | Prioritized recipe input | 0.75 | Fills each missing recipe input toward `carryCap()`. |
+| 6 | Recipe and tavern input | 1 | Normal consuming-building demand. Taverns request eligible foods while below capacity. |
 | 7 | Market export stock | 1.5 | Stocks the configured sale quantity after construction and production needs. |
 | 8 | Routine surplus to storage | 2 | Moves output only when no current construction, production, tavern, or market demand wants that item. |
 
@@ -53,6 +56,8 @@ unwanted timber after higher-priority work has been assigned.
   market inventory.
 - A non-storage building with output may request a haul to its nearest standing
   storehouse only if no discovered demand wants that item.
+- A `globalOutput` recipe deposits into global storage at completion and therefore
+  creates neither an output-haul demand nor an intermediate building inventory.
 - The destination for a consumer demand is the consumer itself. Storage must never be
   inserted as an intermediate destination.
 
@@ -87,6 +92,9 @@ consumer buffer during later dispatcher passes.
 - Player priority changes ordering within construction, input delivery, and near-cap
   output clearing. It never permits storage to take an item that a current consumer
   wants.
+- Urgent output clearing may outrank an input request for a different item. This is a
+  liveness exception: it frees a blocked producer, while the item-specific consumer
+  rule still prevents detours such as coal mine → castle when a mint wants coal.
 - A full input buffer is not a waiting consumer. Further output is surplus and may go
   to storage until consumption opens buffer space.
 - Markets are intentional low-priority consumers. They do not take goods ahead of
@@ -113,6 +121,8 @@ Tests for this subsystem should cover both sides of the routing invariant:
 - capped producers with a waiting consumer route directly to that consumer, including
   multi-input chains such as gold mine + coal mine to mint;
 - capped producers with no waiting consumer still route output to storage;
+- capped output cannot be starved indefinitely by unrelated recurring input refills;
+- `globalOutput` recipes create immediately spendable stock without a serf task;
 - reservations prevent duplicate claims and buffer overfill;
 - cancellation restores or recovers items according to task phase.
 

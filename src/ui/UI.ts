@@ -386,7 +386,9 @@ export class UI {
       if (o.def.recipe) {
         body += `<div class="sect">Production</div><div class="bar"><div style="width:${Math.round(o.prog * 100)}%"></div></div>`;
         body += '<div class="sect">Inputs</div>' + this.invRowsHTML(o.inp);
-        body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
+        body += o.def.recipe.globalOutput
+          ? `<div class="sect">Output</div><div class="hnote">${ITEMS[o.def.recipe.out as ItemKey].name} enters global stock immediately — no serf pickup required.</div>`
+          : '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
         body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize'}</button>`;
       } else if (o.def.gather) {
         body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
