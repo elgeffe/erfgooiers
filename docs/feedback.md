@@ -41,6 +41,8 @@ fix each of these items, always start with bugs first, then design changes > imp
 - sometimes maps are produced where a sea and a mountain range are blocking off an area that contains gold or enemies.
 
 ## Improvements
+- add performance metrics in the nav bar like fps and ticks?
+
 - increase loudness of background music a bit
 
 - add card to shop: increases carry capacity of serfs to two (uncommon)
