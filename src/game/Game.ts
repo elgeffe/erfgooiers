@@ -1,5 +1,3 @@
-import * as THREE from 'three';
-import { BASE_SPEED, MAX_UNITS } from '../constants';
 import { ITEMS } from '../data/items';
 import { UNITS, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
@@ -31,6 +29,7 @@ import { PlacementSystem } from './PlacementSystem';
 import { OrderSystem } from './OrderSystem';
 import { RefugeSystem } from './RefugeSystem';
 import { EconomyState, type WorkerMetrics } from './EconomyState';
+import { UnitFactory } from './UnitFactory';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -121,6 +120,7 @@ export class Game {
   private readonly orderSystem: OrderSystem;
   private readonly refugeSystem: RefugeSystem;
   private readonly economyState: EconomyState;
+  private readonly unitFactory: UnitFactory;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -323,6 +323,17 @@ export class Game {
       sfx: name => this.sfx(name),
     });
     this.economyState = new EconomyState(this.buildings, this.sites, this.units, this.mods, owner => this.storeFor(owner), this.localPlayerId);
+    this.unitFactory = new UnitFactory(this.world, this.view, this.mods, this.units, this.localPlayerId, {
+      nextId: () => this.nextEntityId++,
+      storeFor: owner => this.storeFor(owner),
+      primaryStore: () => this.store,
+      registerHero: (heroId, roleName, owner, unit) => {
+        this.heroId = heroId;
+        this.heroName = roleName;
+        this.playerHeroes.set(owner, unit);
+        if (owner === this.localPlayerId) this.heroUnit = unit;
+      },
+    });
   }
 
   entityById(id: number): Building | Site | Unit | null {
@@ -442,70 +453,15 @@ export class Game {
   //  Units
   // =====================================================================
   spawnUnit(role: string, colorHex: number, tile: { x: number; y: number }, owner: PlayerId = this.localPlayerId): Unit {
-    const { group, itemMesh } = this.view.createUnit(colorHex, role, tile.x, tile.y);
-    const u: Unit = {
-      id: this.nextEntityId++, owner,
-      role, roleName: role[0].toUpperCase() + role.slice(1), colorHex, mesh: group, itemMesh,
-      tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
-      home: null, wstate: 'idle', timer: 0, target: null, hunger: 70 + rnd() * 30, bob: 0, status: 'Idle',
-      faction: 'player', spd: BASE_SPEED, hp: 20, maxHp: 20, dmg: 0, range: 0, atkCd: 1, atkTimer: 0,
-      dead: false, raider: false, foe: null, foeB: null, order: null, orderQueue: [], obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null, sepI: 0,
-    };
-    this.units.push(u);
-    return u;
+    return this.unitFactory.spawnUnit(role, colorHex, tile, owner);
   }
 
-  /** Spawn the run's mounted hero near the castle gate: a controllable player
-   *  fighter with a per-hero look. Box-select or click it like any soldier. */
   spawnHero(heroId: string, roleName: string, owner: PlayerId = this.localPlayerId): Unit {
-    this.heroId = heroId;
-    this.heroName = roleName;
-    const def = UNITS.hero;
-    const d = doorTile(this.storeFor(owner));
-    let tile = { x: d.x, y: d.y + 1 };
-    if (!this.world.passable(tile.x, tile.y)) {
-      for (let r = 1; r < 5 && !this.world.passable(tile.x, tile.y); r++)
-        for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++)
-          if (this.world.passable(d.x + dx, d.y + dy)) { tile = { x: d.x + dx, y: d.y + dy }; }
-    }
-    const { group, itemMesh } = this.view.createHero(heroId, tile.x, tile.y);
-    const u: Unit = {
-      id: this.nextEntityId++, owner,
-      role: 'hero', roleName, colorHex: def.color, mesh: group, itemMesh,
-      tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
-      home: null, wstate: 'idle', timer: 0, target: null, hunger: 100, bob: 0, status: 'Ready to ride',
-      faction: 'player', spd: def.speed * this.mods.combatMult('speed', 'hero'),
-      hp: Math.round(def.hp * this.mods.combatMult('hp', 'hero')),
-      maxHp: Math.round(def.hp * this.mods.combatMult('hp', 'hero')),
-      dmg: def.dmg * this.mods.combatMult('damage', 'hero'),
-      range: def.range, atkCd: def.atkCd, atkTimer: 0,
-      dead: false, raider: false, foe: null, foeB: null, order: null, orderQueue: [], obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null, sepI: 0,
-    };
-    this.units.push(u);
-    this.playerHeroes.set(owner, u);
-    if (owner === this.localPlayerId) this.heroUnit = u;
-    return u;
+    return this.unitFactory.spawnHero(heroId, roleName, owner);
   }
 
-  /** Spawn a combat unit (player soldier/archer, or enemy/wild fighter) from its def. */
   spawnFighter(kind: UnitKind, tile: { x: number; y: number }, faction?: Faction, owner?: OwnerId): Unit {
-    const def = UNITS[kind];
-    const fac = faction ?? def.faction;
-    const unitOwner = owner ?? ownerForFaction(fac, this.localPlayerId);
-    const u = this.spawnUnit(kind, def.color, tile, unitOwner === 'p2' ? 'p2' : 'p1');
-    u.roleName = def.name;
-    u.faction = fac;
-    u.owner = unitOwner;
-    u.spd = def.speed * this.mods.combatMult('speed', kind);
-    u.maxHp = u.hp = Math.round(def.hp * this.mods.combatMult('hp', kind));
-    u.dmg = def.dmg * this.mods.combatMult('damage', kind);
-    u.range = def.range * this.mods.combatMult('range', kind);
-    u.atkCd = def.atkCd;
-    u.hunger = 100; // fighters don't idle for hunger
-    u.status = def.name;
-    u.anchor = { x: tile.x, y: tile.y }; // beasts & guards roam around home
-    u.mesh.scale.setScalar(def.scale);
-    return u;
+    return this.unitFactory.spawnFighter(kind, tile, faction, owner);
   }
 
   private setCarrying(u: Unit, item: string | null): void {
@@ -914,69 +870,12 @@ export class Game {
     this.orderSystem.setRally(target, x, y);
   }
 
-  /**
-   * Muster the level's granted army OUTSIDE the castle: a tidy parade grid on
-   * the open ground in front of the gate, ranks extending away from the walls
-   * as the army grows. Blocked tiles dent a rank locally (tryTile skips them);
-   * anything that can't fit in the parade ground falls back to a ring spawn.
-   */
   spawnStartArmy(groups: { kind: UnitKind; count: number }[]): Unit[] {
-    const total = groups.reduce((s, g) => s + g.count, 0);
-    if (total <= 0) return [];
-    const d = doorTile(this.store);
-    // march direction: straight out through the castle's door side
-    // (rot 0 = south, 1 = west, 2 = north, 3 = east — see doorTile)
-    const [dirX, dirY] = [[0, 1], [-1, 0], [0, -1], [1, 0]][this.store.rot || 0];
-    const cols = Math.max(4, Math.ceil(Math.sqrt(total * 1.8)));
-    const out: Unit[] = [];
-    const queue: UnitKind[] = [];
-    for (const g of groups) for (let i = 0; i < g.count; i++) queue.push(g.kind);
-    const tryTile = (x: number, y: number): void => {
-      if (!queue.length || this.units.length >= MAX_UNITS) return;
-      const t = this.world.T(x, y);
-      if (!t || t.type !== 'grass' || t.b || t.site || t.dep || t.tree || t.field) return;
-      out.push(this.spawnFighter(queue.shift()!, { x, y }, 'player'));
-    };
-    // first rank stands two tiles clear of the door; each following rank steps
-    // one further from the castle
-    for (let rank = 0; queue.length && rank < 40; rank++) {
-      const rx = d.x + dirX * (2 + rank), ry = d.y + dirY * (2 + rank);
-      for (let c = 0; queue.length && c < cols; c++) {
-        const off = (c % 2 === 0 ? 1 : -1) * Math.ceil(c / 2); // centre-out
-        tryTile(rx + (dirY !== 0 ? off : 0), ry + (dirX !== 0 ? off : 0));
-      }
-    }
-    // whatever the parade ground couldn't hold spawns around the door instead
-    for (const kind of queue.splice(0)) {
-      const spare = this.spawnSquad(kind, 1, this.world.wx(d.x) + dirX * 2, this.world.wz(d.y) + dirY * 2, 'player');
-      out.push(...spare);
-    }
-    // face the ranks away from the castle, toward the field
-    for (const u of out) u.mesh.rotation.y = Math.atan2(dirX, dirY);
-    return out;
+    return this.unitFactory.spawnStartArmy(groups);
   }
 
-  /** Scatter `count` fighters of a kind around a world point (sandbox/level spawner). */
   spawnSquad(kind: UnitKind, count: number, worldX: number, worldZ: number, faction?: Faction): Unit[] {
-    const W = this.world.W, H = this.world.H;
-    const cx = Math.max(2, Math.min(W - 3, Math.floor(worldX + W / 2)));
-    const cy = Math.max(2, Math.min(H - 3, Math.floor(worldZ + H / 2)));
-    const out: Unit[] = [];
-    const tryTile = (x: number, y: number): void => {
-      if (out.length >= count || this.units.length >= MAX_UNITS) return; // cap for perf
-      const t = this.world.T(x, y);
-      if (!t || t.type !== 'grass' || t.b || t.site || t.dep) return;
-      out.push(this.spawnFighter(kind, { x, y }, faction));
-    };
-    tryTile(cx, cy);
-    for (let r = 1; r < 14 && out.length < count; r++) {
-      for (let dx = -r; dx <= r && out.length < count; dx++)
-        for (let dy = -r; dy <= r && out.length < count; dy++) {
-          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // ring perimeter only
-          tryTile(cx + dx, cy + dy);
-        }
-    }
-    return out;
+    return this.unitFactory.spawnSquad(kind, count, worldX, worldZ, faction);
   }
 
   // =====================================================================
