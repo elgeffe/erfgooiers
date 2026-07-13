@@ -452,6 +452,43 @@ describe('specialist staffing', () => {
     expect(worker.wstate).toBe('home');
     expect(quarry.active).toBe(true);
   });
+
+  it('skips a nearer villager who cannot reach the building entrance', () => {
+    const { game, world } = openBattleGame(426, 32);
+    const quarry = game.placeBuilding('quarry', 12, 10);
+    for (let y = 0; y < world.H; y++) world.tiles[y][8].type = 'rock';
+    const trapped = game.spawnUnit('villager', 0xcdbb8f, { x: 7, y: 12 });
+    const reachable = game.spawnUnit('villager', 0xcdbb8f, { x: 24, y: 12 });
+
+    (game as any).trainingSystem.staffBuildings();
+
+    expect(quarry.worker).not.toBeNull();
+    expect(quarry.worker!.tx).toBe(24);
+    expect(game.units).toContain(trapped);
+    expect(game.units).not.toContain(reachable);
+  });
+
+  it('never strands a worker in "Moving in" when its route is cut off', () => {
+    const { game, world } = openBattleGame(427, 32);
+    const quarry = game.placeBuilding('quarry', 12, 10);
+    const door = doorTile(quarry);
+    const worker = game.spawnUnit('stonemason', 0x9aa0a3, { x: 7, y: door.y });
+    worker.home = quarry;
+    worker.wstate = 'goHome';
+    worker.roleName = 'Stonemason';
+    quarry.worker = worker;
+
+    // Wall off the entire route so the door is unreachable mid-transit.
+    for (let y = 0; y < world.H; y++) world.tiles[y][9].type = 'rock';
+    expect((game as any).sendTo(worker, door.x, door.y)).toBe(false);
+
+    for (let i = 0; i < 200 && worker.wstate === 'goHome'; i++) (game as any).workerUpdate(worker, 0.05);
+
+    expect(worker.wstate).toBe('home');
+    expect(worker.tx).toBe(door.x);
+    expect(worker.ty).toBe(door.y);
+    expect(quarry.active).toBe(true);
+  });
 });
 
 describe('serf hauling from storehouse', () => {

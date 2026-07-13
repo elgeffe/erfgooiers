@@ -41,6 +41,8 @@ fix each of these items, always start with bugs first, then design changes > imp
 - sometimes maps are produced where a sea and a mountain range are blocking off an area that contains gold or enemies.
 
 ## Improvements
+- implement cattle farming with choices of cow, goat and sheep, chicken and pigs to replace pigs only. make sure maps have specific types of animals avaiable (goats in mountains, sheep on texel, etc). make sure that relevant animals have cheese production line, wool, leather, cloth, armor, butcher, etc.
+
 - add performance metrics in the nav bar like fps and ticks?
 
 - increase loudness of background music a bit

@@ -12,6 +12,7 @@ interface TrainingPorts {
   takeStock: (item: string, amount: number, owner: PlayerId) => boolean;
   spawnUnit: (role: string, color: number, tile: Coord, owner: PlayerId) => Unit;
   spawnFighter: (kind: UnitKind, tile: Coord, owner: PlayerId) => Unit;
+  pathTo: (unit: Unit, x: number, y: number) => Coord[] | null;
   orderAttackMove: (unit: Unit, x: number, y: number) => void;
   removeUnit: (unit: Unit) => void;
   onTrain: () => void;
@@ -111,13 +112,18 @@ export class TrainingSystem {
     for (const building of this.ports.buildings()) {
       if (building.removed || !building.def.worker || building.worker || building.faction !== 'player') continue;
       let best: Unit | null = null;
+      let bestPath: Coord[] | null = null;
       let bestDistance = 1e9;
+      const door = doorTile(building);
       for (const unit of this.ports.units()) {
         if (unit.dead || unit.owner !== building.owner || unit.role !== 'villager' || unit.home) continue;
         const distance = Math.abs(unit.tx - building.x) + Math.abs(unit.ty - building.y);
         if (distance < bestDistance) {
+          const path = this.ports.pathTo(unit, door.x, door.y);
+          if (path === null) continue;
           bestDistance = distance;
           best = unit;
+          bestPath = path;
         }
       }
       if (!best) continue;
@@ -129,6 +135,8 @@ export class TrainingSystem {
       unit.home = building;
       unit.wstate = 'goHome';
       unit.roleName = building.def.worker;
+      unit.path = bestPath;
+      unit.pathI = 0;
       building.worker = unit;
     }
   }

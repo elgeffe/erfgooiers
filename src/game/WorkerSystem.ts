@@ -8,6 +8,10 @@ import { doorTile } from './util';
 
 const rnd = () => simRng.next();
 
+/** Grace period (seconds) a worker spends trying to reach its post before it is
+ *  snapped in, so a blocked route can never strand it in a permanent "Moving in". */
+const MOVE_IN_TIMEOUT = 6;
+
 interface WorkerPorts {
   buildings: () => readonly Building[];
   sites: () => readonly Site[];
@@ -110,9 +114,23 @@ export class WorkerSystem {
     if (unit.wstate === 'goHome') {
       unit.mesh.visible = true;
       const door = doorTile(building);
-      if (!unit.path && (unit.tx !== door.x || unit.ty !== door.y) && !this.ports.sendTo(unit, door.x, door.y)) unit.timer = 1;
+      const atDoor = unit.tx === door.x && unit.ty === door.y;
+      if (!atDoor && !unit.path && !this.ports.sendTo(unit, door.x, door.y)) {
+        // The door became unreachable after staffing (a building or wall placed
+        // across the route). Give the worker a grace period to re-path, then snap
+        // it into its post so no building type can strand it in "Moving in" limbo.
+        unit.timer += dt;
+        if (unit.timer >= MOVE_IN_TIMEOUT) {
+          unit.tx = door.x;
+          unit.ty = door.y;
+          unit.mesh.position.set(this.world.wx(door.x), 0, this.world.wz(door.y));
+        }
+      } else {
+        unit.timer = 0;
+      }
       if (unit.path) this.ports.moveUnit(unit, dt);
       if (!unit.path && unit.tx === door.x && unit.ty === door.y) {
+        unit.timer = 0;
         unit.wstate = 'home';
         building.active = true;
         unit.status = 'At work';

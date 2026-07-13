@@ -233,6 +233,7 @@ export class Game {
       takeStock: (item, amount, owner) => this.takeStock(item, amount, owner),
       spawnUnit: (role, color, tile, owner) => this.spawnUnit(role, color, tile, owner),
       spawnFighter: (kind, tile, owner) => this.spawnFighter(kind, tile, 'player', owner),
+      pathTo: (unit, x, y) => findPath(this.world, unit.tx, unit.ty, x, y, unit.faction),
       orderAttackMove: (unit, x, y) => this.orderUnit(unit, 'attackMove', x, y),
       removeUnit: unit => {
         this.view.remove(unit.mesh);
