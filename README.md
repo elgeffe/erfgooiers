@@ -79,6 +79,9 @@ Key areas:
 - `src/engine/` — RNG, pathfinding, and pure formation layout
 
 Contributor and agent conventions live in [AGENTS.md](AGENTS.md). Product direction and
-remaining milestones live in [ROADMAP.md](ROADMAP.md). The physical hauling contract,
-including demand priorities, reservations, and storage fallback, is documented in
+remaining milestones live in [ROADMAP.md](ROADMAP.md). The first multiplayer slice is
+documented in [docs/co-op-design.md](docs/co-op-design.md): a host-authoritative four-level
+two-player PvE Expedition with independent economies connected by physical trade, invites,
+and a public server browser. The physical hauling contract, including demand priorities,
+reservations, and storage fallback, is documented in
 [docs/logistics-engine.md](docs/logistics-engine.md).

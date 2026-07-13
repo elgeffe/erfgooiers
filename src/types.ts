@@ -17,6 +17,13 @@ export type BuildingKey =
 
 export type NodeKind = 'tree' | 'plant' | 'stone' | 'gold' | 'coal' | 'iron' | 'field' | 'fish';
 
+/** Stable owner identity for the two allied co-op economies. */
+export type PlayerId = 'p1' | 'p2';
+export const PLAYER_IDS: readonly PlayerId[] = ['p1', 'p2'];
+
+/** Simulation owner. Diplomacy is derived separately so p1/p2 remain allied. */
+export type OwnerId = PlayerId | 'enemy' | 'wild';
+
 /** Which side a unit or building belongs to. Economy workers are always 'player'. */
 export type Faction = 'player' | 'enemy' | 'wild';
 export type Formation = 'box' | 'line' | 'column' | 'split';
@@ -100,6 +107,7 @@ export interface Pickup { gold: number; reserved: boolean; meshes: THREE.Object3
 export interface Tile {
   type: 'grass' | 'water' | 'rock';
   road: boolean;
+  roadOwner: PlayerId | null;
   lake: boolean;               // part of the big fish-stocked lake (not a pond)
   rock?: 'peak' | 'wall';      // rock tiles: impassable mountain or a ruined wall
   b: Building | null;
@@ -113,6 +121,8 @@ export interface Tile {
 }
 
 export interface Building {
+  id: number;
+  owner: OwnerId;
   key: BuildingKey;
   def: BuildingDef;
   x: number; y: number; rot: number;
@@ -143,6 +153,8 @@ export interface Building {
 }
 
 export interface Site {
+  id: number;
+  owner: PlayerId;
   key: BuildingKey;
   def: BuildingDef;
   x: number; y: number; rot: number;
@@ -163,6 +175,8 @@ export interface Site {
 export interface Task { from: any; to: any; item: string; phase: 'pickup' | 'deliver'; }
 
 export interface Unit {
+  id: number;
+  owner: OwnerId;
   role: string;
   roleName: string;
   colorHex: number;

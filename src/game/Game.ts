@@ -9,10 +9,14 @@ import { findPath } from '../engine/pathfinding';
 import { formationSpots } from '../engine/formations';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
-import type { Building, BuildingKey, Coord, Faction, Formation, ItemKey, Site, Unit, UnitOrder } from '../types';
+import { PLAYER_IDS, type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit, type UnitOrder } from '../types';
 import { buildingEntranceTiles, doorTile, unitLabel } from './util';
 import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
+import { canControl, ownerForFaction } from './ownership';
+import { TRADE, tradeEta, tradeLoadTime, tradePartner, tradeShipmentActive, type TradeHistoryEntry, type TradeRequest, type TradeShipment } from './trade';
+import { applyGameCommand } from './commands';
+import type { GameCommand } from '../net/protocol';
 
 // Gameplay events use the sim stream (reseeded per level), never worldgen/cosmetic.
 const rnd = () => simRng.next();
@@ -45,6 +49,9 @@ export class Game {
   readonly units: Unit[] = [];
   store!: Building;
   guild!: Building;
+  readonly playerStores = new Map<PlayerId, Building>();
+  readonly playerGuilds = new Map<PlayerId, Building>();
+  readonly playerHeroes = new Map<PlayerId, Unit>();
   selected: any = null;
   simSpeed = 1;
   /** The run's mounted hero on this level (null in sandbox / before spawn). */
@@ -81,19 +88,74 @@ export class Game {
   private fieldT = 0;
   private roadWarnT = 0;
   private plotWarnT = 0;
+  private nextEntityId = 1;
 
-  constructor(private readonly world: World, private readonly view: View, readonly mods: Modifiers = new Modifiers()) {}
+  constructor(
+    private readonly world: World,
+    private readonly view: View,
+    readonly mods: Modifiers = new Modifiers(),
+    readonly localPlayerId: PlayerId = 'p1',
+  ) {}
+
+  entityById(id: number): Building | Site | Unit | null {
+    return this.buildings.find(entity => entity.id === id)
+      ?? this.sites.find(entity => entity.id === id)
+      ?? this.units.find(entity => entity.id === id)
+      ?? null;
+  }
+
+  /**
+   * Input-side boundary: UI and Controls submit gameplay intents here rather
+   * than mutating the sim directly. Singleplayer applies immediately; co-op
+   * (main.ts) swaps this sink for the host-ordered relay so both peers apply
+   * the same accepted command stream.
+   */
+  submitCommand: (command: GameCommand) => void = command => {
+    applyGameCommand(this, this.localPlayerId, command);
+  };
+
+  ownedByLocal(entity: { owner: OwnerId }): boolean {
+    return canControl(this.localPlayerId, entity.owner);
+  }
 
   // =====================================================================
   //  Setup
   // =====================================================================
   init(kit: StartKit = DEFAULT_KIT): void {
+    this.indexPickups();
+    const { W, H } = this.world;
+    const cx = Math.floor(W / 2) - 1, cy = Math.floor(H / 2) - 1;
+    this.initSettlement(this.localPlayerId, kit, cx, cy);
+    this.store = this.playerStores.get(this.localPlayerId)!;
+    this.guild = this.playerGuilds.get(this.localPlayerId)!;
+  }
+
+  /** Two deterministic allied starts with fully separate ownership and stock. */
+  initCoOp(p1Kit: StartKit = DEFAULT_KIT, p2Kit: StartKit = DEFAULT_KIT): void {
+    this.indexPickups();
+    const { W, H } = this.world;
+    const cy = Math.floor(H / 2) - 1;
+    this.initSettlement('p1', p1Kit, Math.max(3, Math.floor(W * 0.28) - 1), cy);
+    this.initSettlement('p2', p2Kit, Math.min(W - 6, Math.floor(W * 0.72) - 1), cy);
+    this.store = this.playerStores.get('p1')!;
+    this.guild = this.playerGuilds.get('p1')!;
+  }
+
+  storeFor(owner: PlayerId): Building {
+    const store = this.playerStores.get(owner);
+    if (!store) throw new Error(`No store exists for ${owner}`);
+    return store;
+  }
+
+  private indexPickups(): void {
+    if (this.pickups.length) return;
     const { W, H } = this.world;
     const tiles = this.world.tiles;
-    // index the map's gold piles so serfs can be dispatched to collect them
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (tiles[y][x].pickup) this.pickups.push({ x, y });
-    // clear a build zone at the map centre for the starting settlement
-    const cx = Math.floor(W / 2) - 1, cy = Math.floor(H / 2) - 1;
+  }
+
+  private initSettlement(owner: PlayerId, kit: StartKit, cx: number, cy: number): void {
+    const tiles = this.world.tiles;
     for (let y = cy - 1; y < cy + 5; y++) for (let x = cx - 2; x < cx + 5; x++) {
       const t = this.world.T(x, y); if (!t) continue;
       if (t.tree) this.removeTree(x, y);
@@ -101,27 +163,36 @@ export class Game {
       if (t.deco) this.removeDeco(x, y);
       t.type = 'grass'; this.view.refreshTile(x, y);
     }
-    this.store = this.placeBuilding('storehouse', cx, cy, true);
+    const store = this.placeBuilding('storehouse', cx, cy, true, 0, 'player', owner);
+    this.playerStores.set(owner, store);
     // base kit stock, then run-upgrade start bonuses on top
-    this.store.stock = Object.fromEntries(Object.keys(ITEMS).map(key => [key, kit.stock[key] ?? 0]));
+    store.stock = Object.fromEntries(Object.keys(ITEMS).map(key => [key, kit.stock[key] ?? 0]));
     const bonus = this.mods.startStock();
-    for (const k in bonus) this.store.stock[k] = (this.store.stock[k] || 0) + (bonus as Record<string, number>)[k];
-    const d = doorTile(this.store);
+    for (const k in bonus) store.stock[k] = (store.stock[k] || 0) + (bonus as Record<string, number>)[k];
+    const d = doorTile(store);
     const serfs = kit.serfs + this.mods.extraSerfs();
     const laborers = kit.laborers + this.mods.extraLaborers();
-    for (let i = 0; i < serfs; i++) this.spawnUnit('serf', 0xd8c49a, { x: d.x - 2 + (i % 4), y: d.y + Math.floor(i / 4) });
-    for (let i = 0; i < laborers; i++) { const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + (i % 3), y: d.y + Math.floor(i / 3) }); u.roleName = 'Builder'; u.anchor = { x: u.tx, y: u.ty }; }
+    for (let i = 0; i < serfs; i++) this.spawnUnit('serf', 0xd8c49a, { x: d.x - 2 + (i % 4), y: d.y + Math.floor(i / 4) }, owner);
+    for (let i = 0; i < laborers; i++) {
+      const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + (i % 3), y: d.y + Math.floor(i / 3) }, owner);
+      u.roleName = 'Builder';
+      u.anchor = { x: u.tx, y: u.ty };
+    }
     // the Guild Hall trains the villagers who staff your buildings (separate from storage)
-    this.guild = this.placeBuilding('guildhall', cx + 3, cy, true);
-    const gd = doorTile(this.guild);
+    const guild = this.placeBuilding('guildhall', cx + 3, cy, true, 0, 'player', owner);
+    this.playerGuilds.set(owner, guild);
+    const gd = doorTile(guild);
     const villagers = kit.villagers ?? DEFAULT_KIT.villagers ?? 4;
-    for (let i = 0; i < villagers; i++) this.spawnCivilian('villager', { x: gd.x - 1 + (i % 4), y: gd.y + 1 + Math.floor(i / 4) });
+    for (let i = 0; i < villagers; i++) this.spawnCivilian('villager', { x: gd.x - 1 + (i % 4), y: gd.y + 1 + Math.floor(i / 4) }, owner);
   }
 
   // =====================================================================
   //  Buildings / sites
   // =====================================================================
-  placeBuilding(key: BuildingKey, tx: number, ty: number, instant = false, rot = 0, faction: Faction = 'player'): Building {
+  placeBuilding(
+    key: BuildingKey, tx: number, ty: number, instant = false, rot = 0,
+    faction: Faction = 'player', owner: OwnerId = ownerForFaction(faction, this.localPlayerId),
+  ): Building {
     const def = DEFS[key];
     const mesh = this.view.createBuildingMesh(key, def);
     mesh.rotation.y = -rot * Math.PI / 2;
@@ -130,6 +201,7 @@ export class Game {
     const facMult = faction === 'player' ? (def.store ? this.mods.castleHpMult() : 1) : (this.mods.buildingHpMult(faction) || 1);
     const maxHp = Math.round((def.hp ?? 100) * facMult);
     const b: Building = {
+      id: this.nextEntityId++, owner,
       key, def, x: tx, y: ty, rot, active: false, inp: {}, out: {}, incoming: {},
       prog: 0, working: false, worker: null, fieldsList: [], mesh, name: def.name,
       faction, hp: maxHp, maxHp,
@@ -160,8 +232,8 @@ export class Game {
    * Player-placed plot: attach a crop/pasture tile to the given fields-building
    * (the one selected in its inspector) while it has room and range. Click & drag.
    */
-  placePlot(tx: number, ty: number, b: Building): void {
-    if (b.removed || !b.def.fields) return;
+  placePlot(tx: number, ty: number, b: Building, owner: PlayerId = this.localPlayerId): void {
+    if (b.removed || b.owner !== owner || !b.def.fields) return;
     const t = this.world.T(tx, ty);
     if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep || t.tree?.dense) return;
     if (b.fieldsList.length >= this.fieldCap(b)) {
@@ -187,13 +259,14 @@ export class Game {
   removeDep(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.dep) { this.view.removeMeshes(t.dep.meshes); t.dep = null; this.view.dirtyTile(x, y); } }
   removeDeco(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.deco) { this.view.removeMeshes(t.deco.meshes); t.deco = null; this.view.dirtyTile(x, y); } }
 
-  placeSite(key: BuildingKey, tx: number, ty: number, rot = 0): Site {
+  placeSite(key: BuildingKey, tx: number, ty: number, rot = 0, owner: PlayerId = this.localPlayerId): Site {
     const def = DEFS[key];
     const { group, frame } = this.view.createScaffold(key, def);
     frame.rotation.y = -rot * Math.PI / 2;
     group.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
     this.view.add(group);
     const s: Site = {
+      id: this.nextEntityId++, owner,
       key, def, x: tx, y: ty, rot, needs: this.mods.buildingCost(def) as Record<string, number>, delivered: {}, incoming: {},
       progress: 0, ready: false, builder: null, mesh: group, frame, isSite: true, name: def.name + ' (site)',
     };
@@ -210,7 +283,7 @@ export class Game {
     for (let y = s.y; y < s.y + 2; y++) for (let x = s.x; x < s.x + 2; x++) tiles[y][x].site = null;
     this.view.remove(s.mesh);
     this.sites.splice(this.sites.indexOf(s), 1);
-    const b = this.placeBuilding(s.key, s.x, s.y, false, s.rot);
+    const b = this.placeBuilding(s.key, s.x, s.y, false, s.rot, 'player', s.owner);
     this.toast(s.def.name + ' completed');
     this.sfx('build');
     // worker buildings stay unstaffed until a trained villager reports in (staffBuildings)
@@ -221,9 +294,10 @@ export class Game {
   // =====================================================================
   //  Units
   // =====================================================================
-  spawnUnit(role: string, colorHex: number, tile: { x: number; y: number }): Unit {
+  spawnUnit(role: string, colorHex: number, tile: { x: number; y: number }, owner: PlayerId = this.localPlayerId): Unit {
     const { group, itemMesh } = this.view.createUnit(colorHex, role, tile.x, tile.y);
     const u: Unit = {
+      id: this.nextEntityId++, owner,
       role, roleName: role[0].toUpperCase() + role.slice(1), colorHex, mesh: group, itemMesh,
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
       home: null, wstate: 'idle', timer: 0, target: null, hunger: 70 + rnd() * 30, bob: 0, status: 'Idle',
@@ -236,11 +310,11 @@ export class Game {
 
   /** Spawn the run's mounted hero near the castle gate: a controllable player
    *  fighter with a per-hero look. Box-select or click it like any soldier. */
-  spawnHero(heroId: string, roleName: string): Unit {
+  spawnHero(heroId: string, roleName: string, owner: PlayerId = this.localPlayerId): Unit {
     this.heroId = heroId;
     this.heroName = roleName;
     const def = UNITS.hero;
-    const d = doorTile(this.store);
+    const d = doorTile(this.storeFor(owner));
     let tile = { x: d.x, y: d.y + 1 };
     if (!this.world.passable(tile.x, tile.y)) {
       for (let r = 1; r < 5 && !this.world.passable(tile.x, tile.y); r++)
@@ -249,6 +323,7 @@ export class Game {
     }
     const { group, itemMesh } = this.view.createHero(heroId, tile.x, tile.y);
     const u: Unit = {
+      id: this.nextEntityId++, owner,
       role: 'hero', roleName, colorHex: def.color, mesh: group, itemMesh,
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
       home: null, wstate: 'idle', timer: 0, target: null, hunger: 100, bob: 0, status: 'Ready to ride',
@@ -260,17 +335,20 @@ export class Game {
       dead: false, raider: false, foe: null, foeB: null, order: null, orderQueue: [], obeyT: 0, special: 0, anchor: null, lungeT: 0, hpBar: null, sepI: 0,
     };
     this.units.push(u);
-    this.heroUnit = u;
+    this.playerHeroes.set(owner, u);
+    if (owner === this.localPlayerId) this.heroUnit = u;
     return u;
   }
 
   /** Spawn a combat unit (player soldier/archer, or enemy/wild fighter) from its def. */
-  spawnFighter(kind: UnitKind, tile: { x: number; y: number }, faction?: Faction): Unit {
+  spawnFighter(kind: UnitKind, tile: { x: number; y: number }, faction?: Faction, owner?: OwnerId): Unit {
     const def = UNITS[kind];
     const fac = faction ?? def.faction;
-    const u = this.spawnUnit(kind, def.color, tile);
+    const unitOwner = owner ?? ownerForFaction(fac, this.localPlayerId);
+    const u = this.spawnUnit(kind, def.color, tile, unitOwner === 'p2' ? 'p2' : 'p1');
     u.roleName = def.name;
     u.faction = fac;
+    u.owner = unitOwner;
     u.spd = def.speed * this.mods.combatMult('speed', kind);
     u.maxHp = u.hp = Math.round(def.hp * this.mods.combatMult('hp', kind));
     u.dmg = def.dmg * this.mods.combatMult('damage', kind);
@@ -358,25 +436,30 @@ export class Game {
   private bDist(a: any, b: any): number { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
 
   private dispatch(): void {
-    let idle = this.units.filter(u => u.role === 'serf' && !u.task && !u.collect);
+    for (const owner of PLAYER_IDS) this.dispatchOwner(owner);
+  }
+
+  private dispatchOwner(owner: PlayerId): void {
+    let idle = this.units.filter(u => u.owner === owner && u.role === 'serf' && !u.task && !u.collect);
     if (!idle.length) return;
     const carryCap = this.mods.carryCap(), outCap = this.mods.outCap();
     const demands: any[] = [];
     for (const s of this.sites) {
+      if (s.owner !== owner) continue;
       for (const it in s.needs) {
         const rem = s.needs[it] - (s.delivered[it] || 0) - (s.incoming[it] || 0);
         for (let i = 0; i < rem; i++) demands.push({ pri: s.priority ? -1 : 0, to: s, item: it });
       }
     }
     for (const b of this.buildings) {
-      if (!b.active || !b.def.recipe) continue;
+      if (b.owner !== owner || !b.active || !b.def.recipe) continue;
       for (const it in this.mods.recipeInputs(b.def)) {
         const have = (b.inp[it] || 0) + (b.incoming[it] || 0);
         if (have < carryCap) demands.push({ pri: b.priority ? 0.75 : 1, to: b, item: it });
       }
     }
     for (const b of this.buildings) {
-      if (!b.active || !b.def.tavern) continue;
+      if (b.owner !== owner || !b.active || !b.def.tavern) continue;
       const tv = b.def.tavern;
       const total = tv.foods.reduce((s, f) => s + (b.inp[f] || 0) + (b.incoming[f] || 0), 0);
       if (total >= tv.capacity) continue;
@@ -395,7 +478,7 @@ export class Game {
       for (let i = 0; i < missing; i++) demands.push({ pri: 1.5, to: b, item });
     }
     for (const b of this.buildings) {
-      if (!b.active || b.def.store) continue;
+      if (b.owner !== owner || !b.active || b.def.store) continue;
       for (const it in b.out) {
         if (b.out[it] > 0) {
           const wanted = demands.some(d => d.item === it);
@@ -420,7 +503,7 @@ export class Game {
       else {
         let best: any = null, bd = 1e9;
         for (const b of this.buildings) {
-          if (b === d.to) continue;
+          if (b.owner !== owner || b === d.to) continue;
           const avail = b.def.store ? (b.stock![d.item] || 0) : (b.out[d.item] || 0);
           if (avail > 0) { const dd = this.bDist(b, d.to) + (b.def.store ? 0.5 : 0); if (dd < bd) { bd = dd; best = b; } }
         }
@@ -468,7 +551,10 @@ export class Game {
     if (t.phase === 'pickup' && !t.from.removed) { if (t.from.def && t.from.def.store) t.from.stock[t.item]++; else t.from.out[t.item]++; }
     if (t.to.isSite) t.to.incoming[t.item] = Math.max(0, (t.to.incoming[t.item] || 0) - 1);
     else if (t.to.def && !t.to.def.store) t.to.incoming[t.item] = Math.max(0, (t.to.incoming[t.item] || 0) - 1);
-    if (u.carrying && this.store) this.store.stock![u.carrying] = (this.store.stock![u.carrying] || 0) + 1;
+    if (u.carrying && (u.owner === 'p1' || u.owner === 'p2')) {
+      const store = this.storeFor(u.owner);
+      store.stock![u.carrying] = (store.stock![u.carrying] || 0) + 1;
+    }
     this.setCarrying(u, null); u.task = null; u.status = 'Idle';
   }
 
@@ -507,7 +593,7 @@ export class Game {
     // build prioritized sites first, then any other ready site; a claim whose
     // builder died or wandered off no longer blocks the site
     const claimable = (s: Site): boolean => {
-      if (!s.ready) return false;
+      if (s.owner !== u.owner || !s.ready) return false;
       if (s.builder && (s.builder.dead || s.builder.target !== s)) s.builder = null;
       return !s.builder;
     };
@@ -681,7 +767,8 @@ export class Game {
       u.mesh.position.y = 0;
       u.timer -= dt;
       if (u.timer > 0) return;
-      const g = this.guild ?? this.store, cx = g.x + 1, cy = g.y + 1;
+      const owner = u.owner === 'p2' ? 'p2' : 'p1';
+      const g = this.playerGuilds.get(owner) ?? this.storeFor(owner), cx = g.x + 1, cy = g.y + 1;
       for (let tries = 0; tries < 8; tries++) {
         const x = cx + Math.round((rnd() - 0.5) * 14), y = cy + Math.round((rnd() - 0.5) * 14);
         const t = this.world.T(x, y);
@@ -734,8 +821,8 @@ export class Game {
     return n;
   }
 
-  countItem(item: string): number {
-    const d = this.itemBreakdown(item);
+  countItem(item: string, owner: PlayerId = this.localPlayerId): number {
+    const d = this.itemBreakdown(item, owner);
     return d.store + d.buildings + d.carried;
   }
 
@@ -784,14 +871,15 @@ export class Game {
   }
 
   /** Every standing storage building (the castle plus any built storehouses). */
-  stores(): Building[] {
-    return this.buildings.filter(b => b.def.store && !b.removed);
+  stores(owner?: PlayerId): Building[] {
+    return this.buildings.filter(b => b.def.store && !b.removed && (!owner || b.owner === owner));
   }
 
   /** The closest storage building to a producer (surplus hauls go here). */
   private nearestStore(from: { x: number; y: number }): Building {
-    let best = this.store, bd = 1e9;
-    for (const st of this.stores()) {
+    const owner = 'owner' in from && (from.owner === 'p1' || from.owner === 'p2') ? from.owner : this.localPlayerId;
+    let best = this.storeFor(owner), bd = 1e9;
+    for (const st of this.stores(owner)) {
       const d = Math.abs(st.x - from.x) + Math.abs(st.y - from.y);
       if (d < bd) { bd = d; best = st; }
     }
@@ -799,8 +887,8 @@ export class Game {
   }
 
   /** Spend `n` of an item across all storehouses (castle first). False = short. */
-  private takeStock(item: string, n: number): boolean {
-    const sts = this.stores();
+  private takeStock(item: string, n: number, owner?: PlayerId): boolean {
+    const sts = this.stores(owner);
     let have = 0;
     for (const st of sts) have += st.stock![item] || 0;
     if (have < n) return false;
@@ -814,18 +902,40 @@ export class Game {
   }
 
   /** Total of an item sitting in storehouses. */
-  private storeTotal(item: string): number {
+  private storeTotal(item: string, owner?: PlayerId): number {
     let n = 0;
-    for (const st of this.stores()) n += st.stock![item] || 0;
+    for (const st of this.stores(owner)) n += st.stock![item] || 0;
     return n;
   }
 
   /** Where an item currently sits: storehouses vs. building inventories vs. in transit. */
-  itemBreakdown(item: string): { store: number; buildings: number; carried: number } {
+  itemBreakdown(item: string, owner: PlayerId = this.localPlayerId): { store: number; buildings: number; carried: number } {
     let buildings = 0, carried = 0;
-    for (const b of this.buildings) { if (!b.def.store) buildings += (b.inp[item] || 0) + (b.out[item] || 0); }
-    for (const u of this.units) if (u.carrying === item) carried++;
-    return { store: this.storeTotal(item), buildings, carried };
+    for (const b of this.buildings) { if (b.owner === owner && !b.def.store) buildings += (b.inp[item] || 0) + (b.out[item] || 0); }
+    for (const u of this.units) if (u.owner === owner && u.carrying === item) carried++;
+    return { store: this.storeTotal(item, owner), buildings, carried };
+  }
+
+  /** Read-only precheck used by Controls to batch road cells worth sending. */
+  canPaintRoadAt(tx: number, ty: number): boolean {
+    const t = this.world.T(tx, ty);
+    return !!t && t.type === 'grass' && !t.b && !t.site && !t.road && !t.field && !t.dep && !t.tree?.dense;
+  }
+
+  /** Read-only precheck used by Controls to batch plot cells worth sending. */
+  canPlotAt(tx: number, ty: number): boolean {
+    const t = this.world.T(tx, ty);
+    return !!t && t.type === 'grass' && !t.b && !t.site && !t.road && !t.field && !t.dep && !t.tree?.dense;
+  }
+
+  /** Would a demolish command at this tile do anything for this player? */
+  demolishableAt(tx: number, ty: number, dragOnly: boolean, owner: PlayerId = this.localPlayerId): boolean {
+    const t = this.world.T(tx, ty);
+    if (!t) return false;
+    if (t.road) return t.roadOwner === owner;
+    if (t.field) return t.field.farm.owner === owner;
+    if (dragOnly) return false;
+    return !!t.b || !!t.site; // clicks go through so the sim can toast the reason
   }
 
   canPlace(key: BuildingKey, tx: number, ty: number, rot: number): boolean {
@@ -875,7 +985,7 @@ export class Game {
     return banned;
   }
 
-  tryPlace(key: BuildingKey, tx: number, ty: number, rot: number): void {
+  tryPlace(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId = this.localPlayerId): void {
     if (this.disabledBuildings().includes(key)) {
       this.sfx('error');
       this.toast(`No ${DEFS[key].name.toLowerCase()} can be raised in ${this.world.biome.name}`, 'err');
@@ -890,31 +1000,37 @@ export class Game {
     if (def.gather?.node === 'fish' && !this.lakeInRange(tx, ty, def.gather.range)) { this.toast('No open water in range — build on the shore', 'err'); return; }
     if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.toast('Warning: few trees nearby', 'err');
     const cost = this.mods.buildingCost(def);
-    for (const k in cost) { if (this.countItem(k) < (cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name + ' in the world — site will wait', 'err'); break; } }
-    this.placeSite(key, tx, ty, rot);
+    for (const k in cost) { if (this.countItem(k, owner) < (cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name + ' in your economy — site will wait', 'err'); break; } }
+    this.placeSite(key, tx, ty, rot, owner);
     this.sfx('place');
     this.toast(def.name + ' site placed — serfs will deliver materials');
   }
 
-  paintRoad(tx: number, ty: number): void {
+  paintRoad(tx: number, ty: number, owner: PlayerId = this.localPlayerId): void {
     const t = this.world.T(tx, ty);
     if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep || t.tree?.dense) return;
     const cost = this.mods.roadCost();
-    if (cost > 0 && !this.takeStock('stone', cost)) {
+    if (cost > 0 && !this.takeStock('stone', cost, owner)) {
       const now = Date.now();
       if (now - this.roadWarnT > 1500) { this.roadWarnT = now; this.toast('Out of stone — quarry more to build roads', 'err'); this.sfx('error'); }
       return;
     }
     if (t.tree) this.removeTree(tx, ty);
     if (t.deco) this.removeDeco(tx, ty);
-    t.road = true; this.mods.ctx.roadTiles++;
+    t.road = true; t.roadOwner = owner; this.mods.ctx.roadTiles++;
     this.view.refreshTile(tx, ty); this.view.addRoad(tx, ty);
   }
 
-  demolishAt(tx: number, ty: number, dragOnly: boolean): void {
+  demolishAt(tx: number, ty: number, dragOnly: boolean, owner: PlayerId = this.localPlayerId): void {
     const t = this.world.T(tx, ty); if (!t) return;
-    if (t.road) { t.road = false; this.mods.ctx.roadTiles = Math.max(0, this.mods.ctx.roadTiles - 1); this.store.stock!['stone'] = (this.store.stock!['stone'] || 0) + this.mods.roadCost(); this.view.refreshTile(tx, ty); this.view.removeRoad(tx, ty); return; }
+    if (t.road) {
+      if (t.roadOwner !== owner) return;
+      t.road = false; t.roadOwner = null; this.mods.ctx.roadTiles = Math.max(0, this.mods.ctx.roadTiles - 1);
+      const store = this.storeFor(owner); store.stock!['stone'] = (store.stock!['stone'] || 0) + this.mods.roadCost();
+      this.view.refreshTile(tx, ty); this.view.removeRoad(tx, ty); return;
+    }
     if (t.field) {
+      if (t.field.farm.owner !== owner) return;
       const list = t.field.farm.fieldsList, i = list.findIndex(f => f.x === tx && f.y === ty);
       if (i >= 0) list.splice(i, 1);
       this.view.removeMeshes(t.field.meshes); t.field = null; this.view.refreshTile(tx, ty); return;
@@ -922,11 +1038,12 @@ export class Game {
     if (dragOnly) return;
     if (t.b) {
       const b = t.b; // removeBuilding clears the tile — keep the reference
-      if (b === this.store) { this.toast('The castle cannot be demolished', 'err'); return; }
+      if (this.playerStores.get(owner) === b) { this.toast('The castle cannot be demolished', 'err'); return; }
       if (b.faction !== 'player') { this.toast('Enemy strongholds must be destroyed in battle', 'err'); return; }
+      if (b.owner !== owner) { this.toast("You cannot demolish your ally's building", 'err'); return; }
       this.sfx('demolish'); this.removeBuilding(b); this.toast(b.def.name + ' demolished'); return;
     }
-    if (t.site) { this.sfx('demolish'); this.removeSite(t.site); return; }
+    if (t.site) { if (t.site.owner !== owner) return; this.sfx('demolish'); this.removeSite(t.site); return; }
   }
 
   private removeSite(s: Site): void {
@@ -997,8 +1114,8 @@ export class Game {
   private pickupHintT = 0;
   private pickupScanT = 0;
 
-  /** A unit reached a gold pile — scoop it into the purse. */
-  collectGoldAt(tx: number, ty: number, by?: Unit): void {
+  /** A unit reached a gold pile; only that unit's owner banks the gold. */
+  collectGoldAt(tx: number, ty: number, owner: PlayerId = this.localPlayerId, by?: Unit): void {
     const t = this.world.T(tx, ty);
     if (!t || !t.pickup) return;
     const gain = Math.max(1, Math.round(t.pickup.gold * this.mods.goldMult()));
@@ -1006,9 +1123,10 @@ export class Game {
     t.pickup = null;
     const i = this.pickups.findIndex(p => p.x === tx && p.y === ty);
     if (i >= 0) this.pickups.splice(i, 1);
+    this.objective?.onCollect();
+    if (owner !== this.localPlayerId) return; // gold and fanfare are personal
     this.onGold(gain);
     this.sfx('coin');
-    this.objective?.onCollect();
     this.toast(`${by ? by.roleName : 'A unit'} collected a gold pile (+${gain} gold)`);
   }
 
@@ -1023,7 +1141,8 @@ export class Game {
         const dx = u.mesh.position.x - this.world.wx(p.x), dz = u.mesh.position.z - this.world.wz(p.y);
         if (dx * dx + dz * dz <= 1.1 * 1.1) taker = u;
       });
-      if (taker) this.collectGoldAt(p.x, p.y, taker);
+      const collector = taker as Unit | null;
+      if (collector) this.collectGoldAt(p.x, p.y, collector.owner === 'p2' ? 'p2' : 'p1', collector);
     }
   }
 
@@ -1154,8 +1273,8 @@ export class Game {
     if (leash && u.anchor) {
       const da = Math.hypot(u.tx - u.anchor.x, u.ty - u.anchor.y);
       if (u.wstate === 'leash') {
-        if (da < 3) { 
-          u.wstate = 'idle'; 
+        if (da < 3) {
+          u.wstate = 'idle';
           u.path = null; // FIX: Wipe the return path cleanly
         }
         else {
@@ -1378,7 +1497,7 @@ export class Game {
     // walls & gates are fortifications, not strongholds — no objective credit
     if (!b.def.bulwark) this.objective?.onStructureDestroyed(b.faction);
     for (const o of this.units) if (o.foeB === b) o.foeB = null;
-    const isCastle = b === this.store;
+    const isCastle = (b.owner === 'p1' || b.owner === 'p2') && this.playerStores.get(b.owner) === b;
     this.removeBuilding(b);
     this.toast(b.def.name + (b.faction === 'player' ? ' has fallen!' : ' destroyed!'), 'err');
     if (isCastle) this.defeat = true;
@@ -1617,15 +1736,22 @@ export class Game {
   //  are doing and shelters inside the castle (AOE town-bell style); ring
   //  again to send them back out.
   // =====================================================================
-  bell = false;
+  private readonly bells = new Set<PlayerId>();
+  get bell(): boolean { return this.bells.has(this.localPlayerId); }
 
-  toggleBell(): void {
-    this.bell = !this.bell;
+  /** Command-path bell control: apply the requested state if it differs. */
+  setBell(owner: PlayerId, active: boolean): void {
+    if (this.bells.has(owner) !== active) this.toggleBell(owner);
+  }
+
+  toggleBell(owner: PlayerId = this.localPlayerId): void {
+    if (this.bells.has(owner)) this.bells.delete(owner); else this.bells.add(owner);
+    const active = this.bells.has(owner);
     this.sfx('bell');
-    if (this.bell) {
+    if (active) {
       this.toast('The bell tolls — workers run for the castle!', 'err');
       for (const u of this.units) {
-        if (u.dead || u.faction !== 'player' || this.isFighter(u)) continue;
+        if (u.dead || u.owner !== owner || u.faction !== 'player' || this.isFighter(u) || u.role === 'carrier') continue;
         if (u.task) this.cancelTask(u);
         const site = u.target as Site | null;
         if (site && site.isSite && site.builder === u) site.builder = null;
@@ -1635,9 +1761,9 @@ export class Game {
       }
     } else {
       this.toast('The bell falls silent — back to work');
-      const d = doorTile(this.store);
+      const d = doorTile(this.storeFor(owner));
       for (const u of this.units) {
-        if (u.dead || u.faction !== 'player' || this.isFighter(u)) continue;
+        if (u.dead || u.owner !== owner || u.faction !== 'player' || this.isFighter(u)) continue;
         if (u.wstate !== 'refuge' && u.wstate !== 'toRefuge') continue;
         u.mesh.visible = true;
         u.mesh.position.set(this.world.wx(d.x) + (rnd() - 0.5) * 0.8, 0, this.world.wz(d.y) + (rnd() - 0.5) * 0.8);
@@ -1652,7 +1778,8 @@ export class Game {
   /** While the bell tolls: run for the castle door, then vanish inside. */
   private refugeUpdate(u: Unit, dt: number): void {
     if (u.wstate === 'refuge') { u.mesh.visible = false; return; }
-    const d = doorTile(this.store);
+    const owner = u.owner === 'p2' ? 'p2' : 'p1';
+    const d = doorTile(this.storeFor(owner));
     if (u.tx === d.x && u.ty === d.y && !u.path) {
       u.wstate = 'refuge'; u.mesh.visible = false; u.status = 'Sheltering in the castle';
       return;
@@ -1660,6 +1787,197 @@ export class Game {
     u.status = 'Running for the castle';
     if (!u.path) { if (!this.sendTo(u, d.x, d.y)) { u.mesh.position.y = 0; return; } }
     this.moveUnit(u, dt);
+  }
+
+  // =====================================================================
+  //  Trade — the only way goods cross between the two allied economies.
+  //  A confirmed send reserves the goods at once, loads a visible carrier
+  //  at the sender's storehouse and walks it to the ally's store. Goods
+  //  arrive only when the cart does; a slain cart's cargo is lost on the
+  //  road. Requests transfer nothing — they are a visible ask.
+  // =====================================================================
+  readonly tradeRequests: TradeRequest[] = [];
+  readonly tradeShipments: TradeShipment[] = [];
+  readonly tradeHistory: TradeHistoryEntry[] = [];
+  private tradeSeq = 0;
+
+  private tradeLog(kind: TradeHistoryEntry['kind'], text: string): void {
+    this.tradeHistory.unshift({ at: this.elapsed, kind, text });
+    if (this.tradeHistory.length > TRADE.historyCap) this.tradeHistory.length = TRADE.historyCap;
+  }
+
+  /** A standing storehouse by entity id owned by `owner`, or null. */
+  private storeById(id: number, owner: PlayerId): Building | null {
+    const b = this.entityById(id);
+    if (!b || !('def' in b) || b.isSite || !b.def.store || b.removed || b.owner !== owner) return null;
+    return b as Building;
+  }
+
+  /** Ask the ally for goods, delivered to one of your own storehouses. */
+  requestTrade(owner: PlayerId, item: string, amount: number, destinationId: number): boolean {
+    if (!Number.isInteger(amount) || amount <= 0 || !(item in ITEMS)) return false;
+    if (!this.storeById(destinationId, owner)) { if (owner === this.localPlayerId) this.toast('Choose one of your own storehouses for the delivery', 'err'); return false; }
+    const r: TradeRequest = {
+      id: `t${++this.tradeSeq}`, from: owner, item: item as ItemKey,
+      amount, destinationId, status: 'open', at: this.elapsed,
+    };
+    this.tradeRequests.unshift(r);
+    this.tradeLog('requested', `${owner === this.localPlayerId ? 'You' : 'Your ally'} requested ${amount} ${ITEMS[r.item].name.toLowerCase()}`);
+    if (owner !== this.localPlayerId) { this.toast(`Your ally asks for ${amount} ${ITEMS[r.item].name.toLowerCase()} — open the Trade tab`, 'err'); this.sfx('click'); }
+    return true;
+  }
+
+  /** The requester cancels their ask; the ally declines it. */
+  cancelTradeRequest(actor: PlayerId, requestId: string): boolean {
+    const r = this.tradeRequests.find(req => req.id === requestId && req.status === 'open');
+    if (!r) return false;
+    r.status = r.from === actor ? 'cancelled' : 'declined';
+    this.tradeLog(r.status, `Request for ${r.amount} ${ITEMS[r.item].name.toLowerCase()} ${r.status}`);
+    return true;
+  }
+
+  /** Confirm a send: reserve the goods and dispatch a cart to the ally. */
+  sendTrade(owner: PlayerId, item: string, amount: number, sourceId: number, destinationId: number, requestId?: string): boolean {
+    const local = owner === this.localPlayerId;
+    if (!Number.isInteger(amount) || amount <= 0 || !(item in ITEMS)) return false;
+    const source = this.storeById(sourceId, owner);
+    const dest = this.storeById(destinationId, tradePartner(owner));
+    if (!source || !dest) { if (local) this.toast('Trade needs your storehouse and a standing allied storehouse', 'err'); return false; }
+    const send = Math.min(amount, source.stock![item] || 0);
+    if (send <= 0) { if (local) { this.toast('Not enough ' + ITEMS[item as keyof typeof ITEMS].name.toLowerCase() + ' in that storehouse', 'err'); this.sfx('error'); } return false; }
+    const sd = doorTile(source), dd = doorTile(dest);
+    const path = findPath(this.world, sd.x, sd.y, dd.x, dd.y);
+    if (!path) { if (local) { this.toast("No land route to your ally's storehouse", 'err'); this.sfx('error'); } return false; }
+    source.stock![item] = (source.stock![item] || 0) - send;
+    const u = this.spawnUnit('carrier', 0x9a7b52, sd, owner);
+    u.roleName = 'Carrier';
+    u.status = 'Loading the cart';
+    u.hp = u.maxHp = TRADE.carrierHp;
+    u.spd = BASE_SPEED * TRADE.carrierSpeedMult;
+    this.setCarrying(u, item);
+    const s: TradeShipment = {
+      id: `t${++this.tradeSeq}`, from: owner, to: tradePartner(owner),
+      item: item as ItemKey, amount: send, sourceId, destinationId,
+      phase: 'loading', loadT: tradeLoadTime(send), eta: tradeEta(path.length, BASE_SPEED),
+      carrier: u, requestId, at: this.elapsed,
+    };
+    this.tradeShipments.unshift(s);
+    if (requestId) {
+      const r = this.tradeRequests.find(req => req.id === requestId && req.status === 'open' && req.from === s.to);
+      if (r) { r.status = 'fulfilled'; s.destinationId = this.storeById(r.destinationId, s.to) ? r.destinationId : s.destinationId; }
+    }
+    if (local) this.toast(`Cart loading — ${send} ${ITEMS[s.item].name.toLowerCase()} bound for your ally`);
+    else this.toast(`Your ally is sending ${send} ${ITEMS[s.item].name.toLowerCase()}`);
+    this.sfx('place');
+    return true;
+  }
+
+  /** Cancel before dispatch; a moving cart is recalled physically. */
+  cancelTradeShipment(actor: PlayerId, shipmentId: string): boolean {
+    const s = this.tradeShipments.find(sh => sh.id === shipmentId && sh.from === actor);
+    if (!s || !tradeShipmentActive(s)) return false;
+    if (s.phase === 'loading') {
+      this.refundShipment(s);
+      s.phase = 'recalled';
+      this.despawnCarrier(s);
+      this.tradeLog('recalled', `Shipment of ${s.amount} ${ITEMS[s.item].name.toLowerCase()} cancelled before departure`);
+      return true;
+    }
+    if (s.phase === 'enroute') {
+      s.phase = 'returning';
+      if (s.carrier) { s.carrier.path = null; s.carrier.status = 'Recalled — turning the cart around'; }
+      if (actor === this.localPlayerId) this.toast('Shipment recalled — the cart turns for home');
+      return true;
+    }
+    return false;
+  }
+
+  /** Return a shipment's cargo to the sender's stores (source first). */
+  private refundShipment(s: TradeShipment): void {
+    const source = this.storeById(s.sourceId, s.from) ?? this.stores(s.from)[0] ?? null;
+    if (!source) { this.tradeLog('lost', `${s.amount} ${ITEMS[s.item].name.toLowerCase()} had nowhere to return to`); return; }
+    source.stock![s.item] = (source.stock![s.item] || 0) + s.amount;
+  }
+
+  private despawnCarrier(s: TradeShipment): void {
+    const u = s.carrier;
+    s.carrier = null;
+    if (!u) return;
+    const i = this.units.indexOf(u);
+    if (i >= 0) { this.view.remove(u.mesh); this.units.splice(i, 1); }
+    if (this.selected === u) this.select(null);
+  }
+
+  /** Advance every active shipment: loading, the outward haul, or the recall. */
+  private updateTrade(sdt: number): void {
+    for (const s of this.tradeShipments) {
+      if (!tradeShipmentActive(s)) continue;
+      const u = s.carrier;
+      if (!u || u.dead) {
+        s.phase = 'lost';
+        s.carrier = null;
+        this.tradeLog('lost', `A caravan was lost with ${s.amount} ${ITEMS[s.item].name.toLowerCase()}`);
+        this.toast(`A trade caravan was ambushed — ${s.amount} ${ITEMS[s.item].name.toLowerCase()} lost`, 'err');
+        continue;
+      }
+      if (s.phase === 'loading') {
+        s.loadT -= sdt;
+        u.mesh.position.y = 0;
+        if (s.loadT <= 0) { s.phase = 'enroute'; u.status = `Hauling ${ITEMS[s.item].name.toLowerCase()} to the ally`; }
+        continue;
+      }
+      if (s.phase === 'enroute') {
+        const dest = this.storeById(s.destinationId, s.to);
+        if (!dest) {
+          // the destination fell or was demolished mid-haul — turn for home
+          s.phase = 'returning';
+          u.path = null;
+          u.status = 'Destination gone — returning';
+          continue;
+        }
+        const d = doorTile(dest);
+        if (u.tx === d.x && u.ty === d.y && !u.path) {
+          dest.stock![s.item] = (dest.stock![s.item] || 0) + s.amount;
+          s.phase = 'delivered';
+          this.tradeLog('delivered', `${s.amount} ${ITEMS[s.item].name.toLowerCase()} delivered to ${s.to === this.localPlayerId ? 'you' : 'your ally'}`);
+          this.toast(s.to === this.localPlayerId
+            ? `Trade arrived: ${s.amount} ${ITEMS[s.item].name.toLowerCase()} from your ally`
+            : `Your shipment of ${s.amount} ${ITEMS[s.item].name.toLowerCase()} was delivered`);
+          this.sfx('coin');
+          this.despawnCarrier(s);
+          continue;
+        }
+        this.walkCarrier(u, d, sdt);
+        continue;
+      }
+      // returning: walk back to the source (or any surviving own store) and unload
+      const home = this.storeById(s.sourceId, s.from) ?? this.stores(s.from)[0] ?? null;
+      if (!home) {
+        s.phase = 'lost';
+        this.tradeLog('lost', `${s.amount} ${ITEMS[s.item].name.toLowerCase()} had nowhere to return to`);
+        this.despawnCarrier(s);
+        continue;
+      }
+      const hd = doorTile(home);
+      if (u.tx === hd.x && u.ty === hd.y && !u.path) {
+        home.stock![s.item] = (home.stock![s.item] || 0) + s.amount;
+        s.phase = 'recalled';
+        this.tradeLog('recalled', `${s.amount} ${ITEMS[s.item].name.toLowerCase()} returned to the storehouse`);
+        if (s.from === this.localPlayerId) this.toast('Recalled shipment unloaded back into your storehouse');
+        this.despawnCarrier(s);
+        continue;
+      }
+      this.walkCarrier(u, hd, sdt);
+    }
+  }
+
+  /** Carrier movement: re-path on a throttle when blocked, then walk. */
+  private walkCarrier(u: Unit, d: Coord, sdt: number): void {
+    if (!u.path) {
+      u.timer -= sdt;
+      if (u.timer <= 0) { u.timer = 1; this.sendTo(u, d.x, d.y); }
+    }
+    if (u.path) this.moveUnit(u, sdt); else u.mesh.position.y = 0;
   }
 
   /** Toggle priority on a construction site (materials & builders go there
@@ -1689,7 +2007,7 @@ export class Game {
     u.path = null;
     u.obeyT = o.type === 'attack' ? 0 : 2.5;
 
-    // FIX: Shift their home anchor to their new destination 
+    // FIX: Shift their home anchor to their new destination
     // so they don't tether back to their old barracks/spawn grid
     if (u.faction === 'player' && u.anchor) {
       u.anchor = { x: o.x, y: o.y };
@@ -1986,13 +2304,21 @@ export class Game {
     }
   }
 
-  /** A raid squad from a map edge (or a camp), ordered to march on the castle. */
+  /** In co-op, raids pick one of the two standing castles (deterministically). */
+  private raidTarget(): Building | null {
+    const targets: Building[] = [];
+    for (const id of PLAYER_IDS) { const b = this.playerStores.get(id); if (b && !b.removed) targets.push(b); }
+    if (!targets.length) return this.store ?? null;
+    return targets.length === 1 ? targets[0] : targets[Math.floor(rnd() * targets.length)];
+  }
+
+  /** A raid squad from a map edge (or a camp), ordered to march on a castle. */
   private spawnRaid(kind: UnitKind, count: number, from: 'edge' | 'camp'): Unit[] {
     let ox: number, oz: number;
     if (from === 'camp' && this.camps.length) { const c = this.camps[Math.floor(rnd() * this.camps.length)]; ox = this.world.wx(c.x); oz = this.world.wz(c.y); }
     else { const e = this.randomEdge(); ox = e.x; oz = e.z; }
     const squad = this.spawnSquad(kind, count, ox, oz, 'enemy');
-    const castle = this.store;
+    const castle = this.raidTarget();
     for (const u of squad) { u.raider = true; if (castle) this.orderUnit(u, 'attackMove', castle.x + 1, castle.y + 1); }
     return squad;
   }
@@ -2174,7 +2500,7 @@ export class Game {
     }
     const e = this.randomEdge();
     const squad = this.spawnSquad(kind, 1, e.x, e.z, UNITS[kind].faction);
-    const castle = this.store;
+    const castle = this.raidTarget();
     for (const u of squad) {
       u.hp = u.maxHp = Math.round(u.maxHp * this.bossHpMult);
       u.raider = true; if (castle) this.orderUnit(u, 'attackMove', castle.x + 1, castle.y + 1);
@@ -2416,12 +2742,14 @@ export class Game {
       if (u.dead) continue;
       u.hunger = Math.max(0, u.hunger - sdt * 100 / 600 * hungerRate);
       if (this.isFighter(u)) this.combatUpdate(u, sdt);
-      else if (this.bell && u.faction === 'player') this.refugeUpdate(u, sdt);
+      else if (u.role === 'carrier') continue; // trade carts are driven by updateTrade
+      else if ((u.owner === 'p1' || u.owner === 'p2') && this.bells.has(u.owner) && u.faction === 'player') this.refugeUpdate(u, sdt);
       else if (u.role === 'serf') this.serfUpdate(u, sdt);
       else if (u.role === 'laborer') this.laborerUpdate(u, sdt);
       else if (u.role === 'villager' && !u.home) this.villagerStroll(u, sdt);
       else this.workerUpdate(u, sdt);
     }
+    this.updateTrade(sdt);
     this.separate(sdt);
     this.updateProjectiles(sdt);
     this.updateFlames(sdt);
@@ -2444,9 +2772,10 @@ export class Game {
     const spec = b.def.military ?? b.def.trainer;
     const t = spec?.units.find(s => s.kind === kind);
     if (!t || !b.active) return false;
-    if (!this.store || !this.store.stock) return false;
-    for (const k in t.cost) if (this.storeTotal(k) < (t.cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name.toLowerCase() + ' to train a ' + unitLabel(kind).toLowerCase(), 'err'); this.sfx('error'); return false; }
-    for (const k in t.cost) this.takeStock(k, (t.cost as any)[k]);
+    if (b.owner !== 'p1' && b.owner !== 'p2') return false;
+    if (!this.playerStores.get(b.owner)?.stock) return false;
+    for (const k in t.cost) if (this.storeTotal(k, b.owner) < (t.cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name.toLowerCase() + ' to train a ' + unitLabel(kind).toLowerCase(), 'err'); this.sfx('error'); return false; }
+    for (const k in t.cost) this.takeStock(k, (t.cost as any)[k], b.owner);
     (b.trainQ ||= []).push(kind);
     this.sfx('click');
     return true;
@@ -2459,15 +2788,18 @@ export class Game {
     const t = spec?.units.find(s => s.kind === b.trainQ![index]);
     b.trainQ.splice(index, 1);
     if (index === 0) b.prog = 0;           // scrap progress on the in-flight unit
-    if (t && this.store?.stock) for (const k in t.cost) this.store.stock[k] = (this.store.stock[k] || 0) + (t.cost as any)[k];
+    if (t && (b.owner === 'p1' || b.owner === 'p2')) {
+      const store = this.storeFor(b.owner);
+      for (const k in t.cost) store.stock![k] = (store.stock![k] || 0) + (t.cost as any)[k];
+    }
     this.sfx('click');
   }
 
   /** Spawn a civilian worker (serf / laborer / villager) at a tile. */
-  private spawnCivilian(role: string, tile: { x: number; y: number }): Unit {
-    if (role === 'serf') return this.spawnUnit('serf', 0xd8c49a, tile);
-    if (role === 'laborer') { const u = this.spawnUnit('laborer', 0xc97b3d, tile); u.roleName = 'Builder'; u.anchor = { x: tile.x, y: tile.y }; return u; }
-    const u = this.spawnUnit('villager', 0xcdbb8f, tile); u.roleName = 'Villager'; u.status = 'Awaiting a post'; return u;
+  private spawnCivilian(role: string, tile: { x: number; y: number }, owner: PlayerId = this.localPlayerId): Unit {
+    if (role === 'serf') return this.spawnUnit('serf', 0xd8c49a, tile, owner);
+    if (role === 'laborer') { const u = this.spawnUnit('laborer', 0xc97b3d, tile, owner); u.roleName = 'Builder'; u.anchor = { x: tile.x, y: tile.y }; return u; }
+    const u = this.spawnUnit('villager', 0xcdbb8f, tile, owner); u.roleName = 'Villager'; u.status = 'Awaiting a post'; return u;
   }
 
   /** Barracks & guild halls turn their player-built queue into units over time. */
@@ -2484,10 +2816,11 @@ export class Game {
         const kind = b.trainQ.shift()!;
         const d = doorTile(b);
         if ((UNITS as any)[kind]) {
-          const u = this.spawnFighter(kind as UnitKind, { x: d.x, y: d.y }, 'player');
+          const owner = b.owner === 'p2' ? 'p2' : 'p1';
+          const u = this.spawnFighter(kind as UnitKind, { x: d.x, y: d.y }, 'player', owner);
           this.objective?.onTrain(); // military drill counts toward produceTrain goals
           if (b.rally) this.orderUnit(u, 'attackMove', b.rally.x, b.rally.y); // muster at the flag
-        } else this.spawnCivilian(kind, { x: d.x, y: d.y });
+        } else this.spawnCivilian(kind, { x: d.x, y: d.y }, b.owner === 'p2' ? 'p2' : 'p1');
         this.sfx('build');
       }
     }
@@ -2499,7 +2832,7 @@ export class Game {
       if (b.removed || !b.def.worker || b.worker || b.faction !== 'player') continue;
       let best: Unit | null = null, bd = 1e9;
       for (const u of this.units) {
-        if (u.dead || u.role !== 'villager' || u.home) continue;
+        if (u.dead || u.owner !== b.owner || u.role !== 'villager' || u.home) continue;
         const dd = Math.abs(u.tx - b.x) + Math.abs(u.ty - b.y);
         if (dd < bd) { bd = dd; best = u; }
       }
@@ -2508,7 +2841,7 @@ export class Game {
       this.view.remove(best.mesh); this.units.splice(this.units.indexOf(best), 1);
       if (this.selected === best) this.select(null);
       const def = b.def;
-      const u = this.spawnUnit(def.worker!.toLowerCase(), def.wcolor!, tile);
+      const u = this.spawnUnit(def.worker!.toLowerCase(), def.wcolor!, tile, b.owner === 'p2' ? 'p2' : 'p1');
       u.home = b; u.wstate = 'goHome'; u.roleName = def.worker!;
       b.worker = u;
     }
@@ -2524,7 +2857,7 @@ export class Game {
       b.prog = 0;
       // hungriest player workers first (fighters don't dine here); unlimited range
       const eaters = this.units
-        .filter(u => u.faction === 'player' && !this.isFighter(u) && u.hunger < 90)
+        .filter(u => u.owner === b.owner && u.faction === 'player' && !this.isFighter(u) && u.hunger < 90)
         .sort((a, c) => a.hunger - c.hunger)
         .slice(0, tv.capacity);
       const fed: Unit[] = [];

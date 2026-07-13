@@ -148,6 +148,12 @@ hard placement pressure.
 
 - The ten-level economy/combat run, boss, shop, contracts, saves, Heritage shop,
   unlockable hero rule sets, mutators, and Ascension A1–A3 are playable.
+- Two-player co-op is playable as a first slice: rooms/lobby via the `server/` relay
+  (`npm run dev:server`, default port 8787), two player-owned economies, a Trade tab
+  with physical cart shipments, and a four-level Expedition (`src/data/coOpLevels.ts`).
+  Every gameplay mutation flows through `Game.submitCommand` → `src/game/commands.ts`;
+  co-op swaps that sink for the relay, so never mutate the sim directly from UI/input
+  code. Checkpoint/replay recovery and per-player heroes/shops are not built yet.
 - The physical hero unit and functional equipment slots are not implemented yet.
 - Combat units include soldiers, archers, knights, and several enemy/wild archetypes.
 - Army controls include box/double-click selection, minimap highlighting, groups,

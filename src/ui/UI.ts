@@ -8,8 +8,9 @@ import { installFavicon, logoSVG } from './logo';
 import { audio } from '../audio/Audio';
 import { unitLabel } from '../game/util';
 import { buildingIconSVG, itemIconSVG } from './icons';
+import { tradeLoadTime, tradePartner, tradeShipmentActive } from '../game/trade';
 import type { Game } from '../game/Game';
-import type { BuildingDef, ItemKey, Mode } from '../types';
+import type { Building, BuildingDef, ItemKey, Mode } from '../types';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -41,6 +42,9 @@ export class UI {
   private perksOpen = false;
   private perkUpgrades: string[] = [];
   private perkUnlocks: string[] = [];
+  private tradeOpen = false;
+  private pendingRequestId: string | null = null;
+  private speedLocked = false;   // co-op runs at a fixed 1× — a local pause would desync
   private sandbox = false;
 
   constructor() {
@@ -53,6 +57,8 @@ export class UI {
     this.wireUnitPanel();
     this.wirePerkPanel();
     this.wireInspector();
+    this.wireTradePanel();
+    this.setCoOp(false);
   }
 
   /** Bind the HUD to a level's Game and reset transient UI state. */
@@ -146,6 +152,129 @@ export class UI {
     ($('timerChip') as HTMLElement).style.display = on ? 'none' : '';
     ($('btnDebugWin') as HTMLElement).style.display = on ? 'none' : '';
     if (this.perksOpen) this.renderPerks();
+  }
+
+  /** Toggle the co-op HUD: the Trade tab appears, the speed stays locked at 1×. */
+  setCoOp(on: boolean): void {
+    this.speedLocked = on;
+    ($('btnTrade') as HTMLElement).style.display = on ? 'block' : 'none';
+    ($('sp0') as HTMLElement).style.display = on ? 'none' : '';
+    ($('sp3') as HTMLElement).style.display = on ? 'none' : '';
+    if (!on) this.setTradeOpen(false);
+  }
+
+  // ---------- co-op trade tab ----------
+  private wireTradePanel(): void {
+    $('btnTrade').onclick = () => this.setTradeOpen(!this.tradeOpen);
+    $('closeTrade').onclick = () => this.setTradeOpen(false);
+    for (const id of ['tradeSendItem', 'tradeReqItem']) {
+      ($(id) as HTMLSelectElement).innerHTML = RES_SHOWN.map(k => `<option value="${k}">${ITEMS[k].name}</option>`).join('');
+    }
+    $('btnTradeSend').onclick = () => this.submitTradeSend();
+    $('btnTradeRequest').onclick = () => this.submitTradeRequest();
+    // lists re-render each tick, so actions are delegated like the inspector's
+    for (const id of ['tradeRequests', 'tradeShipments']) {
+      $(id).addEventListener('pointerdown', e => {
+        const b = (e.target as HTMLElement).closest('button[data-act]') as HTMLElement | null;
+        if (b) this.tradeAction(b.dataset.act!, b.dataset.id!);
+      });
+    }
+  }
+
+  private setTradeOpen(open: boolean): void {
+    this.tradeOpen = open;
+    ($('tradepanel') as HTMLElement).style.display = open ? 'block' : 'none';
+    if (open) this.renderTrade();
+    else { this.pendingRequestId = null; $('tradeSendNote').textContent = ''; }
+  }
+
+  /** The ally's main storehouse (deliveries land at their castle). */
+  private allyStore(): Building | null {
+    if (!this.game) return null;
+    return this.game.stores(tradePartner(this.game.localPlayerId))[0] ?? null;
+  }
+
+  /** Your storehouse holding the most of the item — carts load there. */
+  private ownStoreFor(item: string): Building | null {
+    if (!this.game) return null;
+    const stores = this.game.stores(this.game.localPlayerId);
+    if (!stores.length) return null;
+    return stores.reduce((a, b) => ((b.stock![item] || 0) > (a.stock![item] || 0) ? b : a));
+  }
+
+  private submitTradeSend(): void {
+    if (!this.game) return;
+    const item = ($('tradeSendItem') as HTMLSelectElement).value;
+    const amount = Math.max(1, Math.min(999, parseInt(($('tradeSendAmt') as HTMLInputElement).value, 10) || 0));
+    const source = this.ownStoreFor(item);
+    const dest = this.allyStore();
+    if (!source || !dest) { this.toast('Trade needs both castles standing', 'err'); return; }
+    this.game.submitCommand({
+      type: 'sendTrade', item: item as ItemKey, amount,
+      sourceId: source.id, destinationId: dest.id,
+      requestId: this.pendingRequestId ?? undefined,
+    });
+    this.pendingRequestId = null;
+    $('tradeSendNote').textContent = '';
+    audio.play('click');
+  }
+
+  private submitTradeRequest(): void {
+    if (!this.game) return;
+    const item = ($('tradeReqItem') as HTMLSelectElement).value;
+    const amount = Math.max(1, Math.min(999, parseInt(($('tradeReqAmt') as HTMLInputElement).value, 10) || 0));
+    const dest = this.game.stores(this.game.localPlayerId)[0];
+    if (!dest) return;
+    this.game.submitCommand({ type: 'requestTrade', item: item as ItemKey, amount, destinationId: dest.id });
+    audio.play('click');
+  }
+
+  private tradeAction(act: string, id: string): void {
+    if (!this.game) return;
+    if (act === 'fulfill') {
+      const r = this.game.tradeRequests.find(req => req.id === id && req.status === 'open');
+      if (!r) return;
+      ($('tradeSendItem') as HTMLSelectElement).value = r.item;
+      ($('tradeSendAmt') as HTMLInputElement).value = String(r.amount);
+      this.pendingRequestId = r.id;
+      $('tradeSendNote').textContent = 'Fulfilling your ally’s request — adjust the amount, then press Send.';
+      audio.play('click');
+      return;
+    }
+    if (act === 'cancelReq') { this.game.submitCommand({ type: 'cancelTradeRequest', requestId: id }); return; }
+    if (act === 'cancelShip') this.game.submitCommand({ type: 'cancelTradeShipment', shipmentId: id });
+  }
+
+  private renderTrade(): void {
+    const g = this.game;
+    if (!g || !this.tradeOpen) return;
+    const local = g.localPlayerId;
+    const open = g.tradeRequests.filter(r => r.status === 'open');
+    $('tradeRequests').innerHTML = open.length ? open.map(r => {
+      const mine = r.from === local;
+      const who = mine ? 'You ask for' : 'Your ally asks for';
+      const actions = mine
+        ? `<button data-act="cancelReq" data-id="${r.id}">Cancel</button>`
+        : `<button data-act="fulfill" data-id="${r.id}">Fulfill</button><button data-act="cancelReq" data-id="${r.id}">Decline</button>`;
+      return `<div class="tr-line">${itemIconSVG(r.item, 13)}<div class="grow">${who} <b>${r.amount} ${ITEMS[r.item].name.toLowerCase()}</b></div>${actions}</div>`;
+    }).join('') : '<div class="tr-empty">No open requests.</div>';
+
+    const active = g.tradeShipments.filter(tradeShipmentActive);
+    $('tradeShipments').innerHTML = active.length ? active.map(s => {
+      const outgoing = s.from === local;
+      const dir = outgoing ? '→ to your ally' : '← from your ally';
+      const remaining = Math.max(0, Math.round(s.at + tradeLoadTime(s.amount) + s.eta - g.elapsed));
+      const status = s.phase === 'loading' ? 'loading the cart'
+        : s.phase === 'returning' ? 'recalled — heading home'
+        : `on the road · ~${fmtTime(remaining)}`;
+      const cancel = outgoing && s.phase !== 'returning'
+        ? `<button data-act="cancelShip" data-id="${s.id}">${s.phase === 'loading' ? 'Cancel' : 'Recall'}</button>` : '';
+      return `<div class="tr-line">${itemIconSVG(s.item, 13)}<div class="grow"><b>${s.amount} ${ITEMS[s.item].name.toLowerCase()}</b> ${dir}<small>${status}</small></div>${cancel}</div>`;
+    }).join('') : '<div class="tr-empty">No carts on the road.</div>';
+
+    $('tradeHistory').innerHTML = g.tradeHistory.length ? g.tradeHistory.slice(0, 8).map(h =>
+      `<div class="tr-line"><div class="grow">${h.text}<small>${fmtTime(h.at)} · ${h.kind}</small></div></div>`,
+    ).join('') : '<div class="tr-empty">Nothing traded yet.</div>';
   }
 
   /** Refresh modifier-derived HUD after a live sandbox card purchase. */
@@ -242,12 +371,13 @@ export class UI {
     $('sp3').onclick = () => this.setSpeed(3);
   }
   setSpeed(s: number): void {
+    if (this.speedLocked && s !== 1) return;
     if (this.game) this.game.simSpeed = s;
     $('sp0').classList.toggle('on', s === 0);
     $('sp1').classList.toggle('on', s === 1);
     $('sp3').classList.toggle('on', s === 3);
   }
-  togglePause(): void { if (this.game) this.setSpeed(this.game.simSpeed === 0 ? 1 : 0); }
+  togglePause(): void { if (this.game && !this.speedLocked) this.setSpeed(this.game.simSpeed === 0 ? 1 : 0); }
 
   // ---------- inspector ----------
   private wireInspector(): void {
@@ -263,22 +393,25 @@ export class UI {
         return;
       }
       if (t && t.closest('#bellBtn')) {
-        if (o && o.def && o.def.store) { this.game!.toggleBell(); this.renderInspector(); }
+        if (o && o.def && o.def.store) { this.game!.submitCommand({ type: 'setBell', active: !this.game!.bell }); this.renderInspector(); }
         return;
       }
       if (t && t.closest('#prioBtn')) {
-        if (o && (o.isSite || (o.def && (o.def.recipe || o.def.gather)))) { this.game!.togglePriority(o); this.renderInspector(); }
+        if (o && (o.isSite || (o.def && (o.def.recipe || o.def.gather)))) {
+          this.game!.submitCommand({ type: 'setPriority', siteId: o.id, priority: !o.priority });
+          this.renderInspector();
+        }
         return;
       }
       const trainBtn = t && t.closest('[data-train]') as HTMLElement | null;
       if (trainBtn && o && o.def && (o.def.military || o.def.trainer)) {
-        this.game!.trainUnit(o, trainBtn.dataset.train!);
+        this.game!.submitCommand({ type: 'queueTraining', buildingId: o.id, unit: trainBtn.dataset.train! });
         this.renderInspector();
         return;
       }
       const cancelBtn = t && t.closest('[data-cancel]') as HTMLElement | null;
       if (cancelBtn && o && o.def && (o.def.military || o.def.trainer)) {
-        this.game!.cancelTrain(o, parseInt(cancelBtn.dataset.cancel!, 10));
+        this.game!.submitCommand({ type: 'cancelTraining', buildingId: o.id, index: parseInt(cancelBtn.dataset.cancel!, 10) });
         this.renderInspector();
       }
     });
@@ -319,7 +452,11 @@ export class UI {
       $('inspName').textContent = o.roleName;
       const support = UNITS[o.role as UnitKind]?.heal;
       if (o.dmg > 0 || support) {
-        $('inspSub').textContent = support ? 'Support — automatically heals nearby allies' : o.faction === 'player' ? 'Fighter — right-click to order, drag to box-select' : 'Hostile';
+        $('inspSub').textContent = o.faction !== 'player'
+          ? 'Hostile'
+          : !this.game?.ownedByLocal(o)
+            ? support ? 'Allied support' : 'Allied fighter'
+            : support ? 'Support — automatically heals nearby allies' : 'Fighter — right-click to order, drag to box-select';
         const hp = Math.max(0, Math.round(o.hp)), ratio = Math.max(0, o.hp / o.maxHp);
         const hcol2 = ratio > 0.5 ? 'var(--good)' : ratio > 0.25 ? 'var(--accent)' : 'var(--bad)';
         let fb = '<div class="sect">Status</div><div class="invrow">' + o.status + '</div>';
@@ -500,7 +637,7 @@ export class UI {
 
   private renderUnits(): void {
     if (!this.unitsOpen || !this.game) { this.updateWorkerWarning(); return; }
-    const players = this.game.units.filter(u => u.faction === 'player');
+    const players = this.game.units.filter(u => u.faction === 'player' && this.game!.ownedByLocal(u));
     const counts: Record<string, number> = { all: players.length, serf: 0, villager: 0, laborer: 0, specialist: 0, military: 0 };
     for (const u of players) counts[this.unitCat(u.role)]++;
     // Live logistics KPIs: which of the labour pools is short-handed.
@@ -611,5 +748,6 @@ export class UI {
     this.renderUnits();
     const focused = document.activeElement as HTMLElement | null;
     if (this.game.selected && !focused?.matches('[data-market-control]')) this.renderInspector();
+    if (this.tradeOpen) this.renderTrade();
   }
 }

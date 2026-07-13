@@ -135,12 +135,51 @@ commandable hero character yet.
 - Performance budgets for large maps and armies; profile before further optimization.
 - Daily seeded runs, shareable seed links, achievements, and run-history summaries.
 
+### 5. Two-player real-time co-op Expeditions
+
+Co-op is the first multiplayer target: a dedicated four-level Expedition with much
+larger maps, multi-front objectives, and its own difficulty presets. Two allied players
+each own a settlement, workers, resources, production chains, army, hero, gold, cards,
+and shop while sharing the map, enemies, objectives, and Expedition outcome. The host
+is authoritative for networking, while a small WebSocket room service provides
+host/invite, public server browsing, relay, presence, checkpoints, and reconnects.
+
+Shipped (first playable slice):
+
+- Versioned gameplay commands with stable entity IDs; singleplayer and co-op share one
+  command-application path with per-player ownership validation.
+- The Node room service (rooms, invites, public browser, relay, presence, reconnect
+  credentials, seat reclaim) plus the main-menu Host / Join by invite / Server browser /
+  Lobby flow and the in-game Multiplayer panel.
+- Two fully separate player economies on one map: stores, workers, dispatch, training,
+  bells, roads, demolition, and player-scoped HUD.
+- The Trade tab with requests and physical, interceptable cart shipments — reserve on
+  send, deliver on arrival, recall physically, lose cargo with the cart.
+- Four data-driven Expedition levels with three difficulty presets (Journey /
+  Erfgooiers / Veldheer) routed through `Modifiers`; both-ready lobbies auto-start from
+  a shared seed, raids target either castle, defeat ends the run for both, and a
+  disconnected peer freezes rather than drifting.
+- Fixed `1x` speed, strict ownership, shared team victory, and no host migration.
+
+Still to build before co-op is release-ready:
+
+- Canonical fingerprints plus render-free checkpoints/replay so a drifted or rejoining
+  guest is corrected mid-level (today a mid-level rejoin waits for the next level and
+  long sessions rely on both sims staying in step).
+- Tick-aligned command application under measured latency/jitter (commands currently
+  apply on receipt in server order).
+- Per-player heroes, shops, cards, contracts, participation rewards, and co-op resume
+  saves; scale difficulty through fronts and logistics before HP inflation.
+
+The staged architecture, protocol, recovery model, security boundaries, risks, and exit
+criteria are documented in [docs/co-op-design.md](docs/co-op-design.md).
+
 ## Future
 
 - Async daily/seed leaderboards and friend score races.
 - Additional heroes, cards, buildings, enemies, biomes, and Ascension tiers.
-- Co-op only after deterministic simulation order, serialization, and lockstep recovery
-  have dedicated tests. Multiplayer is not currently scheduled.
+- Competitive/asynchronous multiplayer remains future work after co-op; see
+  [docs/multiplayer-design.md](docs/multiplayer-design.md).
 
 ## Open decisions
 

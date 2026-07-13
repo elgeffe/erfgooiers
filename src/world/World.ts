@@ -86,7 +86,7 @@ export class World {
     for (let y = 0; y < this.H; y++) {
       this.tiles[y] = [];
       for (let x = 0; x < this.W; x++) {
-        this.tiles[y][x] = { type: 'grass', road: false, lake: false, b: null, site: null, tree: null, dep: null, field: null, deco: null, pickup: null, cshade: 0.9 + rnd() * 0.2 };
+        this.tiles[y][x] = { type: 'grass', road: false, roadOwner: null, lake: false, b: null, site: null, tree: null, dep: null, field: null, deco: null, pickup: null, cshade: 0.9 + rnd() * 0.2 };
       }
     }
     this.generate();
