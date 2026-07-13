@@ -400,11 +400,13 @@ export class Game {
         if (b.out[it] > 0) {
           const wanted = demands.some(d => d.item === it);
           // A producer at (or nearing) the output cap has STOPPED working —
-          // draining it un-halts production, so it outranks routine input
-          // top-ups (which sit at 1). At pri 2 behind every site and input
-          // demand these drains starved whenever serfs were busy, leaving
-          // "full output nobody picks up" and stalled chains.
-          if (b.out[it] >= outCap - 1) demands.push({ pri: b.priority ? 0.4 : 0.5, to: this.nearestStore(b), item: it, from: b });
+          // draining it un-halts production, but an outstanding consumer for
+          // this item must receive it directly. Creating a storage task here
+          // used to reserve the item before the consumer demand ran, causing
+          // full coal/gold mines to send goods to the castle ahead of a mint.
+          // Urgent drains still beat markets and routine storage, but never
+          // construction or production inputs.
+          if (!wanted && b.out[it] >= outCap - 1) demands.push({ pri: b.priority ? 1.1 : 1.25, to: this.nearestStore(b), item: it, from: b });
           else if (!wanted) demands.push({ pri: 2, to: this.nearestStore(b), item: it, from: b });
         }
       }

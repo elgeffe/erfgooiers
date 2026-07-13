@@ -79,4 +79,6 @@ Key areas:
 - `src/engine/` — RNG, pathfinding, and pure formation layout
 
 Contributor and agent conventions live in [AGENTS.md](AGENTS.md). Product direction and
-remaining milestones live in [ROADMAP.md](ROADMAP.md).
+remaining milestones live in [ROADMAP.md](ROADMAP.md). The physical hauling contract,
+including demand priorities, reservations, and storage fallback, is documented in
+[docs/logistics-engine.md](docs/logistics-engine.md).

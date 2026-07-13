@@ -58,12 +58,11 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - add more rare and legendary cards, they are unlocked through achievements. add an achievements menu in the main menu to show which cards have been unlocked, give a hint for cards that have not been unlocked yet. make sure achievements are linked to the save state and exported with the export setting.
 
-
+- production modal with clear input / output overview > this should be the start of micromanagement side of the game.
 
 - implement a gore mode in the settings that introduces blood spots on bodies and other blood related visual effects. 
 
 - can we also introduce a setting or easter egg in the settings menu to enable the wilhelm scream when units die?
-
 
 
 

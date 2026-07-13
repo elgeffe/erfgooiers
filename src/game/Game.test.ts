@@ -178,6 +178,47 @@ describe('serf hauling from storehouse', () => {
   });
 });
 
+describe('production-chain routing priority', () => {
+  it('routes capped gold and coal output directly to a waiting mint before storage', () => {
+    const world = new World({ seed: 408, w: 32, h: 32, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
+    for (const row of world.tiles) for (const t of row) { t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; }
+    const game = new Game(world, headlessView(world));
+    game.init({ stock: {}, serfs: 2, laborers: 0, villagers: 0 });
+    const goldMine = game.placeBuilding('goldmine', 5, 5, true);
+    const coalMine = game.placeBuilding('coalmine', 9, 5, true);
+    const mint = game.placeBuilding('mint', 7, 10, true);
+    goldMine.out.goldore = 5;
+    coalMine.out.coal = 5;
+
+    game.update(0.5);
+
+    const tasks = game.units.filter(u => u.role === 'serf').map(u => u.task);
+    expect(tasks).toHaveLength(2);
+    expect(tasks.every(task => task?.to === mint)).toBe(true);
+    expect(tasks.map(task => task?.item).sort()).toEqual(['coal', 'goldore']);
+    expect(goldMine.out.goldore).toBe(4);
+    expect(coalMine.out.coal).toBe(4);
+    expect(game.store.stock!.goldore).toBe(0);
+    expect(game.store.stock!.coal).toBe(0);
+  });
+
+  it('uses storage as the fallback when no building is waiting for the output', () => {
+    const world = new World({ seed: 409, w: 32, h: 32, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
+    for (const row of world.tiles) for (const t of row) { t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; }
+    const game = new Game(world, headlessView(world));
+    game.init({ stock: {}, serfs: 1, laborers: 0, villagers: 0 });
+    const goldMine = game.placeBuilding('goldmine', 5, 5, true);
+    goldMine.out.goldore = 5;
+
+    game.update(0.5);
+
+    const serf = game.units.find(u => u.role === 'serf')!;
+    expect(serf.task?.from).toBe(goldMine);
+    expect(serf.task?.to).toBe(game.store);
+    expect(serf.task?.item).toBe('goldore');
+  });
+});
+
 
 
 
