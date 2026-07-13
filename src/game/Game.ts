@@ -19,6 +19,7 @@ import { TradeSystem } from './TradeSystem';
 import { EncounterDirector } from './EncounterDirector';
 import { ProjectileSystem } from './ProjectileSystem';
 import { MarketSystem } from './MarketSystem';
+import { SeparationSystem } from './SeparationSystem';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -99,6 +100,7 @@ export class Game {
   private readonly encounters: EncounterDirector;
   private readonly projectileSystem: ProjectileSystem;
   private readonly marketSystem: MarketSystem;
+  private readonly separationSystem: SeparationSystem;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -179,6 +181,7 @@ export class Game {
       sfx: name => this.sfx(name),
       toast: message => this.toast(message),
     });
+    this.separationSystem = new SeparationSystem(this.world, this.units);
   }
 
   entityById(id: number): Building | Site | Unit | null {
@@ -1778,108 +1781,7 @@ export class Game {
   //  Separation — units softly shoulder each other aside, never stacking
   // =====================================================================
   private separate(dt: number): void {
-    const W = this.world.W;
-    const cells = new Map<number, Unit[]>();
-    const list: Unit[] = [];
-    for (const u of this.units) {
-      if (u.dead || !u.mesh.visible) continue;
-      u.sepI = list.length;            // stamp the crowd index on the unit itself…
-      list.push(u);
-      const k = u.ty * W + u.tx;
-      let c = cells.get(k);
-      if (!c) { c = []; cells.set(k, c); }
-      c.push(u);
-    }
-    const push = Math.min(1, dt * 6);
-    for (const u of list) {
-      // stationary workers hold their spot; fliers are above the crowd
-      if (u.wstate === 'gather' || u.wstate === 'build') continue;
-      if ((UNITS as Partial<Record<string, { flying?: boolean }>>)[u.role]?.flying) continue;
-      const ru = 0.3 * (u.mesh.scale.x || 1);
-      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
-        const c = cells.get((u.ty + oy) * W + (u.tx + ox));
-        if (!c) continue;
-        for (const o of c) {
-          // Resolve each pair once and push both participants. The old loop
-          // evaluated every overlap twice, dominating large moving armies.
-          // …and compare the stamped indices — no per-pair Map lookups in the
-          // hottest loop of the sim.
-          if (o.sepI <= u.sepI) continue;
-          // Logistics traffic may pass through itself and through builders.
-          // Builders spend long stretches planted on a site's single door
-          // tile; treating that stationary worker as a solid body repeatedly
-          // shoved passing serfs off their route.
-          if (u.role === 'serf' && (o.role === 'serf' || o.role === 'laborer')) continue;
-          if (o.role === 'serf' && u.role === 'laborer') continue;
-          const dx = o.mesh.position.x - u.mesh.position.x, dz = o.mesh.position.z - u.mesh.position.z;
-          const r = ru + 0.3 * (o.mesh.scale.x || 1);
-          const d2 = dx * dx + dz * dz;
-          if (d2 >= r * r) continue;
-          let nx: number, nz: number;
-          const d = Math.sqrt(d2);
-          if (d < 1e-4) { // dead-on overlap: split along a deterministic axis
-            const ax = ((u.tx + o.ty) % 2) * 2 - 1, az = ((u.ty + o.tx) % 2) * 2 - 1;
-            const l = Math.hypot(ax, az); nx = ax / l; nz = az / l;
-          } else { nx = dx / d; nz = dz / d; }
-          // split the correction evenly between the pair
-          const overlap = (r - d) * 0.5 * push;
-          const allied = u.faction === o.faction;
-          const uMarching = allied && this.isFormationMarching(u);
-          const oMarching = allied && this.isFormationMarching(o);
-          if (uMarching || oMarching) {
-            // Friendly units already holding a slot must not become a wall for
-            // the rest of their formation. Keep the holder planted and put
-            // the full sideways correction on the marcher. For two marchers,
-            // retain the normal half correction on each. nudgeMarching strips
-            // only the backwards component, so dense traffic may flow around
-            // or through a knot but can never overpower forward movement.
-            if (uMarching) this.nudgeMarching(u, -nx * overlap * (oMarching ? 1 : 2), -nz * overlap * (oMarching ? 1 : 2));
-            if (oMarching) this.nudgeMarching(o, nx * overlap * (uMarching ? 1 : 2), nz * overlap * (uMarching ? 1 : 2));
-          } else {
-            this.nudge(u, -nx * overlap, -nz * overlap);
-            this.nudge(o, nx * overlap, nz * overlap);
-          }
-        }
-      }
-    }
-  }
-
-  /** A path-backed player formation order is traffic, rather than a unit
-   *  fighting or standing its ground. Kept deliberately narrow so combat
-   *  crowd pressure and ordinary worker separation retain their old feel. */
-  private isFormationMarching(u: Unit): boolean {
-    return u.faction === 'player' && !!u.path && !!u.order
-      && (u.order.type === 'move' || u.order.type === 'attackMove');
-  }
-
-  /** Apply separation to a formation marcher without ever moving it away
-   *  from its next waypoint. This is scalar and allocation-free because it
-   *  runs inside the hottest crowd loop. */
-  private nudgeMarching(u: Unit, dx: number, dz: number): void {
-    const node = u.path?.[u.pathI];
-    if (!node) { this.nudge(u, dx, dz); return; }
-    const px = this.world.wx(node.x) - u.mesh.position.x;
-    const pz = this.world.wz(node.y) - u.mesh.position.z;
-    const l2 = px * px + pz * pz;
-    if (l2 > 1e-8) {
-      const backwards = (dx * px + dz * pz) / l2;
-      if (backwards < 0) { dx -= backwards * px; dz -= backwards * pz; }
-    }
-    this.nudge(u, dx, dz);
-  }
-
-  /** Shift a unit if the destination isn't water or inside a building/site. */
-  private nudge(u: Unit, dx: number, dz: number): void {
-    const W = this.world.W, H = this.world.H;
-    const radius = 0.3 * (u.mesh.scale.x || 1);
-    const nxp = Math.max(-W / 2 + radius, Math.min(W / 2 - radius, u.mesh.position.x + dx));
-    const nzp = Math.max(-H / 2 + radius, Math.min(H / 2 - radius, u.mesh.position.z + dz));
-    const tx = Math.max(0, Math.min(W - 1, Math.round(nxp + W / 2 - 0.5)));
-    const ty = Math.max(0, Math.min(H - 1, Math.round(nzp + H / 2 - 0.5)));
-    const t = this.world.tiles[ty][tx];
-    if (t.type !== 'grass' || t.b || t.site || t.dep) return;
-    u.mesh.position.x = nxp; u.mesh.position.z = nzp;
-    u.tx = tx; u.ty = ty;
+    this.separationSystem.update(dt);
   }
 
   // =====================================================================
