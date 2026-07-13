@@ -730,6 +730,50 @@ export class Game {
     return d.store + d.buildings + d.carried;
   }
 
+  /**
+   * Live health of the three logistics labour pools — serfs (hauling), villagers
+   * (staffing buildings) and builders (raising sites). Each reports the pool
+   * size, a one-line demand read-out and a traffic-light status the workers panel
+   * colours in and the toggle badges as a persistent shortage warning. */
+  workerMetrics(): Record<'serf' | 'villager' | 'builder', { count: number; status: 'good' | 'warn' | 'bad'; note: string }> {
+    let serfs = 0, idleSerfs = 0, villagers = 0, idleVillagers = 0, builders = 0;
+    for (const u of this.units) {
+      if (u.dead || u.faction !== 'player') continue;
+      if (u.role === 'serf') { serfs++; if (!u.task && !u.collect) idleSerfs++; }
+      else if (u.role === 'villager') { villagers++; if (!u.home) idleVillagers++; }
+      else if (u.role === 'laborer') builders++;
+    }
+
+    // Serfs: count outstanding haul demands (sites awaiting materials, producers
+    // hungry for inputs or backed up with output nobody has fetched).
+    const carryCap = this.mods.carryCap();
+    let haulLoad = 0;
+    for (const s of this.sites) for (const it in s.needs) haulLoad += Math.max(0, s.needs[it] - (s.delivered[it] || 0) - (s.incoming[it] || 0));
+    for (const b of this.buildings) {
+      if (b.removed || !b.active) continue;
+      if (b.def.recipe) for (const it in this.mods.recipeInputs(b.def)) if (((b.inp[it] || 0) + (b.incoming[it] || 0)) < carryCap) haulLoad++;
+      if (!b.def.store) for (const it in b.out) if (b.out[it] > 0) haulLoad++;
+    }
+    const serf = { count: serfs,
+      status: (serfs === 0 && haulLoad > 0) || haulLoad > serfs * 2 ? 'bad' : (haulLoad > 0 && idleSerfs === 0) ? 'warn' : 'good',
+      note: haulLoad === 0 ? 'All caught up' : `${haulLoad} deliver${haulLoad === 1 ? 'y' : 'ies'} waiting` } as const;
+
+    // Villagers: posts left unstaffed for want of a trained villager.
+    let unstaffed = 0;
+    for (const b of this.buildings) if (!b.removed && b.faction === 'player' && b.def.worker && !b.worker) unstaffed++;
+    const villager = { count: villagers,
+      status: unstaffed > 0 ? 'bad' : idleVillagers === 0 ? 'warn' : 'good',
+      note: unstaffed > 0 ? `${unstaffed} building${unstaffed === 1 ? '' : 's'} unstaffed` : idleVillagers === 0 ? 'None spare' : `${idleVillagers} ready to post` } as const;
+
+    // Builders: sites in the ground versus hands to raise them.
+    const openSites = this.sites.length;
+    const builder = { count: builders,
+      status: (builders === 0 && openSites > 0) || openSites > builders ? 'bad' : openSites === builders && openSites > 0 ? 'warn' : 'good',
+      note: openSites === 0 ? 'No sites pending' : `${openSites} site${openSites === 1 ? '' : 's'} to raise` } as const;
+
+    return { serf, villager, builder };
+  }
+
   /** Every standing storage building (the castle plus any built storehouses). */
   stores(): Building[] {
     return this.buildings.filter(b => b.def.store && !b.removed);

@@ -448,11 +448,11 @@ export class UI {
   // ---------- worker panel ----------
   private wireUnitPanel(): void {
     const toggle = $('unitsToggle'), panel = $('unitpanel');
-    toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; if (this.unitsOpen && this.perksOpen) this.setPerksOpen(false); panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : 'block'; this.renderUnits(); };
+    toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; if (this.unitsOpen && this.perksOpen) this.setPerksOpen(false); panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : ''; this.renderUnits(); };
     document.addEventListener('keydown', e => { if (e.key === 'u') toggle.click(); });
     const h3 = $('unitTitle');
     h3.style.cursor = 'pointer'; h3.title = 'Click to collapse';
-    h3.onclick = () => { this.unitsOpen = false; panel.style.display = 'none'; toggle.style.display = 'block'; };
+    h3.onclick = () => { this.unitsOpen = false; panel.style.display = 'none'; toggle.style.display = ''; };
     $('unitTabs').addEventListener('click', e => {
       const b = (e.target as HTMLElement).closest('.utab') as HTMLElement | null;
       if (b) { this.unitTab = b.dataset.tab!; this.renderUnits(); }
@@ -468,12 +468,45 @@ export class UI {
     return 'specialist';
   }
 
+  /** Always show the three labour-pool KPIs on the (collapsed) Workers button so
+   *  their health is visible at a glance, and pulse it when one runs short. */
+  private setWorkerWarning(shortage: boolean, metrics: ReturnType<Game['workerMetrics']>): void {
+    const toggle = $('unitsToggle');
+    toggle.classList.toggle('warn', shortage);
+    const pools = [
+      { k: 'serf', label: 'Serfs' },
+      { k: 'builder', label: 'Builders' },
+      { k: 'villager', label: 'Villagers' },
+    ] as const;
+    const chips = pools.map(({ k, label }) => {
+      const m = metrics[k];
+      return `<span class="utab${m.status === 'bad' ? ' short' : ''}" title="${label}: ${m.note}">${label} <b>${m.count}</b> <i class="kpi ${m.status}"></i></span>`;
+    }).join('');
+    const total = this.game ? this.game.units.filter(u => !u.dead && u.faction === 'player').length : 0;
+    toggle.innerHTML = `<h3 class="serif wtitle">${shortage ? '⚠️ ' : ''}Workers · ${total}</h3><div class="wkpis">${chips}</div>`;
+    const bad = pools.filter(p => metrics[p.k].status === 'bad');
+    toggle.title = bad.length ? 'Short-handed — ' + bad.map(p => `${p.label}: ${metrics[p.k].note}`).join(' · ') : 'Open the worker roster (U)';
+  }
+
+  /** Keep the Workers-button shortage badge live even while the panel is closed. */
+  private updateWorkerWarning(): void {
+    if (!this.game) return;
+    const metrics = this.game.workerMetrics();
+    const shortage = (['serf', 'villager', 'builder'] as const).some(k => metrics[k].status === 'bad');
+    this.setWorkerWarning(shortage, metrics);
+  }
+
   private renderUnits(): void {
-    if (!this.unitsOpen || !this.game) return;
+    if (!this.unitsOpen || !this.game) { this.updateWorkerWarning(); return; }
     const players = this.game.units.filter(u => u.faction === 'player');
     const counts: Record<string, number> = { all: players.length, serf: 0, villager: 0, laborer: 0, specialist: 0, military: 0 };
     for (const u of players) counts[this.unitCat(u.role)]++;
+    // Live logistics KPIs: which of the labour pools is short-handed.
+    const metrics = this.game.workerMetrics();
+    const metricFor = (id: string) => id === 'serf' ? metrics.serf : id === 'laborer' ? metrics.builder : id === 'villager' ? metrics.villager : null;
+    const shortage = (['serf', 'villager', 'builder'] as const).some(k => metrics[k].status === 'bad');
     $('unitTitle').textContent = `Workers · ${players.length}`;
+    this.setWorkerWarning(shortage, metrics);
     const tabsDef: { id: string; label: string }[] = [
       { id: 'all', label: 'All' },
       { id: 'serf', label: 'Serfs' },
@@ -487,7 +520,10 @@ export class UI {
     let tabs = '';
     for (const c of tabsDef) {
       if (c.id !== 'all' && counts[c.id] === 0 && this.unitTab !== c.id) continue;
-      tabs += `<button class="utab${this.unitTab === c.id ? ' on' : ''}" data-tab="${c.id}">${c.label} <b>${counts[c.id]}</b></button>`;
+      const m = metricFor(c.id);
+      // a small traffic-light dot + hover note flags an under-supplied pool
+      const kpi = m ? ` <i class="kpi ${m.status}" title="${m.note}"></i>` : '';
+      tabs += `<button class="utab${this.unitTab === c.id ? ' on' : ''}${m && m.status === 'bad' ? ' short' : ''}" data-tab="${c.id}"${m ? ` title="${m.note}"` : ''}>${c.label} <b>${counts[c.id]}</b>${kpi}</button>`;
     }
     if (tabs !== this.lastTabsHTML) { $('unitTabs').innerHTML = tabs; this.lastTabsHTML = tabs; }
 

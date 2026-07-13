@@ -113,6 +113,11 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 .utab:hover{border-color:var(--accent);}
 .utab.on{background:rgba(217,164,65,.16);border-color:var(--accent);color:var(--ink);}
 .utab b{font-variant-numeric:tabular-nums;color:var(--accent);font-size:11px;}
+.utab.short{border-color:var(--bad);}
+.kpi{width:7px;height:7px;border-radius:50%;flex:none;display:inline-block;}
+.kpi.good{background:var(--good);}
+.kpi.warn{background:var(--accent);}
+.kpi.bad{background:var(--bad);}
 .urow{display:flex;align-items:center;gap:7px;padding:4px 2px;border-bottom:1px solid rgba(255,255,255,.05);}
 .urow .dot{width:10px;height:10px;border-radius:50%;flex:none;}
 .urow .info{flex:1;min-width:0;}
@@ -120,8 +125,12 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 .urow .st{font-size:10px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .hbar{width:34px;height:5px;background:rgba(0,0,0,.4);border-radius:3px;overflow:hidden;flex:none;}
 .hbar>div{height:100%;background:var(--good);}
-#unitsToggle{position:absolute;left:12px;top:84px;background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:8px;color:var(--ink);padding:6px 11px;cursor:pointer;font-size:12px;font-weight:600;}
+#unitsToggle{position:absolute;left:12px;top:84px;background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:8px;color:var(--ink);padding:9px 13px;cursor:pointer;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:flex-start;gap:7px;}
 #unitsToggle:hover{border-color:var(--accent);}
+#unitsToggle .wtitle{margin:0;font-size:13px;font-weight:400;color:var(--accent);}
+#unitsToggle .wkpis{display:flex;flex-direction:column;align-items:flex-start;gap:4px;}
+#unitsToggle.warn{border-color:var(--bad);color:#f0c0ac;animation:workerpulse 1.6s ease-in-out infinite;}
+@keyframes workerpulse{0%,100%{box-shadow:0 0 0 0 rgba(201,107,74,0);}50%{box-shadow:0 0 0 3px rgba(201,107,74,.4);}}
 .hnote{font-size:9.5px;color:var(--ink-dim);margin-top:6px;font-style:italic;}
 /* ---------- heritage / power-up panel ---------- */
 #perkpanel{left:12px;top:84px;width:244px;max-height:calc(100% - 220px);overflow:hidden auto;display:none;}
