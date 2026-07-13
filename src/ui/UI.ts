@@ -448,11 +448,11 @@ export class UI {
   // ---------- worker panel ----------
   private wireUnitPanel(): void {
     const toggle = $('unitsToggle'), panel = $('unitpanel');
-    toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; if (this.unitsOpen && this.perksOpen) this.setPerksOpen(false); panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : 'block'; this.renderUnits(); };
+    toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; if (this.unitsOpen && this.perksOpen) this.setPerksOpen(false); panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : ''; this.renderUnits(); };
     document.addEventListener('keydown', e => { if (e.key === 'u') toggle.click(); });
     const h3 = $('unitTitle');
     h3.style.cursor = 'pointer'; h3.title = 'Click to collapse';
-    h3.onclick = () => { this.unitsOpen = false; panel.style.display = 'none'; toggle.style.display = 'block'; };
+    h3.onclick = () => { this.unitsOpen = false; panel.style.display = 'none'; toggle.style.display = ''; };
     $('unitTabs').addEventListener('click', e => {
       const b = (e.target as HTMLElement).closest('.utab') as HTMLElement | null;
       if (b) { this.unitTab = b.dataset.tab!; this.renderUnits(); }
