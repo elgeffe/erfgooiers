@@ -15,6 +15,8 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 ## Design changes
 
+- when the game is run on small screens, the sandbox spawn panel does not properly display (the collapse button is underneath the panel. the button to collapse should always be visible.)
+
 - add some spacing in between the fullscreen and mute button 
 
 - improve the cloud designs, make them look more like real clouds, improve the fidelity of the animal shapes that sometimes pass by.
@@ -23,7 +25,7 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 ## Improvements
 
-- remove the melody notes from the songs, i only want pads and chords (use extended chords or chord substitutions to make it more dynamic.)
+- remove the melody notes from the songs, i only want pads and chords (use extended chords or chord substitutions to make it more dynamic.) make sure only 1 melody plays at the home screen and continues into the new game. only change the melody on a new run or refresh of the whole page or returning to the home screen.
 
 - the strongholds in the sandbox should be distributed across the map in different locations, not all in the same corner
 

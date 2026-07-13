@@ -468,14 +468,23 @@ export class UI {
     return 'specialist';
   }
 
-  /** Flag the (collapsed) Workers button when a labour pool is short-handed. */
+  /** Always show the three labour-pool KPIs on the (collapsed) Workers button so
+   *  their health is visible at a glance, and pulse it when one runs short. */
   private setWorkerWarning(shortage: boolean, metrics: ReturnType<Game['workerMetrics']>): void {
     const toggle = $('unitsToggle');
     toggle.classList.toggle('warn', shortage);
-    const labels: Record<'serf' | 'villager' | 'builder', string> = { serf: 'Serfs', villager: 'Villagers', builder: 'Builders' };
-    const bad = (['serf', 'villager', 'builder'] as const).filter(k => metrics[k].status === 'bad');
-    toggle.innerHTML = shortage ? '⚠️ Workers' : 'Workers';
-    toggle.title = bad.length ? 'Short-handed — ' + bad.map(k => `${labels[k]}: ${metrics[k].note}`).join(' · ') : 'Open the worker roster (U)';
+    const pools: { k: 'serf' | 'builder' | 'villager'; label: string; icon: string }[] = [
+      { k: 'serf', label: 'Serfs', icon: '🧺' },
+      { k: 'builder', label: 'Builders', icon: '🔨' },
+      { k: 'villager', label: 'Villagers', icon: '🧑' },
+    ];
+    const chips = pools.map(({ k, label, icon }) => {
+      const m = metrics[k];
+      return `<span class="wkpi ${m.status}" title="${label}: ${m.note}"><i class="kpi ${m.status}"></i>${icon} ${m.count}</span>`;
+    }).join('');
+    toggle.innerHTML = `<span class="wtitle">${shortage ? '⚠️ ' : ''}Workers</span>${chips}`;
+    const bad = pools.filter(p => metrics[p.k].status === 'bad');
+    toggle.title = bad.length ? 'Short-handed — ' + bad.map(p => `${p.label}: ${metrics[p.k].note}`).join(' · ') : 'Open the worker roster (U)';
   }
 
   /** Keep the Workers-button shortage badge live even while the panel is closed. */
