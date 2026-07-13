@@ -3,7 +3,7 @@ fix each of these items, always start with bugs first, then design changes > imp
 ## Bugs
 - i keep having the same problem that my Mint has produced a full output of coins, but none of the serfs pick it up. the game gets stuck because of this. i propose the mint directly contributes it output to the global coin supply so i can use it directly. it still shows that there is something wrong with how the serfs are ordering their priorities.
 
-- no Coal has spawned on the map, this should not be possible.
+- no Coal has spawned on the map, this should not be possible. make sure to increase the default amount of coal to accomodate coin and military equipment.
 
 - builders are very often in the way of serfs moving around, blocking the movement. can we fix this?
 
@@ -46,6 +46,8 @@ fix each of these items, always start with bugs first, then design changes > imp
 - the weaponsmith has something orange sticking out of the front door? make this nicer.
 
 ## Improvements
+
+- each tree should give 2 trunks
 
 - level 8 the fortified village should have a 'clear all enemy structures' goal instead
 
