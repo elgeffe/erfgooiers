@@ -47,7 +47,8 @@ describe('World generation', () => {
         if (t.dep) ore[t.dep.kind]++;
       }
       expect(trees).toBeGreaterThanOrEqual(14);
-      for (const k of ['stone', 'gold', 'coal', 'iron'] as const) expect(ore[k]).toBeGreaterThanOrEqual(6);
+      for (const k of ['stone', 'gold', 'iron'] as const) expect(ore[k]).toBeGreaterThanOrEqual(6);
+      expect(ore.coal).toBeGreaterThanOrEqual(12);
     }
   });
 
@@ -84,9 +85,25 @@ describe('Biome worldgen', () => {
         if (t.dep) ore[t.dep.kind]++;
       }
       expect(trees, `${biome} trees`).toBeGreaterThanOrEqual(14);
-      for (const k of ['stone', 'gold', 'coal', 'iron'] as const) {
+      for (const k of ['stone', 'gold', 'iron'] as const) {
         expect(ore[k], `${biome} ${k}`).toBeGreaterThanOrEqual(6);
       }
+      expect(ore.coal, `${biome} coal`).toBeGreaterThanOrEqual(12);
+    }
+  });
+
+  it('retains every ore minimum after clearing a corner castle apron and frontier paths', () => {
+    for (const seed of [1, 7, 42, 1260, 31337, 987654]) {
+      const w = new World({
+        seed, w: 64, h: 64, treeStands: 11, oreVeins: 5, waterScale: 1.2,
+        meadows: 6, mountains: 2, frontier: true, biome: 'seaside',
+      });
+      const ore = { stone: 0, gold: 0, coal: 0, iron: 0 };
+      for (const row of w.tiles) for (const tile of row) if (tile.dep) ore[tile.dep.kind]++;
+      expect(ore.stone, `seed ${seed} stone`).toBeGreaterThanOrEqual(6);
+      expect(ore.gold, `seed ${seed} gold`).toBeGreaterThanOrEqual(6);
+      expect(ore.coal, `seed ${seed} coal`).toBeGreaterThanOrEqual(12);
+      expect(ore.iron, `seed ${seed} iron`).toBeGreaterThanOrEqual(6);
     }
   });
 

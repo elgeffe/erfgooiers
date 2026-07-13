@@ -508,12 +508,19 @@ export class World {
           }
     }
 
+    // Tiles cleared later for the town apron and frontier routes stay clear
+    // when the final ore invariant replenishes deposits.
+    const oreReserved = new Uint8Array(W * H);
     const deposits = (cx: number, cy: number, r: number, kind: DepositKind, n: number): number => {
       let placed = 0, guard = 0;
       while (placed < n && guard++ < 200) {
         const { x, y } = this.near(cx, cy, r);
         const t = this.T(x, y);
-        if (t && t.type === 'grass' && !t.dep) { t.dep = { kind, amt: 10 + Math.floor(rnd() * 11), meshes: [] }; placed++; }
+        const sx = this.playerStart.x + 1, sy = this.playerStart.y + 1;
+        if (t && t.type === 'grass' && !t.dep && !t.tree && !t.deco && !t.pickup
+          && !oreReserved[y * W + x] && Math.hypot(x - sx, y - sy) > 8) {
+          t.dep = { kind, amt: 10 + Math.floor(rnd() * 11), meshes: [] }; placed++;
+        }
       }
       return placed;
     };
@@ -529,12 +536,12 @@ export class World {
     // guarantee a workable minimum of every ore kind: a wetter/late map (or too few
     // veins) can otherwise drop a vein into the lake and leave a whole resource
     // (e.g. gold, breaking the mint chain) absent from the map.
-    const MIN_ORE = 6;
+    const MIN_ORE: Record<DepositKind, number> = { stone: 6, gold: 6, coal: 12, iron: 6 };
     for (const kind of ['stone', 'gold', 'coal', 'iron'] as const) {
       let guard = 0;
-      while (oreCount[kind] < MIN_ORE && guard++ < 120) {
+      while (oreCount[kind] < MIN_ORE[kind] && guard++ < 120) {
         const cx = 4 + Math.floor(rnd() * (W - 8)), cy = 4 + Math.floor(rnd() * (H - 8));
-        oreCount[kind] += deposits(cx, cy, 3, kind, MIN_ORE - oreCount[kind]);
+        oreCount[kind] += deposits(cx, cy, 3, kind, MIN_ORE[kind] - oreCount[kind]);
       }
     }
 
@@ -624,6 +631,7 @@ export class World {
           const t = this.tiles[y][x];
           t.type = 'grass'; t.lake = false; t.rock = undefined;
           t.tree = null; t.dep = null; t.deco = null; t.pickup = null;
+          oreReserved[y * W + x] = 1;
         }
       }
 
@@ -648,7 +656,24 @@ export class World {
           const t = this.tiles[Math.floor(id / W)][id % W];
           t.dep = null;
           if (t.tree?.dense) t.tree = null;
+          oreReserved[id] = 1;
         }
+      }
+    }
+
+    // The final frontier cleanup above deliberately removes deposits from the
+    // castle apron and assault routes. Recount afterwards and replace anything
+    // it consumed so every completed map retains its required ore chains.
+    const finalOre: Record<DepositKind, number> = { stone: 0, gold: 0, coal: 0, iron: 0 };
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const dep = this.tiles[y][x].dep;
+      if (dep) finalOre[dep.kind]++;
+    }
+    for (const kind of ['stone', 'gold', 'coal', 'iron'] as const) {
+      let guard = 0;
+      while (finalOre[kind] < MIN_ORE[kind] && guard++ < 160) {
+        const cx = 4 + Math.floor(rnd() * (W - 8)), cy = 4 + Math.floor(rnd() * (H - 8));
+        finalOre[kind] += deposits(cx, cy, 3, kind, MIN_ORE[kind] - finalOre[kind]);
       }
     }
 
