@@ -16,13 +16,15 @@ import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from '.
 import { DEFAULT_SANDBOX, MAX_SANDBOX_STRONGHOLDS, biomeWater, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
 import { campaignBiome } from './data/biomes';
 import type { BiomeKey } from './data/biomes';
-import { UNITS, type UnitKind } from './data/units';
-import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionArmyMult, ascensionForcesCurse, ascensionPrepMult, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
-import { loadSettings, saveSettings } from './game/Settings';
+import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
+import { planLevel, planStartArmy } from './game/levelPlanning';
+import { installSettingsController } from './ui/settingsController';
+import { installSandboxTools } from './ui/sandboxTools';
+import { CoOpController } from './ui/CoOpController';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
 import { PeerCoOpClient, type ConnectionSnapshot } from './net/PeerCoOpClient';
-import type { AcceptedCommand, ExpeditionDifficulty, GameCommand, RoomState, ServerMessage } from './net/protocol';
+import type { AcceptedCommand, ExpeditionDifficulty, GameCommand } from './net/protocol';
 import { applyGameCommand } from './game/commands';
 import { EXPEDITION_DIFFICULTY, EXPEDITION_LEVEL_COUNT, expeditionLevelFor } from './data/coOpLevels';
 
@@ -107,36 +109,8 @@ function startLevel(): void {
   // ascension journey: higher tiers march the run's later levels into
   // harsher biomes (sandbox picks its own on the setup screen)
   const biomeKey = sandbox ? sandboxCfg.biome : campaignBiome(run.ascension, run.levelIndex);
-  // The Infernal finale: Hell is a vast, thrice-walled battlefield. Great
-  // undead strongholds stand between you and the dragon, with the resources
-  // (and the clock, below) to raise the army that can break them.
-  const hellFinale = !sandbox && biomeKey === 'hell';
-  const worldParams = { seed, ...level.world, biome: biomeKey };
-  if (hellFinale) {
-    worldParams.w = (level.world.w ?? 48) + 24;
-    worldParams.h = (level.world.h ?? 48) + 24;
-    worldParams.frontiers = 3;
-    worldParams.treeStands = Math.round((level.world.treeStands ?? 8) * 1.7);
-    worldParams.oreVeins = Math.round((level.world.oreVeins ?? 6) * 1.8);
-    worldParams.goldPiles = (level.world.goldPiles ?? 4) + 8;
-  }
-  // The road to the dragon always has four successive mountain pockets. The
-  // encounter data below strengthens those same stages at higher tiers rather
-  // than scattering extra corners around the map.
-  if (!sandbox && level.index === 10) {
-    worldParams.lairStages = 4;
-  }
-  // the hunt spreads out on higher ascensions: a bigger range for the growing
-  // packs (see ascendObjective) so the chase takes real ground to run down
-  if (!sandbox && level.type === 'Hunt' && run.ascension > 0) {
-    const tiers = Math.min(3, run.ascension);
-    worldParams.w = (level.world.w ?? 46) + tiers * 10;
-    worldParams.h = (level.world.h ?? 46) + tiers * 10;
-    worldParams.treeStands = Math.round((level.world.treeStands ?? 8) * (1 + 0.22 * tiers));
-    worldParams.meadows = Math.round((level.world.meadows ?? 5) * (1 + 0.25 * tiers));
-    worldParams.goldPiles = (level.world.goldPiles ?? 3) + tiers * 2;
-  }
-  const world = new World(worldParams);
+  const levelPlan = planLevel(level, seed, biomeKey, run.ascension, sandbox);
+  const world = new World(levelPlan.world);
   view.loadWorld(world);
   const mutators = sandbox ? [] : run.mutators;
   const selectedHeroId = sandbox ? (sandboxCfg.hero === 'none' ? null : sandboxCfg.hero) : run.hero;
@@ -163,53 +137,12 @@ function startLevel(): void {
   ui.setPerks(run.upgrades, meta.activeGlobalBuff ? [meta.activeGlobalBuff] : []);
   controls.setGame(game);
   // sandbox trouble is configured on the setup screen; runs use the level table
-  game.prepMult = sandbox ? 1 : ascensionPrepMult(run.ascension);
+  game.prepMult = levelPlan.prepMult;
   // higher ascensions garrison the enemy strongholds ever more heavily
   // and breathe more life into their bosses
-  game.garrisonMult = sandbox ? 1 : 1 + 0.35 * run.ascension;
-  game.bossHpMult = sandbox ? 1 : 1 + 0.5 * run.ascension;
-  // hell's extra strongholds: great undead hosts in every walled corner
-  // (a fresh object each time — the static LEVELS table stays untouched)
-  let enemies = hellFinale && level.enemies && !level.enemies.stages
-    ? { ...level.enemies, camps: [...(level.enemies.camps ?? []), { count: 4, guards: 14, kinds: ['skeleton', 'skelarcher', 'zombie', 'brute'] as UnitKind[] }] }
-    : level.enemies ?? null;
-  // Ascension reinforces the same readable camp → fortress → walled fortress
-  // route; garrisonMult supplies most of the pressure and the walls gain a few
-  // additional towers. The dragon remains visible in the deepest pocket.
-  if (!sandbox && level.index === 10 && run.ascension > 0 && enemies?.stages) {
-    const a = Math.min(4, run.ascension);
-    enemies = {
-      ...enemies,
-      stages: enemies.stages.map(stage => 'boss' in stage ? stage : {
-        ...stage,
-        guards: stage.guards + a * 2,
-        towers: (stage.towers ?? 0) + (stage.structure === 'camp' ? 0 : Math.ceil(a / 2)),
-      }),
-    };
-  }
-  // the hunt's quarry grows with the tier: enough wolves AND boars on the map
-  // to honour the swollen slayMulti objective (see ascendObjective)
-  if (!sandbox && enemies?.wild && level.type === 'Hunt' && run.ascension > 0) {
-    const packMult = 1 + 0.4 * run.ascension;
-    enemies = { ...enemies, wild: enemies.wild.map(w => ({ ...w, count: Math.round(w.count * packMult) })) };
-  }
-  // higher ascensions turn the Defend & assault levels into a real siege: the
-  // raid waves swell and a broader, nastier cast keeps arriving. The top tier
-  // also plants an extra fortified stronghold to storm (feeds the clear-all
-  // objective — more foes, more strongholds, more diverse raids).
-  if (!sandbox && enemies?.waves && run.ascension > 0 && level.index >= 5 && level.index <= 9) {
-    const a = Math.min(4, run.ascension);
-    const waveMult = 1 + 0.5 * a;
-    const scaled = enemies.waves.map(w => ({ ...w, count: Math.max(1, Math.round(w.count * waveMult)) }));
-    const roster: UnitKind[] = ['orc', 'skeleton', 'skelarcher', 'zombie', 'troll', 'bandit'];
-    const extra = Array.from({ length: a }, (_, i) => ({ at: 240 + i * 150, kind: roster[i % roster.length], count: 3 + a + i }));
-    enemies = { ...enemies, waves: [...scaled, ...extra] };
-    // the frontier assault levels gain extra walled keeps at the very top tiers
-    if (run.ascension >= 3 && level.index >= 7) {
-      enemies = { ...enemies, strongholds: { count: 1 + (run.ascension - 3), guards: 12, towers: 2, kinds: ['orc', 'troll', 'skeleton', 'skelarcher', 'zombie'] } };
-    }
-  }
-  game.setEnemies(enemies);
+  game.garrisonMult = levelPlan.garrisonMult;
+  game.bossHpMult = levelPlan.bossHpMult;
+  game.setEnemies(levelPlan.enemies);
   // mutator payloads beyond stat curses: extra wild packs on the map
   for (const id of mutators) {
     const def = MUTATOR_BY_ID[id];
@@ -221,15 +154,8 @@ function startLevel(): void {
   // The whole granted muster (level army + hero warband) parades in a grid
   // on the open ground in front of the castle gate, never on the castle.
   const heroDef = selectedHeroId ? HERO_BY_ID[selectedHeroId] : null;
-  {
-    const startGroups: { kind: UnitKind; count: number }[] = [];
-    if (level.startArmy) {
-      const armyMult = sandbox ? 1 : ascensionArmyMult(run.ascension);
-      for (const a of level.startArmy) startGroups.push({ kind: a.kind, count: Math.max(1, Math.round(a.count * armyMult)) });
-    }
-    if (heroDef?.startArmy) startGroups.push(...heroDef.startArmy);
-    if (startGroups.length) game.spawnStartArmy(startGroups);
-  }
+  const startGroups = planStartArmy(level.startArmy, heroDef?.startArmy, run.ascension, sandbox);
+  if (startGroups.length) game.spawnStartArmy(startGroups);
   const heroChip = $('heroChip') as HTMLElement;
   if (heroDef) {
     game.spawnHero(heroDef.id, heroDef.name);
@@ -244,7 +170,7 @@ function startLevel(): void {
   // the sandbox spawn bar docks left — give the build menu room to breathe
   document.body.classList.toggle('sandbox', sandbox);
   // hell's siege is meant to be long and cumbersome: much more clock to match
-  levelHardTimer = Math.round(level.hardTimer * ascensionTimerMult(sandbox ? 0 : run.ascension) * (hellFinale ? 1.8 : 1));
+  levelHardTimer = levelPlan.hardTimer;
   if (game.objective) {
     ui.setLevel(level.index, level.name);
     ui.setObjective(game.objective.brief());
@@ -762,196 +688,23 @@ function showScreen(id: ScreenId): void {
   controls.resetInput();
 }
 
+const coopUi = new CoOpController(coop, ui, {
+  showScreen,
+  onBack: goMenu,
+  onConnection: snapshot => { coopConnected = snapshot.status === 'connected'; maybeStartExpedition(snapshot); },
+  onAccepted: applyAcceptedCommand,
+  onLeave: leaveCoop,
+  isInterlude: () => !!coopRun && phase === 'shop',
+});
 // ---------- direct co-op handshake, lobby, and in-game connection panel ----------
-function openCoopMenu(): void {
-  showCoopError('');
-  const code = new URL(location.href).searchParams.get('coop'); // retained for later rendezvous links
-  if (code) ($('coopInviteCode') as HTMLTextAreaElement).value = code;
-  showScreen('coopmenu');
-}
-
-async function hostCoop(): Promise<void> {
-  await withCoopButton('btnCoopHost', 'Creating secure code…', async () => {
-    showCoopError('');
-    const playerName = ($('coopPlayerName') as HTMLInputElement).value;
-    await coop.createRoom(playerName, {
-      visibility: 'unlisted',
-      roomName: ($('coopRoomName') as HTMLInputElement).value,
-      region: 'Europe',
-      difficulty: ($('coopDifficulty') as HTMLSelectElement).value as ExpeditionDifficulty,
-      mode: 'expedition',
-      passwordProtected: false,
-    });
-    renderCoopLobby();
-    showScreen('cooplobby');
-  });
-}
-
-async function joinCoop(): Promise<void> {
-  await withCoopButton('btnCoopJoin', 'Opening host code…', async () => {
-    showCoopError('');
-    const code = ($('coopInviteCode') as HTMLTextAreaElement).value;
-    if (!code.trim()) throw new Error('Paste the host code before joining');
-    const playerName = ($('coopPlayerName') as HTMLInputElement).value;
-    await coop.joinByInvite(code, playerName);
-    renderCoopLobby();
-    showScreen('cooplobby');
-  });
-}
-
-function renderCoopLobby(): void {
-  const snapshot = coop.snapshot();
-  const room = snapshot.room;
-  if (!room) return;
-  $('coopLobbyMeta').innerHTML = `<b>${escapeHtml(room.settings.roomName)}</b> · direct room ${escapeHtml(room.inviteCode)} · ${escapeHtml(room.settings.difficulty)} · level ${room.level}`;
-  $('coopLobbyPlayers').innerHTML = playerRows(room, snapshot.playerId, 'coopplayer');
-  const local = room.players.find(player => player.id === snapshot.playerId);
-  const bothReady = room.players.length === 2 && room.players.every(player => player.ready);
-  const status = $('coopLobbyStatus');
-  status.textContent = coopRun && phase === 'shop'
-    ? `Level cleared — the Expedition marches on shortly…`
-    : snapshot.status === 'error'
-      ? snapshot.error ?? 'The direct connection failed.'
-      : snapshot.role === 'guest' && snapshot.status !== 'connected'
-      ? 'Share the response code with the host, then wait for them to accept it.'
-      : room.players.length < 2
-        ? coop.pendingJoin() ? 'Review this player, then accept or reject the request.' : 'Share your code, then paste the guest response below.'
-      : bothReady ? 'Both players ready — the Expedition is starting.' : 'Choose Ready when your connection is stable.';
-  status.className = `tag coop-status ${snapshot.status === 'error' ? 'error' : snapshot.status === 'connected' ? 'connected' : 'waiting'}`;
-  const ready = $('btnCoopReady') as HTMLButtonElement;
-  ready.textContent = local?.ready ? 'Cancel ready' : 'Ready to start';
-  ready.classList.toggle('ghost', !!local?.ready);
-  ready.style.display = snapshot.status === 'connected' ? '' : 'none';
-  const hostHandshake = $('coopHostHandshake');
-  const guestHandshake = $('coopGuestHandshake');
-  hostHandshake.style.display = snapshot.role === 'host' && snapshot.status !== 'connected' ? 'block' : 'none';
-  guestHandshake.style.display = snapshot.role === 'guest' && snapshot.status !== 'connected' ? 'block' : 'none';
-  ($('coopHostCode') as HTMLTextAreaElement).value = coop.encryptedInvite();
-  ($('coopGeneratedResponse') as HTMLTextAreaElement).value = coop.encryptedJoinResponse();
-  $('coopGuestSafety').textContent = coop.verificationCode();
-  $('coopHostSafety').textContent = coop.verificationCode();
-  const pending = coop.pendingJoin();
-  $('coopApproval').style.display = pending ? 'block' : 'none';
-  $('coopHostResponseStep').style.display = pending ? 'none' : '';
-  $('coopPendingName').textContent = pending?.playerName ?? '';
-  renderCoopProgress(snapshot, !!pending);
-}
-
-function renderCoopProgress(snapshot: ConnectionSnapshot, pending: boolean): void {
-  const connected = snapshot.status === 'connected';
-  const shareDone = snapshot.role === 'guest' || pending || connected;
-  const share = $('coopStepShare');
-  const connect = $('coopStepConnect');
-  const ready = $('coopStepReady');
-  share.className = shareDone ? 'done' : 'active';
-  connect.className = connected ? 'done' : shareDone ? 'active' : '';
-  ready.className = connected ? 'active' : '';
-  const bars = $('coopProgress').querySelectorAll<HTMLElement>('b');
-  bars[0]?.classList.toggle('done', shareDone);
-  bars[1]?.classList.toggle('done', connected);
-}
-
-function renderMultiplayer(snapshot: ConnectionSnapshot): void {
-  coopConnected = snapshot.status === 'connected';
-  maybeStartExpedition(snapshot);
-  const dot = $('coopStatusDot');
-  dot.className = snapshot.status;
-  const button = $('btnMultiplayer') as HTMLButtonElement;
-  button.style.display = snapshot.room ? 'block' : 'none';
-  const statusLabel = snapshot.status.replace(/([A-Z])/g, ' $1');
-  $('mpConnection').textContent = `${statusLabel}${snapshot.rtt === null ? '' : ` · ${Math.round(snapshot.rtt)} ms`}${snapshot.error ? ` · ${snapshot.error}` : ''}`;
-  const banner = $('coopConnectionBanner');
-  const troubled = snapshot.room && ['paused', 'error'].includes(snapshot.status);
-  banner.style.display = troubled ? 'block' : 'none';
-  banner.textContent = snapshot.status === 'paused' ? 'Direct peer disconnected — Expedition paused.' : 'Direct connection failed — create a fresh invite to retry.';
-  if (!snapshot.room) { $('mpRoom').innerHTML = ''; $('mpPlayers').innerHTML = ''; return; }
-  $('mpRoom').innerHTML = `<div class="mp-room"><b>${escapeHtml(snapshot.room.settings.roomName)}</b>Invite ${escapeHtml(snapshot.room.inviteCode)} · level ${snapshot.room.level}</div>`;
-  $('mpPlayers').innerHTML = playerRows(snapshot.room, snapshot.playerId, 'mp-player');
-  renderCoopLobby();
-}
-
-function playerRows(room: RoomState, localId: string | null, cls: string): string {
-  return room.players.map(player =>
-    `<div class="${cls}"><span class="dot" style="background:${escapeHtml(player.color)}"></span><div><b>${escapeHtml(player.name)}${player.id === localId ? ' (you)' : ''}</b><small>${player.host ? 'Host · ' : ''}${player.ready ? 'Ready' : 'Not ready'}</small></div><span class="mp-presence ${player.presence}">${escapeHtml(player.presence)}</span></div>`,
-  ).join('');
-}
-
-function handleCoopMessage(message: ServerMessage): void {
-  if (message.type === 'commandAccepted') { applyAcceptedCommand(message.accepted); return; }
-  if (message.type === 'commandRejected') { ui.toast(`Command rejected: ${message.reason}`, 'err'); return; }
-}
-
-function showCoopError(message: string): void {
-  for (const id of ['coopError', 'coopLobbyError']) {
-    const el = document.getElementById(id);
-    if (!el) continue;
-    el.textContent = message;
-    el.style.display = message ? 'block' : 'none';
-  }
-}
-
-async function copyCoopInvite(buttonId = 'btnCoopCopy'): Promise<void> {
-  const text = coop.encryptedInvite();
-  if (!text) return;
-  await copyCoopCode(text, buttonId, 'Host code copied');
-}
-
-async function copyJoinResponse(): Promise<void> {
-  const text = coop.encryptedJoinResponse();
-  if (!text) return;
-  await copyCoopCode(text, 'btnCoopCopyResponse', 'Response code copied');
-}
-
-async function reviewJoinResponse(): Promise<void> {
-  await withCoopButton('btnCoopReview', 'Checking response…', async () => {
-    showCoopError('');
-    const response = ($('coopJoinResponse') as HTMLTextAreaElement).value;
-    if (!response.trim()) throw new Error("Paste your friend's response code first");
-    await coop.reviewJoinResponse(response);
-    renderCoopLobby();
-  });
-}
-
-async function acceptPeer(): Promise<void> {
-  await withCoopButton('btnCoopAccept', 'Connecting…', async () => {
-    showCoopError('');
-    await coop.acceptPendingJoin();
-    renderCoopLobby();
-  });
-}
-
-async function copyCoopCode(text: string, buttonId: string, message: string): Promise<void> {
-  const button = $(buttonId) as HTMLButtonElement;
-  const original = button.textContent ?? 'Copy code';
-  try {
-    await navigator.clipboard.writeText(text);
-    button.textContent = 'Copied ✓';
-    button.classList.add('copied');
-    ui.toast(message);
-    window.setTimeout(() => { button.textContent = original; button.classList.remove('copied'); }, 1800);
-  } catch { ui.toast('Clipboard blocked — select the code and copy it', 'err'); }
-}
-
-async function withCoopButton(id: string, busyLabel: string, action: () => Promise<void>): Promise<void> {
-  const button = $(id) as HTMLButtonElement;
-  const original = button.textContent ?? '';
-  button.disabled = true;
-  button.textContent = busyLabel;
-  try { await action(); }
-  catch (error) { showCoopError(errorMessage(error)); }
-  finally { button.disabled = false; button.textContent = original; }
-}
-
+function openCoopMenu(): void { coopUi.open(); }
+function renderCoopLobby(): void { coopUi.renderLobby(); }
 function leaveCoop(): void {
   if (coopRun && phase === 'playing') disposeLevel();
   endCoopSession();
   goMenu();
 }
 
-function escapeHtml(value: unknown): string {
-  return String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
-}
-function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
 function renderMenu(): void {
   const has = Save.hasRun();
@@ -1032,294 +785,17 @@ $('heroChip').onclick = () => {
 ($('btnSandbox') as HTMLButtonElement).onclick = openSandboxSetup;
 ($('btnSbxBack') as HTMLButtonElement).onclick = goMenu;
 ($('btnSbxStart') as HTMLButtonElement).onclick = startSandbox;
-($('btnCoop') as HTMLButtonElement).onclick = openCoopMenu;
-($('btnCoopBack') as HTMLButtonElement).onclick = goMenu;
-($('btnCoopHost') as HTMLButtonElement).onclick = () => void hostCoop();
-($('btnCoopJoin') as HTMLButtonElement).onclick = () => void joinCoop();
-($('btnCoopLobbyBack') as HTMLButtonElement).onclick = leaveCoop;
-($('btnCoopCopy') as HTMLButtonElement).onclick = () => void copyCoopInvite();
-($('btnCoopCopyResponse') as HTMLButtonElement).onclick = () => void copyJoinResponse();
-($('btnCoopReview') as HTMLButtonElement).onclick = () => void reviewJoinResponse();
-($('btnCoopAccept') as HTMLButtonElement).onclick = () => void acceptPeer();
-($('btnCoopReject') as HTMLButtonElement).onclick = () => {
-  void withCoopButton('btnCoopReject', 'Rejecting…', async () => {
-    showCoopError('');
-    await coop.rejectPendingJoin();
-    renderCoopLobby();
-    ui.toast('Join request rejected');
-  });
-};
-($('btnCoopReady') as HTMLButtonElement).onclick = () => {
-  const snapshot = coop.snapshot();
-  const local = snapshot.room?.players.find(player => player.id === snapshot.playerId);
-  // the lobby renders before the socket finishes opening — a dropped ready
-  // toggle must not fail silently
-  if (!coop.setReady(!local?.ready)) ui.toast('Still connecting — try Ready again in a moment', 'err');
-};
+coopUi.install();
 
-coop.onConnection = renderMultiplayer;
-coop.onMessage = handleCoopMessage;
-coop.onJoinRequest = request => { renderCoopLobby(); ui.toast(`${request.playerName} wants to join`); };
-renderMultiplayer(coop.snapshot());
-window.setInterval(() => { if (coop.snapshot().status === 'connected') coop.ping(); }, 3000);
-
-($('btnMultiplayer') as HTMLButtonElement).onclick = () => {
-  const panel = $('multiplayerpanel');
-  panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
-};
-($('closeMultiplayer') as HTMLButtonElement).onclick = () => { $('multiplayerpanel').style.display = 'none'; };
-($('btnMpCopy') as HTMLButtonElement).onclick = () => void copyCoopInvite('btnMpCopy');
-($('btnMpReconnect') as HTMLButtonElement).onclick = () => coop.reconnectNow();
-($('btnMpLeave') as HTMLButtonElement).onclick = leaveCoop;
-
-// ---------- sandbox spawn toolbar ----------
-/** One spawn button: what to spawn per click (and per hold-tick), and how it looks. */
-type SandboxSpawnDef = { kind: UnitKind; count: number; icon: string; label: string };
-
-const SANDBOX_FRIENDLY: SandboxSpawnDef[] = [
-  { kind: 'soldier', count: 12, icon: '⚔️', label: 'Soldiers' },
-  { kind: 'pikeman', count: 10, icon: '🔱', label: 'Pikemen' },
-  { kind: 'archer', count: 8, icon: '🏹', label: 'Archers' },
-  { kind: 'knight', count: 6, icon: '🛡️', label: 'Knights' },
-  { kind: 'priest', count: 4, icon: '⛪', label: 'Priests' },
-  { kind: 'lancer', count: 8, icon: '🐎', label: 'Lancers' },
-  { kind: 'horseknight', count: 6, icon: '🏇', label: 'Horse Knights' },
-  { kind: 'horsearcher', count: 8, icon: '🎯', label: 'Horse Archers' },
-  { kind: 'ballista', count: 3, icon: '⚙️', label: 'Ballistas' },
-  { kind: 'onager', count: 3, icon: '💥', label: 'Onagers' },
-  { kind: 'trebuchet', count: 2, icon: '🪨', label: 'Trebuchets' },
-];
-
-const SANDBOX_ENEMY: SandboxSpawnDef[] = [
-  { kind: 'bandit', count: 12, icon: '🗡️', label: 'Bandits' },
-  { kind: 'lancer', count: 8, icon: '🐎', label: 'Enemy Lancers' },
-  { kind: 'horseknight', count: 6, icon: '🏇', label: 'Enemy Horse Knights' },
-  { kind: 'horsearcher', count: 8, icon: '🎯', label: 'Enemy Horse Archers' },
-  { kind: 'boar', count: 6, icon: '🐗', label: 'Boars' },
-  { kind: 'wolf', count: 8, icon: '🐺', label: 'Wolves' },
-  { kind: 'orc', count: 8, icon: '🪓', label: 'Orcs' },
-  { kind: 'troll', count: 3, icon: '🪨', label: 'Trolls' },
-  { kind: 'skeleton', count: 10, icon: '💀', label: 'Skeletons' },
-  { kind: 'skelarcher', count: 8, icon: '🏹', label: 'Skeletal Archers' },
-  { kind: 'zombie', count: 10, icon: '🧟', label: 'Zombies' },
-  { kind: 'brute', count: 1, icon: '🧟‍♂️', label: 'Bloated Zombie' },
-  { kind: 'demon', count: 1, icon: '🔥', label: 'Demon' },
-  { kind: 'dragon', count: 1, icon: '🐉', label: 'Dragon' },
-];
-
-function sandboxSpawn(kind: UnitKind, count: number, faction: 'player' | 'enemy'): void {
-  if (!game) return;
-  const c = view.camTarget;
-  const squad = game.spawnSquad(kind, count, c.x, c.z, faction);
-  const label = kind === 'pikeman' && squad.length > 1 ? 'Pikemen' : UNITS[kind].name + (squad.length > 1 ? 's' : '');
-  if (squad.length) ui.toast(`Spawned ${squad.length} ${label}`);
-}
-let sandboxSpawnTimer: number | null = null;
-function stopSandboxSpawn(): void {
-  if (sandboxSpawnTimer !== null) {
-    clearInterval(sandboxSpawnTimer);
-    sandboxSpawnTimer = null;
-  }
-}
-addEventListener('pointerup', stopSandboxSpawn);
-addEventListener('pointercancel', stopSandboxSpawn);
-addEventListener('blur', stopSandboxSpawn);
-function makeSandboxSpawnBtn(def: SandboxSpawnDef, side: 'player' | 'enemy'): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.textContent = `${def.icon} ${def.label}`;
-  btn.title = `Spawn ${side} ${def.label.toLowerCase()} at the camera`;
-  btn.addEventListener('pointerdown', e => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    stopSandboxSpawn();
-    const faction = side === 'player' ? 'player' : 'enemy';
-    sandboxSpawn(def.kind, def.count, faction);
-    sandboxSpawnTimer = window.setInterval(() => sandboxSpawn(def.kind, def.count, faction), 180);
-  });
-  return btn;
-}
-for (const def of SANDBOX_FRIENDLY) $('sbFriendly').appendChild(makeSandboxSpawnBtn(def, 'player'));
-for (const def of SANDBOX_ENEMY) $('sbEnemy').appendChild(makeSandboxSpawnBtn(def, 'enemy'));
-($('sbToggle') as HTMLButtonElement).onclick = () => {
-  const bar = $('sandboxbar');
-  const collapsed = bar.classList.toggle('collapsed');
-  $('sbToggle').textContent = collapsed ? 'Sandbox ▸' : 'Sandbox ▾';
-};
-// ---------- sandbox wave composer: a modal to mix a raid & put it on a timer ----------
-{
-  const modal = $('wavemodal');
-  const kindsEl = $('waveKinds');
-  const totalEl = $('waveTotal');
-  const delayInp = $('waveDelay') as HTMLInputElement;
-  // per-kind counts: the wave is exactly what you type, kind by kind
-  const counts = new Map<UnitKind, number>([['bandit', 12]]);
-  const refreshTotal = (): void => {
-    let total = 0;
-    for (const n of counts.values()) total += n;
-    totalEl.textContent = String(total);
-  };
-  const renderKinds = (): void => {
-    kindsEl.innerHTML = '';
-    for (const def of SANDBOX_ENEMY) {
-      const row = document.createElement('div');
-      row.className = 'waverow-kind' + (counts.get(def.kind) ? ' on' : '');
-      const label = document.createElement('span');
-      label.className = 'wavekind-label';
-      label.textContent = `${def.icon} ${def.label}`;
-      const inp = document.createElement('input');
-      inp.type = 'number'; inp.min = '0'; inp.max = '1000'; inp.step = '1';
-      inp.value = String(counts.get(def.kind) ?? 0);
-      inp.title = `How many ${def.label.toLowerCase()} arrive in the wave`;
-      inp.addEventListener('keydown', e => e.stopPropagation());
-      inp.addEventListener('input', () => {
-        const n = Math.max(0, Math.min(1000, Math.round(Number(inp.value) || 0)));
-        if (n > 0) counts.set(def.kind, n); else counts.delete(def.kind);
-        row.classList.toggle('on', n > 0);
-        refreshTotal();
-      });
-      row.appendChild(label);
-      row.appendChild(inp);
-      kindsEl.appendChild(row);
-    }
-    refreshTotal();
-  };
-  // typing in the modal must never fall through to game hotkeys
-  delayInp.addEventListener('keydown', e => e.stopPropagation());
-  const openModal = (): void => { renderKinds(); modal.style.display = 'flex'; };
-  const closeModal = (): void => { modal.style.display = 'none'; };
-  const summon = (): void => {
-    if (!game) return;
-    let total = 0;
-    for (const n of counts.values()) total += n;
-    if (total < 1) { ui.toast('Set a count for at least one kind', 'err'); audio.play('error'); return; }
-    const delay = Math.max(0, Math.min(3600, Math.round(Number(delayInp.value) || 0)));
-    delayInp.value = String(delay);
-    for (const [kind, n] of counts) if (n > 0) game.scheduleWave(kind, n, delay);
-    ui.toast(delay > 0
-      ? `A wave of ${total} raiders will march in ${delay}s`
-      : `A wave of ${total} raiders marches on your castle!`, delay > 0 ? undefined : 'err');
-    closeModal();
-  };
-  ($('sbWaveOpen') as HTMLButtonElement).onclick = openModal;
-  ($('waveCancel') as HTMLButtonElement).onclick = closeModal;
-  ($('waveGo') as HTMLButtonElement).onclick = summon;
-  delayInp.addEventListener('keydown', e => { if (e.key === 'Enter') summon(); });
-  addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display === 'flex') closeModal(); });
-}
-
-// ---------- sandbox card picker: shop-style cards you can freely add & remove ----------
-{
-  const modal = $('sbcardmodal');
-  const ownedEl = $('sbcardOwned');
-  const availEl = $('sbcardAvail');
-  const ownedLabel = $('sbcardOwnedLabel');
-  // A shop-styled card (mirrors Shop.card so the UX reads the same).
-  const cardEl = (def: (typeof UPGRADES)[number], priceLabel: string, cls: string, onClick: () => void): HTMLElement => {
-    const el = document.createElement('div');
-    el.className = `scard rar-${def.rarity}` + (cls ? ' ' + cls : '');
-    const tag = def.rarity !== 'common'
-      ? `<span class="rtag rtag-${def.rarity}">${def.rarity}${def.unique ? ' · unique' : ''}</span>`
-      : (def.unique ? '<span class="rtag">unique</span>' : '');
-    el.innerHTML = `<div class="sc-icon">${def.icon}</div><div class="sc-body"><div class="sc-name">${def.name}${tag}</div><div class="sc-desc">${def.desc}</div><div class="sc-price ${cls}">${priceLabel}</div></div>`;
-    if (!cls.includes('disabled')) el.onclick = onClick;
-    return el;
-  };
-  const render = (): void => {
-    if (!run) return;
-    const full = run.upgrades.length >= MAX_CARDS;
-    ownedLabel.textContent = `Your cards (${run.upgrades.length}/${MAX_CARDS})` +
-      (run.upgrades.length ? ' — click a card to remove it' : '');
-    ownedEl.innerHTML = '';
-    run.upgrades.forEach((id, i) => {
-      const def = UPGRADE_BY_ID[id];
-      if (def) ownedEl.appendChild(cardEl(def, 'remove ✕', 'sellable', () => {
-        run!.upgrades.splice(i, 1);
-        rebuildSandboxMods();
-        audio.play('click');
-        render();
-      }));
-    });
-    if (!run.upgrades.length) ownedEl.innerHTML = '<div class="sc-desc">No cards yet — add some below.</div>';
-    availEl.innerHTML = '';
-    for (const def of UPGRADES) {
-      const owned = def.unique && run.upgrades.includes(def.id);
-      const disabled = full || owned;
-      const label = owned ? 'held' : full ? 'slots full' : 'add +';
-      availEl.appendChild(cardEl(def, label, disabled ? 'cant disabled' : '', () => {
-        if (ui.onSandboxCard(def.id)) render();
-      }));
-    }
-  };
-  const open = (): void => { render(); modal.style.display = 'flex'; };
-  const close = (): void => { modal.style.display = 'none'; };
-  ($('sbCardsOpen') as HTMLButtonElement).onclick = open;
-  ($('sbcardDone') as HTMLButtonElement).onclick = close;
-  addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display === 'flex') close(); });
-}
+installSandboxTools(view, ui, {
+  getGame: () => game,
+  getRun: () => run,
+  rebuildModifiers: rebuildSandboxMods,
+});
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
 
 // ---------- settings screen ----------
-const settings = loadSettings();
-audio.setMusicVolume(settings.musicVol);
-audio.setSfxVolume(settings.sfxVol);
-view.setQualityMode(settings.quality);
-controls.settings = settings;
-
-let settingsReturn: 'menu' | 'pause' = 'menu';
-function openSettings(from: 'menu' | 'pause'): void {
-  settingsReturn = from;
-  if (from === 'menu') $('menu').style.display = 'none';
-  else $('pausemenu').style.display = 'none';
-  renderSettings();
-  $('settings').style.display = 'flex';
-}
-function closeSettings(): void {
-  $('settings').style.display = 'none';
-  if (settingsReturn === 'menu') $('menu').style.display = 'flex';
-  else $('pausemenu').style.display = 'flex';
-}
-($('btnSettings') as HTMLButtonElement).onclick = () => openSettings('menu');
-($('btnPauseSettings') as HTMLButtonElement).onclick = () => openSettings('pause');
-($('btnSettingsBack') as HTMLButtonElement).onclick = closeSettings;
-
-/** Push the stored values into the controls (called every time it opens). */
-function renderSettings(): void {
-  ($('setMusic') as HTMLInputElement).value = String(Math.round(settings.musicVol * 100));
-  ($('setSfx') as HTMLInputElement).value = String(Math.round(settings.sfxVol * 100));
-  ($('setPan') as HTMLInputElement).value = String(Math.round(settings.panSpeed * 100));
-  ($('setInvZoom') as HTMLInputElement).checked = settings.invertZoom;
-  ($('setEdgePan') as HTMLInputElement).checked = settings.edgePan;
-  ($('setAutoPause') as HTMLInputElement).checked = settings.autoPauseOnBlur;
-  ($('setQuality') as HTMLSelectElement).value = settings.quality;
-  $('setMusicVal').textContent = `${Math.round(settings.musicVol * 100)}%`;
-  $('setSfxVal').textContent = `${Math.round(settings.sfxVol * 100)}%`;
-  $('setPanVal').textContent = `${settings.panSpeed.toFixed(1)}×`;
-}
-/** Every control applies live and persists immediately. */
-($('setMusic') as HTMLInputElement).oninput = e => {
-  settings.musicVol = Number((e.target as HTMLInputElement).value) / 100;
-  audio.setMusicVolume(settings.musicVol); saveSettings(settings);
-  $('setMusicVal').textContent = `${Math.round(settings.musicVol * 100)}%`;
-};
-($('setSfx') as HTMLInputElement).oninput = e => {
-  settings.sfxVol = Number((e.target as HTMLInputElement).value) / 100;
-  audio.setSfxVolume(settings.sfxVol); saveSettings(settings);
-  $('setSfxVal').textContent = `${Math.round(settings.sfxVol * 100)}%`;
-  audio.play('click');
-};
-($('setPan') as HTMLInputElement).oninput = e => {
-  settings.panSpeed = Number((e.target as HTMLInputElement).value) / 100;
-  saveSettings(settings);
-  $('setPanVal').textContent = `${settings.panSpeed.toFixed(1)}×`;
-};
-($('setInvZoom') as HTMLInputElement).onchange = e => { settings.invertZoom = (e.target as HTMLInputElement).checked; saveSettings(settings); };
-($('setEdgePan') as HTMLInputElement).onchange = e => { settings.edgePan = (e.target as HTMLInputElement).checked; saveSettings(settings); };
-($('setAutoPause') as HTMLInputElement).onchange = e => { settings.autoPauseOnBlur = (e.target as HTMLInputElement).checked; saveSettings(settings); };
-($('setQuality') as HTMLSelectElement).onchange = e => {
-  settings.quality = (e.target as HTMLSelectElement).value as typeof settings.quality;
-  view.setQualityMode(settings.quality); saveSettings(settings);
-};
-addEventListener('blur', () => { if (settings.autoPauseOnBlur) openPauseMenu(); });
+installSettingsController(view, controls, openPauseMenu);
 
 // save export / import: a downloadable JSON bundle of run + Heritage progress
 ($('btnExportSave') as HTMLButtonElement).onclick = () => {

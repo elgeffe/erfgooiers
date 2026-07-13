@@ -168,7 +168,7 @@ export class Objective {
         if (made < r.n) done = false;
       }
       const tr = Math.min(d.train, this.trained);
-      parts.push(`Trained ${tr}/${d.train}`);
+      parts.push(`Trained Military ${tr}/${d.train}`);
       have += tr; need += d.train;
       if (this.trained < d.train) done = false;
       return { done, label: parts.join(' · '), ratio: need ? have / need : 1 };

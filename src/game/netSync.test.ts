@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { simRng } from '../engine/rng';
 import { applyGameCommand } from './commands';
-import { makeTestGame } from './testHarness';
-import type { Game } from './Game';
+import { gameplayFingerprint, makeTestGame } from './testHarness';
 import type { GameCommand } from '../net/protocol';
 import type { PlayerId } from '../types';
 
@@ -12,18 +11,6 @@ import type { PlayerId } from '../types';
  * host and guest is which PlayerId is local — if `localPlayerId` ever leaks
  * into simulation outcomes, the two sims drift apart and co-op breaks.
  */
-function fingerprint(game: Game): string {
-  const buildings = game.buildings.map(b => `${b.id}:${b.key}:${b.owner}:${b.x},${b.y}:${b.hp}`).join('|');
-  const sites = game.sites.map(s => `${s.id}:${s.key}:${s.owner}:${s.x},${s.y}:${Math.round(s.progress * 1000)}`).join('|');
-  const units = game.units.map(u =>
-    `${u.id}:${u.role}:${u.owner}:${u.tx},${u.ty}:${Math.round(u.mesh.position.x * 1000)},${Math.round(u.mesh.position.z * 1000)}:${Math.round(u.hp)}`,
-  ).join('|');
-  const stocks = (['p1', 'p2'] as PlayerId[]).map(p => JSON.stringify(game.storeFor(p).stock)).join('|');
-  const trade = game.tradeShipments.map(s => `${s.id}:${s.phase}:${s.amount}`).join('|')
-    + '#' + game.tradeRequests.map(r => `${r.id}:${r.status}`).join('|');
-  return [game.elapsed.toFixed(3), buildings, sites, units, stocks, trade].join('\n');
-}
-
 describe('host/guest simulation parity', () => {
   it('two peers applying the same command stream stay identical', () => {
     const seed = 20260711;
@@ -65,6 +52,8 @@ describe('host/guest simulation parity', () => {
       guest.update(TICK);
     }
 
-    expect(fingerprint(guest)).toBe(fingerprint(host));
+    // History text is intentionally phrased for the local seat ("to you"),
+    // while authoritative gameplay state must remain identical.
+    expect(gameplayFingerprint(guest, false)).toBe(gameplayFingerprint(host, false));
   });
 });
