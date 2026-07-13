@@ -16,6 +16,7 @@ import { Modifiers } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, ownerForFaction } from './ownership';
 import { TradeSystem } from './TradeSystem';
+import { EncounterDirector } from './EncounterDirector';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -95,6 +96,7 @@ export class Game {
   private plotWarnT = 0;
   private nextEntityId = 1;
   private readonly trade: TradeSystem;
+  private readonly encounters: EncounterDirector;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -126,6 +128,26 @@ export class Game {
     this.tradeRequests = this.trade.requests;
     this.tradeShipments = this.trade.shipments;
     this.tradeHistory = this.trade.history;
+    this.encounters = new EncounterDirector({
+      now: () => this.elapsed,
+      enemyZones: () => this.world.enemyZones,
+      garrisonMult: () => this.garrisonMult,
+      deferBoss: () => this.deferBoss,
+      resetPlacement: () => { this.camps = []; },
+      spawnWild: (kind, count) => this.spawnWild(kind, count),
+      spawnBoss: (kind, fromEdge, zone) => this.spawnBoss(kind, fromEdge, zone),
+      spawnStronghold: (key, guards, kinds, zone) => this.spawnStronghold(key, guards, kinds, zone),
+      spawnCampNear: (x, y, guards, kinds) => this.spawnCampNear(x, y, guards, kinds),
+      fortifyStronghold: building => this.fortifyStronghold(building),
+      spawnTowerNear: building => this.spawnTowerNear(building),
+      spawnRaid: (kind, count, from) => this.spawnRaid(kind, count, from),
+      summonWave: (kind, count) => this.summonWave(kind, count),
+      playerFighters: () => this.playerFighters(),
+      enemyStructuresLeft: () => this.enemyStructuresLeft(),
+      onWaveCleared: () => this.objective?.onWaveCleared(),
+      toast: (message, cls) => this.toast(message, cls),
+      sfx: name => this.sfx(name),
+    });
   }
 
   entityById(id: number): Building | Site | Unit | null {
@@ -2236,74 +2258,16 @@ export class Game {
   // =====================================================================
   //  Enemy director — waves, camps, wild beasts, a boss and a commander
   // =====================================================================
-  private enemy: EnemySetup | null = null;
-  private waveIdx = 0;
-  private waves: { units: Unit[]; cleared: boolean }[] = [];
-  private commanderT = 0;
   private camps: Building[] = [];
-  /** Sim time the armed muster-triggered wave lands at (null = not armed yet). */
-  private waveArmT: number | null = null;
   /** Extra seconds granted to the level's hard timer (waves with bonusTime). */
-  bonusTime = 0;
+  get bonusTime(): number { return this.encounters.bonusTime; }
   /** Stretches wave timers & grace delays (higher ascensions get more prep). */
-  prepMult = 1;
+  get prepMult(): number { return this.encounters.prepMult; }
+  set prepMult(value: number) { this.encounters.prepMult = value; }
 
   /** Configure and spawn a level's enemy presence (called by main after init). */
   setEnemies(setup: EnemySetup | null): void {
-    this.enemy = setup;
-    this.waveIdx = 0; this.waves = []; this.commanderT = 0; this.camps = [];
-    this.waveArmT = null; this.bonusTime = 0;
-    if (!setup) return;
-    // the commander's first raid gets extra grace beyond its usual cadence
-    if (setup.commander) this.commanderT = -setup.commander.every * 0.75;
-    if (setup.wild) for (const w of setup.wild) this.spawnWild(w.kind, w.count);
-    if (setup.stages) {
-      for (let i = 0; i < setup.stages.length; i++) {
-        const stage = setup.stages[i];
-        const zone = this.world.enemyZones[Math.min(i, this.world.enemyZones.length - 1)];
-        if ('boss' in stage) {
-          this.spawnBoss(stage.boss, false, zone ?? null);
-          continue;
-        }
-        const key: BuildingKey = stage.structure === 'camp' ? 'banditcamp' : 'enemycastle';
-        const stronghold = this.spawnStronghold(key, stage.guards, stage.kinds, zone);
-        if (!stronghold) continue;
-        if (stage.structure === 'walledFortress') this.fortifyStronghold(stronghold);
-        for (let t = 0; t < (stage.towers ?? 0); t++) this.spawnTowerNear(stronghold);
-      }
-    // gate garrisons: a camp planted ON each frontier pass — the enemy position
-    // that must fall before the army can travel through into the walled quarter
-    } else if (setup.gatecamps) {
-      for (const ez of this.world.enemyZones) {
-        const total = Math.round(setup.gatecamps.guards * this.garrisonMult);
-        this.spawnCampNear(ez.pass.x, ez.pass.y, total, setup.gatecamps.kinds ?? ['bandit']);
-      }
-    }
-    if (!setup.stages && setup.camps) for (const c of setup.camps) for (let i = 0; i < c.count; i++) this.spawnStronghold('banditcamp', c.guards, c.kinds);
-    if (!setup.stages && setup.keep) {
-      const camp = this.spawnStronghold('enemycastle', setup.keep.guards, setup.keep.kinds);
-      if (camp && setup.towers) for (let i = 0; i < setup.towers; i++) this.spawnTowerNear(camp);
-      if (camp && setup.keep.fortified) this.fortifyStronghold(camp);
-    }
-    // several fortified castles — each a walled keep ringed with watchtowers,
-    // dealt round-robin into the map's walled corners / mountain pockets
-    // (spawnStronghold already scales the garrison by garrisonMult)
-    if (!setup.stages && setup.strongholds) {
-      const s = setup.strongholds;
-      for (let i = 0; i < s.count; i++) {
-        const keep = this.spawnStronghold('enemycastle', s.guards, s.kinds);
-        if (!keep) continue;
-        this.fortifyStronghold(keep);
-        for (let t = 0; t < (s.towers ?? 2); t++) this.spawnTowerNear(keep);
-      }
-    }
-    this.pendingBoss = null;
-    if (setup.boss) {
-      if (this.deferBoss && this.enemyStructuresLeft() > 0) {
-        this.pendingBoss = setup.boss;
-        this.toast(`Raze every enemy stronghold first — only then will the ${UNITS[setup.boss].name} reveal itself`, 'err');
-      } else this.spawnBoss(setup.boss);
-    }
+    this.encounters.configure(setup);
   }
 
   /** Player-faction fighters currently alive (arming muster-triggered raids). */
@@ -2320,56 +2284,7 @@ export class Game {
    * label telling the player what will provoke it.
    */
   nextWave(): { in: number; count: number; label?: string } | null {
-    const w = this.enemy?.waves;
-    if (!w || this.waveIdx >= w.length) return null;
-    const def = w[this.waveIdx];
-    if (def.at !== undefined) return { in: Math.max(0, def.at * this.prepMult - this.elapsed), count: def.count };
-    if (this.waveArmT !== null) return { in: Math.max(0, this.waveArmT - this.elapsed), count: def.count };
-    return { in: Infinity, count: def.count, label: `Raiders are watching — mustering ${def.whenArmy ?? 1} fighters will provoke them` };
-  }
-
-  private combatDirector(sdt: number): void {
-    if (!this.enemy) return;
-    // two-phase boss: once the whole enemy garrison is razed, the held-back
-    // dragon reveals itself and sweeps in from the edge for the final fight
-    if (this.pendingBoss && this.enemyStructuresLeft() === 0) {
-      const kind = this.pendingBoss; this.pendingBoss = null;
-      this.spawnBoss(kind, true);
-    }
-    // launch scheduled raid waves at the castle. Waves are sequential: the
-    // head wave launches on its trigger (a timestamp, or the player's muster
-    // reaching size + a grace delay), then the next takes its place.
-    const w = this.enemy.waves;
-    while (w && this.waveIdx < w.length) {
-      const def = w[this.waveIdx];
-      let launch = false;
-      if (def.at !== undefined) launch = this.elapsed >= def.at * this.prepMult;
-      else if (this.waveArmT !== null) launch = this.elapsed >= this.waveArmT;
-      else if (this.playerFighters() >= (def.whenArmy ?? 1)) {
-        this.waveArmT = this.elapsed + (def.delay ?? 45) * this.prepMult;
-        this.toast('Your muster has been spotted — raiders are gathering!', 'err');
-        this.sfx('error');
-      }
-      if (!launch) break;
-      this.waveIdx++;
-      this.waveArmT = null;
-      if (def.bonusTime) { this.bonusTime += def.bonusTime; this.toast(`+${def.bonusTime}s on the clock for the fight ahead`); }
-      this.waves.push({ units: this.spawnRaid(def.kind, def.count, 'edge'), cleared: false });
-      this.toast('A raid approaches!', 'err'); this.sfx('error');
-    }
-    // count a wave as cleared once every raider in it is dead
-    for (const wv of this.waves) {
-      if (wv.cleared || !wv.units.length) continue;
-      if (wv.units.every(u => u.dead)) { wv.cleared = true; this.objective?.onWaveCleared(); this.toast('Raid repelled!'); }
-    }
-    // the enemy commander sends fresh squads on a timer — but reinforcements
-    // that muster "from camp" dry up once every camp and keep has been razed,
-    // so a cleared map stays cleared (and the clear-all objective can be won)
-    const cmd = this.enemy.commander;
-    if (cmd && (cmd.from !== 'camp' || this.enemyStructuresLeft() > 0)) {
-      this.commanderT += sdt;
-      if (this.commanderT >= cmd.every) { this.commanderT = 0; this.spawnRaid(cmd.kind, cmd.count, cmd.from ?? 'camp'); }
-    }
+    return this.encounters.nextWave();
   }
 
   /** Every tower (any faction) looses arrows at the nearest hostile fighter in range. */
@@ -2431,29 +2346,14 @@ export class Game {
     return this.spawnRaid(kind, count, 'edge').length;
   }
 
-  /** Sandbox waves put on a timer: each entry marches when the sim clock hits
-   *  its hour. Works with or without a level enemy director. */
-  private readonly pendingWaves: { kind: UnitKind; count: number; at: number }[] = [];
-
   /** Queue a sandbox wave `delay` sim-seconds from now (0 = at once). */
   scheduleWave(kind: UnitKind, count: number, delay: number): void {
-    if (delay <= 0) { this.summonWave(kind, count); return; }
-    this.pendingWaves.push({ kind, count, at: this.elapsed + delay });
-    this.pendingWaves.sort((a, b) => a.at - b.at);
+    this.encounters.scheduleWave(kind, count, delay);
   }
 
   /** Seconds until the earliest scheduled sandbox wave, or null. */
   nextScheduledWave(): { in: number; count: number } | null {
-    const w = this.pendingWaves[0];
-    return w ? { in: Math.max(0, w.at - this.elapsed), count: w.count } : null;
-  }
-
-  private launchPendingWaves(): void {
-    while (this.pendingWaves.length && this.elapsed >= this.pendingWaves[0].at) {
-      const w = this.pendingWaves.shift()!;
-      const n = this.summonWave(w.kind, w.count);
-      if (n) { this.toast(`The scheduled wave marches — ${n} ${unitLabel(w.kind).toLowerCase()}${n > 1 ? 's' : ''}!`, 'err'); this.sfx('error'); }
-    }
+    return this.encounters.nextScheduledWave();
   }
 
   /** Scatter wild beasts across the map's OUTER band, far from the starting
@@ -2553,7 +2453,6 @@ export class Game {
    *  the boss is held back until every enemy encampment and fortress has been
    *  razed, then it reveals itself and sweeps in from the map edge. */
   deferBoss = false;
-  private pendingBoss: UnitKind | null = null;
 
   /** Standing enemy garrison structures — camps, keeps and their towers. The
    *  deferred boss and the clear-all objective wait for this to reach zero.
@@ -2577,8 +2476,7 @@ export class Game {
 
   /** True while the level still has scheduled raid waves yet to launch. */
   scheduledWavesPending(): boolean {
-    const w = this.enemy?.waves;
-    return !!w && this.waveIdx < w.length;
+    return this.encounters.scheduledWavesPending();
   }
 
   private spawnBoss(
@@ -2866,8 +2764,7 @@ export class Game {
     this.serveTaverns(sdt);
     this.trainQueues(sdt);
     this.staffBuildings();
-    this.combatDirector(sdt);
-    this.launchPendingWaves();
+    this.encounters.update(sdt);
     this.pickupScanT += sdt;
     if (this.pickupScanT > 0.3 && this.pickups.length) { this.pickupScanT = 0; this.collectPickups(); }
     this.towerFire(sdt); // towers watch on every level, with or without a director
