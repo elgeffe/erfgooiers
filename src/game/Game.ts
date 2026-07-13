@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ROAD_STONE_COST, PLOT_RANGE, BASE_SPEED, MAX_UNITS } from '../constants';
 import { DEFS } from '../data/buildings';
 import { ITEMS } from '../data/items';
-import { UNITS, damageMultiplier, formationRank, structureDamage, type UnitKind } from '../data/units';
+import { UNITS, formationRank, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
@@ -21,6 +21,7 @@ import { ProjectileSystem } from './ProjectileSystem';
 import { MarketSystem } from './MarketSystem';
 import { SeparationSystem } from './SeparationSystem';
 import { UnitSpatialIndex } from './UnitSpatialIndex';
+import { DamageSystem } from './DamageSystem';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -103,6 +104,7 @@ export class Game {
   private readonly marketSystem: MarketSystem;
   private readonly separationSystem: SeparationSystem;
   private readonly unitSpatialIndex: UnitSpatialIndex;
+  private readonly damageSystem: DamageSystem;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -185,6 +187,20 @@ export class Game {
     });
     this.separationSystem = new SeparationSystem(this.world, this.units);
     this.unitSpatialIndex = new UnitSpatialIndex(this.world, this.units);
+    this.damageSystem = new DamageSystem({
+      units: () => this.units,
+      playerStore: owner => this.playerStores.get(owner) ?? null,
+      buildingCenter: building => this.buildingCenter(building),
+      removeBuilding: building => this.removeBuilding(building),
+      onHurt: (x, z, faction) => this.onHurt(x, z, faction),
+      onDeath: (x, z, faction, color, role, scale) => this.onDeath(x, z, faction, color, role, scale),
+      onKill: unit => this.onKill(unit),
+      onObjectiveKill: (role, faction) => this.objective?.onKill(role, faction),
+      onStructureDestroyed: faction => this.objective?.onStructureDestroyed(faction),
+      markDefeat: () => { this.defeat = true; },
+      toast: (message, cls) => this.toast(message, cls),
+      sfx: name => this.sfx(name),
+    });
   }
 
   entityById(id: number): Building | Site | Unit | null {
@@ -1294,19 +1310,11 @@ export class Game {
 
   /** Apply damage to a unit: hurt feedback, retaliation, death. */
   private hurtUnit(source: Unit | null, victim: Unit, dmg: number): void {
-    victim.hp -= dmg;
-    this.onHurt(victim.mesh.position.x, victim.mesh.position.z, victim.faction);
-    // retaliation: an idle victim turns on its attacker
-    if (source && !source.dead && !victim.foe && this.hostile(victim.faction, source.faction)) victim.foe = source;
-    if (victim.hp <= 0) this.killUnit(victim);
+    this.damageSystem.hurtUnit(source, victim, dmg);
   }
 
   private attack(attacker: Unit, foe: Unit): void {
-    attacker.lungeT = 0.22; // little hop into the swing
-    const s = this.meleeSfx(attacker);
-    if (s) this.sfx(s);
-    const mult = damageMultiplier(attacker.role as UnitKind, foe.role as UnitKind);
-    this.hurtUnit(attacker, foe, attacker.dmg * mult);
+    this.damageSystem.attackUnit(attacker, foe);
   }
 
   /** The strike sound a melee unit makes, chosen by what it is: light blades
@@ -1314,24 +1322,7 @@ export class Game {
    *  blunt thuds, beasts snap and bite, demons rake. Archers and siege loose
    *  projectiles (their own sounds) so they swing silently here. */
   private meleeSfx(u: Unit): 'sword' | 'clang' | 'maul' | 'bite' | 'claw' | null {
-    const def = UNITS[u.role as UnitKind];
-    if (!def || def.arrows) return null;
-    if (def.model === 'beast' || def.model === 'wolf' || def.model === 'dragon') return 'bite';
-    if (def.model === 'demon') return 'claw';
-    switch (u.role) {
-      case 'zombie': case 'brute': return 'maul';
-      case 'knight': case 'horseknight': case 'hero': case 'lancer': case 'orc': return 'clang';
-      default: return 'sword';
-    }
-  }
-
-  private killUnit(u: Unit): void {
-    if (u.dead) return;
-    u.dead = true;
-    this.onDeath(u.mesh.position.x, u.mesh.position.z, u.faction, u.colorHex, u.role, u.mesh.scale.x || 1);
-    this.onKill(u);
-    this.objective?.onKill(u.role, u.faction);
-    for (const o of this.units) if (o.foe === u) o.foe = null;
+    return this.damageSystem.meleeSound(u);
   }
 
   private combatUpdate(u: Unit, dt: number): void {
@@ -1695,24 +1686,11 @@ export class Game {
   }
 
   private attackBuilding(u: Unit, b: Building): void {
-    const s = this.meleeSfx(u);
-    if (s) this.sfx(s);
-    b.hp -= structureDamage(u.role as UnitKind, u.dmg);
-    this.onHurt(this.buildingCenter(b).x, this.buildingCenter(b).z, b.faction);
-    if (b.hp <= 0) this.destroyBuilding(b);
+    this.damageSystem.attackBuilding(u, b);
   }
 
   private destroyBuilding(b: Building): void {
-    if (b.removed) return;
-    const c = this.buildingCenter(b);
-    for (let i = 0; i < 4; i++) this.onDeath(c.x + (rnd() - 0.5) * 1.4, c.z + (rnd() - 0.5) * 1.4, b.faction, b.def.roof, 'serf', 1);
-    // walls & gates are fortifications, not strongholds — no objective credit
-    if (!b.def.bulwark) this.objective?.onStructureDestroyed(b.faction);
-    for (const o of this.units) if (o.foeB === b) o.foeB = null;
-    const isCastle = (b.owner === 'p1' || b.owner === 'p2') && this.playerStores.get(b.owner) === b;
-    this.removeBuilding(b);
-    this.toast(b.def.name + (b.faction === 'player' ? ' has fallen!' : ' destroyed!'), 'err');
-    if (isCastle) this.defeat = true;
+    this.damageSystem.destroyBuilding(b);
   }
 
   /** A fire-wielder's periodic volley (dragon breath, demon magic): fire gobs
