@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import { ROAD_STONE_COST, PLOT_RANGE, BASE_SPEED, MAX_UNITS } from '../constants';
-import { DEFS } from '../data/buildings';
+import { BASE_SPEED, MAX_UNITS } from '../constants';
 import { ITEMS } from '../data/items';
 import { UNITS, formationRank, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
@@ -29,6 +28,7 @@ import { WorkerSystem } from './WorkerSystem';
 import { UnitMovement } from './UnitMovement';
 import { CombatTargeting } from './CombatTargeting';
 import { CombatSystem } from './CombatSystem';
+import { PlacementSystem } from './PlacementSystem';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -102,8 +102,6 @@ export class Game {
   private readonly pickups: { x: number; y: number }[] = [];
   private dispatchT = 0;
   private fieldT = 0;
-  private roadWarnT = 0;
-  private plotWarnT = 0;
   private nextEntityId = 1;
   private readonly trade: TradeSystem;
   private readonly encounters: EncounterDirector;
@@ -119,6 +117,7 @@ export class Game {
   private readonly unitMovement: UnitMovement;
   private readonly combatTargeting: CombatTargeting;
   private readonly combatSystem: CombatSystem;
+  private readonly placementSystem: PlacementSystem;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -291,6 +290,22 @@ export class Game {
       fireFlame: (shooter, from, x, y, z, endX, endZ, damage) => this.fireFlame(shooter, from, x, y, z, endX, endZ, damage),
       sfx: name => this.sfx(name),
     });
+    this.placementSystem = new PlacementSystem(
+      this.world, this.view, this.mods, this.buildings, this.sites, this.units, this.marketSystem,
+      {
+        nextId: () => this.nextEntityId++,
+        countItem: (item, owner) => this.countItem(item, owner),
+        takeStock: (item, amount, owner) => this.takeStock(item, amount, owner),
+        storeFor: owner => this.storeFor(owner),
+        playerStore: owner => this.playerStores.get(owner) ?? null,
+        cancelTask: unit => this.cancelTask(unit),
+        checkSiteReady: site => this.checkSiteReady(site),
+        select: value => this.select(value),
+        selected: () => this.selected,
+        toast: (message, cls) => this.toast(message, cls),
+        sfx: name => this.sfx(name),
+      },
+    );
   }
 
   entityById(id: number): Building | Site | Unit | null {
@@ -388,106 +403,24 @@ export class Game {
     key: BuildingKey, tx: number, ty: number, instant = false, rot = 0,
     faction: Faction = 'player', owner: OwnerId = ownerForFaction(faction, this.localPlayerId),
   ): Building {
-    const def = DEFS[key];
-    const mesh = this.view.createBuildingMesh(key, def);
-    mesh.rotation.y = -rot * Math.PI / 2;
-    mesh.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
-    this.view.add(mesh);
-    const facMult = faction === 'player' ? (def.store ? this.mods.castleHpMult() : 1) : (this.mods.buildingHpMult(faction) || 1);
-    const maxHp = Math.round((def.hp ?? 100) * facMult);
-    const b: Building = {
-      id: this.nextEntityId++, owner,
-      key, def, x: tx, y: ty, rot, active: false, inp: {}, out: {}, incoming: {},
-      prog: 0, working: false, worker: null, fieldsList: [], mesh, name: def.name,
-      faction, hp: maxHp, maxHp,
-    };
-    if (def.store) b.stock = {};   // player-built storehouses start empty
-    if (key === 'market') { b.marketItem = 'timber'; b.marketAmount = 0; b.marketTimer = 60; }
-    const tiles = this.world.tiles;
-    for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].b = b; if (tiles[y][x].tree) this.removeTree(x, y); if (tiles[y][x].deco) this.removeDeco(x, y); }
-    this.buildings.push(b);
-    if (instant) b.active = true;
-    // fields-buildings carry a floating marker that nags for plot placement
-    // until every plot square is down (toggled & animated by View.animate)
-    if (def.fields && faction === 'player') {
-      const marker = this.view.createPlotMarker();
-      marker.userData.dynamic = true;
-      marker.position.y = 2.4;
-      marker.visible = false;
-      mesh.add(marker);
-      mesh.userData.plotMarker = marker;
-    }
-    return b;
+    return this.placementSystem.placeBuilding(key, tx, ty, instant, rot, faction, owner);
   }
 
-  /** Max plots a fields-building may hold (data-driven, with a safe default). */
-  private fieldCap(b: Building): number { return b.def.plots ?? 8; }
-
-  /**
-   * Player-placed plot: attach a crop/pasture tile to the given fields-building
-   * (the one selected in its inspector) while it has room and range. Click & drag.
-   */
   placePlot(tx: number, ty: number, b: Building, owner: PlayerId = this.localPlayerId): void {
-    if (b.removed || b.owner !== owner || !b.def.fields) return;
-    const t = this.world.T(tx, ty);
-    if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep || t.tree?.dense) return;
-    if (b.fieldsList.length >= this.fieldCap(b)) {
-      const now = Date.now();
-      if (now - this.plotWarnT > 1500) { this.plotWarnT = now; this.toast(`${b.name} has no room for more plots`, 'err'); this.sfx('error'); }
-      return;
-    }
-    if (Math.hypot(tx - (b.x + 0.5), ty - (b.y + 0.5)) > PLOT_RANGE) {
-      const now = Date.now();
-      if (now - this.plotWarnT > 1500) { this.plotWarnT = now; this.toast(`Too far — plots must sit within ${PLOT_RANGE} tiles of the ${b.name}`, 'err'); this.sfx('error'); }
-      return;
-    }
-    if (t.deco) this.removeDeco(tx, ty);
-    t.field = { farm: b, growth: rnd() * 0.4, meshes: [] };
-    b.fieldsList.push({ x: tx, y: ty });
-    this.view.refreshTile(tx, ty); this.view.addFieldCrop(tx, ty, t.field);
+    this.placementSystem.placePlot(tx, ty, b, owner);
   }
 
-  // Static doodads live in merged scenery chunks; clearing the tile state and
-  // dirtying the chunk re-bakes it without them. Growing trees also carry an
-  // individual mesh, removed via removeMeshes.
-  removeTree(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.tree) { this.view.removeMeshes(t.tree.meshes); t.tree = null; this.view.dirtyTile(x, y); } }
-  removeDep(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.dep) { this.view.removeMeshes(t.dep.meshes); t.dep = null; this.view.dirtyTile(x, y); } }
-  removeDeco(x: number, y: number): void { const t = this.world.tiles[y][x]; if (t.deco) { this.view.removeMeshes(t.deco.meshes); t.deco = null; this.view.dirtyTile(x, y); } }
+  removeTree(x: number, y: number): void { this.placementSystem.removeTree(x, y); }
+  removeDep(x: number, y: number): void { this.placementSystem.removeDeposit(x, y); }
+  removeDeco(x: number, y: number): void { this.placementSystem.removeDecoration(x, y); }
 
   placeSite(key: BuildingKey, tx: number, ty: number, rot = 0, owner: PlayerId = this.localPlayerId): Site {
-    const def = DEFS[key];
-    const { group, frame } = this.view.createScaffold(key, def);
-    frame.rotation.y = -rot * Math.PI / 2;
-    group.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
-    this.view.add(group);
-    const s: Site = {
-      id: this.nextEntityId++, owner,
-      key, def, x: tx, y: ty, rot, needs: this.mods.buildingCost(def) as Record<string, number>, delivered: {}, incoming: {},
-      progress: 0, ready: false, builder: null, mesh: group, frame, isSite: true, name: def.name + ' (site)',
-    };
-    for (const k in s.needs) { s.delivered[k] = 0; s.incoming[k] = 0; }
-    const tiles = this.world.tiles;
-    for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) { tiles[y][x].site = s; if (tiles[y][x].tree) this.removeTree(x, y); if (tiles[y][x].deco) this.removeDeco(x, y); }
-    this.sites.push(s);
-    this.checkSiteReady(s); // a zero-cost site (cost fully reduced) is ready at once
-    return s;
+    return this.placementSystem.placeSite(key, tx, ty, rot, owner);
   }
 
   private completeSite(s: Site): void {
-    const tiles = this.world.tiles;
-    for (let y = s.y; y < s.y + 2; y++) for (let x = s.x; x < s.x + 2; x++) tiles[y][x].site = null;
-    this.view.remove(s.mesh);
-    this.sites.splice(this.sites.indexOf(s), 1);
-    const b = this.placeBuilding(s.key, s.x, s.y, false, s.rot, 'player', s.owner);
-    b.rally = s.rally;
-    b.rallyMesh = s.rallyMesh;
-    this.toast(s.def.name + ' completed');
-    this.sfx('build');
-    // worker buildings stay unstaffed until a trained villager reports in (staffBuildings)
-    if (!s.def.worker) b.active = true;
-    if (this.selected === s) this.select(b);
+    this.placementSystem.completeSite(s);
   }
-
   // =====================================================================
   //  Units
   // =====================================================================
@@ -740,159 +673,44 @@ export class Game {
     return { store: this.storeTotal(item, owner), buildings, carried };
   }
 
-  /** Read-only precheck used by Controls to batch road cells worth sending. */
   canPaintRoadAt(tx: number, ty: number): boolean {
-    const t = this.world.T(tx, ty);
-    return !!t && t.type === 'grass' && !t.b && !t.site && !t.road && !t.field && !t.dep && !t.tree?.dense;
+    return this.placementSystem.canPaintRoadAt(tx, ty);
   }
 
-  /** Read-only precheck used by Controls to batch plot cells worth sending. */
   canPlotAt(tx: number, ty: number): boolean {
-    const t = this.world.T(tx, ty);
-    return !!t && t.type === 'grass' && !t.b && !t.site && !t.road && !t.field && !t.dep && !t.tree?.dense;
+    return this.placementSystem.canPlotAt(tx, ty);
   }
 
-  /** Would a demolish command at this tile do anything for this player? */
   demolishableAt(tx: number, ty: number, dragOnly: boolean, owner: PlayerId = this.localPlayerId): boolean {
-    const t = this.world.T(tx, ty);
-    if (!t) return false;
-    if (t.road) return t.roadOwner === owner;
-    if (t.field) return t.field.farm.owner === owner;
-    if (dragOnly) return false;
-    return !!t.b || !!t.site; // clicks go through so the sim can toast the reason
+    return this.placementSystem.demolishableAt(tx, ty, dragOnly, owner);
   }
 
   canPlace(key: BuildingKey, tx: number, ty: number, rot: number): boolean {
-    for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) {
-      const t = this.world.T(x, y);
-      if (!t || t.type !== 'grass' || t.b || t.site || t.dep || t.road || t.field) return false;
-      if (t.tree?.dense) return false;    // old-growth is not for clearing
-    }
-    return buildingEntranceTiles({ x: tx, y: ty, rot, def: DEFS[key] })
-      .every(d => this.world.passable(d.x, d.y));
+    return this.placementSystem.canPlace(key, tx, ty, rot);
   }
 
-  private depositInRange(kind: string, tx: number, ty: number, range: number): boolean {
-    const { W, H } = this.world;
-    const tiles = this.world.tiles;
-    for (let y = Math.max(0, ty - range); y <= Math.min(H - 1, ty + 1 + range); y++) for (let x = Math.max(0, tx - range); x <= Math.min(W - 1, tx + 1 + range); x++) {
-      const t = tiles[y][x]; if (t.dep && t.dep.kind === kind && t.dep.amt > 0) return true;
-    }
-    return false;
-  }
-  private nearTree(tx: number, ty: number, r: number): boolean {
-    const { W, H } = this.world;
-    const tiles = this.world.tiles;
-    for (let y = Math.max(0, ty - r); y <= Math.min(H - 1, ty + 1 + r); y++) for (let x = Math.max(0, tx - r); x <= Math.min(W - 1, tx + 1 + r); x++) if (tiles[y][x].tree) return true;
-    return false;
-  }
-
-  /** Is an orthogonal neighbour a lake-water tile (the shore a fisher casts from)? */
-  private adjLake(x: number, y: number): boolean {
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const t = this.world.T(x + dx, y + dy); if (t && t.type === 'water' && t.lake) return true; }
-    return false;
-  }
-  private lakeInRange(tx: number, ty: number, r: number): boolean {
-    const { W, H } = this.world;
-    const tiles = this.world.tiles;
-    for (let y = Math.max(0, ty - r); y <= Math.min(H - 1, ty + 1 + r); y++) for (let x = Math.max(0, tx - r); x <= Math.min(W - 1, tx + 1 + r); x++) if (tiles[y][x].type === 'water' && tiles[y][x].lake) return true;
-    return false;
-  }
-
-  /** Buildings this map's biome forbids (mirrored by the build menu): the
-   *  biome's own bans, plus coastal-only chains anywhere without a sea. */
   disabledBuildings(): BuildingKey[] {
-    const banned = [...this.world.biome.disabledBuildings];
-    if (!this.world.biome.gen.coast) {
-      for (const key in DEFS) if (DEFS[key as BuildingKey].coastal) banned.push(key as BuildingKey);
-    }
-    return banned;
+    return this.placementSystem.disabledBuildings();
   }
 
   tryPlace(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId = this.localPlayerId): void {
-    if (this.disabledBuildings().includes(key)) {
-      this.sfx('error');
-      this.toast(`No ${DEFS[key].name.toLowerCase()} can be raised in ${this.world.biome.name}`, 'err');
-      return;
-    }
-    if (!this.canPlace(key, tx, ty, rot)) { this.sfx('error'); this.toast('Cannot build here — the entrance tile must be clear too', 'err'); return; }
-    const def = DEFS[key];
-    if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.toast('No stone deposits in range — build near the grey rocks', 'err'); return; }
-    if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.toast('No gold deposits in range', 'err'); return; }
-    if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.toast('No coal deposits in range', 'err'); return; }
-    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.toast('No iron deposits in range — build near the rusty rocks', 'err'); return; }
-    if (def.gather?.node === 'fish' && !this.lakeInRange(tx, ty, def.gather.range)) { this.toast('No open water in range — build on the shore', 'err'); return; }
-    if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.toast('Warning: few trees nearby', 'err');
-    const cost = this.mods.buildingCost(def);
-    for (const k in cost) { if (this.countItem(k, owner) < (cost as any)[k]) { this.toast('Not enough ' + ITEMS[k as keyof typeof ITEMS].name + ' in your economy — site will wait', 'err'); break; } }
-    this.placeSite(key, tx, ty, rot, owner);
-    this.sfx('place');
-    this.toast(def.name + ' site placed — serfs will deliver materials');
+    this.placementSystem.tryPlace(key, tx, ty, rot, owner);
   }
 
   paintRoad(tx: number, ty: number, owner: PlayerId = this.localPlayerId): void {
-    const t = this.world.T(tx, ty);
-    if (!t || t.type !== 'grass' || t.b || t.site || t.road || t.field || t.dep || t.tree?.dense) return;
-    const cost = this.mods.roadCost();
-    if (cost > 0 && !this.takeStock('stone', cost, owner)) {
-      const now = Date.now();
-      if (now - this.roadWarnT > 1500) { this.roadWarnT = now; this.toast('Out of stone — quarry more to build roads', 'err'); this.sfx('error'); }
-      return;
-    }
-    if (t.tree) this.removeTree(tx, ty);
-    if (t.deco) this.removeDeco(tx, ty);
-    t.road = true; t.roadOwner = owner; this.mods.ctx.roadTiles++;
-    this.view.refreshTile(tx, ty); this.view.addRoad(tx, ty);
+    this.placementSystem.paintRoad(tx, ty, owner);
   }
 
   demolishAt(tx: number, ty: number, dragOnly: boolean, owner: PlayerId = this.localPlayerId): void {
-    const t = this.world.T(tx, ty); if (!t) return;
-    if (t.road) {
-      if (t.roadOwner !== owner) return;
-      t.road = false; t.roadOwner = null; this.mods.ctx.roadTiles = Math.max(0, this.mods.ctx.roadTiles - 1);
-      const store = this.storeFor(owner); store.stock!['stone'] = (store.stock!['stone'] || 0) + this.mods.roadCost();
-      this.view.refreshTile(tx, ty); this.view.removeRoad(tx, ty); return;
-    }
-    if (t.field) {
-      if (t.field.farm.owner !== owner) return;
-      const list = t.field.farm.fieldsList, i = list.findIndex(f => f.x === tx && f.y === ty);
-      if (i >= 0) list.splice(i, 1);
-      this.view.removeMeshes(t.field.meshes); t.field = null; this.view.refreshTile(tx, ty); return;
-    }
-    if (dragOnly) return;
-    if (t.b) {
-      const b = t.b; // removeBuilding clears the tile — keep the reference
-      if (this.playerStores.get(owner) === b) { this.toast('The castle cannot be demolished', 'err'); return; }
-      if (b.faction !== 'player') { this.toast('Enemy strongholds must be destroyed in battle', 'err'); return; }
-      if (b.owner !== owner) { this.toast("You cannot demolish your ally's building", 'err'); return; }
-      this.sfx('demolish'); this.removeBuilding(b); this.toast(b.def.name + ' demolished'); return;
-    }
-    if (t.site) { if (t.site.owner !== owner) return; this.sfx('demolish'); this.removeSite(t.site); return; }
+    this.placementSystem.demolishAt(tx, ty, dragOnly, owner);
   }
 
-  private removeSite(s: Site): void {
-    s.removed = true;
-    for (const u of this.units) if (u.task && (u.task.to === s || u.task.from === s)) this.cancelTask(u);
-    if (s.builder) { s.builder.wstate = 'idle'; s.builder.target = null; s.builder.status = 'Idle'; }
-    for (let y = s.y; y < s.y + 2; y++) for (let x = s.x; x < s.x + 2; x++) this.world.tiles[y][x].site = null;
-    if (s.rallyMesh) this.view.remove(s.rallyMesh);
-    this.view.remove(s.mesh);
-    this.sites.splice(this.sites.indexOf(s), 1);
-    if (this.selected === s) this.select(null);
-    this.toast(s.def.name + ' site removed');
+  private removeSite(site: Site): void {
+    this.placementSystem.removeSite(site);
   }
 
-  private removeBuilding(b: Building): void {
-    b.removed = true;
-    for (const u of this.units) if (u.task && (u.task.to === b || u.task.from === b)) this.cancelTask(u);
-    if (b.worker) { const w = b.worker; this.view.remove(w.mesh); this.units.splice(this.units.indexOf(w), 1); if (this.selected === w) this.select(null); }
-    for (const f of b.fieldsList) { const t = this.world.tiles[f.y][f.x]; if (t.field) { this.view.removeMeshes(t.field.meshes); t.field = null; this.view.refreshTile(f.x, f.y); } }
-    for (let y = b.y; y < b.y + 2; y++) for (let x = b.x; x < b.x + 2; x++) this.world.tiles[y][x].b = null;
-    if (b.rallyMesh) this.view.remove(b.rallyMesh);
-    this.marketSystem.removeBuilding(b);
-    this.view.remove(b.mesh);
-    this.buildings.splice(this.buildings.indexOf(b), 1);
-    if (this.selected === b) this.select(null);
+  private removeBuilding(building: Building): void {
+    this.placementSystem.removeBuilding(building);
   }
 
   select(obj: any): void { this.selected = obj; this.onSelect(obj); }
