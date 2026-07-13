@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { simRng } from '../engine/rng';
+import { findPath } from '../engine/pathfinding';
 import type { View } from '../render/View';
 import type { Building, Coord, PlayerId, Site, Unit } from '../types';
 import type { World } from '../world/World';
@@ -402,6 +403,7 @@ export class WorkerSystem {
       }
       return best;
     }
+    const candidates: { node: GatherNode; distance: number }[] = [];
     for (let y = Math.max(0, building.y - gather.range); y <= Math.min(H - 1, building.y + 1 + gather.range); y++) {
       for (let x = Math.max(0, building.x - gather.range); x <= Math.min(W - 1, building.x + 1 + gather.range); x++) {
         const tile = tiles[y][x];
@@ -417,22 +419,23 @@ export class WorkerSystem {
             const sx = x + ox;
             const sy = y + oy;
             if (!this.world.passable(sx, sy)) continue;
-            const distance = Math.hypot(sx - cx, sy - cy);
-            if (distance < bestDistance) {
-              bestDistance = distance;
-              best = { x: sx, y: sy, depX: x, depY: y };
-            }
+            candidates.push({ node: { x: sx, y: sy, depX: x, depY: y }, distance: Math.hypot(sx - cx, sy - cy) });
           }
         } else {
-          const distance = Math.hypot(x - cx, y - cy);
-          if (distance < bestDistance) {
-            bestDistance = distance;
-            best = { x, y };
-          }
+          candidates.push({ node: { x, y }, distance: Math.hypot(x - cx, y - cy) });
         }
       }
     }
-    return best;
+    // Pick the nearest node the worker can actually walk to. Selecting purely by
+    // distance let a blocked-off nearest deposit (e.g. a mine placed across the
+    // route) trap the worker in an endless home->toNode->home loop with nothing
+    // gathered, even though a reachable deposit sat further out.
+    candidates.sort((a, b) => a.distance - b.distance);
+    const from = doorTile(building);
+    for (const { node } of candidates) {
+      if (findPath(this.world, from.x, from.y, node.x, node.y, building.faction) !== null) return node;
+    }
+    return null;
   }
 
   private adjacentLake(x: number, y: number): boolean {

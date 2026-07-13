@@ -489,6 +489,33 @@ describe('specialist staffing', () => {
     expect(worker.ty).toBe(door.y);
     expect(quarry.active).toBe(true);
   });
+
+  it('gathers from a reachable deposit instead of looping on a walled-off nearer one', () => {
+    const { game, world } = openBattleGame(428, 32);
+    const quarry = game.placeBuilding('quarry', 14, 14);
+    const door = doorTile(quarry);
+    const stone = (x: number, y: number) => { world.tiles[y][x].dep = { kind: 'stone', amt: 5, meshes: [] }; };
+    const rock = (x: number, y: number) => { world.tiles[y][x].type = 'rock'; };
+
+    // Nearer stone deposit sealed inside a rock pocket: its standing tile (9,14)
+    // is passable but unreachable from the quarry door.
+    stone(10, 14);
+    rock(11, 14); rock(10, 13); rock(10, 15);
+    rock(8, 14); rock(9, 13); rock(9, 15);
+    // A farther but reachable deposit.
+    stone(22, 14);
+
+    const worker = game.spawnUnit('stonemason', 0x9aa0a3, { x: door.x, y: door.y });
+    worker.home = quarry;
+    worker.wstate = 'home';
+    worker.roleName = 'Stonemason';
+    quarry.worker = worker;
+    quarry.active = true;
+
+    for (let i = 0; i < 800 && (quarry.out.stone ?? 0) === 0; i++) (game as any).workerUpdate(worker, 0.1);
+
+    expect(quarry.out.stone ?? 0).toBeGreaterThan(0);
+  });
 });
 
 describe('serf hauling from storehouse', () => {
