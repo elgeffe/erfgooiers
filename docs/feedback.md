@@ -1,7 +1,7 @@
 fix each of these items, always start with bugs first, then design changes > improvements > features > epics should always be last and first written out as docs/.md file.
 
 ## Bugs
-- i keep having the same problem that my Mint has produced a full output of coins, but none of the serfs pick it up. the game gets stuck because of this. i propose the mint directly contributes it output to the global coin supply so i can use it directly. it still shows that there is something wrong with how the serfs are ordering their priorities.
+- the way military unit commands work is sometimes resulting in units not adhering to commands when a lot of them have been selected. for example, i select a large group, give them move commands, then chain an attack on a tower (which seems to cause performance issues somehow), a small number of units attack, another set of units walks away? investigate probably causes and fix the issues. i need to be able to command, chain movements, chain attacks and have my units automatically follow orders or attack at will when the chain ends. this should work smoothly as its a core mechanic of the strategic side of the game.
 
 - no Coal has spawned on the map, this should not be possible. make sure to increase the default amount of coal to accomodate coin and military equipment.
 
@@ -14,6 +14,8 @@ fix each of these items, always start with bugs first, then design changes > imp
 - when i have a large host of units, then i  have a second host with a lot of siege units. my normal units were attacking enemies, my siege units about to attack a castle wall. suddenly the game performance dropped very badly. seems like a bug?
 
 - priest and archers should keep a distance from enemy units when selected to attack.
+
+- rally point set before building construction was finished did not save correctly to the state of the building. the rallypoint for the building before completion is allowed but should maintain when units are trained.
 
 ## Design changes
 
@@ -45,7 +47,13 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - the weaponsmith has something orange sticking out of the front door? make this nicer.
 
+- coin and gold share the same icon. can we give the gold coins (the one we use for purchasing in the shop) a unique symbol. maybe a crown inside the coin emblem? > also design a unique coin for heritage with a erfgooiers game emblem in it
+
+- rallypoint flag should be purple for barracks
+
 ## Improvements
+
+- shift+click on train buttons should set 5 units in the queue.
 
 - each tree should give 2 trunks
 
