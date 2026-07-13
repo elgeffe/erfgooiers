@@ -2,7 +2,7 @@ import type { BuildingDef, BuildingKey } from '../types';
 
 export const DEFS: Record<BuildingKey, BuildingDef> = {
   storehouse: { name: 'Castle', desc: 'A fortified depot: stores every good and looses arrows at raiders. Build more to shorten haul routes', model: 'castle',
-    cost: { timber: 12, stone: 16, coin: 10 }, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 500,
+    cost: { timber: 12, stone: 16 }, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 500,
     tower: { range: 7, dmg: 8, rate: 1.6 } },
 
   guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & builders)', model: 'guildhall',
@@ -57,7 +57,7 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     recipe: { inp: { goldore: 1, coal: 1 }, out: 'coin', time: 6, globalOutput: true }, worker: 'Minter', wcolor: 0xd4af37 },
 
   market: { name: 'Market', desc: 'Assign surplus goods to export; invulnerable horse traders arrive automatically and pay in coin', model: 'cottage',
-    cost: { timber: 4, stone: 2, coin: 2 }, roof: 0xb54f38, wall: 0xc8aa78, accent: 0xffd24a, hp: 180 },
+    cost: { timber: 4, stone: 2 }, roof: 0xb54f38, wall: 0xc8aa78, accent: 0xffd24a, hp: 180 },
 
   vineyard: { name: 'Vineyard', desc: 'Grows & harvests grapes on its plots', model: 'farm',
     cost: { timber: 3, stone: 1 }, roof: 0x6a3d6e, wall: 0xb08a5c,
@@ -137,7 +137,7 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     ] } },
 
   monastery: { name: 'Monastery', desc: 'A stone cloister and chapel that trains priests to heal nearby allies', model: 'cottage',
-    cost: { timber: 4, stone: 6, coin: 2 }, roof: 0x70433a, wall: 0xd8cfba, accent: 0xd9a441, hp: 280,
+    cost: { timber: 4, stone: 6 }, roof: 0x70433a, wall: 0xd8cfba, accent: 0xd9a441, hp: 280,
     military: { units: [
       { kind: 'priest', cost: { coin: 3 }, time: 8,
         desc: 'Humble support unit — automatically heals nearby friendly units and stays at the rear' },
@@ -148,7 +148,7 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     tower: { range: 7, dmg: 9, rate: 1.4 } },
 
   stonetower: { name: 'Stone Watchtower', desc: 'A tall stone tower — tougher and further-seeing than the wooden one', model: 'mine',
-    cost: { timber: 1, stone: 8, coin: 2 }, roof: 0x565c62, wall: 0x8f959a, accent: 0x3f5aa0, hp: 520,
+    cost: { timber: 1, stone: 8 }, roof: 0x565c62, wall: 0x8f959a, accent: 0x3f5aa0, hp: 520,
     tower: { range: 8, dmg: 11, rate: 1.5 } },
 
   wall: { name: 'Stone Wall', desc: 'A solid stretch of rampart — raiders must batter it down to pass', model: 'mine',
@@ -179,8 +179,9 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
 export interface BuildCategory { id: string; name: string; keys: BuildingKey[]; stub?: string; }
 
 export const MENU_CATEGORIES: BuildCategory[] = [
-  { id: 'materials', name: 'Materials', keys: ['guildhall', 'woodcutter', 'sawmill', 'forester', 'quarry', 'storehouse'] },
+  { id: 'materials', name: 'Materials', keys: ['woodcutter', 'sawmill', 'forester', 'quarry', 'guildhall', 'storehouse'] },
   { id: 'food', name: 'Food', keys: ['farm', 'mill', 'bakery', 'pigfarm', 'butcher', 'vineyard', 'winery', 'fishery', 'clamdigger', 'tavern'] },
   { id: 'coin', name: 'Coin', keys: ['goldmine', 'coalmine', 'mint', 'market'] },
-  { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'monastery', 'ironmine', 'smithy', 'armory', 'watchtower', 'stonetower', 'wall', 'gate'] },
+  { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'monastery', 'ironmine', 'smithy', 'armory'] },
+  { id: 'fortifications', name: 'Fortifications', keys: ['watchtower', 'stonetower', 'wall', 'gate'] },
 ];
