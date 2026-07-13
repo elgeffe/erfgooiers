@@ -26,6 +26,7 @@ import { EnemySpawner } from './EnemySpawner';
 import { TrainingSystem } from './TrainingSystem';
 import { LogisticsSystem } from './LogisticsSystem';
 import { WorkerSystem } from './WorkerSystem';
+import { UnitMovement } from './UnitMovement';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -113,6 +114,7 @@ export class Game {
   private readonly trainingSystem: TrainingSystem;
   private readonly logisticsSystem: LogisticsSystem;
   private readonly workerSystem: WorkerSystem;
+  private readonly unitMovement: UnitMovement;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -267,6 +269,7 @@ export class Game {
       toast: message => this.toast(message),
       sfx: name => this.sfx(name),
     });
+    this.unitMovement = new UnitMovement(this.world, this.mods);
   }
 
   entityById(id: number): Building | Site | Unit | null {
@@ -535,72 +538,26 @@ export class Game {
   }
 
   private setCarrying(u: Unit, item: string | null): void {
-    u.carrying = item;
-    u.itemMesh.visible = !!item;
-    if (item) (u.itemMesh.material as THREE.MeshLambertMaterial).color.setHex(ITEMS[item as keyof typeof ITEMS].hex);
+    this.unitMovement.setCarrying(u, item);
   }
 
   private sendTo(u: Unit, x: number, y: number): boolean {
-    const p = findPath(this.world, u.tx, u.ty, x, y, u.faction);
-    if (p === null) { u.path = null; return false; }
-    u.path = p; u.pathI = 0; return true;
-  }
-
-  /** Tile under a unit's current world position (paths are smoothed, so tx/ty
-   *  must track the mesh continuously rather than only at node arrivals). */
-  private syncTile(u: Unit): void {
-    const W = this.world.W, H = this.world.H;
-    u.tx = Math.max(0, Math.min(W - 1, Math.round(u.mesh.position.x + W / 2 - 0.5)));
-    u.ty = Math.max(0, Math.min(H - 1, Math.round(u.mesh.position.z + H / 2 - 0.5)));
+    return this.unitMovement.sendTo(u, x, y);
   }
 
   private moveUnit(u: Unit, dt: number): boolean {
-    if (!u.path || u.pathI >= u.path.length) { u.path = null; return true; }
-    const node = u.path[u.pathI];
-    // plain scalar math — this runs for every moving unit every tick, so no
-    // per-call Vector3 allocations (GC churn at 20 tps with hundreds of units)
-    const tx = this.world.wx(node.x), tz = this.world.wz(node.y);
-    const cur = u.mesh.position;
-    const curTile = this.world.T(u.tx, u.ty);
-    // corvée roads' downside only drags the player's own folk off-road
-    const offRoad = u.faction === 'player' ? this.mods.offRoadMult() : 1;
-    const sp = this.mods.unitSpeed(u) * (curTile && curTile.road ? 1.3 : offRoad);
-    const dx = tx - cur.x, dz = tz - cur.z;
-    const dist = Math.hypot(dx, dz);
-    const step = sp * dt;
-    if (dist <= step) {
-      cur.x = tx; cur.z = tz; u.tx = node.x; u.ty = node.y; u.pathI++;
-      if (u.pathI >= u.path.length) { u.path = null; return true; }
-    } else {
-      const k = step / dist;
-      cur.x += dx * k; cur.z += dz * k;
-      u.mesh.rotation.y = Math.atan2(dx, dz);
-      u.bob += dt * 10;
-      u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.045;
-      this.syncTile(u);
-    }
-    return false;
+    return this.unitMovement.moveGround(u, dt);
   }
 
   /** Direct steering for flying units (the dragon): no tiles, no paths — just
    *  glide toward the point, banking to face travel, wings flapping. */
   private moveFlying(u: Unit, dt: number, wx: number, wz: number): boolean {
-    const cur = u.mesh.position;
-    const dx = wx - cur.x, dz = wz - cur.z;
-    const dist = Math.hypot(dx, dz);
-    const step = this.mods.unitSpeed(u) * dt;
-    if (dist > 0.01) u.mesh.rotation.y = Math.atan2(dx, dz);
-    if (dist <= step) { cur.x = wx; cur.z = wz; } else { cur.x += dx / dist * step; cur.z += dz / dist * step; }
-    this.syncTile(u);
-    return dist <= step;
+    return this.unitMovement.moveFlying(u, dt, wx, wz);
   }
 
   /** Hover bob + wing flap for a flying unit, run every tick whatever it does. */
   private animateFlight(u: Unit, dt: number): void {
-    u.bob += dt * 5;
-    u.mesh.position.y = 0.45 + Math.sin(u.bob * 0.8) * 0.12;
-    const wings = u.mesh.userData.wings as THREE.Object3D[] | undefined;
-    if (wings) for (const w of wings) w.rotation.x = (w.userData.flapBase as number) + (w.userData.flapSign as number) * Math.sin(u.bob) * 0.4;
+    this.unitMovement.animateFlight(u, dt);
   }
 
   // =====================================================================
