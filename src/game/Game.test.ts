@@ -5,6 +5,7 @@ import { World } from '../world/World';
 import { LEVELS } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { Game } from './Game';
+import { doorTile } from './util';
 
 function headlessView(world: World, caravan?: { created: number; removed: number }): View {
   const unit = (_color: number, _role: string, x: number, y: number) => {
@@ -430,6 +431,26 @@ describe('market exports', () => {
     expect(market.inp.bread).toBe(0);
     expect(market.out.coin).toBe(6);
     expect(game.store.stock!.coin).toBe(0); // no serf exists to return the proceeds
+  });
+});
+
+describe('specialist staffing', () => {
+  it('activates the building on the exact tick its worker reaches the entrance', () => {
+    const { game } = openBattleGame(425, 32);
+    const quarry = game.placeBuilding('quarry', 10, 10);
+    const door = doorTile(quarry);
+    const worker = game.spawnUnit('stonemason', 0x9aa0a3, { x: door.x - 1, y: door.y });
+    worker.home = quarry;
+    worker.wstate = 'goHome';
+    worker.roleName = 'Stonemason';
+    quarry.worker = worker;
+
+    expect((game as any).sendTo(worker, door.x, door.y)).toBe(true);
+    (game as any).workerUpdate(worker, 1);
+
+    expect(worker.path).toBeNull();
+    expect(worker.wstate).toBe('home');
+    expect(quarry.active).toBe(true);
   });
 });
 

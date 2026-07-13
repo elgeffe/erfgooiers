@@ -668,9 +668,16 @@ export class Game {
     if (u.wstate === 'goHome') {
       u.mesh.visible = true;
       const d = doorTile(b);
-      if (u.tx === d.x && u.ty === d.y && !u.path) { u.wstate = 'home'; b.active = true; this.toast(b.def.name + ' is now staffed'); }
-      else if (!u.path) { if (!this.sendTo(u, d.x, d.y)) u.timer = 1; }
+      if (!u.path && (u.tx !== d.x || u.ty !== d.y)) { if (!this.sendTo(u, d.x, d.y)) u.timer = 1; }
       if (u.path) this.moveUnit(u, dt);
+      // Commit staffing on the arrival tick. Waiting until the next update lets
+      // crowd separation push the worker off the door before this check, which
+      // can trap specialists in a permanent move-in/repath loop.
+      if (!u.path && u.tx === d.x && u.ty === d.y) {
+        u.wstate = 'home'; b.active = true; u.status = 'At work';
+        this.toast(b.def.name + ' is now staffed');
+        return;
+      }
       u.status = 'Moving in';
       return;
     }
