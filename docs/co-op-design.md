@@ -16,9 +16,11 @@ Signaling is deliberately manual: the host copies an expiring AES-GCM encrypted 
 the guest returns a response encrypted to the host with ephemeral ECDH P-256, HKDF-SHA-256,
 and AES-256-GCM, and the host explicitly accepts or rejects the named guest. After acceptance,
 an ordered reliable WebRTC data channel carries commands and the host is the authoritative
-sequencer. WebRTC provides DTLS encryption for that channel. Both peers also see a six-digit
-short authentication string derived from the ECDH secret; comparing it over voice before
-acceptance detects join-response substitution. The encrypted invite is a bearer capability,
+sequencer. WebRTC provides DTLS encryption for that channel. Signaling payloads are gzip
+compressed before encryption so the manually shared codes are substantially shorter. Both
+peers also see a six-digit short authentication string derived from the ECDH secret; sharing
+and comparing it separately before acceptance detects join-response substitution. The
+encrypted invite is a bearer capability,
 so it still needs to be shared through a private channel and expires after 15 minutes.
 
 The room service, public browser, reconnect, and reclaim design below is retained as the

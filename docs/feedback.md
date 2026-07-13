@@ -53,6 +53,11 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 ## Improvements
 - allow aggresion level for unit formations. add another row with: auto-attack, defensive, hold ground
+
+- add mute button in the homescreen panel
+
+- allow spaces in the name of a co-op user. add name field to normal runs too and in settings.
+
 - increase max zoom level, have a toggle in settings for max zoom level so that users can choose to enable it.
 
 - enemy stongholds input field validation for numbers 0-6
@@ -98,10 +103,12 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 ## Features
 
-- let the dragon in the last level restore health very slowly to annoy the player, in higher ascensions restore speed is increased. let the restore start after a minute of last damage received.
+- let players pick an emblem out of a selection of colors and symbols in normal run and settings. only 1 player may have 1 specific selection in co-op, let them
+
+- let the dragon in the last level restore health very slowly to annoy the player, in higher ascensions restore speed is increased. let the restore start after a minute of last damage received. TESTING
 
 
-- in the coin build tab, add a market building. users can assign additional resources there with an input field and see a timer with expected coin income (per minute?). a great way to monetize overproduction of a resource. a caravan of traders with horses passes by the market, goes in and leaves again automatically. the caravan cannot be attacked or slain by enemies.
+- in the coin build tab, add a market building. users can assign additional resources there with an input field and see a timer with expected coin income (per minute?). a great way to monetize overproduction of a resource. a caravan of traders with horses passes by the market, goes in and leaves again automatically. the caravan cannot be attacked or slain by enemies. TESTING
 
 
 

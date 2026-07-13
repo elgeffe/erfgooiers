@@ -1,9 +1,14 @@
 import type { RoomState } from './protocol';
 
-const INVITE_PREFIX = 'ERF-I1';
-const JOIN_PREFIX = 'ERF-J1';
-const INVITE_AAD = bytes('erfgooiers/webrtc/invite/v1');
+const INVITE_PREFIX = 'ERF-I2';
+const JOIN_PREFIX = 'ERF-J2';
+const LEGACY_INVITE_PREFIX = 'ERF-I1';
+const LEGACY_JOIN_PREFIX = 'ERF-J1';
+const INVITE_AAD = bytes('erfgooiers/webrtc/invite/v2');
+const LEGACY_INVITE_AAD = bytes('erfgooiers/webrtc/invite/v1');
 const JOIN_INFO = bytes('erfgooiers/webrtc/join/v1');
+const MAX_SIGNAL_CODE_LENGTH = 64 * 1024;
+const MAX_SIGNAL_PAYLOAD_BYTES = 512 * 1024;
 
 export const INVITE_LIFETIME_MS = 15 * 60 * 1000;
 
@@ -48,7 +53,7 @@ export async function sealInvite(invite: PeerInvite): Promise<string> {
   const keyBytes = randomBytes(32);
   const iv = randomBytes(12);
   const key = await importAesKey(keyBytes);
-  const plaintext = bytes(JSON.stringify(invite));
+  const plaintext = await compress(bytes(JSON.stringify(invite)));
   const ciphertext = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv: source(iv), additionalData: source(INVITE_AAD) }, key, source(plaintext),
   );
@@ -56,14 +61,17 @@ export async function sealInvite(invite: PeerInvite): Promise<string> {
 }
 
 export async function openInvite(code: string, now = Date.now()): Promise<PeerInvite> {
+  if (code.length > MAX_SIGNAL_CODE_LENGTH) throw new Error('Encrypted invite code is too large');
   const [prefix, encodedKey, encodedPayload, ...rest] = code.trim().split('.');
-  if (prefix !== INVITE_PREFIX || !encodedKey || !encodedPayload || rest.length) throw new Error('Invalid encrypted invite code');
+  const compressed = prefix === INVITE_PREFIX;
+  if ((!compressed && prefix !== LEGACY_INVITE_PREFIX) || !encodedKey || !encodedPayload || rest.length) throw new Error('Invalid encrypted invite code');
   try {
     const packed = unbase64url(encodedPayload);
     const key = await importAesKey(unbase64url(encodedKey));
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: source(packed.slice(0, 12)), additionalData: source(INVITE_AAD) }, key, source(packed.slice(12)),
-    );
+    const decrypted = new Uint8Array(await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: source(packed.slice(0, 12)), additionalData: source(compressed ? INVITE_AAD : LEGACY_INVITE_AAD) }, key, source(packed.slice(12)),
+    ));
+    const plaintext = compressed ? await decompress(decrypted) : decrypted;
     const invite = JSON.parse(new TextDecoder().decode(plaintext)) as PeerInvite;
     validateInvite(invite, now);
     return invite;
@@ -83,8 +91,9 @@ export async function sealJoin(
   const key = await deriveJoinKey(guestPrivateKey, hostPublicKey, join.inviteNonce, join.roomId);
   const iv = randomBytes(12);
   const aad = joinAad(publicKey, join.roomId);
+  const plaintext = await compress(bytes(JSON.stringify(join)));
   const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: source(iv), additionalData: source(aad) }, key, source(bytes(JSON.stringify(join))),
+    { name: 'AES-GCM', iv: source(iv), additionalData: source(aad) }, key, source(plaintext),
   );
   return `${JOIN_PREFIX}.${publicKey}.${base64url(concat(iv, new Uint8Array(ciphertext)))}`;
 }
@@ -94,17 +103,20 @@ export async function openJoin(
   hostPrivateKey: CryptoKey,
   invite: PeerInvite,
 ): Promise<PeerJoin> {
+  if (code.length > MAX_SIGNAL_CODE_LENGTH) throw new Error('Encrypted join response is too large');
   const [prefix, publicKeyValue, encodedPayload, ...rest] = code.trim().split('.');
-  if (prefix !== JOIN_PREFIX || !publicKeyValue || !encodedPayload || rest.length) throw new Error('Invalid encrypted join response');
+  const compressed = prefix === JOIN_PREFIX;
+  if ((!compressed && prefix !== LEGACY_JOIN_PREFIX) || !publicKeyValue || !encodedPayload || rest.length) throw new Error('Invalid encrypted join response');
   try {
     const guestPublicKey = await importPublicKey(publicKeyValue);
     const key = await deriveJoinKey(hostPrivateKey, guestPublicKey, invite.nonce, invite.room.id);
     const packed = unbase64url(encodedPayload);
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: source(packed.slice(0, 12)), additionalData: source(joinAad(publicKeyValue, invite.room.id)) },
+    const decrypted = new Uint8Array(await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: source(packed.slice(0, 12)), additionalData: source(joinAad(publicKeyValue, invite.room.id, prefix)) },
       key,
       source(packed.slice(12)),
-    );
+    ));
+    const plaintext = compressed ? await decompress(decrypted) : decrypted;
     const join = JSON.parse(new TextDecoder().decode(plaintext)) as PeerJoin;
     if (join.kind !== 'join' || join.roomId !== invite.room.id || join.inviteNonce !== invite.nonce) {
       throw new Error('Join response belongs to another invite');
@@ -123,7 +135,7 @@ export async function openJoin(
 
 export function randomToken(bytesLength = 16): string { return base64url(randomBytes(bytesLength)); }
 
-/** Six decimal digits for an out-of-band verbal comparison before admission. */
+/** Six decimal digits for a separate comparison before admission. */
 export async function deriveSafetyCode(
   privateKey: CryptoKey, publicKey: CryptoKey, nonce: string, roomId: string,
 ): Promise<string> {
@@ -157,8 +169,8 @@ async function deriveJoinKey(privateKey: CryptoKey, publicKey: CryptoKey, nonce:
   );
 }
 
-function joinAad(publicKey: string, roomId: string): Uint8Array {
-  return bytes(`${JOIN_PREFIX}/${roomId}/${publicKey}`);
+function joinAad(publicKey: string, roomId: string, prefix = JOIN_PREFIX): Uint8Array {
+  return bytes(`${prefix}/${roomId}/${publicKey}`);
 }
 
 function importAesKey(value: Uint8Array): Promise<CryptoKey> {
@@ -190,6 +202,44 @@ function unbase64url(value: string): Uint8Array {
   if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('Invalid base64url value');
   const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/'));
   return Uint8Array.from(binary, char => char.charCodeAt(0));
+}
+
+async function compress(value: Uint8Array): Promise<Uint8Array> {
+  if (typeof CompressionStream === 'undefined') throw new Error('This browser cannot create compact share codes');
+  return transform(value, new CompressionStream('gzip'));
+}
+
+async function decompress(value: Uint8Array): Promise<Uint8Array> {
+  if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot open compact share codes');
+  return transform(value, new DecompressionStream('gzip'));
+}
+
+async function transform(
+  value: Uint8Array,
+  stream: { writable: WritableStream<BufferSource>; readable: ReadableStream<Uint8Array> },
+): Promise<Uint8Array> {
+  const writer = stream.writable.getWriter();
+  const writing = writer.write(value.slice()).then(() => writer.close());
+  const writeFailure = writing.then<never>(
+    () => new Promise<never>(() => {}),
+    error => Promise.reject(error),
+  );
+  const reader = stream.readable.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  while (true) {
+    const { done, value: chunk } = await Promise.race([reader.read(), writeFailure]);
+    if (done) break;
+    length += chunk.length;
+    if (length > MAX_SIGNAL_PAYLOAD_BYTES) {
+      await reader.cancel();
+      await writing.catch(() => {});
+      throw new Error('Signaling payload is too large');
+    }
+    chunks.push(chunk);
+  }
+  await writing;
+  return concat(...chunks);
 }
 
 /** Web Crypto's DOM declarations require a non-shared, exactly bounded buffer. */

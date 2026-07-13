@@ -24,8 +24,9 @@ describe('encrypted peer signaling', () => {
     const invite = await makeInvite(keys, 10_000);
     const code = await sealInvite(invite);
 
-    expect(code).toMatch(/^ERF-I1\./);
+    expect(code).toMatch(/^ERF-I2\./);
     expect(code).not.toContain('Encrypted Polder');
+    expect(code.length).toBeLessThan(JSON.stringify(invite).length);
     expect(await openInvite(code, 10_001)).toEqual(invite);
   });
 
@@ -54,7 +55,7 @@ describe('encrypted peer signaling', () => {
     };
     const code = await sealJoin(join, guest.privateKey, guest.publicKey, hostPublicKey);
 
-    expect(code).toMatch(/^ERF-J1\./);
+    expect(code).toMatch(/^ERF-J2\./);
     expect(code).not.toContain('Bram');
     await expect(openJoin(code, host.privateKey, invite)).resolves.toEqual(join);
     await expect(openJoin(code, wrongHost.privateKey, invite)).rejects.toThrow('authentication failed');
@@ -64,7 +65,10 @@ describe('encrypted peer signaling', () => {
 async function makeInvite(keys: CryptoKeyPair, now: number): Promise<PeerInvite> {
   return {
     kind: 'invite', createdAt: now, expiresAt: now + INVITE_LIFETIME_MS, nonce: randomToken(),
-    room, offer: { type: 'offer', sdp: 'v=0\r\na=fingerprint:sha-256 host' },
+    room, offer: {
+      type: 'offer',
+      sdp: `v=0\r\na=fingerprint:sha-256 host\r\n${'a=candidate:1 1 UDP 2122260223 192.0.2.1 5000 typ host\r\n'.repeat(20)}`,
+    },
     hostPublicKey: await exportPublicKey(keys.publicKey),
   };
 }

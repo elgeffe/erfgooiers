@@ -86,8 +86,9 @@ and direct WebRTC play. The GitHub Pages build uses encrypted manual invite/join
 explicit host admission, so it needs no application or relay server. The existing Node room
 service and public browser are retained but disabled for a later server-backed mode. Direct
 play uses public STUN only for route discovery and may not connect through strict symmetric
-NATs, because browser-only mode deliberately has no TURN relay. Host and guest compare a
-six-digit verification code over voice before admission to detect a substituted response.
+NATs, because browser-only mode deliberately has no TURN relay. Share codes are compressed
+before encryption to keep the manual exchange compact. Host and guest separately share and
+compare a six-digit verification code before admission to detect a substituted response.
 The physical hauling contract,
 including demand priorities,
 reservations, and storage fallback, is documented in

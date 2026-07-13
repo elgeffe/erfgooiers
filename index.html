@@ -205,9 +205,9 @@
         <button id="btnCoopHost">Host Expedition</button>
       </section>
       <section>
-        <div class="shopsect">Join by encrypted invite</div>
-        <label class="coopfield"><span>Paste the host's encrypted invite</span><textarea id="coopInviteCode" rows="5" spellcheck="false" placeholder="ERF-I1.…"></textarea></label>
-        <button id="btnCoopJoin">Create join response</button>
+        <div class="shopsect">Join with a share code</div>
+        <label class="coopfield"><span>Paste the code the host shared</span><textarea id="coopInviteCode" rows="4" spellcheck="false" placeholder="ERF-I2.…"></textarea></label>
+        <button id="btnCoopJoin">Create response code</button>
         <div class="shopsect">Public rooms (server mode)</div>
         <button id="btnCoopRefresh" class="ghost" disabled title="The room service is disabled in browser-only mode">Room browser disabled</button>
       </section>
@@ -226,24 +226,24 @@
     <div id="coopLobbyStatus" class="tag"></div>
     <div id="coopHostHandshake" class="coophandshake">
       <div class="shopsect">Host admission</div>
-      <div class="tag">1. Copy the encrypted invite to your friend. 2. Paste their encrypted join response here.</div>
-      <label class="coopfield"><span>Guest join response</span><textarea id="coopJoinResponse" rows="4" spellcheck="false" placeholder="ERF-J1.…"></textarea></label>
+      <div class="tag">1. Copy and share this code. 2. Paste the guest's response code here.</div>
+      <label class="coopfield"><span>Guest response code</span><textarea id="coopJoinResponse" rows="4" spellcheck="false" placeholder="ERF-J2.…"></textarea></label>
       <button id="btnCoopReview">Review join request</button>
       <div id="coopApproval" class="coopapproval">
         <b id="coopPendingName"></b> wants to join this Expedition.
-        <div class="coopsafety">Compare by voice before accepting: <b id="coopHostSafety"></b></div>
+        <div class="coopsafety">Ask the guest to share their verification code. It must match: <b id="coopHostSafety"></b></div>
         <div class="btns row"><button id="btnCoopReject" class="danger">Reject</button><button id="btnCoopAccept">Accept player</button></div>
       </div>
     </div>
     <div id="coopGuestHandshake" class="coophandshake">
-      <div class="shopsect">Return this encrypted response to the host</div>
+      <div class="shopsect">Share this response code with the host</div>
       <label class="coopfield"><textarea id="coopGeneratedResponse" rows="5" readonly spellcheck="false"></textarea></label>
-      <div class="coopsafety">Tell the host this verification code by voice: <b id="coopGuestSafety"></b></div>
-      <button id="btnCoopCopyResponse">Copy join response</button>
+      <div class="coopsafety">Share this verification code too: <b id="coopGuestSafety"></b></div>
+      <button id="btnCoopCopyResponse">Copy response code</button>
     </div>
     <div class="btns row">
       <button id="btnCoopLobbyBack" class="ghost">Leave room</button>
-      <button id="btnCoopCopy" class="ghost">Copy encrypted invite</button>
+      <button id="btnCoopCopy" class="ghost">Copy share code</button>
       <button id="btnCoopReady">Ready</button>
     </div>
   </div>

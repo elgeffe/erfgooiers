@@ -811,9 +811,9 @@ function renderCoopLobby(): void {
     : snapshot.status === 'error'
       ? snapshot.error ?? 'The direct connection failed.'
       : snapshot.role === 'guest' && snapshot.status !== 'connected'
-      ? 'Waiting for the host to review and accept your encrypted join response.'
+      ? 'Share the response code with the host, then wait for them to accept it.'
       : room.players.length < 2
-        ? coop.pendingJoin() ? 'Review this player, then accept or reject the request.' : 'Share the encrypted invite, then paste the guest response below.'
+        ? coop.pendingJoin() ? 'Review this player, then accept or reject the request.' : 'Share your code, then paste the guest response below.'
       : bothReady ? 'Both players ready — the Expedition is starting.' : 'Choose Ready when your connection is stable.';
   const ready = $('btnCoopReady') as HTMLButtonElement;
   ready.textContent = local?.ready ? 'Not ready' : 'Ready';
@@ -871,15 +871,15 @@ function showCoopError(message: string): void {
 async function copyCoopInvite(): Promise<void> {
   const text = coop.encryptedInvite();
   if (!text) return;
-  try { await navigator.clipboard.writeText(text); ui.toast('Encrypted invite copied'); }
+  try { await navigator.clipboard.writeText(text); ui.toast('Share code copied'); }
   catch { ui.toast('Could not copy invite', 'err'); }
 }
 
 async function copyJoinResponse(): Promise<void> {
   const text = coop.encryptedJoinResponse();
   if (!text) return;
-  try { await navigator.clipboard.writeText(text); ui.toast('Encrypted join response copied'); }
-  catch { ui.toast('Could not copy join response', 'err'); }
+  try { await navigator.clipboard.writeText(text); ui.toast('Response code copied'); }
+  catch { ui.toast('Could not copy response code', 'err'); }
 }
 
 async function reviewJoinResponse(): Promise<void> {
