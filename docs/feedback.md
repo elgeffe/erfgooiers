@@ -3,6 +3,7 @@ fix each of these items, always start with bugs first, then design changes > imp
 ## Bugs DOING
 
 ## Design changes
+- sometimes maps are produced where a sea and a mountain range are blocking off an area that contains gold or enemies.
 
 - re-order all workers order: Villagers first (tooltip should say: Ready to work), Serfs, Builders
 
@@ -14,33 +15,31 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - the 'no curses' pill is now using the whole card width. let it adapt width to its content
 
-- remove tooltip info for rotation when mouse over on the build menu cards, only tooltip for the specific building.
+- remove tooltip info for rotation with R when mouse over on the build menu cards, only tooltip for the specific building.
 
 - remove coin requirement for Castle, Market, Monastery, stone watchtower
 
-- move defensive military buildings to 'Fortifications' tab
+- move defensive military buildings to 'Fortifications' tab in the build menu
 
 - move Guild Hall to the left of Castle in build menu
 
-- Some building models have objects running through (saw mill has a log, woodcutter has a log. etc.)
+- Some building models have objects running through (saw mill has a log, woodcutter has a log. etc.). move these items so that they don't intersect other building elements.
 
 - Barracks model is nice, but needs slightly larger inner cube to reach the outline of the building. add windows like the castle.
 
-- barracks button should have resources under the title and responsive (show resource titles instead of just icons)
+- barracks train buttons should have resources under the title and responsive (show resource titles instead of just icons)
 
-- there is something stickout out that looks red in the iron mine. remove that or hang it correctly from the beam.
+- there is something sticking out out that looks red cube in the iron mine. remove that or hang it correctly from the beam structure?
 
 - the weaponsmith has something orange sticking out of the front door? make this nicer.
 
-- coin and gold share the same icon. can we give the gold coins (the one we use for purchasing in the shop) a unique symbol. maybe a crown inside the coin emblem? > also design a unique coin for heritage with a erfgooiers game emblem in it
-
 - rallypoint flag should be purple for barracks
 
+## Improvements
 - improve map tile details to make it look prettier, especially the standard grass tiles
 
-- sometimes maps are produced where a sea and a mountain range are blocking off an area that contains gold or enemies.
+- coin and gold share the same icon. can we give the gold coins (the one we use for purchasing in the shop) a unique symbol. maybe a crown inside the coin emblem? > also design a unique coin for heritage with a erfgooiers game emblem in it
 
-## Improvements
 - implement cattle farming with choices of cow, goat and sheep, chicken and pigs to replace pigs only. make sure maps have specific types of animals avaiable (goats in mountains, sheep on texel, etc). make sure that relevant animals have cheese production line, wool, leather, cloth, armor, butcher, etc.
 
 - add performance metrics in the nav bar like fps and ticks?
