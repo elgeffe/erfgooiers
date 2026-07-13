@@ -231,7 +231,8 @@ function addChimney(g: THREE.Group, ghost: boolean): void {
 function addLogpile(g: THREE.Group, ghost: boolean): void {
   const logMat = mkMat(0x8a5a2b, ghost);
   const ends = mkMat(0xcaa06a, ghost);
-  const rows = [[-0.75, 0.55, 0.28], [-0.75, 0.55, 0.5], [-0.75, 0.73, 0.39]];
+  // sit the pile clear of the cabin's log walls (x = ±0.7) instead of through them
+  const rows = [[-0.92, 0.55, 0.28], [-0.92, 0.55, 0.5], [-0.92, 0.73, 0.39]];
   for (const [x, , z] of rows) {
     const log = new THREE.Mesh(cyl(0.11, 0.11, 0.7, 8), logMat);
     log.rotation.x = Math.PI / 2; log.position.set(x, 0.14, z as number); log.castShadow = !ghost; log.userData.marker = true;
@@ -270,9 +271,10 @@ function woodcutterYard(g: THREE.Group): void {
 function sawmillYard(g: THREE.Group): void {
   const plankMat = mat(0xd2a35c);
   for (let i = 0; i < 4; i++) { const p = new THREE.Mesh(box(0.72, 0.05, 0.26), plankMat); p.position.set(-0.72, 0.07 + i * 0.06, 0.42); p.rotation.y = 0.08 * (i % 2 ? 1 : -1); p.castShadow = true; g.add(p); }
+  // sawbuck + log rest in the open front bay, clear of the shed's corner posts
   const buckMat = mat(0x6b4a2f);
-  for (const sx of [-0.9, -0.5]) for (const rz of [0.35, -0.35]) { const leg = new THREE.Mesh(box(0.04, 0.42, 0.04), buckMat); leg.position.set(sx, 0.2, -0.5); leg.rotation.z = rz; g.add(leg); }
-  const log = new THREE.Mesh(cyl(0.09, 0.09, 0.62, 8), mat(0x8a5a2b)); log.rotation.x = Math.PI / 2; log.position.set(-0.7, 0.42, -0.5); log.castShadow = true; g.add(log);
+  for (const sx of [-0.5, -0.12]) for (const rz of [0.35, -0.35]) { const leg = new THREE.Mesh(box(0.04, 0.42, 0.04), buckMat); leg.position.set(sx, 0.2, 0.86); leg.rotation.z = rz; g.add(leg); }
+  const log = new THREE.Mesh(cyl(0.09, 0.09, 0.62, 8), mat(0x8a5a2b)); log.rotation.z = Math.PI / 2; log.position.set(-0.31, 0.44, 0.86); log.castShadow = true; g.add(log);
 }
 
 function foresterYard(g: THREE.Group): void {
@@ -540,8 +542,10 @@ function smithyBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   const forge = new THREE.Mesh(box(1.65, 0.88, 1.35), mkMat(def.wall, ghost)); forge.position.y = 0.44; forge.castShadow = !ghost; g.add(forge);
   gableRoof(g, 1.95, 1.6, 1.18, def.roof, ghost, 0.45);
-  const hearth = new THREE.Mesh(box(0.78, 0.58, 0.12), mkMat(0x252329, ghost)); hearth.position.set(0.28, 0.3, 0.71); hearth.userData.marker = true; g.add(hearth);
-  const fire = new THREE.Mesh(cone(0.14, 0.32, 7), mkMat(0xe88335, ghost)); fire.position.set(0.28, 0.2, 0.8); fire.userData.marker = true; g.add(fire);
+  const hearth = new THREE.Mesh(box(0.78, 0.58, 0.16), mkMat(0x252329, ghost)); hearth.position.set(0.28, 0.3, 0.69); hearth.userData.marker = true; g.add(hearth);
+  // fire nestles inside the hearth mouth rather than poking out over the sill
+  const embers = new THREE.Mesh(box(0.5, 0.08, 0.14), mkMat(0xd9531f, ghost)); embers.position.set(0.28, 0.12, 0.66); embers.userData.marker = true; g.add(embers);
+  const fire = new THREE.Mesh(cone(0.1, 0.34, 7), mkMat(0xe88335, ghost)); fire.position.set(0.28, 0.3, 0.64); fire.userData.marker = true; g.add(fire);
   const stack = new THREE.Mesh(box(0.38, 1.35, 0.42), mkMat(0x6a5550, ghost)); stack.position.set(-0.55, 1.15, -0.32); stack.castShadow = !ghost; g.add(stack);
   if (!ghost) { mintYard(g); for (const x of [0.65, 0.82]) { const sword = new THREE.Mesh(box(0.035, 0.65, 0.05), mat(0xc6ccd4)); sword.position.set(x, 0.52, 0.74); sword.rotation.z = x === 0.65 ? 0.45 : -0.45; g.add(sword); } }
   return g;
@@ -573,11 +577,15 @@ function quarryBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
 /** A true military barracks: gatehouse, curtain walls, four turrets and yard. */
 function barracksBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group(), stone = mkMat(def.wall, ghost), roofM = mkMat(def.roof, ghost), wood = mkMat(0x443327, ghost);
-  const hall = new THREE.Mesh(box(1.25, 1.15, 1.15), stone); hall.position.set(0, 0.58, -0.25); hall.castShadow = !ghost; g.add(hall);
-  gableRoof(g, 1.48, 1.38, 1.48, def.roof, ghost, 0.62);
+  // inner keep grown to meet the corner turrets so the walls read as one block
+  const hall = new THREE.Mesh(box(1.55, 1.2, 1.5), stone); hall.position.set(0, 0.6, -0.1); hall.castShadow = !ghost; hall.receiveShadow = !ghost; g.add(hall);
+  gableRoof(g, 1.72, 1.6, 1.52, def.roof, ghost, 0.6);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const tower = new THREE.Mesh(cyl(0.23, 0.27, 1.25, 8), stone); tower.position.set(sx * 0.73, 0.63, sz * 0.65); tower.castShadow = !ghost; g.add(tower); const cap = new THREE.Mesh(cone(0.31, 0.46, 8), roofM); cap.position.set(sx * 0.73, 1.48, sz * 0.65); g.add(cap); }
-  for (const x of [-0.4, 0, 0.4]) { const crenel = new THREE.Mesh(box(0.24, 0.24, 0.18), stone); crenel.position.set(x, 1.1, 0.72); g.add(crenel); }
-  const gate = new THREE.Mesh(box(0.52, 0.72, 0.14), wood); gate.position.set(0, 0.36, 0.75); gate.userData.marker = true; g.add(gate);
+  for (const x of [-0.4, 0, 0.4]) { const crenel = new THREE.Mesh(box(0.24, 0.24, 0.18), stone); crenel.position.set(x, 1.15, 0.68); g.add(crenel); }
+  const gate = new THREE.Mesh(box(0.52, 0.72, 0.14), wood); gate.position.set(0, 0.36, 0.72); gate.userData.marker = true; g.add(gate);
+  // warm lit windows in the curtain wall, like the castle keep
+  for (const wx of [-0.46, 0.46]) { const win = new THREE.Mesh(box(0.16, 0.3, 0.05), mkMat(0xf4d98a, ghost)); win.position.set(wx, 0.66, 0.66); win.userData.marker = true; g.add(win); }
+  for (const sx of [-1, 1]) { const win = new THREE.Mesh(box(0.05, 0.3, 0.16), mkMat(0xf4d98a, ghost)); win.position.set(sx * 0.78, 0.66, -0.1); win.userData.marker = true; g.add(win); }
   if (!ghost) { const rack = new THREE.Mesh(box(0.62, 0.08, 0.08), mat(0x65472d)); rack.position.set(0, 0.72, 0.83); g.add(rack); for (const x of [-0.22, 0, 0.22]) { const spear = new THREE.Mesh(cyl(0.014, 0.014, 0.75, 5), mat(0x6b4a2f)); spear.position.set(x, 0.55, 0.86); g.add(spear); } }
   return g;
 }
@@ -887,7 +895,11 @@ function mine(key: BuildingKey, def: BuildingDef, ghost: boolean): THREE.Group {
     const steel = mkMat(0x6d6260, ghost);
     const mast = new THREE.Mesh(box(0.16, 1.55, 0.16), steel); mast.position.set(0.5, 1.0, -0.2); g.add(mast);
     const arm = new THREE.Mesh(box(1.0, 0.12, 0.12), steel); arm.position.set(0.08, 1.72, -0.2); arm.rotation.z = -0.18; g.add(arm);
-    const bucket = new THREE.Mesh(box(0.35, 0.3, 0.35), mkMat(0x8a4a30, ghost)); bucket.position.set(-0.36, 0.72, -0.2); g.add(bucket);
+    // hoist the ore skip on a cable from the arm's tip so it hangs above the
+    // mound instead of floating detached in front of it
+    const cable = new THREE.Mesh(cyl(0.015, 0.015, 0.3, 5), mkMat(0x40362c, ghost)); cable.position.set(-0.4, 1.62, -0.2); g.add(cable);
+    const bucket = new THREE.Mesh(box(0.3, 0.28, 0.3), mkMat(0x8a4a30, ghost)); bucket.position.set(-0.4, 1.36, -0.2); bucket.castShadow = !ghost; g.add(bucket);
+    const bail = new THREE.Mesh(torus(0.15, 0.016, 4, 8), steel); bail.position.set(-0.4, 1.5, -0.2); g.add(bail);
   }
   // quarry stacks cut blocks & leans a pickaxe; the mines park an ore-laden cart
   if (!ghost) {

@@ -135,6 +135,12 @@ Storehouse zero-stock initialization derives from `ITEMS`; do not add another ma
 
 The generic serf dispatcher routes recipe inputs, outputs, and construction materials.
 
+To iterate on a building's mesh, use the standalone model viewer instead of
+placing it in-game: `npm run dev` then open `model-viewer.html?model=<key>`. It
+renders one model with the game's lights/camera and reports any parts poking
+past the 2×2 tile footprint. See the `render-model` skill for the headless
+screenshot workflow.
+
 ### Add or change a level
 
 Edit `src/data/levels.ts`: objective variants, world parameters, kit, timers, reward,

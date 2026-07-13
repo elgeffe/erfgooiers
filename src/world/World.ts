@@ -508,6 +508,27 @@ export class World {
           }
     }
 
+    // Everything worth reaching must sit on foot-connected ground. A sea and a
+    // mountain range together can wall off a grass pocket with no land bridge to
+    // the town, marooning any gold or ore that lands there. Flood the walkable
+    // grass out from the player start once the terrain is final, then keep the
+    // valuables inside that component so nothing spawns behind the water.
+    const reachable = new Uint8Array(W * H);
+    {
+      const rsx = this.playerStart.x + 1, rsy = this.playerStart.y + 1;
+      const stack = [rsy * W + rsx]; reachable[stack[0]] = 1;
+      for (let i = 0; i < stack.length; i++) {
+        const id = stack[i], x = id % W, y = (id / W) | 0;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          const nid = ny * W + nx;
+          if (reachable[nid] || this.tiles[ny][nx].type !== 'grass') continue;
+          reachable[nid] = 1; stack.push(nid);
+        }
+      }
+    }
+
     // Tiles cleared later for the town apron and frontier routes stay clear
     // when the final ore invariant replenishes deposits.
     const oreReserved = new Uint8Array(W * H);
@@ -518,7 +539,7 @@ export class World {
         const t = this.T(x, y);
         const sx = this.playerStart.x + 1, sy = this.playerStart.y + 1;
         if (t && t.type === 'grass' && !t.dep && !t.tree && !t.deco && !t.pickup
-          && !oreReserved[y * W + x] && Math.hypot(x - sx, y - sy) > 8) {
+          && !oreReserved[y * W + x] && reachable[y * W + x] && Math.hypot(x - sx, y - sy) > 8) {
           t.dep = { kind, amt: 10 + Math.floor(rnd() * 11), meshes: [] }; placed++;
         }
       }
@@ -614,7 +635,7 @@ export class World {
     while (piles < this.p.goldPiles && pguard++ < 500) {
       const x = 3 + Math.floor(rnd() * (W - 6)), y = 3 + Math.floor(rnd() * (H - 6));
       const t = this.T(x, y);
-      if (t && t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep && !t.field && !t.pickup && !t.deco && !central(x, y)) {
+      if (t && t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep && !t.field && !t.pickup && !t.deco && reachable[y * W + x] && !central(x, y)) {
         t.pickup = { gold: 3 + Math.floor(rnd() * 5), reserved: false, meshes: [] };
         piles++;
       }

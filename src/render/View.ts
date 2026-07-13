@@ -419,7 +419,7 @@ export class View {
   createRock(): THREE.Group { const m = makeRock(); this.worldGroup.add(m); return m; }
   createFireball(): THREE.Group { const m = makeFireball(); this.worldGroup.add(m); return m; }
   createFlame(): THREE.Group { const m = makeFlame(); this.worldGroup.add(m); return m; }
-  createFlag(): THREE.Group { const m = makeFlag(); this.worldGroup.add(m); return m; }
+  createFlag(pennantHex?: number): THREE.Group { const m = makeFlag(pennantHex); this.worldGroup.add(m); return m; }
   createTraderCaravan(): THREE.Group { const m = makeTraderCaravan(); this.worldGroup.add(m); this.freeze(m, false); return m; }
   /** Marker parented onto a building mesh (not the world) so it follows it. */
   createPlotMarker(): THREE.Group { return makePlotMarker(); }

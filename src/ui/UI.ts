@@ -335,7 +335,7 @@ export class UI {
       tabs.appendChild(tab);
       for (const key of cat.keys) {
         const def = DEFS[key];
-        const el = document.createElement('div'); el.className = 'bcard'; el.dataset.key = key; el.dataset.cat = cat.id; el.title = def.desc + ' · press R (or the ⟳ button) to rotate while placing';
+        const el = document.createElement('div'); el.className = 'bcard'; el.dataset.key = key; el.dataset.cat = cat.id; el.title = def.desc;
         el.innerHTML = `<div class="icon">${buildingIconSVG(key, def)}</div><div class="nm">${def.name}</div><div class="cost">${this.costHTML(def.cost)}</div><div class="ptime">${this.timeHTML(def)}</div>`;
         el.onclick = () => { audio.play('click'); this.onMode(el.classList.contains('on') ? null : { type: 'build', key }); };
         row.appendChild(el);
@@ -562,10 +562,12 @@ export class UI {
         if (!o.active) body += '<div class="hnote">Building still being raised…</div>';
         else {
           for (const t of mil.units) {
-            const cost = Object.entries(t.cost).map(([k, n]) => `<i>${itemIconSVG(k as ItemKey, 13)}${n}</i>`).join('') || '<i>free</i>';
+            const cost = Object.entries(t.cost).map(([k, n]) =>
+              `<i>${itemIconSVG(k as ItemKey, 13)}<span class="tcname">${ITEMS[k as ItemKey].name}</span> ${n}</i>`).join('')
+              || '<i class="tcfree">free</i>';
             body += `<button class="inspbtn train" data-train="${t.kind}" ${t.desc ? `title="${t.desc}"` : ''}>`
-              + `<span class="tname">+ ${unitLabel(t.kind)}</span>`
-              + `<span class="tcost">${cost}<i class="ttime">${t.time}s</i></span></button>`;
+              + `<span class="trow"><span class="tname">+ ${unitLabel(t.kind)}</span><span class="ttime">${t.time}s</span></span>`
+              + `<span class="tcost">${cost}</span></button>`;
             if (t.desc) body += `<div class="tinfo">${t.desc}</div>`;
           }
           if (o.def.military) body += '<div class="hnote">Right-click the map with this building selected to set a rally flag.</div>';
@@ -615,13 +617,17 @@ export class UI {
     const toggle = $('unitsToggle');
     toggle.classList.toggle('warn', shortage);
     const pools = [
+      { k: 'villager', label: 'Villagers' },
       { k: 'serf', label: 'Serfs' },
       { k: 'builder', label: 'Builders' },
-      { k: 'villager', label: 'Villagers' },
     ] as const;
     const chips = pools.map(({ k, label }) => {
       const m = metrics[k];
-      return `<span class="utab${m.status === 'bad' ? ' short' : ''}" title="${label}: ${m.note}">${label} <b>${m.count}</b> <i class="kpi ${m.status}"></i></span>`;
+      // villagers count "spare" workers ready to post; when buildings sit unstaffed
+      // show the shortfall as a negative pill so the deficit reads at a glance
+      const n = k === 'villager' && m.deficit > 0 ? -m.deficit : m.count;
+      const tip = k === 'villager' ? `Villagers ready to work · ${m.note}` : `${label}: ${m.note}`;
+      return `<span class="utab${m.status === 'bad' ? ' short' : ''}" title="${tip}">${label} <b>${n}</b> <i class="kpi ${m.status}"></i></span>`;
     }).join('');
     const total = this.game ? this.game.units.filter(u => !u.dead && u.faction === 'player').length : 0;
     toggle.innerHTML = `<h3 class="serif wtitle">${shortage ? '' : ''}Workers · ${total}</h3><div class="wkpis">${chips}</div>`;
@@ -650,9 +656,9 @@ export class UI {
     this.setWorkerWarning(shortage, metrics);
     const tabsDef: { id: string; label: string }[] = [
       { id: 'all', label: 'All' },
+      { id: 'villager', label: 'Villagers' },
       { id: 'serf', label: 'Serfs' },
       { id: 'laborer', label: 'Builders' },
-      { id: 'villager', label: 'Villagers' },
       { id: 'specialist', label: 'Trades' },
       { id: 'military', label: 'Army' },
     ];
@@ -660,11 +666,15 @@ export class UI {
     if (this.unitTab !== 'all' && counts[this.unitTab] === 0) this.unitTab = 'all';
     let tabs = '';
     for (const c of tabsDef) {
-      if (c.id !== 'all' && counts[c.id] === 0 && this.unitTab !== c.id) continue;
+      // the Villagers pill always shows so its deficit stays visible even at zero spare
+      if (c.id !== 'all' && c.id !== 'villager' && counts[c.id] === 0 && this.unitTab !== c.id) continue;
       const m = metricFor(c.id);
+      // villagers show a negative count when buildings sit unstaffed (workers short)
+      const n = c.id === 'villager' && m && m.deficit > 0 ? -m.deficit : counts[c.id];
+      const tip = c.id === 'villager' ? `Ready to work — ${m!.note}` : m ? m.note : '';
       // a small traffic-light dot + hover note flags an under-supplied pool
       const kpi = m ? ` <i class="kpi ${m.status}" title="${m.note}"></i>` : '';
-      tabs += `<button class="utab${this.unitTab === c.id ? ' on' : ''}${m && m.status === 'bad' ? ' short' : ''}" data-tab="${c.id}"${m ? ` title="${m.note}"` : ''}>${c.label} <b>${counts[c.id]}</b>${kpi}</button>`;
+      tabs += `<button class="utab${this.unitTab === c.id ? ' on' : ''}${m && m.status === 'bad' ? ' short' : ''}" data-tab="${c.id}"${tip ? ` title="${tip}"` : ''}>${c.label} <b>${n}</b>${kpi}</button>`;
     }
     if (tabs !== this.lastTabsHTML) { $('unitTabs').innerHTML = tabs; this.lastTabsHTML = tabs; }
 
