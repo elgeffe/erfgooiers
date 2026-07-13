@@ -24,6 +24,7 @@ export interface UnitDef {
   speed: number;        // tiles/s base walk speed
   scale: number;        // mesh scale
   aggro: number;        // tiles at which it notices & engages hostiles
+  standoff?: number;    // minimum distance kept from an explicitly ordered unit target
   arrows?: boolean;     // attacks by loosing arrows instead of striking (archer)
   wander?: boolean;     // ambles around its anchor when idle (beasts, camp guards)
   leash?: number;       // wild only: max chase distance from anchor before giving up
@@ -59,7 +60,7 @@ export const UNITS: Record<UnitKind, UnitDef> = {
     bonusVs: [{ tag: 'mounted', mult: 2.5 }] },
 
   archer: { kind: 'archer', name: 'Archer', faction: 'player', color: 0x3f8a55, model: 'human',
-    hp: 40, dmg: 6, range: 5.0, atkCd: 1.4, speed: BASE_SPEED, scale: 0.95, aggro: 10, arrows: true, rank: 2 },
+    hp: 40, dmg: 6, range: 5.0, atkCd: 1.4, speed: BASE_SPEED, scale: 0.95, aggro: 10, standoff: 4, arrows: true, rank: 2 },
 
   knight: { kind: 'knight', name: 'Knight', faction: 'player', color: 0x8f97a6, model: 'human',
     hp: 120, dmg: 13, range: 1.4, atkCd: 1.1, speed: BASE_SPEED * 0.95, scale: 1.08, aggro: 9, rank: 1 },
@@ -126,7 +127,7 @@ export const UNITS: Record<UnitKind, UnitDef> = {
     hp: 90, dmg: 48, range: 9, atkCd: 5, speed: BASE_SPEED * 0.4, scale: 1.15, aggro: 4, arrows: true, rank: 4, structureMult: 4 },
 
   priest: { kind: 'priest', name: 'Priest', faction: 'player', color: 0xf1ead8, model: 'human',
-    hp: 45, dmg: 0, range: 0, atkCd: 1.5, speed: BASE_SPEED * 0.9, scale: 0.98, aggro: 0, rank: 5,
+    hp: 45, dmg: 0, range: 0, atkCd: 1.5, speed: BASE_SPEED * 0.9, scale: 0.98, aggro: 0, standoff: 4, rank: 5,
     heal: { range: 4.5, amount: 8, rate: 1.5 } },
 
   // the run's mounted hero: sturdy and fast, but one per run — losing them stings

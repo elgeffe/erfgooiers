@@ -237,6 +237,36 @@ describe('Game siege orders', () => {
     expect(builder.mesh.position).toEqual(builderPos);
   });
 
+  it('has an explicitly ordered archer retreat into bow range before firing', () => {
+    const { game } = openBattleGame(423);
+    const archer = game.spawnFighter('archer', { x: 10, y: 10 }, 'player');
+    const foe = game.spawnFighter('bandit', { x: 12, y: 10 }, 'enemy');
+    foe.dmg = 0; foe.spd = 0; foe.hp = foe.maxHp = 1_000;
+
+    game.orderUnit(archer, 'attack', foe.tx, foe.ty, foe);
+    for (let i = 0; i < 80; i++) game.update(0.05);
+
+    expect(Math.hypot(archer.mesh.position.x - foe.mesh.position.x, archer.mesh.position.z - foe.mesh.position.z)).toBeGreaterThanOrEqual(3.5);
+    expect(foe.hp).toBeLessThan(foe.maxHp);
+  });
+
+  it('has an ordered priest follow the enemy at a safe healing distance', () => {
+    const { game } = openBattleGame(424);
+    const priest = game.spawnFighter('priest', { x: 10, y: 10 }, 'player');
+    const ally = game.spawnFighter('soldier', { x: 9, y: 11 }, 'player');
+    const foe = game.spawnFighter('bandit', { x: 12, y: 10 }, 'enemy');
+    ally.hp = 10;
+    foe.dmg = 0; foe.spd = 0; foe.hp = foe.maxHp = 1_000;
+
+    game.orderUnit(priest, 'attack', foe.tx, foe.ty, foe);
+    for (let i = 0; i < 80; i++) game.update(0.05);
+
+    expect(priest.order?.type).toBe('attack');
+    expect(priest.order?.foe).toBe(foe);
+    expect(Math.hypot(priest.mesh.position.x - foe.mesh.position.x, priest.mesh.position.z - foe.mesh.position.z)).toBeGreaterThanOrEqual(3.5);
+    expect(ally.hp).toBeGreaterThan(10);
+  });
+
   it('turns a 500-plus formation through its old ranks without stranding a group', () => {
     const { game } = openBattleGame(421, 96);
     const squad = Array.from({ length: 520 }, (_, i) => {

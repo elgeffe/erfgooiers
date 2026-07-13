@@ -1260,6 +1260,13 @@ export class Game {
 
   private combatUpdate(u: Unit, dt: number): void {
     const def = UNITS[u.role as UnitKind];
+    // Explicit targets complete as soon as they fall, including support-unit
+    // orders. Advancing in a loop also skips targets destroyed earlier in the
+    // same tick.
+    while (u.order && (
+      (u.order.type === 'attack' && (!u.order.foe || u.order.foe.dead)) ||
+      (u.order.building?.removed ?? false)
+    )) this.advanceOrder(u);
     if (def.heal) { this.supportUpdate(u, def.heal, dt); return; }
     const flying = !!def.flying;
     u.atkTimer = Math.max(0, u.atkTimer - dt);
@@ -1294,12 +1301,6 @@ export class Game {
       // while obeying a fresh move order, drop any current fight entirely
       if (u.order && u.order.type !== 'attack') { u.foe = null; u.foeB = null; }
     }
-    // Explicit targets complete as soon as they fall, including the final order.
-    // Advancing in a loop also skips targets destroyed earlier in the same tick.
-    while (u.order && (
-      (u.order.type === 'attack' && (!u.order.foe || u.order.foe.dead)) ||
-      (u.order.building?.removed ?? false)
-    )) this.advanceOrder(u);
     const orderedBuilding = u.order?.building && !u.order.building.removed ? u.order.building : null;
     // Retaliation and ambient aggro may not steal an explicit focus target.
     let foe = u.order?.type === 'attack' ? u.order.foe : (orderedBuilding ? null : u.foe);
@@ -1322,7 +1323,9 @@ export class Game {
       // big foes are easier to reach — extend melee reach by their bulk
       const reach = u.range + 0.1 + Math.max(0, ((foe.mesh.scale.x || 1) - 1)) * 0.4;
       const d = this.unitDist(u, foe);
-      if (d <= reach) {
+      if (u.order?.type === 'attack' && def.standoff && d < def.standoff) {
+        this.retreatFrom(u, foe, def.standoff, dt);
+      } else if (d <= reach) {
         u.path = null;
         this.faceUnit(u, foe);
         this.groundPose(u, flying);
@@ -1461,6 +1464,27 @@ export class Game {
       } else u.status = 'Tending the company';
     }
     u.foe = null; u.foeB = null;
+    const orderedFoe = u.order?.type === 'attack' && u.order.foe && !u.order.foe.dead ? u.order.foe : null;
+    if (orderedFoe) {
+      const standoff = UNITS[u.role as UnitKind].standoff ?? heal.range;
+      const d = this.unitDist(u, orderedFoe);
+      if (d < standoff) this.retreatFrom(u, orderedFoe, standoff, dt);
+      else if (d > standoff + 0.75) {
+        if (!u.path && this.pathBudget > 0) {
+          this.pathBudget--;
+          this.sendTo(u, orderedFoe.tx, orderedFoe.ty);
+        }
+        if (u.path) this.moveUnit(u, dt); else this.groundPose(u, false);
+        this.faceUnit(u, orderedFoe);
+        u.status = 'Following at a safe distance';
+      } else {
+        u.path = null;
+        this.faceUnit(u, orderedFoe);
+        this.groundPose(u, false);
+        u.status = 'Holding at a safe distance';
+      }
+      return;
+    }
     if (u.order) {
       if (u.tx === u.order.x && u.ty === u.order.y) this.advanceOrder(u);
       else if (!u.path && u.order.field) {
@@ -1477,6 +1501,47 @@ export class Game {
       }
       if (u.path) this.moveUnit(u, dt); else this.groundPose(u, false);
     } else this.groundPose(u, false);
+  }
+
+  /** Back away from an explicitly ordered foe until the unit reaches its
+   *  preferred range. Existing safe retreat paths are reused; chase paths
+   *  ending beside the foe are discarded immediately. */
+  private retreatFrom(u: Unit, foe: Unit, standoff: number, dt: number): void {
+    const fx = foe.mesh.position.x, fz = foe.mesh.position.z;
+    const endpoint = u.path?.[u.path.length - 1];
+    if (endpoint && Math.hypot(this.world.wx(endpoint.x) - fx, this.world.wz(endpoint.y) - fz) < standoff) u.path = null;
+
+    if (!u.path && this.pathBudget > 0) {
+      let dx = u.mesh.position.x - fx, dz = u.mesh.position.z - fz;
+      let len = Math.hypot(dx, dz);
+      if (len < 1e-4) {
+        dx = ((u.id + foe.id) & 1) ? 1 : -1;
+        dz = ((u.id ^ foe.id) & 1) ? 1 : -1;
+        len = Math.hypot(dx, dz);
+      }
+      const idealX = fx + dx / len * (standoff + 0.75);
+      const idealZ = fz + dz / len * (standoff + 0.75);
+      const baseX = Math.round(idealX + this.world.W / 2 - 0.5);
+      const baseY = Math.round(idealZ + this.world.H / 2 - 0.5);
+      const currentDistance = this.unitDist(u, foe);
+      let best: Coord | null = null, bestScore = Infinity;
+      for (let oy = -3; oy <= 3; oy++) for (let ox = -3; ox <= 3; ox++) {
+        const x = baseX + ox, y = baseY + oy;
+        if (!this.world.passable(x, y, u.faction)) continue;
+        const wx = this.world.wx(x), wz = this.world.wz(y);
+        const safety = Math.hypot(wx - fx, wz - fz);
+        if (safety <= currentDistance + 0.2) continue;
+        const score = Math.hypot(wx - idealX, wz - idealZ) + Math.abs(safety - standoff) * 0.15;
+        if (score < bestScore) { bestScore = score; best = { x, y }; }
+      }
+      if (best) {
+        this.pathBudget--;
+        this.sendTo(u, best.x, best.y);
+      }
+    }
+    if (u.path) this.moveUnit(u, dt); else this.groundPose(u, false);
+    this.faceUnit(u, foe);
+    u.status = 'Keeping distance';
   }
 
   /** Resting pose between swings: melee units hop into each attack, fliers hover. */
@@ -2106,7 +2171,6 @@ export class Game {
    *  `queue`, the command is appended behind whatever the unit is already doing
    *  (shift-click chaining) instead of replacing it. */
   orderUnit(u: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, queue = false, field: FlowField | null = null): void {
-    if (UNITS[u.role as UnitKind]?.heal && type === 'attack') { type = 'attackMove'; foe = null; }
     this.queueOrder(u, { type, x, y, foe, building: null, field }, queue);
   }
 
