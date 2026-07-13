@@ -25,6 +25,7 @@ import { DamageSystem } from './DamageSystem';
 import { EnemySpawner } from './EnemySpawner';
 import { TrainingSystem } from './TrainingSystem';
 import { LogisticsSystem } from './LogisticsSystem';
+import { WorkerSystem } from './WorkerSystem';
 import type { TradeHistoryEntry, TradeRequest, TradeShipment } from './trade';
 import { applyGameCommand } from './commands';
 import type { GameCommand } from '../net/protocol';
@@ -111,6 +112,7 @@ export class Game {
   private readonly enemySpawner: EnemySpawner;
   private readonly trainingSystem: TrainingSystem;
   private readonly logisticsSystem: LogisticsSystem;
+  private readonly workerSystem: WorkerSystem;
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
@@ -246,6 +248,24 @@ export class Game {
       setCarrying: (unit, item) => this.setCarrying(unit, item),
       sendTo: (unit, x, y) => this.sendTo(unit, x, y),
       moveUnit: (unit, dt) => this.moveUnit(unit, dt),
+    });
+    this.workerSystem = new WorkerSystem(this.world, this.view, this.mods, {
+      buildings: () => this.buildings,
+      sites: () => this.sites,
+      guildFor: owner => this.playerGuilds.get(owner) ?? null,
+      storeFor: owner => this.storeFor(owner),
+      primaryStore: () => this.store,
+      sendTo: (unit, x, y) => this.sendTo(unit, x, y),
+      moveUnit: (unit, dt) => this.moveUnit(unit, dt),
+      completeSite: site => this.completeSite(site),
+      wander: (unit, dt, moving, resting) => this.wander(unit, dt, moving, resting),
+      removeTree: (x, y) => this.removeTree(x, y),
+      removeDeposit: (x, y) => this.removeDep(x, y),
+      removeDecoration: (x, y) => this.removeDeco(x, y),
+      setCarrying: (unit, item) => this.setCarrying(unit, item),
+      onProduce: (item, amount) => this.objective?.onProduce(item, amount),
+      toast: message => this.toast(message),
+      sfx: name => this.sfx(name),
     });
   }
 
@@ -606,197 +626,11 @@ export class Game {
   //  Laborers & specialists
   // =====================================================================
   private laborerUpdate(u: Unit, dt: number): void {
-    if (u.wstate === 'build') {
-      const s = u.target as Site;
-      if (!s || this.sites.indexOf(s) < 0) { u.wstate = 'idle'; u.target = null; return; }
-      const d = doorTile(s);
-      if (u.tx === d.x && u.ty === d.y && !u.path) {
-        u.status = 'Building ' + s.def.name;
-        s.progress += dt / this.mods.buildTime();
-        u.bob += dt * 12; u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.07;
-        s.frame.scale.y = Math.max(0.05, s.progress);
-        s.frame.position.y = 0;
-        if (s.progress >= 1) { u.wstate = 'idle'; u.target = null; u.status = 'Idle'; this.completeSite(s); }
-      } else if (!u.path) {
-        // can't reach the site right now — release the claim so another
-        // builder (or this one, later) can take it, instead of it sitting
-        // claimed-but-untouched forever
-        if (!this.sendTo(u, d.x, d.y)) { s.builder = null; u.wstate = 'idle'; u.target = null; }
-      }
-      if (u.path) this.moveUnit(u, dt);
-      return;
-    }
-    u.status = 'Idle';
-    u.mesh.position.y = 0;
-    // build prioritized sites first, then any other ready site; a claim whose
-    // builder died or wandered off no longer blocks the site
-    const claimable = (s: Site): boolean => {
-      if (s.owner !== u.owner || !s.ready) return false;
-      if (s.builder && (s.builder.dead || s.builder.target !== s)) s.builder = null;
-      return !s.builder;
-    };
-    let target: Site | null = null;
-    for (const s of this.sites) { if (claimable(s) && s.priority) { target = s; break; } }
-    if (!target) for (const s of this.sites) { if (claimable(s)) { target = s; break; } }
-    if (target) { target.builder = u; u.target = target; u.wstate = 'build'; u.path = null; }
-    // nothing to build: stroll about instead of standing as a fixed obstacle
-    else this.wander(u, dt, 'Strolling', 'Idle');
-  }
-
-  private outTotal(b: Building): number { let n = 0; for (const k in b.out) n += b.out[k]; return n; }
-
-  private findNode(b: Building): any {
-    const g = b.def.gather!, cx = b.x + 0.5, cy = b.y + 0.5;
-    const { W, H } = this.world;
-    const tiles = this.world.tiles;
-    let best: any = null, bd = 1e9;
-    if (g.node === 'field') {
-      for (const f of b.fieldsList) { const t = tiles[f.y][f.x]; if (t.field && t.field.growth >= 1) { const d = Math.hypot(f.x - cx, f.y - cy); if (d < bd) { bd = d; best = f; } } }
-      return best;
-    }
-    if (g.node === 'plant') {
-      for (let y = Math.max(0, b.y - g.range); y <= Math.min(H - 1, b.y + 1 + g.range); y++) for (let x = Math.max(0, b.x - g.range); x <= Math.min(W - 1, b.x + 1 + g.range); x++) {
-        const t = tiles[y][x];
-        if (t.type === 'grass' && !t.b && !t.site && !t.tree && !t.dep && !t.road && !t.field) { const d = Math.hypot(x - cx, y - cy); if (d > 2.2 && d < bd) { bd = d; best = { x, y }; } }
-      }
-      return best;
-    }
-    if (g.node === 'fish') {
-      // stand on an empty shore tile that touches lake water and cast a line
-      for (let y = Math.max(0, b.y - g.range); y <= Math.min(H - 1, b.y + 1 + g.range); y++) for (let x = Math.max(0, b.x - g.range); x <= Math.min(W - 1, b.x + 1 + g.range); x++) {
-        const t = tiles[y][x];
-        if (t.type !== 'grass' || t.b || t.site || t.tree || t.dep || t.road || t.field) continue;
-        if (!this.adjLake(x, y)) continue;
-        const d = Math.hypot(x - cx, y - cy); if (d < bd) { bd = d; best = { x, y }; }
-      }
-      return best;
-    }
-    for (let y = Math.max(0, b.y - g.range); y <= Math.min(H - 1, b.y + 1 + g.range); y++) for (let x = Math.max(0, b.x - g.range); x <= Math.min(W - 1, b.x + 1 + g.range); x++) {
-      const t = tiles[y][x];
-      let ok = false;
-      if (g.node === 'tree') ok = !!(t.tree && t.tree.growth >= 1 && !t.tree.reserved && !t.tree.dense);
-      else if (g.node === 'stone') ok = !!(t.dep && t.dep.kind === 'stone' && t.dep.amt > 0);
-      else if (g.node === 'gold') ok = !!(t.dep && t.dep.kind === 'gold' && t.dep.amt > 0);
-      else if (g.node === 'coal') ok = !!(t.dep && t.dep.kind === 'coal' && t.dep.amt > 0);
-      else if (g.node === 'iron') ok = !!(t.dep && t.dep.kind === 'iron' && t.dep.amt > 0);
-      if (!ok) continue;
-      if (t.dep) {
-        // ore heaps are solid: the miner works from a free neighbouring tile
-        for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const sx = x + ox, sy = y + oy;
-          if (!this.world.passable(sx, sy)) continue;
-          const d = Math.hypot(sx - cx, sy - cy);
-          if (d < bd) { bd = d; best = { x: sx, y: sy, depX: x, depY: y }; }
-        }
-      } else {
-        const d = Math.hypot(x - cx, y - cy); if (d < bd) { bd = d; best = { x, y }; }
-      }
-    }
-    return best;
+    this.workerSystem.updateLaborer(u, dt);
   }
 
   private workerUpdate(u: Unit, dt: number): void {
-    const b = u.home;
-    if (!b) return;
-    if (u.wstate === 'goHome') {
-      u.mesh.visible = true;
-      const d = doorTile(b);
-      if (!u.path && (u.tx !== d.x || u.ty !== d.y)) { if (!this.sendTo(u, d.x, d.y)) u.timer = 1; }
-      if (u.path) this.moveUnit(u, dt);
-      // Commit staffing on the arrival tick. Waiting until the next update lets
-      // crowd separation push the worker off the door before this check, which
-      // can trap specialists in a permanent move-in/repath loop.
-      if (!u.path && u.tx === d.x && u.ty === d.y) {
-        u.wstate = 'home'; b.active = true; u.status = 'At work';
-        this.toast(b.def.name + ' is now staffed');
-        return;
-      }
-      u.status = 'Moving in';
-      return;
-    }
-    const def = b.def;
-    if (def.recipe) {
-      u.mesh.visible = false; u.mesh.position.y = 0;
-      if (b.working) {
-        u.status = 'Working';
-        u.bob += dt * 10; u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.05;
-        b.prog += dt / this.mods.recipeTime(def);
-        if (b.prog >= 1) {
-          b.prog = 0; b.working = false;
-          const out = def.recipe.out;
-          if (def.recipe.globalOutput) this.store.stock![out] = (this.store.stock![out] || 0) + 1;
-          else b.out[out] = (b.out[out] || 0) + 1;
-          this.objective?.onProduce(out, this.mods.objectiveWeight(out));
-        }
-      } else {
-        u.status = 'Waiting for materials';
-        if (this.outTotal(b) < this.mods.outCap()) {
-          const inp = this.mods.recipeInputs(def);
-          let can = true;
-          for (const k in inp) if ((b.inp[k] || 0) < (inp as any)[k]) can = false;
-          if (can) { for (const k in inp) b.inp[k] -= (inp as any)[k]; b.working = true; b.prog = 0; }
-        } else u.status = 'Output full';
-      }
-      return;
-    }
-    // Non-producing staffed buildings (e.g. the Tavern): the worker just tends
-    // it from inside, so it stays hidden until the building is torn down.
-    if (!def.gather) { u.mesh.visible = false; u.mesh.position.y = 0; u.status = 'Tending'; return; }
-    if (u.wstate === 'home') {
-      u.mesh.visible = false;
-      u.mesh.position.y = 0;
-      if (this.outTotal(b) >= this.mods.outCap()) { u.status = 'Output full'; return; }
-      const node = this.findNode(b);
-      if (!node) { u.status = 'No resources in range'; return; }
-      u.target = node;
-      if (def.gather!.node === 'tree') { this.world.tiles[node.y][node.x].tree!.reserved = true; }
-      u.wstate = 'toNode';
-    }
-    if (u.wstate === 'toNode') {
-      u.mesh.visible = true;
-      const n = u.target;
-      if (u.tx === n.x && u.ty === n.y && !u.path) { u.wstate = 'gather'; u.timer = this.mods.gatherTime(def); }
-      else if (!u.path) { if (!this.sendTo(u, n.x, n.y)) { u.wstate = 'home'; u.target = null; return; } }
-      if (u.path) this.moveUnit(u, dt);
-      u.status = 'Heading out';
-      return;
-    }
-    if (u.wstate === 'gather') {
-      u.mesh.visible = true;
-      u.status = def.gather!.node === 'plant' ? 'Planting' : 'Gathering';
-      u.bob += dt * 11; u.mesh.position.y = Math.abs(Math.sin(u.bob)) * 0.07;
-      u.timer -= dt;
-      if (u.timer <= 0) {
-        const n = u.target, t = this.world.tiles[n.y][n.x];
-        if (def.gather!.node === 'tree') {
-          // coppice craft: take the trunk but leave the tree standing
-          if (t.tree) { if (this.mods.preserveTrees()) t.tree.reserved = false; else this.removeTree(n.x, n.y); }
-          this.setCarrying(u, 'trunk'); this.sfx('chop');
-        }
-        else if (def.gather!.node === 'field') { if (t.field) { t.field.growth = 0; this.view.refreshTile(n.x, n.y); this.view.scaleFieldCrop(t.field); } this.setCarrying(u, def.gather!.out ?? 'wheat'); this.sfx('harvest'); }
-        else if (def.gather!.node === 'plant') {
-          if (!t.tree && !t.b && !t.site && !t.road && !t.field && !t.dep) { if (t.deco) this.removeDeco(n.x, n.y); t.tree = { growth: 0.12, reserved: false, meshes: [], s: 0.85 + rnd() * 0.4, kind: Math.floor(rnd() * 4) }; this.view.addTree(n.x, n.y, t.tree); }
-        } else if (def.gather!.node === 'fish') { this.setCarrying(u, def.gather!.out); this.sfx('harvest'); }
-        else {
-          // the miner stands beside the (solid) heap; the ore comes off the heap's tile
-          const dtile = this.world.T(n.depX ?? n.x, n.depY ?? n.y);
-          if (dtile?.dep) { dtile.dep.amt--; if (dtile.dep.amt <= 0) this.removeDep(n.depX ?? n.x, n.depY ?? n.y); }
-          this.setCarrying(u, def.gather!.out);
-        }
-        u.wstate = 'return'; u.mesh.position.y = 0;
-      }
-      return;
-    }
-    if (u.wstate === 'return') {
-      u.mesh.visible = true;
-      const d = doorTile(b);
-      if (u.tx === d.x && u.ty === d.y && !u.path) {
-        if (u.carrying) { b.out[u.carrying] = (b.out[u.carrying] || 0) + 1; this.objective?.onProduce(u.carrying, this.mods.objectiveWeight(u.carrying)); this.setCarrying(u, null); }
-        u.wstate = 'home';
-      } else if (!u.path) { if (!this.sendTo(u, d.x, d.y)) { u.wstate = 'home'; this.setCarrying(u, null); } }
-      if (u.path) this.moveUnit(u, dt);
-      u.status = 'Returning';
-    }
+    this.workerSystem.updateWorker(u, dt);
   }
 
   /**
@@ -805,49 +639,16 @@ export class Game {
    * moment `staffBuildings` assigns it to an unstaffed building.
    */
   private villagerStroll(u: Unit, dt: number): void {
-    u.mesh.visible = true;
-    if (u.wstate !== 'stroll' && u.wstate !== 'strollWait') { u.wstate = 'strollWait'; u.timer = rnd() * 2.5; }
-    if (u.wstate === 'strollWait') {
-      u.status = 'Idling in the village';
-      u.mesh.position.y = 0;
-      u.timer -= dt;
-      if (u.timer > 0) return;
-      const owner = u.owner === 'p2' ? 'p2' : 'p1';
-      const g = this.playerGuilds.get(owner) ?? this.storeFor(owner), cx = g.x + 1, cy = g.y + 1;
-      for (let tries = 0; tries < 8; tries++) {
-        const x = cx + Math.round((rnd() - 0.5) * 14), y = cy + Math.round((rnd() - 0.5) * 14);
-        const t = this.world.T(x, y);
-        if (!t || t.type !== 'grass' || t.b || t.site || t.dep) continue;
-        if (this.sendTo(u, x, y)) { u.wstate = 'stroll'; return; }
-      }
-      u.timer = 1 + rnd() * 2;                 // nowhere to go — wait, then retry
-      return;
-    }
-    // wstate === 'stroll'
-    u.status = 'Strolling';
-    if (u.path) this.moveUnit(u, dt);
-    else { u.wstate = 'strollWait'; u.timer = 1.5 + rnd() * 3; }
+    this.workerSystem.updateVillager(u, dt);
   }
 
   // =====================================================================
   //  Growth
   // =====================================================================
   private growthUpdate(dt: number): void {
-    const { W, H } = this.world;
-    const tiles = this.world.tiles;
-    const fg = this.mods.fieldGrowth();
-    for (const b of this.buildings) { if (b.def.fields) for (const f of b.fieldsList) { const t = tiles[f.y][f.x]; if (t.field && t.field.growth < 1) { t.field.growth += dt / 22 * fg; if (t.field.growth > 1) t.field.growth = 1; this.view.scaleFieldCrop(t.field); } } }
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const t = tiles[y][x];
-      if (!t.tree || t.tree.growth >= 1) continue;
-      t.tree.growth += dt / 40;
-      if (t.tree.growth >= 1) { t.tree.growth = 1; this.view.treeMatured(x, y, t.tree); continue; }
-      const s = t.tree.s * Math.max(0.15, t.tree.growth);
-      const m = t.tree.meshes[0] as THREE.Object3D | undefined;
-      if (m) m.scale.set(s, s, s);
-    }
+    this.workerSystem.updateGrowth(dt);
   }
-  private fieldRecolor(): void { for (const b of this.buildings) { if (b.def.fields) for (const f of b.fieldsList) this.view.refreshTile(f.x, f.y); } }
+  private fieldRecolor(): void { this.workerSystem.recolorFields(); }
 
   // =====================================================================
   //  Queries & placement
