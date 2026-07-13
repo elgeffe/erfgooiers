@@ -41,7 +41,7 @@ objects once, and rebuilds level-scoped `World` and `Game` instances.
 | World | `src/world/World.ts` | Procedural tile state and spatial queries; no Three.js |
 | Engine | `src/engine/` | RNG, pathfinding, pure formation layout |
 | View | `src/render/View.ts` | Three.js scene, camera, world lifecycle, minimap, ambience |
-| Models | `src/render/models.ts` | Reusable geometry/materials and model builders |
+| Models | `src/render/modelCore.ts`, `*Models.ts`, `models.ts` | Shared render primitives plus focused scenery, unit, building, and fauna builders; compatibility barrel |
 | Input | `src/input/Controls.ts` | Camera, placement, selection, groups, formations, orders |
 | HUD/shop | `src/ui/UI.ts`, `Shop.ts`, `icons.ts` | DOM HUD, inspectors, shop, shared SVG icons |
 | Audio | `src/audio/Audio.ts` | Procedural SFX and music/mood |
@@ -54,7 +54,7 @@ objects once, and rebuilds level-scoped `World` and `Game` instances.
 - `Game` owns simulation state and tick ordering; focused systems in `src/game/` own
   subsystem behavior. They may ask `View` to create/remove meshes, but they do not
   manipulate the DOM or own scene bookkeeping.
-- `View` and `models.ts` own Three.js representation. Visual branching by
+- `View` and the render model modules own Three.js representation. Visual branching by
   `BuildingKey`/unit kind is allowed here; gameplay branching is not.
 - `UI`/`Shop` own content DOM. `Controls` may manage input-only overlays such as the
   placement hint, selection rectangle, and formation picker.
@@ -129,7 +129,7 @@ Storehouse zero-stock initialization derives from `ITEMS`; do not add another ma
 2. Add a `BuildingDef` in `src/data/buildings.ts` and place it in `MENU_CATEGORIES`.
 3. Use generic `gather`, `recipe`, `fields`, `tavern`, `military`, or `tower` data.
 4. Choose a fallback `ModelKind`. For a unique silhouette, add a render-only
-   `BuildingKey` case in `makeBuilding`/`models.ts`; keep it out of `Game.ts`.
+   `BuildingKey` case in `makeBuilding`/`buildingModels.ts`; keep it out of `Game.ts`.
 5. Add its build-menu icon mapping in `src/ui/icons.ts` when it produces a new resource
    or needs a special non-resource mark.
 
