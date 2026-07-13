@@ -92,10 +92,11 @@ item table, and extracted formation layout into a pure tested engine module.
 `Game.ts` is now a sub-1,000-line simulation facade and fixed-tick orchestrator. Stable
 subsystems cover combat, enemy spawning/encounters, projectiles, damage, worker logistics,
 training, placement, orders, trade, markets, refuge, interaction, and unit creation. The
-remaining large-file seams worth evaluating are:
+rendering facade now delegates terrain and ambience lifecycle to focused renderers, while
+`main.ts` retains lifecycle composition and delegates level planning, co-op screens,
+sandbox tools, and settings UI. The remaining large-file seam worth evaluating is:
 
-- building model builders from general unit/prop models;
-- ambience lifecycle from `View.ts`.
+- building model builders from general unit/prop models.
 
 These are refactor candidates, not blockers. Avoid a framework or ECS migration unless
 profiling or feature work demonstrates a concrete need.
