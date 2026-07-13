@@ -122,11 +122,21 @@ export class UI {
   /** Refresh the "next raid" countdown banner, or hide it when no wave is pending. */
   updateWave(info: { in: number; count: number; label?: string } | null): void {
     const el = $('wavebar') as HTMLElement;
-    if (!info) { el.style.display = 'none'; return; }
+    if (!info) { el.style.display = 'none'; this.placeToasts(); return; }
     el.style.display = 'flex';
     // muster-triggered raids show what will provoke them instead of a countdown
     $('waveText').textContent = info.label ?? `Next raid in ${fmtTime(info.in)} · ${info.count} raiders`;
     el.classList.toggle('imminent', !info.label && info.in <= 10);
+    this.placeToasts();
+  }
+
+  /** Toast messages and the raid countdown share the top-centre of the screen;
+   *  drop the toast column below the banner whenever it is showing so the two
+   *  never overlay. */
+  private placeToasts(): void {
+    const wave = $('wavebar') as HTMLElement;
+    const showing = wave.style.display !== 'none';
+    ($('toasts') as HTMLElement).style.top = showing ? Math.round(wave.getBoundingClientRect().bottom + 8) + 'px' : '';
   }
 
   /** Toggle sandbox HUD: no objective card, no timer, no debug-win button. */
@@ -159,7 +169,7 @@ export class UI {
     for (const k of RES_SHOWN) {
       const d = this.game.itemBreakdown(k);
       this.resEls[k].textContent = String(d.store);
-      this.resRowEls[k].title = `${ITEMS[k].name} — ${d.store} in the storehouse · ${d.buildings} in buildings · ${d.carried} being carried`;
+      this.resRowEls[k].title = `${ITEMS[k].name} — ${d.store} in the castle · ${d.buildings} in buildings · ${d.carried} being carried`;
     }
   }
 
@@ -257,7 +267,7 @@ export class UI {
         return;
       }
       if (t && t.closest('#prioBtn')) {
-        if (o && o.isSite) { this.game!.togglePriority(o); this.renderInspector(); }
+        if (o && (o.isSite || (o.def && (o.def.recipe || o.def.gather)))) { this.game!.togglePriority(o); this.renderInspector(); }
         return;
       }
       const trainBtn = t && t.closest('[data-train]') as HTMLElement | null;
@@ -282,8 +292,17 @@ export class UI {
     for (const k in obj) { if (!obj[k]) continue; s += `<div class="invrow">${itemIconSVG(k as ItemKey, 14)}${ITEMS[k as keyof typeof ITEMS].name}<b>${obj[k]}</b></div>`; }
     return s || '<div class="invrow" style="color:var(--ink-dim)">empty</div>';
   }
+  /** Keep the inspector clear of the objective card above it: the card's
+   *  height varies (long objective text, mutator chips) and a fixed top made
+   *  the two panels touch. */
+  private placeInspector(): void {
+    const obj = $('objective');
+    const visible = obj.style.display !== 'none' && obj.offsetParent !== null;
+    $('inspector').style.top = visible ? Math.round(obj.getBoundingClientRect().bottom + 10) + 'px' : '84px';
+  }
   private renderInspector(): void {
     const o = this.game?.selected; if (!o) return;
+    this.placeInspector();
     // A selected unit has no building `def` — show its live stats instead.
     if (o.role !== undefined && !o.def) {
       $('inspName').textContent = o.roleName;
@@ -339,8 +358,10 @@ export class UI {
         body += `<div class="sect">Production</div><div class="bar"><div style="width:${Math.round(o.prog * 100)}%"></div></div>`;
         body += '<div class="sect">Inputs</div>' + this.invRowsHTML(o.inp);
         body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
+        body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize'}</button>`;
       } else if (o.def.gather) {
         body += '<div class="sect">Output ready for pickup</div>' + this.invRowsHTML(o.out);
+        body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize'}</button>`;
       } else if (o.def.tavern) {
         const tv = o.def.tavern;
         body += `<div class="sect">Provisions (any food · serves up to ${tv.capacity} workers)</div>` + this.invRowsHTML(o.inp);
@@ -510,6 +531,7 @@ export class UI {
 
   // ---------- toasts ----------
   toast(msg: string, cls?: string): void {
+    this.placeToasts();
     const el = document.createElement('div'); el.className = 'toast' + (cls ? ' ' + cls : ''); el.textContent = msg;
     $('toasts').appendChild(el);
     setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .4s'; setTimeout(() => el.remove(), 400); }, 3200);

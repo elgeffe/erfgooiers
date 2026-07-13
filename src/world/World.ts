@@ -400,6 +400,28 @@ export class World {
           }
         }
       }
+
+      // ---- and guarantee the zone itself holds camp-worthy ground: the
+      // wandering lake lives in the same outer band as the walled quarters, so
+      // a wet seed can drown a quarter almost whole. A drowned quarter left
+      // findStrongholdSpot with nothing, and its camps fell back to random
+      // ground OUTSIDE the range — clustered at the pass mouth or worse. Drain
+      // enough of the lake inside the zone (working out from its heart) that
+      // strongholds always fit behind the mountains.
+      let dry = 0;
+      const need = Math.max(30, Math.round(ez.r * ez.r * 0.8)); // ~25% of the zone disc
+      for (let y = Math.max(0, ez.y - ez.r); y <= Math.min(H - 1, ez.y + ez.r); y++)
+        for (let x = Math.max(0, ez.x - ez.r); x <= Math.min(W - 1, ez.x + ez.r); x++)
+          if (Math.hypot(x - ez.x, y - ez.y) <= ez.r && this.tiles[y][x].type === 'grass') dry++;
+      for (let r = 0; r <= ez.r && dry < need; r++)
+        for (let y = Math.max(0, ez.y - r); y <= Math.min(H - 1, ez.y + r) && dry < need; y++)
+          for (let x = Math.max(0, ez.x - r); x <= Math.min(W - 1, ez.x + r) && dry < need; x++) {
+            if (Math.max(Math.abs(x - ez.x), Math.abs(y - ez.y)) !== r) continue;
+            const t = this.tiles[y][x];
+            if (t.type === 'water' && Math.hypot(x - ez.x, y - ez.y) <= ez.r) {
+              t.type = 'grass'; t.lake = false; t.deco = null; dry++;
+            }
+          }
     }
 
     const deposits = (cx: number, cy: number, r: number, kind: DepositKind, n: number): number => {

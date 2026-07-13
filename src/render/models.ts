@@ -1468,16 +1468,24 @@ export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean)
 function monasteryBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   const stone = mkMat(def.wall, ghost), roof = mkMat(def.roof, ghost), gold = mkMat(def.accent ?? 0xd9a441, ghost);
+  
   const nave = new THREE.Mesh(box(1.75, 0.85, 1.45), stone); nave.position.set(0, 0.43, 0.12); nave.castShadow = !ghost; g.add(nave);
+  
+  // Roof Slopes Fixed Here
   for (const s of [-1, 1]) {
-    const slope = new THREE.Mesh(box(0.98, 0.12, 1.58), roof); slope.position.set(s * 0.42, 1.02, 0.12); slope.rotation.z = s * 0.55; g.add(slope);
+    const slope = new THREE.Mesh(box(0.98, 0.12, 1.58), roof); 
+    slope.position.set(s * 0.42, 1.02, 0.12); 
+    slope.rotation.z = -s * 0.55; 
+    g.add(slope);
   }
+  
   const tower = new THREE.Mesh(box(0.52, 1.35, 0.52), stone); tower.position.set(-0.55, 0.68, -0.5); tower.castShadow = !ghost; g.add(tower);
   const spire = new THREE.Mesh(cone(0.42, 0.65, 4), roof); spire.position.set(-0.55, 1.68, -0.5); spire.rotation.y = Math.PI / 4; g.add(spire);
   const crossV = new THREE.Mesh(box(0.06, 0.4, 0.06), gold); crossV.position.set(-0.55, 2.08, -0.5); g.add(crossV);
   const crossH = new THREE.Mesh(box(0.25, 0.06, 0.06), gold); crossH.position.set(-0.55, 2.12, -0.5); g.add(crossH);
   const door = new THREE.Mesh(box(0.52, 0.68, 0.08), mkMat(0x5b3926, ghost)); door.position.set(-0.35, 0.34, 0.88); door.userData.marker = true; g.add(door);
   for (const x of [0.2, 0.58]) { const w = new THREE.Mesh(box(0.18, 0.32, 0.04), gold); w.position.set(x, 0.5, 0.86); g.add(w); }
+  
   return g;
 }
 
@@ -1594,12 +1602,6 @@ function guildhall(def: BuildingDef, ghost: boolean): THREE.Group {
     st.position.set(0, 0.035 + i * 0.07, 0.82 - i * 0.05); st.userData.marker = true; g.add(st);
   }
 
-  // the town flag by the door
-  if (!ghost) {
-    const flag = makeFlag();
-    flag.position.set(0.78, 0, 0.62);
-    g.add(flag);
-  }
   return g;
 }
 
@@ -1824,9 +1826,15 @@ function facadeWindow(g: THREE.Group, x: number, y: number, z: number, ghost: bo
 /** A low cabin assembled from visible round logs, with a deep woodland roof. */
 function woodcutterHut(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group(), logs = mkMat(0x76502f, ghost), ends = mkMat(0xc69a62, ghost);
-  for (let row = 0; row < 6; row++) for (const z of [-0.62, 0.62]) {
-    const log = new THREE.Mesh(cyl(0.085, 0.085, 1.55, 8), logs); log.rotation.z = Math.PI / 2; log.position.set(0, 0.1 + row * 0.14, z); log.castShadow = !ghost; g.add(log);
+  // eave walls run along Z, tucked under the roof's two lower edges (x = ±0.7)
+  for (let row = 0; row < 6; row++) for (const x of [-0.7, 0.7]) {
+    const log = new THREE.Mesh(cyl(0.085, 0.085, 1.5, 8), logs); log.rotation.x = Math.PI / 2; log.position.set(x, 0.1 + row * 0.14, 0); log.castShadow = !ghost; g.add(log);
   }
+  // gable-end walls run along X, closing the cabin into four full log walls (z = ±0.62)
+  for (let row = 0; row < 6; row++) for (const z of [-0.62, 0.62]) {
+    const log = new THREE.Mesh(cyl(0.085, 0.085, 1.5, 8), logs); log.rotation.z = Math.PI / 2; log.position.set(0, 0.1 + row * 0.14, z); log.castShadow = !ghost; g.add(log);
+  }
+  // notched log ends at the four corners
   for (const x of [-0.7, 0.7]) for (const z of [-0.64, 0.64]) {
     const cap = new THREE.Mesh(circle(0.087, 8), ends); cap.rotation.y = Math.PI / 2; cap.position.set(x, 0.45, z); cap.userData.marker = true; g.add(cap);
   }
@@ -2593,9 +2601,10 @@ function mine(key: BuildingKey, def: BuildingDef, ghost: boolean): THREE.Group {
     const cross = new THREE.Mesh(box(1.25, 0.12, 0.14), timber); cross.position.set(0, 1.72, 0.05); g.add(cross);
     const wheel = new THREE.Mesh(torus(0.28, 0.035, 6, 14), mkMat(0xb8912e, ghost)); wheel.rotation.y = Math.PI / 2; wheel.position.set(0, 1.43, 0.06); wheel.userData.marker = true; g.add(wheel);
   } else if (key === 'coalmine') {
-    const breaker = new THREE.Mesh(box(0.82, 0.95, 0.68), mkMat(0x45454b, ghost)); breaker.position.set(-0.35, 1.02, -0.18); breaker.rotation.z = -0.08; breaker.castShadow = !ghost; g.add(breaker);
+    // no breaker house: the big dark box read as a black square sticking out
+    // of the mound. The tall stack alone marks the colliery.
     const chute = new THREE.Mesh(box(0.42, 0.24, 0.52), mkMat(0x2f3035, ghost)); chute.position.set(0.1, 0.52, 0.38); chute.rotation.z = -0.35; g.add(chute);
-    const stack = new THREE.Mesh(cyl(0.13, 0.18, 1.35, 9), mkMat(0x313137, ghost)); stack.position.set(0.58, 1.16, -0.36); g.add(stack);
+    const stack = new THREE.Mesh(cyl(0.13, 0.18, 1.35, 9), mkMat(0x313137, ghost)); stack.position.set(0.58, 1.16, -0.36); stack.castShadow = !ghost; g.add(stack);
   } else if (key === 'ironmine') {
     const steel = mkMat(0x6d6260, ghost);
     const mast = new THREE.Mesh(box(0.16, 1.55, 0.16), steel); mast.position.set(0.5, 1.0, -0.2); g.add(mast);

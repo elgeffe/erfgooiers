@@ -13,8 +13,9 @@ import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID, cardUnlocked, specsFor } from './da
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
-import { DEFAULT_SANDBOX, levelFor, sandboxLevel, sandboxWaterOpts, type LevelDef, type SandboxConfig } from './data/levels';
-import { BIOMES, campaignBiome } from './data/biomes';
+import { DEFAULT_SANDBOX, MAX_SANDBOX_STRONGHOLDS, biomeWater, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
+import { campaignBiome } from './data/biomes';
+import type { BiomeKey } from './data/biomes';
 import { UNITS, type UnitKind } from './data/units';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionArmyMult, ascensionForcesCurse, ascensionPrepMult, ascensionShopSlots, ascensionTimerMult, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import { loadSettings, saveSettings } from './game/Settings';
@@ -39,14 +40,22 @@ const view = new View(canvas, minimap);
 const ui = new UI();
 const controls = new Controls(view, ui);
 ui.onMode = m => controls.setMode(m);
+/** Rebuild the sandbox's live modifiers from base perks + the cards held now.
+ *  Called after any add/remove so a removed card's effect actually lifts. */
+function rebuildSandboxMods(): void {
+  if (!game || !run) return;
+  const heroId = sandboxCfg.hero === 'none' ? null : sandboxCfg.hero;
+  game.mods.setSpecs([...heroSpecsFor(heroId), ...specsFor(run.upgrades), ...metaSpecsFor(meta.activeGlobalBuff)]);
+  ui.setPerks(run.upgrades, meta.activeGlobalBuff ? [meta.activeGlobalBuff] : []);
+  ui.refreshModifiers();
+}
+
 ui.onSandboxCard = id => {
   if (!sandbox || !run || !game || run.upgrades.length >= MAX_CARDS) return false;
   const def = UPGRADE_BY_ID[id];
   if (!def || def.unique && run.upgrades.includes(id)) return false;
   run.upgrades.push(id);
-  game.mods.addSpecs(def.apply);
-  ui.setPerks(run.upgrades, meta.activeGlobalBuff ? [meta.activeGlobalBuff] : []);
-  ui.refreshModifiers();
+  rebuildSandboxMods();
   audio.play('coin');
   ui.toast(`${def.name} added — free sandbox card`);
   return true;
@@ -99,6 +108,16 @@ function startLevel(): void {
   if (!sandbox && level.index === 10) {
     worldParams.frontiers = Math.max(worldParams.frontiers ?? 2, 2 + Math.min(2, run.ascension));
   }
+  // the hunt spreads out on higher ascensions: a bigger range for the growing
+  // packs (see ascendObjective) so the chase takes real ground to run down
+  if (!sandbox && level.type === 'Hunt' && run.ascension > 0) {
+    const tiers = Math.min(3, run.ascension);
+    worldParams.w = (level.world.w ?? 46) + tiers * 10;
+    worldParams.h = (level.world.h ?? 46) + tiers * 10;
+    worldParams.treeStands = Math.round((level.world.treeStands ?? 8) * (1 + 0.22 * tiers));
+    worldParams.meadows = Math.round((level.world.meadows ?? 5) * (1 + 0.25 * tiers));
+    worldParams.goldPiles = (level.world.goldPiles ?? 3) + tiers * 2;
+  }
   const world = new World(worldParams);
   view.loadWorld(world);
   const mutators = sandbox ? [] : run.mutators;
@@ -137,11 +156,40 @@ function startLevel(): void {
   let enemies = hellFinale && level.enemies
     ? { ...level.enemies, camps: [...(level.enemies.camps ?? []), { count: 4, guards: 14, kinds: ['skeleton', 'skelarcher', 'zombie', 'brute'] as UnitKind[] }] }
     : level.enemies ?? null;
+  // The dragon level turns into a two-phase siege on higher ascensions: the
+  // dragon stays hidden until its whole host is razed, and that host swells
+  // with extra camps and fortified strongholds (garrisonMult scales the guards
+  // further still). See Game.deferBoss / enemyGarrisonLeft.
+  if (!sandbox && level.index === 10 && run.ascension > 0 && enemies) {
+    game.deferBoss = true;
+    const a = Math.min(3, run.ascension);
+    enemies = {
+      ...enemies,
+      camps: [...(enemies.camps ?? []), { count: 1 + a, guards: 8 + a * 2, kinds: ['orc', 'zombie', 'skeleton', 'skelarcher'] as UnitKind[] }],
+      strongholds: { count: a, guards: 12, towers: 2, kinds: ['orc', 'troll', 'skeleton', 'skelarcher', 'zombie'] as UnitKind[] },
+    };
+  }
   // the hunt's quarry grows with the tier: enough wolves AND boars on the map
   // to honour the swollen slayMulti objective (see ascendObjective)
   if (!sandbox && enemies?.wild && level.type === 'Hunt' && run.ascension > 0) {
     const packMult = 1 + 0.4 * run.ascension;
     enemies = { ...enemies, wild: enemies.wild.map(w => ({ ...w, count: Math.round(w.count * packMult) })) };
+  }
+  // higher ascensions turn the Defend & assault levels into a real siege: the
+  // raid waves swell and a broader, nastier cast keeps arriving. The top tier
+  // also plants an extra fortified stronghold to storm (feeds the clear-all
+  // objective — more foes, more strongholds, more diverse raids).
+  if (!sandbox && enemies?.waves && run.ascension > 0 && level.index >= 5 && level.index <= 9) {
+    const a = Math.min(4, run.ascension);
+    const waveMult = 1 + 0.5 * a;
+    const scaled = enemies.waves.map(w => ({ ...w, count: Math.max(1, Math.round(w.count * waveMult)) }));
+    const roster: UnitKind[] = ['orc', 'skeleton', 'skelarcher', 'zombie', 'troll', 'bandit'];
+    const extra = Array.from({ length: a }, (_, i) => ({ at: 240 + i * 150, kind: roster[i % roster.length], count: 3 + a + i }));
+    enemies = { ...enemies, waves: [...scaled, ...extra] };
+    // the frontier assault levels gain extra walled keeps at the very top tiers
+    if (run.ascension >= 3 && level.index >= 7) {
+      enemies = { ...enemies, strongholds: { count: 1 + (run.ascension - 3), guards: 12, towers: 2, kinds: ['orc', 'troll', 'skeleton', 'skelarcher', 'zombie'] } };
+    }
   }
   game.setEnemies(enemies);
   // mutator payloads beyond stat curses: extra wild packs on the map
@@ -290,17 +338,13 @@ function startRun(): void {
 let sandboxCfg: SandboxConfig = { ...DEFAULT_SANDBOX };
 
 /** The setup screen's option groups: key into SandboxConfig, label, choices.
- *  Built per render — the water group's choices are phrased by the chosen
- *  biome (lava in Hell, canals in the Polder), so the two stay linked. */
+ *  The water level isn't a knob of its own — it follows the chosen biome. */
 function sbxGroups(): { key: keyof SandboxConfig; label: string; opts: [string, string][] }[] {
   return [
     { key: 'size', label: 'Map size', opts: [['small', 'Small · 48'], ['medium', 'Medium · 64'], ['large', 'Large · 84'], ['huge', 'Huge · 112'], ['colossal', 'Colossal · 144']] },
     { key: 'biome', label: 'Biome', opts: [['gooi', 'Het Gooi'], ['ardennes', 'The Ardennes'], ['blackforest', 'The Black Forest'], ['alps', 'The Alps'], ['winter', 'Winter'], ['polder', 'The Polder'], ['seaside', 'Zeeland Delta'], ['island', 'Texel'], ['hell', 'Hell']] },
-    { key: 'water', label: `Water — ${BIOMES[sandboxCfg.biome].name}`, opts: sandboxWaterOpts(sandboxCfg.biome) },
     { key: 'mapRes', label: 'Map resources', opts: [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']] },
     { key: 'startRes', label: 'Starting stock', opts: [['modest', 'Modest'], ['plentiful', 'Plentiful'], ['cornucopia', 'Cornucopia']] },
-    { key: 'enemies', label: 'Enemies', opts: [['none', 'None — peaceful'], ['wilds', 'Wild beasts'], ['camps', 'Bandit camps'], ['warzone', 'Warzone']] },
-    { key: 'strongholds', label: 'Enemy strongholds — camps holding spots across the map', opts: [['0', 'As the enemies say'], ['2', '2 strongholds'], ['4', '4 strongholds'], ['6', '6 strongholds']] },
     { key: 'hero', label: 'Hero', opts: [['none', 'No hero'], ...HEROES.map(h => [h.id, `${h.icon} ${h.name}`] as [string, string])] },
   ];
 }
@@ -320,15 +364,37 @@ function renderSandboxSetup(): void {
     }
     s += '</div></div>';
   }
+  // Trouble: independent toggles for beasts & camps, plus a stronghold count.
+  // With nothing toggled and no strongholds, the map stays perfectly peaceful.
+  s += '<div class="optgroup"><div class="optlabel">Enemies — toggle any trouble you want (leave all off for a peaceful build)</div><div class="optrow">'
+    + `<button class="opt${sandboxCfg.wildBeasts ? ' on' : ''}" data-toggle="wildBeasts">🐗 Wild beasts</button>`
+    + `<button class="opt${sandboxCfg.banditCamps ? ' on' : ''}" data-toggle="banditCamps">🗡️ Bandit camps</button>`
+    + '</div></div>';
+  s += `<div class="optgroup"><div class="optlabel">Enemy strongholds — fortified castles with walls & towers dotted across the corners</div>`
+    + `<label class="sbxnum">Strongholds <input id="sbxStrongholds" type="number" min="0" max="${MAX_SANDBOX_STRONGHOLDS}" step="1" value="${sandboxCfg.strongholds}"> <span class="whint">(0–${MAX_SANDBOX_STRONGHOLDS})</span></label></div>`;
   el.innerHTML = s;
   el.querySelectorAll<HTMLElement>('.opt[data-key]').forEach(b => {
     b.onclick = () => {
       const key = b.dataset.key as keyof SandboxConfig;
-      // numeric knobs (stronghold count) parse back from their string value
-      (sandboxCfg as any)[key] = key === 'strongholds' ? Number(b.dataset.val) : b.dataset.val;
+      (sandboxCfg as any)[key] = b.dataset.val;
+      // water isn't chosen directly — it follows whichever biome is picked
+      if (key === 'biome') sandboxCfg.water = biomeWater(b.dataset.val as BiomeKey);
       audio.play('click');
       renderSandboxSetup();
     };
+  });
+  el.querySelectorAll<HTMLElement>('.opt[data-toggle]').forEach(b => {
+    b.onclick = () => {
+      const key = b.dataset.toggle as 'wildBeasts' | 'banditCamps';
+      sandboxCfg[key] = !sandboxCfg[key];
+      audio.play('click');
+      renderSandboxSetup();
+    };
+  });
+  const strong = $('sbxStrongholds') as HTMLInputElement;
+  strong.addEventListener('keydown', e => e.stopPropagation());
+  strong.addEventListener('input', () => {
+    sandboxCfg.strongholds = Math.max(0, Math.min(MAX_SANDBOX_STRONGHOLDS, Math.round(Number(strong.value) || 0)));
   });
 }
 
@@ -368,7 +434,7 @@ function computeTally(): { rows: TallyRow[]; total: number } {
     rows.push({ label: `Speed bonus — done in ${Math.round(g.elapsed)}s`, gold: Math.round(level.reward * 0.5) });
   }
   const surplus = Math.floor(g.stockTotal() / 8);
-  if (surplus > 0) rows.push({ label: 'Surplus goods in the storehouse', gold: surplus });
+  if (surplus > 0) rows.push({ label: 'Surplus goods in the castle', gold: surplus });
   const fed = g.wellFedWorkers();
   const fedGold = Math.floor(fed / 2);
   if (fedGold > 0) rows.push({ label: `${fed} well-fed workers`, gold: fedGold });
@@ -587,6 +653,7 @@ const SANDBOX_FRIENDLY: SandboxSpawnDef[] = [
   { kind: 'pikeman', count: 10, icon: '🔱', label: 'Pikemen' },
   { kind: 'archer', count: 8, icon: '🏹', label: 'Archers' },
   { kind: 'knight', count: 6, icon: '🛡️', label: 'Knights' },
+  { kind: 'priest', count: 4, icon: '⛪', label: 'Priests' },
   { kind: 'lancer', count: 8, icon: '🐎', label: 'Lancers' },
   { kind: 'horseknight', count: 6, icon: '🏇', label: 'Horse Knights' },
   { kind: 'horsearcher', count: 8, icon: '🎯', label: 'Horse Archers' },
@@ -654,52 +721,112 @@ for (const def of SANDBOX_ENEMY) $('sbEnemy').appendChild(makeSandboxSpawnBtn(de
 {
   const modal = $('wavemodal');
   const kindsEl = $('waveKinds');
-  const countInp = $('waveCount') as HTMLInputElement;
+  const totalEl = $('waveTotal');
   const delayInp = $('waveDelay') as HTMLInputElement;
-  const selectedKinds = new Set<UnitKind>(['bandit']);
+  // per-kind counts: the wave is exactly what you type, kind by kind
+  const counts = new Map<UnitKind, number>([['bandit', 12]]);
+  const refreshTotal = (): void => {
+    let total = 0;
+    for (const n of counts.values()) total += n;
+    totalEl.textContent = String(total);
+  };
   const renderKinds = (): void => {
     kindsEl.innerHTML = '';
     for (const def of SANDBOX_ENEMY) {
-      const b = document.createElement('button');
-      b.className = 'opt' + (selectedKinds.has(def.kind) ? ' on' : '');
-      b.textContent = `${def.icon} ${def.label}`;
-      b.title = `Toggle ${def.label.toLowerCase()} in the wave`;
-      b.onclick = () => {
-        if (selectedKinds.has(def.kind)) { if (selectedKinds.size > 1) selectedKinds.delete(def.kind); }
-        else selectedKinds.add(def.kind);
-        audio.play('click');
-        renderKinds();
-      };
-      kindsEl.appendChild(b);
+      const row = document.createElement('div');
+      row.className = 'waverow-kind' + (counts.get(def.kind) ? ' on' : '');
+      const label = document.createElement('span');
+      label.className = 'wavekind-label';
+      label.textContent = `${def.icon} ${def.label}`;
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.min = '0'; inp.max = '1000'; inp.step = '1';
+      inp.value = String(counts.get(def.kind) ?? 0);
+      inp.title = `How many ${def.label.toLowerCase()} arrive in the wave`;
+      inp.addEventListener('keydown', e => e.stopPropagation());
+      inp.addEventListener('input', () => {
+        const n = Math.max(0, Math.min(1000, Math.round(Number(inp.value) || 0)));
+        if (n > 0) counts.set(def.kind, n); else counts.delete(def.kind);
+        row.classList.toggle('on', n > 0);
+        refreshTotal();
+      });
+      row.appendChild(label);
+      row.appendChild(inp);
+      kindsEl.appendChild(row);
     }
+    refreshTotal();
   };
   // typing in the modal must never fall through to game hotkeys
-  for (const el of [countInp, delayInp]) el.addEventListener('keydown', e => e.stopPropagation());
+  delayInp.addEventListener('keydown', e => e.stopPropagation());
   const openModal = (): void => { renderKinds(); modal.style.display = 'flex'; };
   const closeModal = (): void => { modal.style.display = 'none'; };
   const summon = (): void => {
     if (!game) return;
-    const count = Math.max(1, Math.min(1000, Math.round(Number(countInp.value) || 0)));
-    countInp.value = String(count);
+    let total = 0;
+    for (const n of counts.values()) total += n;
+    if (total < 1) { ui.toast('Set a count for at least one kind', 'err'); audio.play('error'); return; }
     const delay = Math.max(0, Math.min(3600, Math.round(Number(delayInp.value) || 0)));
     delayInp.value = String(delay);
-    // the wave mixes the chosen kinds evenly (round-robin remainder to the first)
-    const kinds = [...selectedKinds];
-    const per = Math.floor(count / kinds.length);
-    for (let i = 0; i < kinds.length; i++) {
-      const n = per + (i < count % kinds.length ? 1 : 0);
-      if (n > 0) game.scheduleWave(kinds[i], n, delay);
-    }
+    for (const [kind, n] of counts) if (n > 0) game.scheduleWave(kind, n, delay);
     ui.toast(delay > 0
-      ? `A wave of ${count} raiders will march in ${delay}s`
-      : `A wave of ${count} raiders marches on your castle!`, delay > 0 ? undefined : 'err');
+      ? `A wave of ${total} raiders will march in ${delay}s`
+      : `A wave of ${total} raiders marches on your castle!`, delay > 0 ? undefined : 'err');
     closeModal();
   };
   ($('sbWaveOpen') as HTMLButtonElement).onclick = openModal;
   ($('waveCancel') as HTMLButtonElement).onclick = closeModal;
   ($('waveGo') as HTMLButtonElement).onclick = summon;
-  countInp.addEventListener('keydown', e => { if (e.key === 'Enter') summon(); });
+  delayInp.addEventListener('keydown', e => { if (e.key === 'Enter') summon(); });
   addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display === 'flex') closeModal(); });
+}
+
+// ---------- sandbox card picker: shop-style cards you can freely add & remove ----------
+{
+  const modal = $('sbcardmodal');
+  const ownedEl = $('sbcardOwned');
+  const availEl = $('sbcardAvail');
+  const ownedLabel = $('sbcardOwnedLabel');
+  // A shop-styled card (mirrors Shop.card so the UX reads the same).
+  const cardEl = (def: (typeof UPGRADES)[number], priceLabel: string, cls: string, onClick: () => void): HTMLElement => {
+    const el = document.createElement('div');
+    el.className = `scard rar-${def.rarity}` + (cls ? ' ' + cls : '');
+    const tag = def.rarity !== 'common'
+      ? `<span class="rtag rtag-${def.rarity}">${def.rarity}${def.unique ? ' · unique' : ''}</span>`
+      : (def.unique ? '<span class="rtag">unique</span>' : '');
+    el.innerHTML = `<div class="sc-icon">${def.icon}</div><div class="sc-body"><div class="sc-name">${def.name}${tag}</div><div class="sc-desc">${def.desc}</div><div class="sc-price ${cls}">${priceLabel}</div></div>`;
+    if (!cls.includes('disabled')) el.onclick = onClick;
+    return el;
+  };
+  const render = (): void => {
+    if (!run) return;
+    const full = run.upgrades.length >= MAX_CARDS;
+    ownedLabel.textContent = `Your cards (${run.upgrades.length}/${MAX_CARDS})` +
+      (run.upgrades.length ? ' — click a card to remove it' : '');
+    ownedEl.innerHTML = '';
+    run.upgrades.forEach((id, i) => {
+      const def = UPGRADE_BY_ID[id];
+      if (def) ownedEl.appendChild(cardEl(def, 'remove ✕', 'sellable', () => {
+        run!.upgrades.splice(i, 1);
+        rebuildSandboxMods();
+        audio.play('click');
+        render();
+      }));
+    });
+    if (!run.upgrades.length) ownedEl.innerHTML = '<div class="sc-desc">No cards yet — add some below.</div>';
+    availEl.innerHTML = '';
+    for (const def of UPGRADES) {
+      const owned = def.unique && run.upgrades.includes(def.id);
+      const disabled = full || owned;
+      const label = owned ? 'held' : full ? 'slots full' : 'add +';
+      availEl.appendChild(cardEl(def, label, disabled ? 'cant disabled' : '', () => {
+        if (ui.onSandboxCard(def.id)) render();
+      }));
+    }
+  };
+  const open = (): void => { render(); modal.style.display = 'flex'; };
+  const close = (): void => { modal.style.display = 'none'; };
+  ($('sbCardsOpen') as HTMLButtonElement).onclick = open;
+  ($('sbcardDone') as HTMLButtonElement).onclick = close;
+  addEventListener('keydown', e => { if (e.key === 'Escape' && modal.style.display === 'flex') close(); });
 }
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
 

@@ -128,6 +128,7 @@ export interface Building {
   trainQ?: string[];           // barracks: queued unit kinds being trained
   rally?: Coord;               // barracks: where freshly trained fighters march to
   rallyMesh?: THREE.Object3D;  // the flag marking the rally point
+  priority?: boolean;          // player-flagged: serfs feed & empty this building first
   removed?: boolean;
   marketItem?: ItemKey;
   marketAmount?: number;
@@ -188,11 +189,13 @@ export interface Unit {
   foe: Unit | null;     // current combat target (unit)
   foeB: Building | null; // current combat target (building)
   order: UnitOrder | null;
+  orderQueue: UnitOrder[]; // shift-chained commands, pulled in as each order completes
   obeyT: number;        // seconds a fresh move order suppresses re-aggro (commands overrule combat)
   special: number;      // boss ability cooldown (dragon fire breath)
   anchor: Coord | null; // wild beasts & camp guards roam around (and leash to) this
   lungeT: number;       // melee swing animation timer (little hop toward the foe)
   hpBar: THREE.Object3D | null;
+  sepI: number;         // transient index within the crowd-separation pass (avoids a per-tick Map)
 }
 
 /** UI/Controls interaction mode. */

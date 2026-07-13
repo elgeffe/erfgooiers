@@ -10,11 +10,12 @@
    is created lazily on the first unlock() call (wired to the first click).
    ===================================================================== */
 
-type SfxName = 'place' | 'build' | 'coin' | 'chop' | 'harvest' | 'demolish' | 'click' | 'error' | 'sword' | 'arrow' | 'bell';
+type SfxName = 'place' | 'build' | 'coin' | 'chop' | 'harvest' | 'demolish' | 'click' | 'error'
+  | 'sword' | 'clang' | 'maul' | 'bite' | 'claw' | 'arrow' | 'bell';
 
 // Combat effects fire from every fighter in a battle, so rate-limit them
 // (per name) or a big melee becomes a wall of white noise.
-const SFX_THROTTLE_MS: Partial<Record<SfxName, number>> = { sword: 90, arrow: 80 };
+const SFX_THROTTLE_MS: Partial<Record<SfxName, number>> = { sword: 90, clang: 90, maul: 100, bite: 90, claw: 100, arrow: 80 };
 
 const MUTE_KEY = 'erfgooiers.muted';
 
@@ -216,6 +217,77 @@ const BIOME_MOODS: Record<string, Mood> = {
   hell: MOOD_HELL,
 };
 
+// =====================================================================
+//  Opening motifs — an actual melody line, unlike the moods (which are
+//  pure harmonic texture). A random motif is chosen at the menu and the
+//  first few levels of a run to give each playthrough its own signature
+//  tune, then it falls silent so the later levels stay ambient.
+// =====================================================================
+/** One melodic event: a MIDI pitch held for a number of quarter-note beats. */
+interface MotifNote { midi: number; beats: number; }
+
+/**
+ * A short looping theme laid over the pads. `voice` selects the timbre
+ * (a warm jazz rhodes, a retro square-wave chip lead, or a dark reed for the
+ * tritone theme); `bars` is one note-list per bar, cycled over the run's
+ * progression. Jazz motifs swing their eighths.
+ */
+interface Motif {
+  voice: 'jazz' | 'chip' | 'tritone';
+  bars: MotifNote[][];
+  swing?: boolean;
+  gain?: number;
+}
+
+// Two modal jazz motifs — loose, noodling lines that sit easily over the
+// bright C-major pads. Swung eighths give them a lazy, after-hours lilt.
+const MOTIF_JAZZ_A: Motif = {
+  voice: 'jazz', swing: true, gain: 0.15,
+  bars: [
+    [{ midi: 64, beats: 0.5 }, { midi: 65, beats: 0.5 }, { midi: 67, beats: 1 }, { midi: 69, beats: 0.5 }, { midi: 67, beats: 0.5 }, { midi: 65, beats: 1 }],
+    [{ midi: 64, beats: 1 }, { midi: 62, beats: 0.5 }, { midi: 64, beats: 0.5 }, { midi: 60, beats: 2 }],
+    [{ midi: 67, beats: 0.5 }, { midi: 69, beats: 0.5 }, { midi: 71, beats: 1 }, { midi: 69, beats: 0.5 }, { midi: 67, beats: 0.5 }, { midi: 65, beats: 1 }],
+    [{ midi: 64, beats: 2 }, { midi: 62, beats: 2 }],
+  ],
+};
+
+const MOTIF_JAZZ_B: Motif = {
+  voice: 'jazz', swing: true, gain: 0.14,
+  bars: [
+    [{ midi: 72, beats: 0.5 }, { midi: 71, beats: 0.5 }, { midi: 69, beats: 0.5 }, { midi: 67, beats: 0.5 }, { midi: 69, beats: 1 }, { midi: 67, beats: 1 }],
+    [{ midi: 65, beats: 1 }, { midi: 64, beats: 1 }, { midi: 62, beats: 2 }],
+    [{ midi: 67, beats: 0.5 }, { midi: 69, beats: 0.5 }, { midi: 72, beats: 1 }, { midi: 71, beats: 0.5 }, { midi: 69, beats: 0.5 }, { midi: 67, beats: 1 }],
+    [{ midi: 69, beats: 2 }, { midi: 67, beats: 2 }],
+  ],
+};
+
+// A retro 8-bit lead — steady square-wave eighths arpeggiating the chords,
+// bright and chiptune-plucky. No swing; it marches.
+const MOTIF_CHIP: Motif = {
+  voice: 'chip', gain: 0.11,
+  bars: [
+    [{ midi: 72, beats: 0.5 }, { midi: 76, beats: 0.5 }, { midi: 79, beats: 0.5 }, { midi: 76, beats: 0.5 }, { midi: 74, beats: 0.5 }, { midi: 77, beats: 0.5 }, { midi: 81, beats: 0.5 }, { midi: 79, beats: 0.5 }],
+    [{ midi: 67, beats: 0.5 }, { midi: 71, beats: 0.5 }, { midi: 74, beats: 0.5 }, { midi: 71, beats: 0.5 }, { midi: 69, beats: 0.5 }, { midi: 72, beats: 0.5 }, { midi: 76, beats: 0.5 }, { midi: 74, beats: 0.5 }],
+    [{ midi: 69, beats: 0.5 }, { midi: 72, beats: 0.5 }, { midi: 76, beats: 0.5 }, { midi: 72, beats: 0.5 }, { midi: 65, beats: 0.5 }, { midi: 69, beats: 0.5 }, { midi: 72, beats: 0.5 }, { midi: 69, beats: 0.5 }],
+    [{ midi: 60, beats: 0.5 }, { midi: 64, beats: 0.5 }, { midi: 67, beats: 0.5 }, { midi: 72, beats: 0.5 }, { midi: 67, beats: 0.5 }, { midi: 64, beats: 0.5 }, { midi: 62, beats: 0.5 }, { midi: 60, beats: 0.5 }],
+  ],
+};
+
+// The devil's-interval theme — a slow, ominous reed line built on the
+// tritone (A↔D♯, B↔F). Classical phrasing; when chosen its tempo quickens
+// level by level (handled in pickMotif). Evil, and getting impatient.
+const MOTIF_TRITONE: Motif = {
+  voice: 'tritone', gain: 0.13,
+  bars: [
+    [{ midi: 69, beats: 1 }, { midi: 72, beats: 1 }, { midi: 75, beats: 1 }, { midi: 71, beats: 1 }],
+    [{ midi: 68, beats: 2 }, { midi: 65, beats: 2 }],
+    [{ midi: 69, beats: 1 }, { midi: 75, beats: 1 }, { midi: 69, beats: 0.5 }, { midi: 68, beats: 0.5 }, { midi: 69, beats: 1 }],
+    [{ midi: 71, beats: 2 }, { midi: 65, beats: 2 }],
+  ],
+};
+
+const OPENING_MOTIFS: Motif[] = [MOTIF_JAZZ_A, MOTIF_JAZZ_B, MOTIF_CHIP, MOTIF_TRITONE];
+
 /** Map a 1-based level within a run to a mood tier. */
 function moodForLevel(level: number): Mood {
   if (level <= 3) return MOOD_MAJOR;
@@ -252,6 +324,8 @@ export class AudioEngine {
   private biomeMood: Mood | null = null;  // biome signature overriding level moods
   private activeProg = MOOD_MAJOR.prog;   // the chosen progression for this play
   private dynamic = false;                // sandbox: drift through the moods over time
+  private motif: Motif | null = null;     // opening melody laid over the pads (menu/early levels)
+  private motifBpm = 0;                    // >0: motif drives the bar tempo (tritone's evolving pace)
 
   constructor() {
     this.muted = localStorage.getItem(MUTE_KEY) === '1';
@@ -277,6 +351,7 @@ export class AudioEngine {
    * omit) to return to the bright menu mood.
    */
   setLevel(level = 0): void {
+    this.pickMotif(level); // opening melody is independent of the biome/level pad tier
     if (this.biomeMood) return; // a biome signature owns the score while active
     this.pendingMood = level > 0 ? moodForLevel(level) : MOOD_MAJOR;
     // If nothing is playing yet, adopt it straight away.
@@ -302,6 +377,19 @@ export class AudioEngine {
    * and back, rather than sitting on one texture.
    */
   setDynamic(on: boolean): void { this.dynamic = on; }
+
+  /**
+   * Choose the opening motif. A random theme plays at the menu (level 0) and
+   * the first three levels of a run, then falls silent so the later levels stay
+   * purely ambient. The tritone theme carries its own tempo, quickening a step
+   * each level for a "classical, and closing in" feel.
+   */
+  private pickMotif(level: number): void {
+    if (level > 3) { this.motif = null; this.motifBpm = 0; return; }
+    const m = OPENING_MOTIFS[Math.floor(Math.random() * OPENING_MOTIFS.length)];
+    this.motif = m;
+    this.motifBpm = m.voice === 'tritone' ? 66 + Math.max(0, level - 1) * 10 : 0;
+  }
 
   /** Create the context on the first user gesture and (if unmuted) start music. */
   unlock(): void {
@@ -386,7 +474,9 @@ export class AudioEngine {
       }
       const m = this.mood;
       const prog = this.activeProg;
-      const barLen = (60 / m.bpm) * 4;
+      // A motif with its own tempo (the quickening tritone theme) drives the bar.
+      const bpm = this.motifBpm || m.bpm;
+      const barLen = (60 / bpm) * 4;
       const bar = this.step % prog.length;
       const cell = prog[bar];
       const t = this.nextNote;
@@ -403,6 +493,9 @@ export class AudioEngine {
         const beat = barLen / m.drum;
         for (let i = 0; i < m.drum; i++) this.drum(t + i * beat, i === 0 ? 0.3 : 0.18);
       }
+
+      // Opening melody, if one is playing this run.
+      if (this.motif) this.playMotifBar(this.motif, this.step, t, barLen);
 
       this.nextNote += barLen;
       this.step++;
@@ -484,6 +577,86 @@ export class AudioEngine {
     src.start(t); src.stop(t + 0.18);
   }
 
+  /** Play one bar of the opening motif, walking its notes across the bar. */
+  private playMotifBar(motif: Motif, step: number, t: number, barLen: number): void {
+    const bar = motif.bars[step % motif.bars.length];
+    const beatLen = barLen / 4;
+    let pos = 0;
+    for (const note of bar) {
+      let start = t + pos * beatLen;
+      // Swing: nudge the off-beat eighths a touch late for a lazy lilt.
+      if (motif.swing && Math.round(pos / 0.5) % 2 === 1) start += beatLen * 0.12;
+      this.melodyNote(note.midi, start, note.beats * beatLen, motif);
+      pos += note.beats;
+    }
+  }
+
+  /** A single melody note, voiced per the motif's timbre. */
+  private melodyNote(midi: number, t: number, dur: number, motif: Motif): void {
+    const ctx = this.ctx!;
+    const level = motif.gain ?? 0.14;
+
+    if (motif.voice === 'chip') {
+      // Retro square-wave lead — bright and staccato.
+      const o = ctx.createOscillator();
+      o.type = 'square'; o.frequency.value = hz(midi);
+      const g = ctx.createGain();
+      const d = Math.min(dur, 0.2);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(level, t + 0.008);
+      g.gain.setValueAtTime(level, t + d * 0.6);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(g); g.connect(this.music);
+      o.start(t); o.stop(t + d + 0.02);
+      return;
+    }
+
+    if (motif.voice === 'tritone') {
+      // Dark reed — two detuned saws under a lowpass, with a hall of delay.
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 1400;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(level, t + 0.06);
+      g.gain.setValueAtTime(level, t + Math.max(0.06, dur - 0.15));
+      g.gain.linearRampToValueAtTime(0.0001, t + dur);
+      lp.connect(g); g.connect(this.music);
+      const send = ctx.createGain(); send.gain.value = 0.35;
+      g.connect(send); send.connect(this.delay);
+      for (const det of [1, 0.5]) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth'; o.frequency.value = hz(midi) * det;
+        const og = ctx.createGain(); og.gain.value = det === 1 ? 1 : 0.5;
+        o.connect(og); og.connect(lp);
+        o.start(t); o.stop(t + dur + 0.05);
+      }
+      return;
+    }
+
+    // Jazz — warm rhodes: a triangle + sine pair with a gentle vibrato.
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(level, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, level * 0.5), t + dur * 0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    g.connect(this.music);
+    const send = ctx.createGain(); send.gain.value = 0.25;
+    g.connect(send); send.connect(this.delay);
+    const vib = ctx.createOscillator();
+    vib.type = 'sine'; vib.frequency.value = 5;
+    const vibGain = ctx.createGain(); vibGain.gain.value = 4;
+    vib.connect(vibGain);
+    for (const [type, lv] of [['triangle', 1], ['sine', 0.5]] as [OscillatorType, number][]) {
+      const o = ctx.createOscillator();
+      o.type = type; o.frequency.value = hz(midi);
+      vibGain.connect(o.frequency);
+      const og = ctx.createGain(); og.gain.value = lv;
+      o.connect(og); og.connect(g);
+      o.start(t); o.stop(t + dur + 0.05);
+    }
+    vib.start(t); vib.stop(t + dur + 0.05);
+  }
+
   /** Rounded bass note. */
   private bass(freq: number, t: number, dur: number): void {
     const ctx = this.ctx!;
@@ -522,6 +695,10 @@ export class AudioEngine {
       case 'click': return this.efClick(t);
       case 'error': return this.efError(t);
       case 'sword': return this.efSword(t);
+      case 'clang': return this.efClang(t);
+      case 'maul': return this.efMaul(t);
+      case 'bite': return this.efBite(t);
+      case 'claw': return this.efClaw(t);
       case 'arrow': return this.efArrow(t);
       case 'bell': return this.efBell(t);
     }
@@ -551,6 +728,24 @@ export class AudioEngine {
     g.gain.exponentialRampToValueAtTime(gain, t + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g); g.connect(this.sfx);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+
+  /** A tone that slides in pitch — a growl or a shriek, depending on direction.
+   *  Optional lowpass tames the sawtooth's rasp. */
+  private glide(f0: number, f1: number, t: number, dur: number, type: OscillatorType, gain: number, cutoff = 0): void {
+    const ctx = this.ctx!;
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    let tail: AudioNode = g;
+    if (cutoff) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = cutoff; g.connect(lp); tail = lp; }
+    o.connect(g); tail.connect(this.sfx);
     o.start(t); o.stop(t + dur + 0.02);
   }
 
@@ -595,13 +790,46 @@ export class AudioEngine {
     this.tone(hz(84), t, 0.05, 'triangle', 0.18);
   }
 
-  // sword swing — a metallic clink over a short air swish, pitch jittered so
-  // a melee reads as many blades rather than one repeating sample
+  // light sword swing (soldiers, pikemen, bandits, skeletons) — a quick air
+  // swish then a bright, fast-decaying steel clink. Pitch jittered so a melee
+  // reads as many blades rather than one repeating sample.
   private efSword(t: number): void {
-    const ring = 2200 + Math.random() * 900;
-    this.burst(t, 0.05, 4200, 'bandpass', 0.3);          // the swish of the swing
-    this.tone(ring, t + 0.02, 0.09, 'triangle', 0.2);    // steel on steel
-    this.tone(ring * 1.5, t + 0.02, 0.05, 'sine', 0.1);  // faint upper partial
+    const ring = 2400 + Math.random() * 1000;
+    this.burst(t, 0.035, 5200, 'highpass', 0.22);           // the swish of the swing
+    this.tone(ring, t + 0.02, 0.08, 'triangle', 0.2);       // steel on steel
+    this.tone(ring * 1.5, t + 0.02, 0.05, 'sine', 0.09);    // faint upper partial
+    this.glide(ring * 1.1, ring * 0.8, t + 0.02, 0.06, 'triangle', 0.08); // a glancing scrape
+  }
+
+  // heavy steel clash (knights, horse knights, the hero, orcs) — a lower,
+  // meatier clang with a real body thud under a longer-ringing partial.
+  private efClang(t: number): void {
+    const ring = 1200 + Math.random() * 500;
+    this.burst(t, 0.05, 3000, 'bandpass', 0.26);            // weighty swing
+    this.tone(95, t, 0.11, 'sine', 0.3);                    // the shock through the arms
+    this.tone(ring, t + 0.02, 0.18, 'triangle', 0.2);       // deep steel ring
+    this.tone(ring * 1.5, t + 0.02, 0.1, 'sine', 0.08);     // upper partial, slowly fading
+  }
+
+  // blunt strike on rotten flesh (zombies, bloated zombies) — a wet, dull
+  // thud with no metal in it at all.
+  private efMaul(t: number): void {
+    this.tone(70, t, 0.15, 'sine', 0.34);                   // the heavy thump
+    this.burst(t, 0.1, 420, 'lowpass', 0.3);                // muffled impact body
+    this.burst(t + 0.01, 0.06, 700, 'bandpass', 0.14);      // a squelch of torn flesh
+  }
+
+  // beast bite (wolves, boars) — a snap of teeth over a short low growl.
+  private efBite(t: number): void {
+    this.burst(t, 0.03, 1900, 'bandpass', 0.3);             // the snap
+    this.glide(190, 90, t, 0.13, 'sawtooth', 0.16, 700);    // a guttural growl
+  }
+
+  // demon slash (the hell fiends) — a raking claw with a dark descending shriek.
+  private efClaw(t: number): void {
+    this.burst(t, 0.09, 3200, 'bandpass', 0.22);            // the rake of claws
+    this.glide(520, 120, t, 0.16, 'sawtooth', 0.14, 1400);  // a menacing downward shriek
+    this.tone(58, t, 0.14, 'sine', 0.22);                   // an infernal low body
   }
 
   // arrow loosed — a plucked string twang and the hiss of the shaft in flight

@@ -68,6 +68,18 @@ describe('Objective', () => {
     expect(d.evaluate(gameWith({})).done).toBe(true);
   });
 
+  it('clearAll needs an empty map — no foes, no strongholds, no pending raids', () => {
+    // a mock Game exposing just the clear-all queries
+    const clearWith = (foes: number, holds: number, pending: boolean): Game =>
+      ({ hostileUnitsLeft: () => foes, enemyStructuresLeft: () => holds, scheduledWavesPending: () => pending } as unknown as Game);
+    const o = new Objective({ kind: 'clearAll' });
+    expect(o.evaluate(clearWith(12, 3, true)).done).toBe(false);  // snapshots base = 15
+    expect(o.evaluate(clearWith(4, 1, false)).done).toBe(false);   // foes & holds remain
+    expect(o.evaluate(clearWith(0, 0, true)).done).toBe(false);    // a raid still looms
+    expect(o.evaluate(clearWith(0, 0, false)).done).toBe(true);    // truly clear
+    expect(o.evaluate(clearWith(0, 0, false)).ratio).toBe(1);
+  });
+
   it('progress ratio is clamped to 1', () => {
     const o = new Objective({ kind: 'produce', item: 'bread', n: 2 });
     for (let i = 0; i < 5; i++) o.onProduce('bread');
@@ -94,5 +106,16 @@ describe('ascendObjective', () => {
     expect(ascendObjective(timber8, 3, 2)).toEqual({ kind: 'produce', item: 'timber', n: 12 });
     const slay = { kind: 'slay', unit: 'dragon', n: 1 } as const;
     expect(ascendObjective(slay, 5, 10)).toEqual(slay);
+  });
+
+  it('turns the Defend & assault levels into clear-all from Absurd', () => {
+    const defend = { kind: 'survive', waves: 2 } as const;
+    const assault = { kind: 'destroy', n: 5 } as const;
+    expect(ascendObjective(defend, 2, 5)).toEqual(defend);        // untouched below Absurd
+    expect(ascendObjective(defend, 3, 5)).toEqual({ kind: 'clearAll' });
+    expect(ascendObjective(assault, 3, 9)).toEqual({ kind: 'clearAll' });
+    // the Hunt (6) and Dragon (10) keep their own goals
+    expect(ascendObjective({ kind: 'slay', unit: 'boar', n: 8 }, 3, 6).kind).toBe('slayMulti');
+    expect(ascendObjective({ kind: 'slay', unit: 'dragon', n: 1 }, 3, 10).kind).toBe('slay');
   });
 });

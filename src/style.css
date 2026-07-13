@@ -188,6 +188,15 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 #wavemodal .waverow input{background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:6px 7px;font-size:12px;font-family:inherit;width:76px;font-variant-numeric:tabular-nums;}
 #wavemodal .waverow input:focus{outline:none;border-color:var(--accent);}
 #wavemodal .whint{color:var(--ink-dim);font-size:11px;}
+#wavemodal .wavetotal{font-size:12.5px;color:var(--ink);align-self:center;}
+#wavemodal .wavetotal b{color:var(--accent);font-variant-numeric:tabular-nums;}
+.wavekinds{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 12px;max-height:44vh;overflow-y:auto;margin-top:4px;padding-right:4px;}
+.waverow-kind{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--panel2);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:5px 8px 5px 11px;}
+.waverow-kind.on{background:#4a3823;border-color:var(--accent);}
+.waverow-kind .wavekind-label{font-size:12.5px;font-weight:600;color:var(--ink-dim);}
+.waverow-kind.on .wavekind-label{color:var(--accent);}
+.waverow-kind input{background:var(--panel);color:var(--ink);border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:5px 6px;font-size:12px;font-family:inherit;width:62px;font-variant-numeric:tabular-nums;}
+.waverow-kind input:focus{outline:none;border-color:var(--accent);}
 /* ---------- intro ---------- */
 #intro{position:absolute;inset:0;background:rgba(15,11,8,.72);display:none;align-items:center;justify-content:center;z-index:30;}
 #introCard{width:430px;background:var(--panel);border:1px solid rgba(217,164,65,.4);border-radius:14px;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.6);}
@@ -209,6 +218,10 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 /* option chip rows on the sandbox-setup (and similar) screens */
 .optgroup{margin:10px 0 12px;}
 .optlabel{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);margin-bottom:5px;}
+.sbxnum{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);}
+.sbxnum input{background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:6px 7px;font-size:12px;font-family:inherit;width:70px;font-variant-numeric:tabular-nums;}
+.sbxnum input:focus{outline:none;border-color:var(--accent);}
+.sbxnum .whint{color:var(--ink-dim);font-size:11px;}
 .optrow{display:flex;flex-wrap:wrap;gap:6px;}
 .optrow .opt{background:var(--panel2);color:var(--ink-dim);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;}
 .optrow .opt:hover{color:var(--ink);border-color:var(--accent);}
@@ -253,6 +266,10 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
    be repeated here — otherwise every "wide" screen collapses to 440px. */
 .shopcard,.screen .card.shopcard{width:min(1180px,96vw);text-align:left;max-height:94vh;overflow-y:auto;}
 .shopcard h1{justify-content:flex-start;}
+/* the sandbox card picker borrows the shop's wide, scrolling, left-aligned look */
+.sbcard-card,.screen .card.sbcard-card{width:min(1180px,96vw);text-align:left;max-height:94vh;overflow-y:auto;}
+.sbcard-card h1{justify-content:flex-start;}
+.sbcard-card .btns.row{margin-top:18px;}
 .shopsect{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);margin:14px 0 7px;}
 .shopgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;}
 /* shop wares: three portrait cards, side by side */
@@ -296,7 +313,10 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 /* contracts — the road ahead */
 .scard.contract{flex-direction:column;align-items:stretch;text-align:left;}
 .scard.contract .sc-desc{margin:4px 0 6px;}
-.scard.contract .conchips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;}
+.scard.contract .conchips{display:flex;flex-direction:column;gap:5px;margin-bottom:6px;}
+.scard.contract .mutrow{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 7px;}
+.scard.contract .mutrow .mutchip{flex:none;}
+.scard.contract .mutdesc{font-size:10.5px;line-height:1.35;color:#d8c4b6;opacity:.9;}
 .scard.contract .mutchip.calm{background:rgba(143,191,107,.15);border-color:rgba(143,191,107,.5);color:#d6f0bf;}
 .scard.con-elite{border-color:rgba(217,164,65,.7);box-shadow:0 0 10px rgba(217,164,65,.15);}
 .btns button.disabled{opacity:.5;pointer-events:none;}

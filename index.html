@@ -70,22 +70,40 @@
   <div class="sb-group" id="sbWave"><span class="sb-label">Raids</span>
     <button id="sbWaveOpen" title="Compose a raid wave — pick the units, the size and an optional timer">⚔️ Summon wave…</button>
   </div>
+  <div class="sb-group" id="sbCards"><span class="sb-label">Cards</span>
+    <button id="sbCardsOpen" title="Add or remove heritage and power-up cards freely">🃏 Cards…</button>
+  </div>
 </div>
 
 <!-- ---------- sandbox wave composer (modal) ---------- -->
 <div id="wavemodal" class="screen">
   <div class="card">
     <h1 class="serif">Summon a wave</h1>
-    <div class="tag">Pick the raiders, set the size — and optionally put the raid on a timer. It marches from the map edge onto your castle.</div>
-    <div class="optlabel">Raiders — pick one or several kinds (the wave mixes them)</div>
-    <div id="waveKinds" class="optrow"></div>
+    <div class="tag">Set how many of each kind should arrive — the wave marches from the map edge onto your castle. Optionally put it on a timer.</div>
+    <div class="optlabel">Raiders — set a count for each kind you want in the wave</div>
+    <div id="waveKinds" class="wavekinds"></div>
     <div class="waverow">
-      <label>Total raiders <input id="waveCount" type="number" min="1" max="1000" step="1" value="50"></label>
+      <span class="wavetotal">Total: <b id="waveTotal">0</b> raiders</span>
       <label>Arrives in <input id="waveDelay" type="number" min="0" max="3600" step="5" value="0"> s <span class="whint">(0 = at once)</span></label>
     </div>
     <div class="btns row">
       <button id="waveCancel" class="ghost">Cancel</button>
       <button id="waveGo">⚔️ Summon</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- sandbox card picker (modal) ---------- -->
+<div id="sbcardmodal" class="screen">
+  <div class="card sbcard-card">
+    <h1 class="serif">Heritage &amp; power-ups</h1>
+    <div class="tag">Stack your run however you like — click a card below to add it, click one of your cards to remove it. No gold, no limits but the five card slots.</div>
+    <div class="shopsect" id="sbcardOwnedLabel">Your cards</div>
+    <div id="sbcardOwned" class="shopgrid"></div>
+    <div class="shopsect">Power-ups — click to add</div>
+    <div id="sbcardAvail" class="shopgrid"></div>
+    <div class="btns row">
+      <button id="sbcardDone">Done</button>
     </div>
   </div>
 </div>
@@ -165,6 +183,7 @@
           <tr><td><b>double-click</b> a fighter</td><td>select every visible fighter of that type</td></tr>
           <tr><td><b>right-click</b></td><td>order the selected army (attack / move)</td></tr>
           <tr><td><b>hold right-click + drag</b></td><td>preview the formation and aim its facing</td></tr>
+          <tr><td><b>Shift + right-click</b></td><td>chain orders — queue waypoints and attacks in sequence</td></tr>
           <tr><td><b>Shift + 1–5</b></td><td>assign the selection to a squad</td></tr>
           <tr><td><b>1–5</b></td><td>recall a squad (again: centre the camera on it)</td></tr>
           <tr><td><b>R</b></td><td>rotate the building being placed</td></tr>
@@ -271,7 +290,7 @@
     <h1 class="serif"><span id="introLogo"></span>How to play</h1>
     <div class="tag">A cozy physical economy — every plank, loaf and coin is carried by hand.</div>
     <ul>
-      <li><span class="k">Build</span><span>Place buildings from the bottom menu. Serfs haul timber &amp; stone from your storehouse to the site, then a laborer constructs it.</span></li>
+      <li><span class="k">Build</span><span>Place buildings from the bottom menu. Serfs haul timber &amp; stone from your castle to the site, then a laborer constructs it.</span></li>
       <li><span class="k">Watch</span><span>Specialists gather and craft; serfs automatically carry goods between buildings. Nothing teleports.</span></li>
       <li><span class="k">Roads</span><span>Paint roads for 1 stone each — workers prefer them and walk 30% faster on them.</span></li>
       <li><span class="k">Plots</span><span>Farms, vineyards &amp; pig farms need plots — use the <b>Plot</b> tool to add crop &amp; pasture tiles around them (each building has a plot limit); demolish to clear them.</span></li>

@@ -23,7 +23,10 @@ export type ObjectiveDef =
   | { kind: 'slay'; unit: UnitKind; n: number }
   /** Hunt several kinds at once (higher-difficulty hunts: wolves AND boars). */
   | { kind: 'slayMulti'; reqs: { unit: UnitKind; n: number }[] }
-  | { kind: 'destroy'; n: number };
+  | { kind: 'destroy'; n: number }
+  /** Total war (top ascensions): raze every enemy stronghold, kill every
+   *  hostile unit and outlast every raid still to come. */
+  | { kind: 'clearAll' };
 
 /**
  * Adapt a level's objective to the run's ascension tier.
@@ -33,7 +36,13 @@ export type ObjectiveDef =
  *  Combat and collection goals stay untouched: their counts are bounded by
  *  what the map actually spawns.
  */
+/** Combat levels whose goal becomes total annihilation at the top tier. */
+const CLEAR_ALL_LEVELS = new Set([5, 7, 8, 9]);
+
 export function ascendObjective(def: ObjectiveDef, ascension: number, levelIndex: number): ObjectiveDef {
+  // From Absurd (a ≥ 3) the Defend and assault levels stop asking for a fixed
+  // tally and demand the whole map cleared — every stronghold, unit and raid.
+  if (ascension >= 3 && CLEAR_ALL_LEVELS.has(levelIndex)) return { kind: 'clearAll' };
   if (levelIndex === 1 && ascension >= 2) {
     def = ascension >= 4
       ? { kind: 'produceMulti', reqs: [{ item: 'timber', n: 12 }, { item: 'bread', n: 8 }, { item: 'coin', n: 4 }] }
@@ -73,6 +82,7 @@ export class Objective {
   private wavesCleared = 0;
   private structures = 0; // enemy buildings destroyed
   private trained = 0;    // fighters trained at the player's buildings
+  private clearAllBase = 0; // clearAll: hostile units + strongholds present at first sight
 
   constructor(readonly def: ObjectiveDef) {}
 
@@ -113,6 +123,7 @@ export class Objective {
     if (d.kind === 'slay') return `Slay ${d.n} ${UNITS[d.unit].name.toLowerCase()}${d.n > 1 ? 's' : ''}`;
     if (d.kind === 'slayMulti') return 'Slay ' + d.reqs.map(r => `${r.n} ${UNITS[r.unit].name.toLowerCase()}${r.n > 1 ? 's' : ''}`).join(' + ');
     if (d.kind === 'destroy') return `Destroy ${d.n} enemy ${d.n > 1 ? 'strongholds' : 'stronghold'}`;
+    if (d.kind === 'clearAll') return 'Clear the map — every stronghold, every foe, every raid';
     return `Collect ${d.n} gold piles`;
   }
 
@@ -184,6 +195,17 @@ export class Objective {
         if ((this.kills[r.unit] || 0) < r.n) done = false;
       }
       return { done, label: parts.join(' · '), ratio: need ? have / need : 1 };
+    }
+    if (d.kind === 'clearAll') {
+      const foes = game.hostileUnitsLeft();
+      const holds = game.enemyStructuresLeft();
+      const pending = game.scheduledWavesPending();
+      // snapshot the starting host the first time we look, for a sensible bar
+      if (this.clearAllBase === 0) this.clearAllBase = Math.max(1, foes + holds);
+      const done = foes === 0 && holds === 0 && !pending;
+      const label = `Foes ${foes} · Strongholds ${holds}` + (pending ? ' · a raid still looms' : '');
+      const ratio = done ? 1 : Math.max(0, Math.min(0.95, 1 - (foes + holds) / this.clearAllBase));
+      return { done, label, ratio };
     }
     // destroy
     const s = Math.min(d.n, this.structures);
