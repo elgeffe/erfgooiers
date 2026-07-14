@@ -181,6 +181,7 @@
       <button id="btnContinue">Continue run</button>
       <button id="btnNewRun">New run</button>
       <button id="btnCoop">Co-op Expedition (Beta)</button>
+      <button id="btnSkirmish">1v1 Skirmish (Beta)</button>
       <button id="btnHeritage" class="ghost">Heritage Cards — spend Erfgoed</button>
       <button id="btnSandbox" class="ghost">Sandbox — free build</button>
       <button id="btnHelp" class="ghost">How to play</button>
@@ -192,16 +193,15 @@
 <!-- ---------- co-op create / join (server browser retained for later) ---------- -->
 <div id="coopmenu" class="screen">
   <div class="card coopcard">
-    <h1 class="serif">Co-op Expedition</h1>
-    <div class="tag">Play directly with one friend. Choose one path below.</div>
+    <h1 class="serif" id="coopMenuTitle">Co-op Expedition</h1>
+    <div class="tag" id="coopMenuTag">Play directly with one friend. Choose one path below.</div>
     <div id="coopError" class="coop-error" role="alert"></div>
     <label class="coopfield coop-name"><span>Your player name</span><input id="coopPlayerName" maxlength="24" value="Erfgooier"></label>
     <div class="coopcols coop-choices">
       <section class="coop-route coop-route-host">
-        <div class="coop-route-head"><span class="coop-route-icon">🏰</span><div><b>Host an Expedition</b><small>Create the world and invite a friend.</small></div></div>
+        <div class="coop-route-head"><span class="coop-route-icon">🏰</span><div><b id="coopHostHeading">Host an Expedition</b><small id="coopHostSub">Create the world and invite a friend.</small></div></div>
         <label class="coopfield"><span>Room name</span><input id="coopRoomName" maxlength="48" value="Polder Expedition"></label>
-        <label class="coopfield"><span>Mode</span><select id="coopMode"><option value="expedition">Co-op Expedition</option><option value="skirmish">1v1 Skirmish (beta)</option></select></label>
-        <label class="coopfield"><span>Difficulty</span><select id="coopDifficulty"><option value="journey">Journey</option><option value="erfgooiers">Erfgooiers</option><option value="veldheer">Veldheer</option></select></label>
+        <label class="coopfield" id="coopDifficultyField"><span>Difficulty</span><select id="coopDifficulty"><option value="journey">Journey</option><option value="erfgooiers">Erfgooiers</option><option value="veldheer">Veldheer</option></select></label>
         <button id="btnCoopHost" class="coop-action host">Create host code →</button>
       </section>
       <section class="coop-route coop-route-join">
