@@ -336,7 +336,11 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 /* ---------- full-screen menu / shop / summary ---------- */
 #hud{display:none;}
 .screen{position:absolute;inset:0;background:radial-gradient(120% 120% at 50% 0%,rgba(40,30,20,.86),rgba(15,11,8,.94));display:none;align-items:center;justify-content:center;z-index:25;}
-.screen .card{width:440px;max-width:92vw;background:var(--panel);border:1px solid rgba(217,164,65,.4);border-radius:14px;padding:28px 30px;box-shadow:0 20px 60px rgba(0,0,0,.6);text-align:center;}
+.screen .card{position:relative;width:440px;max-width:92vw;background:var(--panel);border:1px solid rgba(217,164,65,.4);border-radius:14px;padding:28px 30px;box-shadow:0 20px 60px rgba(0,0,0,.6);text-align:center;}
+/* homepage music toggle, tucked into the menu card's top-right corner */
+.menu-sound{position:absolute;top:14px;right:14px;background:var(--panel2);color:var(--ink-dim);border:1px solid rgba(255,255,255,.1);border-radius:7px;width:34px;height:30px;cursor:pointer;font-size:15px;line-height:1;}
+.menu-sound:hover{border-color:var(--accent);color:var(--ink);}
+.menu-sound.off{opacity:.55;}
 .screen .card h1{font-size:26px;color:var(--accent);margin-bottom:6px;display:flex;align-items:center;justify-content:center;gap:10px;}
 .screen .card .tag{color:var(--ink-dim);font-size:12.5px;line-height:1.5;margin-bottom:16px;}
 .screen .metaline{font-size:12.5px;color:var(--ink);background:rgba(217,164,65,.1);border:1px solid rgba(217,164,65,.28);border-radius:8px;padding:8px 12px;margin-bottom:18px;}
