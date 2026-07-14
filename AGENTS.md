@@ -180,6 +180,12 @@ hard placement pressure.
   notifications route through `Game.emitToast(msg, cls, owner)`, which drops the *other*
   player's events so each seat sees only its own; global events (raids, level messages) carry
   no owner and show to both. Checkpoint/replay recovery and per-player shops are not built yet.
+- A beta **1v1 Skirmish** mode reuses the whole co-op stack as PvP: the host picks the mode
+  in the host form (`RoomSettings.mode: 'skirmish'`), diplomacy is data on the simulation
+  (`Game.setTeams`/`Game.hostileOwners`, keyed by entity `owner`), the single symmetric map
+  lives in `src/data/skirmishLevels.ts` with no PvE, and the first storehouse to fall ends
+  the match via `Game.eliminated` (the shared `defeat` flag stays co-op/solo only). See
+  `docs/skirmish-design.md` for the N-player plan and the beta backlog.
 - The physical hero unit and functional equipment slots are not implemented yet.
 - Combat units include soldiers, archers, knights, and several enemy/wild archetypes.
 - Army controls include box/double-click selection, minimap highlighting, groups,

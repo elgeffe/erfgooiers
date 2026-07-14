@@ -373,7 +373,7 @@ function validateSettings(value: RoomSettings): RoomSettings {
   const roomName = cleanName(value.roomName, MAX_ROOM_NAME, 'Room name');
   if (!['public', 'unlisted'].includes(value.visibility)) throw new RoomError('invalid_visibility', 'Invalid room visibility');
   if (!['journey', 'erfgooiers', 'veldheer'].includes(value.difficulty)) throw new RoomError('invalid_difficulty', 'Invalid Expedition difficulty');
-  if (!['expedition', 'sandbox'].includes(value.mode)) throw new RoomError('invalid_mode', 'Invalid room mode');
+  if (!['expedition', 'sandbox', 'skirmish'].includes(value.mode)) throw new RoomError('invalid_mode', 'Invalid room mode');
   const region = cleanName(value.region, 24, 'Region');
   return { ...value, roomName, region, passwordProtected: !!value.passwordProtected };
 }

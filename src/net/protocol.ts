@@ -46,7 +46,7 @@ export interface RoomSettings {
   roomName: string;
   region: string;
   difficulty: ExpeditionDifficulty;
-  mode: 'expedition' | 'sandbox';
+  mode: 'expedition' | 'sandbox' | 'skirmish';
   passwordProtected: boolean;
 }
 

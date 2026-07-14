@@ -30,6 +30,7 @@ import { PeerCoOpClient, type ConnectionSnapshot } from './net/PeerCoOpClient';
 import type { AcceptedCommand, ExpeditionDifficulty, GameCommand } from './net/protocol';
 import { applyGameCommand } from './game/commands';
 import { EXPEDITION_DIFFICULTY, EXPEDITION_LEVEL_COUNT, expeditionLevelFor } from './data/coOpLevels';
+import { SKIRMISH_LEVEL } from './data/skirmishLevels';
 
 /* =====================================================================
    Erfgooiers — roguelite economy builder set in Het Gooi.
@@ -80,7 +81,7 @@ let currentLevel: LevelDef | null = null;
 let sandbox = false;             // free-build mode: no objective, no timer, no save
 
 // ---------- co-op expedition state ----------
-let coopRun: { level: number; difficulty: ExpeditionDifficulty } | null = null;
+let coopRun: { level: number; difficulty: ExpeditionDifficulty; skirmish: boolean } | null = null;
 let expeditionStartSent = false; // host guard: fire one start per both-ready lobby
 let coopCmdSeq = 0;
 let coopConnected = false;       // frame loop freezes the co-op sim while offline
@@ -360,9 +361,10 @@ function startCoopLevel(seed: number, levelIndex: number): void {
   if (game) disposeLevel();
   sandbox = false;
   const difficulty = snapshot.room?.settings.difficulty ?? 'erfgooiers';
+  const skirmish = snapshot.room?.settings.mode === 'skirmish';
   const diff = EXPEDITION_DIFFICULTY[difficulty];
   if (!coopRun || levelIndex === 1) {
-    coopRun = { level: levelIndex, difficulty };
+    coopRun = { level: levelIndex, difficulty, skirmish };
     run = newRun(seed);          // local gold container — never saved, never shopped (yet)
     clearedThisRun = 0;
     goldEarnedThisRun = 0;
@@ -370,7 +372,7 @@ function startCoopLevel(seed: number, levelIndex: number): void {
     coopRun.level = levelIndex;
     run!.levelIndex = levelIndex;
   }
-  const level = expeditionLevelFor(levelIndex);
+  const level = skirmish ? SKIRMISH_LEVEL : expeditionLevelFor(levelIndex);
   currentLevel = level;
   simRng.reseed(seed ^ 0x5bd1e995);
   uiRng.reseed(seed ^ 0x27d4eb2f);
@@ -396,6 +398,10 @@ function startCoopLevel(seed: number, levelIndex: number): void {
   game.onHurt = (x, z) => view.spawnHurt(x, z);
   game.onDeath = (x, z, _fac, color, role, scale) => view.spawnCorpse(x, z, color, role, scale);
   game.objective = new Objective(level.objectives[0]);
+  // Skirmish: each player fights for their own team, so the shared combat
+  // systems treat the rival settlement as hostile. PvE owners keep a team of
+  // their own even though a skirmish level spawns none.
+  if (skirmish) game.setTeams({ p1: 0, p2: 1, enemy: 2, wild: 2 });
   game.initCoOp(level.kit, level.kit);
   // in co-op every gameplay intent goes through the host command sequencer;
   // the accepted broadcast (applyAcceptedCommand) mutates the sim on both peers
@@ -447,7 +453,7 @@ function startCoopLevel(seed: number, levelIndex: number): void {
   phase = 'playing';
   if ((import.meta as any).env?.DEV) (window as any).game = game;
   showScreen(null);
-  ui.toast(`Expedition level ${level.index} — ${level.name}`);
+  ui.toast(skirmish ? `Skirmish — ${level.name}` : `Expedition level ${level.index} — ${level.name}`);
 }
 
 /** Team objective met: interlude, then the host launches the next level. */
@@ -476,6 +482,28 @@ function onCoopLevelClear(): void {
       sendCoopCommand({ type: 'startExpedition', seed: randomSeed(), level: cleared + 1 });
     }, 4000);
   }
+}
+
+/** A storehouse fell (or the clock ran out): both peers resolve the same
+ *  winner from the deterministic sim, each showing their own side of it. */
+function onSkirmishEnd(): void {
+  if (phase !== 'playing' || !coopRun || !game) return;
+  const localId = coop.snapshot().playerId ?? 'p1';
+  const localLost = game.eliminated.has(localId);
+  const anyLost = game.eliminated.size > 0;
+  const victory = anyLost && !localLost;
+  audio.play(victory ? 'coin' : 'error');
+  disposeLevel();
+  phase = 'summary';
+  $('sumTitle').textContent = victory ? 'Skirmish won!' : anyLost ? 'Skirmish lost' : 'Skirmish drawn';
+  $('sumSub').textContent = victory
+    ? "Your rival's storehouse lies in ruins — the border is yours."
+    : anyLost
+      ? 'Your storehouse has fallen — the border is lost.'
+      : 'The clock ran out with both storehouses standing — a stalemate.';
+  $('sumBody').innerHTML = `Gold earned <b>${goldEarnedThisRun}</b><br>Skirmish is a beta mode — no Heritage or rewards are banked yet.`;
+  showScreen('summary');
+  endCoopSession();
 }
 
 function renderCoopSummary(victory: boolean, reason: 'timeout' | 'castle' = 'timeout'): void {
@@ -1125,9 +1153,9 @@ function frame(now: number): void {
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
 
     // resolve the level last: win, castle lost, or timeout tears the level down
-    if (st.done) { if (coopRun) onCoopLevelClear(); else onLevelClear(); }
+    if (st.done) { if (coopRun?.skirmish) onSkirmishEnd(); else if (coopRun) onCoopLevelClear(); else onLevelClear(); }
     else if (game.defeat) onDefeat('castle');
-    else if (remaining <= 0) onDefeat('timeout');
+    else if (remaining <= 0) { if (coopRun?.skirmish) onSkirmishEnd(); else onDefeat('timeout'); }
   } else if (phase === 'playing' && game && currentLevel) {
     // sandbox: tick the sim with no objective/timer to resolve against
     simAcc += dt * game.simSpeed;

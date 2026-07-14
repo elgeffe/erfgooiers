@@ -14,7 +14,8 @@ export interface DamagePort {
   onKill(unit: Unit): void;
   onObjectiveKill(role: string, faction: Faction): void;
   onStructureDestroyed(faction: Faction): void;
-  markDefeat(): void;
+  hostile(a: OwnerId, b: OwnerId): boolean;
+  onCastleLost(owner: PlayerId): void;
   toast(message: string, cls?: string, owner?: OwnerId): void;
   sfx(name: string): void;
 }
@@ -26,7 +27,7 @@ export class DamageSystem {
   hurtUnit(source: Unit | null, victim: Unit, damage: number): void {
     victim.hp -= damage;
     this.port.onHurt(victim.mesh.position.x, victim.mesh.position.z, victim.faction);
-    if (source && !source.dead && !victim.foe && this.hostile(victim.faction, source.faction)) victim.foe = source;
+    if (source && !source.dead && !victim.foe && this.port.hostile(victim.owner, source.owner)) victim.foe = source;
     if (victim.hp <= 0) this.killUnit(victim);
   }
 
@@ -73,7 +74,7 @@ export class DamageSystem {
     // going down is a shared win, so it carries no owner and shows to both.
     this.port.toast(building.def.name + (building.faction === 'player' ? ' has fallen!' : ' destroyed!'), 'err',
       building.faction === 'player' ? building.owner : undefined);
-    if (castle) this.port.markDefeat();
+    if (castle) this.port.onCastleLost(building.owner as PlayerId);
   }
 
   private killUnit(unit: Unit): void {
@@ -83,10 +84,5 @@ export class DamageSystem {
     this.port.onKill(unit);
     this.port.onObjectiveKill(unit.role, unit.faction);
     for (const other of this.port.units()) if (other.foe === unit) other.foe = null;
-  }
-
-  private hostile(a: Faction, b: Faction): boolean {
-    if (a === b) return false;
-    return a === 'player' ? b !== 'player' : b === 'player';
   }
 }

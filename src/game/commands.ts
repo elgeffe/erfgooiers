@@ -89,13 +89,13 @@ export function applyGameCommand(game: Game, playerId: PlayerId, command: GameCo
         const target = game.entityById(order.targetId);
         if (!target || !('role' in target)) return fail('bad_target');
         const foe = target as Unit;
-        if (foe.dead || foe.faction === 'player') return fail('bad_target');
+        if (foe.dead || !game.hostileOwners(playerId, foe.owner)) return fail('bad_target');
         game.orderGroup(units, 'attack', foe.tx, foe.ty, foe, formation, undefined, !!command.queue);
         return ok;
       }
       if (order.type === 'attackBuilding') {
         const target = game.entityById(order.targetId);
-        if (!target || !('def' in target) || target.isSite || target.removed || target.faction === 'player') return fail('bad_target');
+        if (!target || !('def' in target) || target.isSite || target.removed || !game.hostileOwners(playerId, target.owner)) return fail('bad_target');
         game.orderGroupAttackBuilding(units, target as Building, !!command.queue);
         return ok;
       }

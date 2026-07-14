@@ -1,7 +1,7 @@
 import { UNITS, type UnitKind } from '../data/units';
 import { fieldPath } from '../engine/flowfield';
 import { simRng } from '../engine/rng';
-import type { Building, Coord, Faction, Unit } from '../types';
+import type { Building, Coord, Faction, OwnerId, Unit } from '../types';
 import type { World } from '../world/World';
 import type { CombatTargeting } from './CombatTargeting';
 import type { UnitMovement } from './UnitMovement';
@@ -14,9 +14,9 @@ interface CombatPorts {
   buildingCenter: (building: Building) => { x: number; z: number };
   attackUnit: (attacker: Unit, target: Unit) => void;
   attackBuilding: (attacker: Unit, target: Building) => void;
-  fireArrow: (shooter: Unit, from: Faction, x: number, y: number, z: number, target: Unit, damage: number) => void;
-  fireRock: (shooter: Unit, from: Faction, x: number, y: number, z: number, endX: number, endZ: number, damage: number, radius: number) => void;
-  fireFlame: (shooter: Unit, from: Faction, x: number, y: number, z: number, endX: number, endZ: number, damage: number) => void;
+  fireArrow: (shooter: Unit, from: OwnerId, x: number, y: number, z: number, target: Unit, damage: number) => void;
+  fireRock: (shooter: Unit, from: OwnerId, x: number, y: number, z: number, endX: number, endZ: number, damage: number, radius: number) => void;
+  fireFlame: (shooter: Unit, from: OwnerId, x: number, y: number, z: number, endX: number, endZ: number, damage: number) => void;
   sfx: (name: string) => void;
 }
 
@@ -90,8 +90,8 @@ export class CombatSystem {
         this.movement.groundPose(unit, flying);
         if (unit.atkTimer <= 0) {
           unit.atkTimer = unit.atkCd;
-          if (def.splash) this.ports.fireRock(unit, unit.faction, unit.mesh.position.x, 0.6, unit.mesh.position.z, foe.mesh.position.x, foe.mesh.position.z, unit.dmg, def.splash);
-          else if (def.arrows) this.ports.fireArrow(unit, unit.faction, unit.mesh.position.x, 0.6, unit.mesh.position.z, foe, unit.dmg);
+          if (def.splash) this.ports.fireRock(unit, unit.owner, unit.mesh.position.x, 0.6, unit.mesh.position.z, foe.mesh.position.x, foe.mesh.position.z, unit.dmg, def.splash);
+          else if (def.arrows) this.ports.fireArrow(unit, unit.owner, unit.mesh.position.x, 0.6, unit.mesh.position.z, foe, unit.dmg);
           else this.ports.attackUnit(unit, foe);
         }
       } else if (flying) {
@@ -291,7 +291,7 @@ export class CombatSystem {
     const x = unit.mesh.position.x, z = unit.mesh.position.z, y = 1.6 * (unit.mesh.scale.y || 1);
     for (let i = 0; i < 5; i++) {
       const angle = rnd() * Math.PI * 2, radius = rnd() * 1.3;
-      this.ports.fireFlame(unit, unit.faction, x, y, z, targetX + Math.cos(angle) * radius, targetZ + Math.sin(angle) * radius, 12);
+      this.ports.fireFlame(unit, unit.owner, x, y, z, targetX + Math.cos(angle) * radius, targetZ + Math.sin(angle) * radius, 12);
     }
     this.ports.sfx('error');
     unit.special = 5;
