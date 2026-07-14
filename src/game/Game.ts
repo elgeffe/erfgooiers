@@ -336,7 +336,7 @@ export class Game {
       sfx: name => this.sfx(name),
     });
     this.placementSystem = new PlacementSystem(
-      this.world, this.view, owner => this.modsFor(owner), this.buildings, this.sites, this.units, this.marketSystem,
+      this.world, this.view, owner => this.modsFor(owner), this.buildings, this.sites, this.units, this.marketSystem, this.localPlayerId,
       {
         nextId: () => this.nextEntityId++,
         countItem: (item, owner) => this.countItem(item, owner),
