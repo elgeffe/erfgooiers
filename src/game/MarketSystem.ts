@@ -2,15 +2,18 @@ import type * as THREE from 'three';
 import { ITEMS, MARKET_VALUES } from '../data/items';
 import type { Building, ItemKey } from '../types';
 
+export const MAX_MARKET_ORDERS = 3;
+
 interface MarketCaravan {
   mesh: THREE.Group;
   market: Building;
-  item: ItemKey;
-  amount: number;
   state: 'arriving' | 'trading' | 'leaving';
   edgeX: number;
   edgeZ: number;
+  parkX: number;   // where it halts, just outside the market footprint
+  parkZ: number;
   wait: number;
+  loaded: boolean; // has it taken on cargo at the market yet?
 }
 
 export interface MarketPort {
@@ -21,22 +24,37 @@ export interface MarketPort {
   remove(mesh: THREE.Object3D): void;
   sfx(name: string): void;
   toast(message: string): void;
+  /** Pay the market's proceeds straight into the owner's global coin stock. */
+  depositCoin(building: Building, amount: number): void;
 }
 
-/** Neutral export caravans and the physical market inventory they consume. */
+/** Neutral export caravans and the physical market inventory they consume. A
+ *  market can export up to three goods at once; the caravan halts just outside
+ *  the building, loads whatever is ready (rolling in empty, leaving laden), and
+ *  the coin lands directly in the owner's global stock — no serf pickup. */
 export class MarketSystem {
   private readonly caravans: MarketCaravan[] = [];
 
   constructor(private readonly port: MarketPort) {}
 
-  configure(building: Building, item: ItemKey, amount: number): void {
-    if (building.key !== 'market' || building.faction !== 'player' || building.removed || MARKET_VALUES[item] === undefined) return;
-    building.marketItem = item;
-    building.marketAmount = Math.max(0, Math.min(50, Number.isFinite(amount) ? Math.round(amount) : 0));
+  /** Replace a market's export list (deduped, valid goods only, capped at 3). */
+  configure(building: Building, orders: { item: ItemKey; amount: number }[]): void {
+    if (building.key !== 'market' || building.faction !== 'player' || building.removed) return;
+    const seen = new Set<ItemKey>();
+    const clean: { item: ItemKey; amount: number }[] = [];
+    for (const o of orders) {
+      if (MARKET_VALUES[o.item] === undefined || seen.has(o.item)) continue;
+      const amount = Math.max(0, Math.min(50, Number.isFinite(o.amount) ? Math.round(o.amount) : 0));
+      if (amount <= 0) continue;
+      seen.add(o.item);
+      clean.push({ item: o.item, amount });
+      if (clean.length >= MAX_MARKET_ORDERS) break;
+    }
+    building.marketOrders = clean;
   }
 
   incomePerMinute(building: Building): number {
-    return (MARKET_VALUES[building.marketItem ?? 'timber'] ?? 0) * (building.marketAmount ?? 0);
+    return (building.marketOrders ?? []).reduce((sum, o) => sum + (MARKET_VALUES[o.item] ?? 0) * o.amount, 0);
   }
 
   caravansInTransit(building: Building): number {
@@ -53,17 +71,21 @@ export class MarketSystem {
     }
   }
 
+  /** Goods currently sitting in the market that its export orders can sell. */
+  private readyTotal(building: Building): number {
+    return (building.marketOrders ?? []).reduce((sum, o) => sum + Math.min(o.amount, building.inp[o.item] || 0), 0);
+  }
+
   update(dt: number): void {
     for (const building of this.port.buildings()) {
       if (building.key !== 'market' || building.faction !== 'player' || !building.active || building.removed) continue;
       building.marketTimer = Math.max(0, (building.marketTimer ?? 60) - dt);
       if (building.marketTimer > 0 || this.caravansInTransit(building)) continue;
-      const item = building.marketItem ?? 'timber';
-      const amount = building.marketAmount ?? 0;
-      if (amount <= 0) { building.marketTimer = 60; continue; }
-      if ((building.inp[item] || 0) < amount) { building.marketTimer = 5; continue; }
+      if (!(building.marketOrders?.length)) { building.marketTimer = 60; continue; }
+      // wait for something to sell; re-check soon rather than idling a full minute
+      if (this.readyTotal(building) <= 0) { building.marketTimer = 5; continue; }
       building.marketTimer = 60;
-      this.spawnCaravan(building, item, amount);
+      this.spawnCaravan(building);
     }
 
     for (let i = this.caravans.length - 1; i >= 0; i--) {
@@ -78,9 +100,8 @@ export class MarketSystem {
         if (caravan.wait <= 0) caravan.state = 'leaving';
         continue;
       }
-      const center = this.port.buildingCenter(caravan.market);
-      const targetX = caravan.state === 'arriving' ? center.x : caravan.edgeX;
-      const targetZ = caravan.state === 'arriving' ? center.z : caravan.edgeZ;
+      const targetX = caravan.state === 'arriving' ? caravan.parkX : caravan.edgeX;
+      const targetZ = caravan.state === 'arriving' ? caravan.parkZ : caravan.edgeZ;
       const dx = targetX - caravan.mesh.position.x, dz = targetZ - caravan.mesh.position.z;
       const distance = Math.hypot(dx, dz), step = dt * 3;
       if (distance > 0.01) caravan.mesh.rotation.y = Math.atan2(dx, dz);
@@ -95,24 +116,46 @@ export class MarketSystem {
         this.caravans.splice(i, 1);
         continue;
       }
-      const sold = Math.min(caravan.amount, caravan.market.inp[caravan.item] || 0);
-      if (sold > 0) {
-        caravan.market.inp[caravan.item] -= sold;
-        const earned = sold * (MARKET_VALUES[caravan.item] ?? 0);
-        caravan.market.out.coin = (caravan.market.out.coin || 0) + earned;
-        this.port.sfx('coin');
-        this.port.toast(`Market exported ${sold} ${ITEMS[caravan.item].name.toLowerCase()} (+${earned} coin)`);
-      }
+      // arrived at the parking spot outside the market: load every ordered good
+      if (!caravan.loaded) this.loadCaravan(caravan);
       caravan.state = 'trading';
       caravan.wait = 2.5;
     }
   }
 
-  private spawnCaravan(market: Building, item: ItemKey, amount: number): void {
+  /** Take on cargo at the market: deduct each order's goods, pay the coin
+   *  straight into the owner's stock, and reveal the laden crates. */
+  private loadCaravan(caravan: MarketCaravan): void {
+    const market = caravan.market;
+    let earned = 0;
+    const parts: string[] = [];
+    for (const order of market.marketOrders ?? []) {
+      const sold = Math.min(order.amount, market.inp[order.item] || 0);
+      if (sold <= 0) continue;
+      market.inp[order.item] -= sold;
+      earned += sold * (MARKET_VALUES[order.item] ?? 0);
+      parts.push(`${sold} ${ITEMS[order.item].name.toLowerCase()}`);
+    }
+    caravan.loaded = true;
+    if (earned > 0) {
+      const cargo = caravan.mesh.getObjectByName('cargo');
+      if (cargo) cargo.visible = true; // rolled in empty, leaves laden
+      this.port.depositCoin(market, earned);
+      this.port.sfx('coin');
+      this.port.toast(`Market sold ${parts.join(', ')} (+${earned} coin)`);
+    }
+  }
+
+  private spawnCaravan(market: Building): void {
     const center = this.port.buildingCenter(market);
     const edgeX = center.x < 0 ? -this.port.worldWidth() / 2 - 2 : this.port.worldWidth() / 2 + 2;
+    // halt ~1.6 tiles from the market centre on the approach side, so the
+    // trader sits just outside the building rather than driving into its mesh
+    const parkX = center.x + Math.sign(edgeX - center.x || 1) * 1.6;
     const mesh = this.port.createCaravan();
     mesh.position.set(edgeX, 0, center.z);
-    this.caravans.push({ mesh, market, item, amount, state: 'arriving', edgeX, edgeZ: center.z, wait: 0 });
+    const cargo = mesh.getObjectByName('cargo');
+    if (cargo) cargo.visible = false;
+    this.caravans.push({ mesh, market, state: 'arriving', edgeX, edgeZ: center.z, parkX, parkZ: center.z, wait: 0, loaded: false });
   }
 }

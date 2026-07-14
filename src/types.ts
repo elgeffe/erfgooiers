@@ -154,8 +154,7 @@ export interface Building {
   rallyMesh?: THREE.Object3D;  // the flag marking the rally point
   priority?: boolean;          // player-flagged: serfs feed & empty this building first
   removed?: boolean;
-  marketItem?: ItemKey;
-  marketAmount?: number;
+  marketOrders?: { item: ItemKey; amount: number }[]; // up to 3 goods to export at once
   marketTimer?: number;
   isSite?: false;
 }

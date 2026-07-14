@@ -113,6 +113,55 @@ export function storyFor(level: number): LevelStory | undefined {
   return LEVEL_STORY[level];
 }
 
+/** A proud, self-contained victory banner for the dragon-slain modal: a golden
+ *  sunrise over Het Gooi, the erfgooier hero on the mound with sword and pennant
+ *  raised, and the fallen dragon beneath. Inline SVG (no external asset), sized
+ *  to the modal width and theme-agnostic. */
+export const VICTORY_IMAGE = `
+<svg viewBox="0 0 440 168" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Victory over the dragon" style="display:block">
+  <defs>
+    <linearGradient id="vsky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a2b4a"/><stop offset=".5" stop-color="#8a4a3a"/><stop offset="1" stop-color="#e0a341"/>
+    </linearGradient>
+    <radialGradient id="vsun" cx="50%" cy="88%" r="60%">
+      <stop offset="0" stop-color="#ffe9a8"/><stop offset=".5" stop-color="#ffd24a" stop-opacity=".9"/><stop offset="1" stop-color="#ffd24a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="440" height="168" fill="url(#vsky)"/>
+  <circle cx="220" cy="150" r="130" fill="url(#vsun)"/>
+  <g stroke="#ffe9a8" stroke-width="2" opacity=".5" stroke-linecap="round">
+    <path d="M220 150 L120 10"/><path d="M220 150 L180 4"/><path d="M220 150 L260 4"/><path d="M220 150 L320 10"/><path d="M220 150 L60 60"/><path d="M220 150 L380 60"/>
+  </g>
+  <path d="M0 150 Q90 116 180 138 T440 128 V168 H0 Z" fill="#3f6d3a"/>
+  <path d="M0 168 Q120 132 250 152 T440 150 V168 H0 Z" fill="#2f5330"/>
+  <!-- fallen dragon: a long green neck and horned head laid low on the grass -->
+  <g transform="translate(286 130)">
+    <path d="M0 8 Q40 -6 96 6 Q70 20 40 18 Q16 18 0 8 Z" fill="#3c5a34"/>
+    <path d="M96 6 q22 -2 30 8 q-14 8 -30 4 q-8 -6 0 -12 Z" fill="#33512c"/>
+    <path d="M112 2 l10 -12 M120 4 l14 -8" stroke="#25301d" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <circle cx="118" cy="10" r="2.3" fill="#1a1f14"/>
+    <path d="M40 18 l-6 12 M60 16 l4 12" stroke="#33512c" stroke-width="4" fill="none" stroke-linecap="round"/>
+  </g>
+  <!-- the hero triumphant on the mound: sword and pennant raised -->
+  <g transform="translate(150 96)">
+    <ellipse cx="4" cy="60" rx="42" ry="8" fill="#284226"/>
+    <rect x="-3" y="26" width="14" height="30" rx="4" fill="#5a4a6a"/>
+    <circle cx="4" cy="18" r="9" fill="#e8c9a0"/>
+    <path d="M-1 10 a9 9 0 0 1 10 0 l-1 -6 -4 3 -4 -3 Z" fill="#c9a94e"/>
+    <!-- raised sword arm -->
+    <path d="M9 30 L30 -2" stroke="#e8c9a0" stroke-width="6" stroke-linecap="round"/>
+    <path d="M30 -2 L40 -36" stroke="#dfe6ee" stroke-width="5" stroke-linecap="round"/>
+    <path d="M25 -2 L37 -2" stroke="#c9a94e" stroke-width="4" stroke-linecap="round"/>
+    <!-- pennant arm -->
+    <path d="M-1 30 L-20 6" stroke="#e8c9a0" stroke-width="6" stroke-linecap="round"/>
+    <path d="M-20 6 L-24 -34" stroke="#7a4f2d" stroke-width="3"/>
+    <path d="M-24 -32 q22 4 22 14 q-14 -2 -22 6 Z" fill="#8a4fbf"/>
+  </g>
+  <g fill="#ffe9a8" opacity=".85">
+    <circle cx="70" cy="30" r="2"/><circle cx="110" cy="52" r="1.6"/><circle cx="350" cy="34" r="2"/><circle cx="392" cy="58" r="1.6"/><circle cx="250" cy="24" r="1.6"/>
+  </g>
+</svg>`;
+
 /** The one-time congratulations shown when the dragon falls on Normal — the
  *  reward for the whole first-ascension journey, and the doorway to Hard. */
 export const VICTORY_STORY = {

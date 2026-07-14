@@ -64,6 +64,13 @@ export function makeTraderCaravan(): THREE.Group {
   const canopy = new THREE.Mesh(box(0.72, 0.08, 0.72), cloth); canopy.position.y = 0.82; cart.add(canopy);
   for (const x of [-0.31, 0.31]) for (const z of [-0.3, 0.3]) { const p = new THREE.Mesh(box(0.035, 0.5, 0.035), wood); p.position.set(x, 0.58, z); cart.add(p); }
   const trader = makeHumanoid(0x6a4b8a, 'minter').group; trader.scale.setScalar(0.75); trader.position.set(0, 0.42, -0.05); cart.add(trader);
+  // cargo crates on the bed — hidden until the caravan has loaded at a market,
+  // so it rolls in empty and leaves laden (named for MarketSystem to toggle)
+  const cargo = new THREE.Group(); cargo.name = 'cargo'; cargo.visible = false;
+  for (const [cx, cz, s] of [[-0.18, -0.16, 0.24], [0.2, -0.14, 0.22], [-0.04, 0.16, 0.26], [0.16, 0.2, 0.2]] as const) {
+    const crate = new THREE.Mesh(box(s, s, s), umat(0x9a6b38)); crate.position.set(cx, 0.5, cz); cargo.add(crate);
+  }
+  cart.add(cargo);
   g.add(cart); g.scale.setScalar(1.25); return g;
 }
 

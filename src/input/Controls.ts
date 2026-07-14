@@ -50,6 +50,13 @@ export class Controls {
   constructor(private readonly view: View, private readonly ui: UI) {
     const canvas = this.view.renderer.domElement;
     canvas.addEventListener('contextmenu', e => e.preventDefault());
+    // Firefox on macOS lets Shift+right-click bypass a target-level
+    // preventDefault and pop the native menu, which swallowed the chain-order
+    // gesture. Catch it at the window in the capture phase (over the canvas)
+    // so Shift+right-click keeps chaining instead.
+    addEventListener('contextmenu', e => {
+      if (e.target === canvas) e.preventDefault();
+    }, { capture: true });
     canvas.addEventListener('pointerdown', e => this.onDown(e));
     canvas.addEventListener('dblclick', e => this.doubleClickSelect(e));
     addEventListener('pointermove', e => this.onMove(e));
@@ -142,6 +149,9 @@ export class Controls {
   // ---------- pointer ----------
   private onDown(e: PointerEvent): void {
     this.lastMouse = { x: e.clientX, y: e.clientY };
+    // suppress the native context menu for every right-button gesture so the
+    // Shift+right-click chain order is never overridden by the browser
+    if (e.button === 2) e.preventDefault();
     // right-click cancels an active placement mode
     if (e.button === 2 && this.mode) { this.setMode(null); return; }
     // right-click with an army selected = issue an order (no camera pan);

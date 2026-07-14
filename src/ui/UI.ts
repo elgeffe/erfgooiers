@@ -7,6 +7,7 @@ import { ROAD_STONE_COST } from '../constants';
 import { installFavicon, logoSVG } from './logo';
 import { audio } from '../audio/Audio';
 import { unitLabel } from '../game/util';
+import { MAX_MARKET_ORDERS } from '../game/MarketSystem';
 import { buildingIconSVG, itemIconSVG } from './icons';
 import { tradeLoadTime, tradePartner, tradeShipmentActive } from '../game/trade';
 import type { Game } from '../game/Game';
@@ -54,6 +55,7 @@ export class UI {
     $('logo').innerHTML = logoSVG(30);
     ($('goldChip').querySelector('.coin') as HTMLElement).innerHTML = itemIconSVG('coin', 15);
     installFavicon();
+    this.observeTopbar();
     this.buildResbar();
     this.buildMenu();
     this.wireSpeed();
@@ -62,6 +64,17 @@ export class UI {
     this.wireInspector();
     this.wireTradePanel();
     this.setCoOp(false);
+  }
+
+  /** Publish the live top-bar height as `--topbar-h` so the side panels, wave
+   *  banner and toasts sit just below it instead of a fixed offset — on small
+   *  screens the resource bar wraps taller and used to hide behind them. */
+  private observeTopbar(): void {
+    const bar = $('topbar');
+    const set = (): void => document.documentElement.style.setProperty('--topbar-h', `${bar.offsetHeight}px`);
+    set();
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(set).observe(bar);
+    addEventListener('resize', set);
   }
 
   /** Bind the HUD to a level's Game and reset transient UI state. */
@@ -113,8 +126,8 @@ export class UI {
    *  highlight to the first building not yet placed. Cheap; called each tick. */
   private renderChecklist(): void {
     const box = $('objChecklist');
-    // clear any previous suggestion highlight before recomputing
-    document.querySelectorAll<HTMLElement>('.bcard.suggest').forEach(el => el.classList.remove('suggest'));
+    // clear any previous suggestion highlight (cards and their tabs) first
+    document.querySelectorAll<HTMLElement>('.bcard.suggest, .btab.suggest').forEach(el => el.classList.remove('suggest'));
     if (!this.game || !this.checklistKeys.length) { box.style.display = 'none'; box.innerHTML = ''; this.placeInspector(); return; }
     const g = this.game;
     const built = (key: string) => g.buildings.some(b => b.key === key);
@@ -135,7 +148,14 @@ export class UI {
     box.style.display = 'flex';
     if (nextKey) {
       const card = document.querySelector<HTMLElement>(`.bcard[data-key="${nextKey}"]`);
-      if (card && !card.classList.contains('bio-hidden')) card.classList.add('suggest');
+      if (card && !card.classList.contains('bio-hidden')) {
+        card.classList.add('suggest');
+        // guide the eye to the right tab too when the suggested card is on a
+        // category that isn't the one currently shown
+        const cat = card.dataset.cat;
+        const tab = cat && document.querySelector<HTMLElement>(`.btab[data-cat="${cat}"]`);
+        if (tab && !tab.classList.contains('on')) tab.classList.add('suggest');
+      }
     }
     // the checklist changes the objective card's height — keep the inspector clear
     this.placeInspector();
@@ -487,9 +507,13 @@ export class UI {
       if (!target.matches('[data-market-control]')) return;
       const b = this.game?.selected;
       if (!b || b.key !== 'market') return;
-      const item = ($('marketItem') as HTMLSelectElement).value as ItemKey;
-      const amount = Number(($('marketAmount') as HTMLInputElement).value);
-      this.game!.configureMarket(b, item, amount);
+      const orders: { item: ItemKey; amount: number }[] = [];
+      document.querySelectorAll<HTMLElement>('#inspBody .market-row').forEach(row => {
+        const sel = row.querySelector('select') as HTMLSelectElement;
+        const amt = row.querySelector('input') as HTMLInputElement;
+        if (sel && sel.value !== '-') orders.push({ item: sel.value as ItemKey, amount: Number(amt.value) });
+      });
+      this.game!.configureMarket(b, orders);
       audio.play('click');
       this.renderInspector();
     });
@@ -509,7 +533,7 @@ export class UI {
   private placeInspector(): void {
     const obj = $('objective');
     const visible = obj.style.display !== 'none' && obj.offsetParent !== null;
-    $('inspector').style.top = visible ? Math.round(obj.getBoundingClientRect().bottom + 10) + 'px' : '84px';
+    $('inspector').style.top = visible ? Math.round(obj.getBoundingClientRect().bottom + 10) + 'px' : 'calc(var(--topbar-h, 52px) + 12px)';
   }
   private renderInspector(): void {
     const o = this.game?.selected; if (!o) return;
@@ -571,22 +595,22 @@ export class UI {
     } else {
       if (!o.active) body += o.def.worker ? '<div class="hnote">Waiting for a trained villager to staff it…</div>' : '<div class="hnote">Waiting for worker to arrive…</div>';
       if (o.key === 'market') {
-        const selected = (o.marketItem ?? 'timber') as ItemKey;
-        const amount = o.marketAmount ?? 0;
-        const options = (Object.keys(MARKET_VALUES) as ItemKey[]).map(k =>
-          `<option value="${k}"${k === selected ? ' selected' : ''}>${ITEMS[k].name} · ${MARKET_VALUES[k]} coin each</option>`).join('');
-        const delivered = o.inp[selected] || 0, incoming = o.incoming[selected] || 0;
+        const orders: { item: ItemKey; amount: number }[] = o.marketOrders ?? [];
         const transit = this.game!.marketCaravansInTransit(o);
-        body += '<div class="sect">Export surplus</div>';
-        body += `<div class="marketctl"><label>Resource<select id="marketItem" data-market-control>${options}</select></label>`;
-        body += `<label>Units per caravan<input id="marketAmount" data-market-control type="number" min="0" max="50" step="1" value="${amount}"></label></div>`;
-        body += `<div class="invrow">Ready at market<b>${delivered} / ${amount}</b></div>`;
-        body += `<div class="invrow">Being delivered<b>${incoming}</b></div>`;
+        const totalAmount = orders.reduce((s: number, r: { amount: number }) => s + r.amount, 0);
+        body += '<div class="sect">Export surplus — up to 3 goods</div>';
+        // three assignable slots: each a resource picker (— clears it) + amount
+        for (let i = 0; i < MAX_MARKET_ORDERS; i++) {
+          const cur = orders[i];
+          const options = `<option value="-">— none —</option>` + (Object.keys(MARKET_VALUES) as ItemKey[]).map(k =>
+            `<option value="${k}"${cur && cur.item === k ? ' selected' : ''}>${ITEMS[k].name} · ${MARKET_VALUES[k]} coin</option>`).join('');
+          body += `<div class="marketctl market-row"><label>Resource<select data-market-control>${options}</select></label>`;
+          body += `<label>Units<input data-market-control type="number" min="0" max="50" step="1" value="${cur ? cur.amount : 0}"></label></div>`;
+        }
         body += `<div class="invrow">Expected income<b>${this.game!.marketIncomePerMinute(o)} coin / min</b></div>`;
-        body += `<div class="invrow">${transit ? 'Trader caravan' : amount > 0 ? 'Next caravan' : 'Exports paused'}<b>${transit ? 'in transit' : amount > 0 ? `${Math.ceil(o.marketTimer ?? 60)}s` : 'set an amount'}</b></div>`;
-        body += '<div class="sect">Market inventory</div>' + this.invRowsHTML(o.inp);
-        body += '<div class="sect">Coin awaiting pickup</div>' + this.invRowsHTML(o.out);
-        body += '<div class="hnote">Serfs carry assigned goods here before sale, then carry the proceeds back to storage. Caravans are neutral and cannot be attacked.</div>';
+        body += `<div class="invrow">${transit ? 'Trader caravan' : totalAmount > 0 ? 'Next caravan' : 'Exports paused'}<b>${transit ? 'loading outside' : totalAmount > 0 ? `${Math.ceil(o.marketTimer ?? 60)}s` : 'assign a good'}</b></div>`;
+        body += '<div class="sect">Waiting at market</div>' + this.invRowsHTML(o.inp);
+        body += '<div class="hnote">Serfs carry assigned goods here; a trader halts outside, loads up and pays the coin straight into your global stock. Caravans are neutral and cannot be attacked.</div>';
       }
       if (o.def.recipe) {
         body += `<div class="sect">Production</div><div class="bar"><div style="width:${Math.round(o.prog * 100)}%"></div></div>`;

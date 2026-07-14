@@ -127,6 +127,54 @@ export class Objective {
     return `Collect ${d.n} gold piles`;
   }
 
+  /** Per-requirement breakdown for the objective card and the objective modal.
+   *  Single-goal kinds return one line; multi-goal kinds one line each. Keeps
+   *  the full list in the modal so the card can show only the next step. */
+  steps(game: Game): { label: string; done: boolean }[] {
+    const d = this.def;
+    const one = (label: string, done: boolean) => [{ label, done }];
+    switch (d.kind) {
+      case 'stock':
+        return d.reqs.map(r => { const c = Math.min(r.n, game.countItem(r.item)); return { label: `${ITEM_LABEL[r.item]} ${c}/${r.n}`, done: c >= r.n }; });
+      case 'produce': {
+        const made = this.produced[d.item] || 0; const c = Math.min(d.n, made);
+        return one(`${ITEM_LABEL[d.item]} ${c}/${d.n}`, made >= d.n);
+      }
+      case 'produceMulti':
+        return d.reqs.map(r => { const made = this.produced[r.item] || 0; const c = Math.min(r.n, made); return { label: `${ITEM_LABEL[r.item]} ${c}/${r.n}`, done: made >= r.n }; });
+      case 'produceTrain': {
+        const steps = d.reqs.map(r => { const made = this.produced[r.item] || 0; const c = Math.min(r.n, made); return { label: `${ITEM_LABEL[r.item]} ${c}/${r.n}`, done: made >= r.n }; });
+        const tr = Math.min(d.train, this.trained);
+        steps.push({ label: `Trained fighters ${tr}/${d.train}`, done: this.trained >= d.train });
+        return steps;
+      }
+      case 'collect': { const c = Math.min(d.n, this.collected); return one(`Gold piles ${c}/${d.n}`, this.collected >= d.n); }
+      case 'survive': { const w = Math.min(d.waves, this.wavesCleared); return one(`Waves survived ${w}/${d.waves}`, this.wavesCleared >= d.waves); }
+      case 'slay': { const k = Math.min(d.n, this.kills[d.unit] || 0); return one(`${UNITS[d.unit].name} slain ${k}/${d.n}`, (this.kills[d.unit] || 0) >= d.n); }
+      case 'slayMulti':
+        return d.reqs.map(r => { const k = Math.min(r.n, this.kills[r.unit] || 0); return { label: `${UNITS[r.unit].name}s ${k}/${r.n}`, done: (this.kills[r.unit] || 0) >= r.n }; });
+      case 'destroy': { const s = Math.min(d.n, this.structures); return one(`Strongholds razed ${s}/${d.n}`, this.structures >= d.n); }
+      case 'clearAll': {
+        const foes = game.hostileUnitsLeft(), holds = game.enemyStructuresLeft(), pending = game.scheduledWavesPending();
+        return [
+          { label: `Foes remaining ${foes}`, done: foes === 0 },
+          { label: `Strongholds ${holds}`, done: holds === 0 },
+          { label: pending ? 'A raid still looms' : 'No raids pending', done: !pending },
+        ];
+      }
+    }
+  }
+
+  /** The compact label for the objective card: the first unmet step, plus a
+   *  "step i/n" counter when the goal has several parts. */
+  nextStepLabel(game: Game): string {
+    const steps = this.steps(game);
+    if (steps.length <= 1) return steps[0]?.label ?? '';
+    const next = steps.find(s => !s.done) ?? steps[steps.length - 1];
+    const done = steps.filter(s => s.done).length;
+    return `${next.label} · step ${Math.min(done + 1, steps.length)}/${steps.length}`;
+  }
+
   evaluate(game: Game): ObjectiveStatus {
     const d = this.def;
     if (d.kind === 'stock') {
