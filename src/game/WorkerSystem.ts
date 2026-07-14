@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { simRng } from '../engine/rng';
 import { findPath } from '../engine/pathfinding';
 import type { View } from '../render/View';
-import type { Building, Coord, PlayerId, Site, Unit } from '../types';
+import type { Building, Coord, OwnerId, PlayerId, Site, Unit } from '../types';
 import type { World } from '../world/World';
 import type { Modifiers } from './Modifiers';
 import { doorTile } from './util';
@@ -28,7 +28,7 @@ interface WorkerPorts {
   removeDecoration: (x: number, y: number) => void;
   setCarrying: (unit: Unit, item: string | null) => void;
   onProduce: (item: string, amount: number) => void;
-  toast: (message: string) => void;
+  toast: (message: string, owner?: OwnerId) => void;
   sfx: (name: string) => void;
 }
 
@@ -135,7 +135,7 @@ export class WorkerSystem {
         unit.wstate = 'home';
         building.active = true;
         unit.status = 'At work';
-        this.ports.toast(`${building.def.name} is now staffed`);
+        this.ports.toast(`${building.def.name} is now staffed`, building.owner);
         return;
       }
       unit.status = 'Moving in';

@@ -185,6 +185,8 @@ export class PeerCoOpClient {
   }
 
   setReady(ready: boolean): boolean { return this.send({ type: 'ready', ready }); }
+  /** Claim a preset building colour and hero for this seat (lobby only). */
+  setLoadout(color: string, hero: string | null): boolean { return this.send({ type: 'setLoadout', color, hero }); }
   ping(): void { this.send({ type: 'ping', sentAt: performance.now() }); }
 
   reconnectNow(): void {
@@ -301,6 +303,21 @@ export class PeerCoOpClient {
         if (peer) { peer.ready = message.ready; peer.lastSeenAt = Date.now(); this.broadcastRoom(); }
         return true;
       }
+      case 'setLoadout': {
+        if (this.room.phase !== 'lobby') return true;
+        const peer = this.room.players.find(value => value.id === actor);
+        if (peer) {
+          // Colours stay unique: ignore a pick already held by the other seat
+          // (the picker greys it out too, so this is just a safety net).
+          const taken = this.room.players.some(value => value.id !== actor && value.color === message.color);
+          if (!taken) peer.color = message.color;
+          peer.hero = message.hero;
+          peer.ready = false; // a loadout change drops ready so both re-confirm
+          peer.lastSeenAt = Date.now();
+          this.broadcastRoom();
+        }
+        return true;
+      }
       case 'hostTick':
         if (actor === 'p1') this.hostTick = Math.max(this.hostTick, message.tick);
         return true;
@@ -355,7 +372,7 @@ export class PeerCoOpClient {
 }
 
 function player(id: PlayerId, name: string, host: boolean, presence: 'connected' | 'reconnecting' | 'offline') {
-  return { id, name, color: id === 'p1' ? '#5b8c5a' : '#d59b45', host, ready: false, presence, lastSeenAt: Date.now() };
+  return { id, name, color: id === 'p1' ? '#5b8c5a' : '#d59b45', hero: null, host, ready: false, presence, lastSeenAt: Date.now() };
 }
 
 function cleanName(value: string): string { return value.trim().slice(0, 24) || 'Erfgooier'; }

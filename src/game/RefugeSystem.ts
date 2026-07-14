@@ -1,5 +1,5 @@
 import { simRng } from '../engine/rng';
-import type { Building, PlayerId, Site, Unit } from '../types';
+import type { Building, OwnerId, PlayerId, Site, Unit } from '../types';
 import type { World } from '../world/World';
 import type { UnitMovement } from './UnitMovement';
 import { doorTile } from './util';
@@ -9,7 +9,7 @@ interface RefugePorts {
   storeFor: (owner: PlayerId) => Building;
   isFighter: (unit: Unit) => boolean;
   cancelTask: (unit: Unit) => void;
-  toast: (message: string, cls?: string) => void;
+  toast: (message: string, cls?: string, owner?: OwnerId) => void;
   sfx: (name: string) => void;
 }
 
@@ -34,7 +34,7 @@ export class RefugeSystem {
     const active = this.active(owner);
     this.ports.sfx('bell');
     if (active) {
-      this.ports.toast('The bell tolls — workers run for the castle!', 'err');
+      this.ports.toast('The bell tolls — workers run for the castle!', 'err', owner);
       for (const unit of this.ports.units()) {
         if (unit.dead || unit.owner !== owner || unit.faction !== 'player' || this.ports.isFighter(unit) || unit.role === 'carrier') continue;
         if (unit.task) this.ports.cancelTask(unit);
@@ -44,7 +44,7 @@ export class RefugeSystem {
       }
       return;
     }
-    this.ports.toast('The bell falls silent — back to work');
+    this.ports.toast('The bell falls silent — back to work', undefined, owner);
     const door = doorTile(this.ports.storeFor(owner));
     for (const unit of this.ports.units()) {
       if (unit.dead || unit.owner !== owner || unit.faction !== 'player' || this.ports.isFighter(unit)) continue;

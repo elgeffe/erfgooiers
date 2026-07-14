@@ -394,8 +394,8 @@ export class View {
     o.traverse((c) => { if (c.userData.ownGeometry) (c as THREE.Mesh).geometry.dispose(); });
   }
 
-  createBuildingMesh(key: BuildingKey, def: BuildingDef): THREE.Group { return makeBuilding(key, def, false); }
-  createScaffold(key: BuildingKey, def: BuildingDef) { return makeScaffold(key, def); }
+  createBuildingMesh(key: BuildingKey, def: BuildingDef, playerColor?: number): THREE.Group { return makeBuilding(key, def, false, playerColor); }
+  createScaffold(key: BuildingKey, def: BuildingDef, playerColor?: number) { return makeScaffold(key, def, playerColor); }
 
   createUnit(colorHex: number, role: string, tileX: number, tileY: number, faction: Faction = 'player'): { group: THREE.Group; itemMesh: THREE.Mesh } {
     const u = makeUnit(colorHex, role, faction);

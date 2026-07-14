@@ -12,7 +12,7 @@ const room: RoomState = {
     difficulty: 'erfgooiers', mode: 'expedition', passwordProtected: false,
   },
   players: [{
-    id: 'p1', name: 'Ada', color: '#5b8c5a', host: true, ready: false,
+    id: 'p1', name: 'Ada', color: '#5b8c5a', hero: null, host: true, ready: false,
     presence: 'reconnecting', lastSeenAt: 1,
   }],
   protocolVersion: 1, contentVersion: 1,

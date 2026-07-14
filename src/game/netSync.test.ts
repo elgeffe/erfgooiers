@@ -5,6 +5,19 @@ import { gameplayFingerprint, makeTestGame } from './testHarness';
 import type { GameCommand } from '../net/protocol';
 import type { PlayerId } from '../types';
 
+describe('per-player event toasts', () => {
+  it('shows a player only their own settlement events, not their ally\'s', () => {
+    const { game } = makeTestGame({ localPlayerId: 'p1' });
+    const seen: string[] = [];
+    game.toast = message => seen.push(message);
+    // The bell toast is owner-scoped: p1 hears their own, never p2's.
+    game.setBell('p2', true);
+    expect(seen).toHaveLength(0);
+    game.setBell('p1', true);
+    expect(seen.some(message => message.includes('bell'))).toBe(true);
+  });
+});
+
 /**
  * The co-op model: both peers build the same world from the shared seed and
  * apply the same accepted command stream. The only allowed difference between

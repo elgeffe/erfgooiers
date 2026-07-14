@@ -15,11 +15,13 @@ interface PlacementPorts {
   takeStock: (item: string, amount: number, owner: PlayerId) => boolean;
   storeFor: (owner: PlayerId) => Building;
   playerStore: (owner: PlayerId) => Building | null;
+  /** Co-op only: the preset colour a player's buildings are painted with (undefined in single player). */
+  playerColor: (owner: OwnerId) => number | undefined;
   cancelTask: (unit: Unit) => void;
   checkSiteReady: (site: Site) => void;
   select: (value: unknown) => void;
   selected: () => unknown;
-  toast: (message: string, cls?: string) => void;
+  toast: (message: string, cls?: string, owner?: OwnerId) => void;
   sfx: (name: string) => void;
 }
 
@@ -41,7 +43,7 @@ export class PlacementSystem {
 
   placeBuilding(key: BuildingKey, tx: number, ty: number, instant: boolean, rot: number, faction: Faction, owner: OwnerId): Building {
     const def = DEFS[key];
-    const mesh = this.view.createBuildingMesh(key, def);
+    const mesh = this.view.createBuildingMesh(key, def, faction === 'player' ? this.ports.playerColor(owner) : undefined);
     mesh.rotation.y = -rot * Math.PI / 2;
     mesh.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
     this.view.add(mesh);
@@ -80,14 +82,14 @@ export class PlacementSystem {
     if (building.fieldsList.length >= (building.def.plots ?? 8)) {
       const now = Date.now();
       if (now - this.plotWarnT > 1500) {
-        this.plotWarnT = now; this.ports.toast(`${building.name} has no room for more plots`, 'err'); this.ports.sfx('error');
+        this.plotWarnT = now; this.ports.toast(`${building.name} has no room for more plots`, 'err', owner); this.ports.sfx('error');
       }
       return;
     }
     if (Math.hypot(tx - (building.x + 0.5), ty - (building.y + 0.5)) > PLOT_RANGE) {
       const now = Date.now();
       if (now - this.plotWarnT > 1500) {
-        this.plotWarnT = now; this.ports.toast(`Too far — plots must sit within ${PLOT_RANGE} tiles of the ${building.name}`, 'err'); this.ports.sfx('error');
+        this.plotWarnT = now; this.ports.toast(`Too far — plots must sit within ${PLOT_RANGE} tiles of the ${building.name}`, 'err', owner); this.ports.sfx('error');
       }
       return;
     }
@@ -115,7 +117,7 @@ export class PlacementSystem {
 
   placeSite(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId): Site {
     const def = DEFS[key];
-    const { group, frame } = this.view.createScaffold(key, def);
+    const { group, frame } = this.view.createScaffold(key, def, this.ports.playerColor(owner));
     frame.rotation.y = -rot * Math.PI / 2;
     group.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
     this.view.add(group);
@@ -143,7 +145,7 @@ export class PlacementSystem {
     const building = this.placeBuilding(site.key, site.x, site.y, false, site.rot, 'player', site.owner);
     building.rally = site.rally;
     building.rallyMesh = site.rallyMesh;
-    this.ports.toast(`${site.def.name} completed`);
+    this.ports.toast(`${site.def.name} completed`, undefined, site.owner);
     this.ports.sfx('build');
     if (!site.def.worker) building.active = true;
     if (this.ports.selected() === site) this.ports.select(building);
@@ -193,29 +195,29 @@ export class PlacementSystem {
   tryPlace(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId): void {
     if (this.disabledBuildings().includes(key)) {
       this.ports.sfx('error');
-      this.ports.toast(`No ${DEFS[key].name.toLowerCase()} can be raised in ${this.world.biome.name}`, 'err');
+      this.ports.toast(`No ${DEFS[key].name.toLowerCase()} can be raised in ${this.world.biome.name}`, 'err', owner);
       return;
     }
     if (!this.canPlace(key, tx, ty, rot)) {
-      this.ports.sfx('error'); this.ports.toast('Cannot build here — keep the footprint and entrance clear of other doorways', 'err'); return;
+      this.ports.sfx('error'); this.ports.toast('Cannot build here — keep the footprint and entrance clear of other doorways', 'err', owner); return;
     }
     const def = DEFS[key];
-    if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.ports.toast('No stone deposits in range — build near the grey rocks', 'err'); return; }
-    if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.ports.toast('No gold deposits in range', 'err'); return; }
-    if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.ports.toast('No coal deposits in range', 'err'); return; }
-    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.ports.toast('No iron deposits in range — build near the rusty rocks', 'err'); return; }
-    if (def.gather?.node === 'fish' && !this.lakeInRange(tx, ty, def.gather.range)) { this.ports.toast('No open water in range — build on the shore', 'err'); return; }
-    if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.ports.toast('Warning: few trees nearby', 'err');
+    if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.ports.toast('No stone deposits in range — build near the grey rocks', 'err', owner); return; }
+    if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.ports.toast('No gold deposits in range', 'err', owner); return; }
+    if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.ports.toast('No coal deposits in range', 'err', owner); return; }
+    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.ports.toast('No iron deposits in range — build near the rusty rocks', 'err', owner); return; }
+    if (def.gather?.node === 'fish' && !this.lakeInRange(tx, ty, def.gather.range)) { this.ports.toast('No open water in range — build on the shore', 'err', owner); return; }
+    if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.ports.toast('Warning: few trees nearby', 'err', owner);
     const cost = this.mods.buildingCost(def) as Record<string, number>;
     for (const item in cost) {
       if (this.ports.countItem(item, owner) < cost[item]) {
-        this.ports.toast(`Not enough ${ITEMS[item as keyof typeof ITEMS].name} in your economy — site will wait`, 'err');
+        this.ports.toast(`Not enough ${ITEMS[item as keyof typeof ITEMS].name} in your economy — site will wait`, 'err', owner);
         break;
       }
     }
     this.placeSite(key, tx, ty, rot, owner);
     this.ports.sfx('place');
-    this.ports.toast(`${def.name} site placed — serfs will deliver materials`);
+    this.ports.toast(`${def.name} site placed — serfs will deliver materials`, undefined, owner);
   }
 
   paintRoad(tx: number, ty: number, owner: PlayerId): void {
@@ -225,7 +227,7 @@ export class PlacementSystem {
     if (cost > 0 && !this.ports.takeStock('stone', cost, owner)) {
       const now = Date.now();
       if (now - this.roadWarnT > 1500) {
-        this.roadWarnT = now; this.ports.toast('Out of stone — quarry more to build roads', 'err'); this.ports.sfx('error');
+        this.roadWarnT = now; this.ports.toast('Out of stone — quarry more to build roads', 'err', owner); this.ports.sfx('error');
       }
       return;
     }
@@ -258,10 +260,10 @@ export class PlacementSystem {
     if (dragOnly) return;
     if (tile.b) {
       const building = tile.b;
-      if (this.ports.playerStore(owner) === building) { this.ports.toast('The castle cannot be demolished', 'err'); return; }
-      if (building.faction !== 'player') { this.ports.toast('Enemy strongholds must be destroyed in battle', 'err'); return; }
-      if (building.owner !== owner) { this.ports.toast("You cannot demolish your ally's building", 'err'); return; }
-      this.ports.sfx('demolish'); this.removeBuilding(building); this.ports.toast(`${building.def.name} demolished`); return;
+      if (this.ports.playerStore(owner) === building) { this.ports.toast('The castle cannot be demolished', 'err', owner); return; }
+      if (building.faction !== 'player') { this.ports.toast('Enemy strongholds must be destroyed in battle', 'err', owner); return; }
+      if (building.owner !== owner) { this.ports.toast("You cannot demolish your ally's building", 'err', owner); return; }
+      this.ports.sfx('demolish'); this.removeBuilding(building); this.ports.toast(`${building.def.name} demolished`, undefined, owner); return;
     }
     if (tile.site && tile.site.owner === owner) { this.ports.sfx('demolish'); this.removeSite(tile.site); }
   }
@@ -275,7 +277,7 @@ export class PlacementSystem {
     this.view.remove(site.mesh);
     this.sites.splice(this.sites.indexOf(site), 1);
     if (this.ports.selected() === site) this.ports.select(null);
-    this.ports.toast(`${site.def.name} site removed`);
+    this.ports.toast(`${site.def.name} site removed`, undefined, site.owner);
   }
 
   removeBuilding(building: Building): void {

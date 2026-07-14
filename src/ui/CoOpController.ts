@@ -1,5 +1,7 @@
 import type { PeerCoOpClient, ConnectionSnapshot } from '../net/PeerCoOpClient';
 import type { AcceptedCommand, ExpeditionDifficulty, RoomState, ServerMessage } from '../net/protocol';
+import { PLAYER_COLOR_PRESETS } from '../net/protocol';
+import { HEROES, HERO_BY_ID } from '../data/heroes';
 import type { UI } from './UI';
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
@@ -37,6 +39,14 @@ export class CoOpController {
       const local = snapshot.room?.players.find(player => player.id === snapshot.playerId);
       if (!this.coop.setReady(!local?.ready)) this.ui.toast('Still connecting — try Ready again in a moment', 'err');
     };
+    $('coopHeroPick').addEventListener('click', event => {
+      const pick = (event.target as HTMLElement).closest<HTMLElement>('[data-hero]');
+      if (pick) this.sendLoadout({ hero: pick.dataset.hero === '' ? null : pick.dataset.hero! });
+    });
+    $('coopColorPick').addEventListener('click', event => {
+      const pick = (event.target as HTMLElement).closest<HTMLElement>('[data-color]');
+      if (pick && pick.getAttribute('aria-disabled') !== 'true') this.sendLoadout({ color: pick.dataset.color! });
+    });
     ($('btnMultiplayer') as HTMLButtonElement).onclick = () => {
       const panel = $('multiplayerpanel'); panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
     };
@@ -79,6 +89,7 @@ export class CoOpController {
     ($('coopHostCode') as HTMLTextAreaElement).value = this.coop.encryptedInvite();
     ($('coopGeneratedResponse') as HTMLTextAreaElement).value = this.coop.encryptedJoinResponse();
     $('coopGuestSafety').textContent = this.coop.verificationCode(); $('coopHostSafety').textContent = this.coop.verificationCode();
+    this.renderLoadout(room, snapshot.playerId, snapshot.status === 'connected' && !this.ports.isInterlude());
     const pending = this.coop.pendingJoin(); $('coopApproval').style.display = pending ? 'block' : 'none';
     $('coopHostResponseStep').style.display = pending ? 'none' : ''; $('coopPendingName').textContent = pending?.playerName ?? '';
     const connected = snapshot.status === 'connected', shareDone = snapshot.role === 'guest' || !!pending || connected;
@@ -108,8 +119,37 @@ export class CoOpController {
     $('mpRoom').innerHTML = `<div class="mp-room"><b>${escapeHtml(snapshot.room.settings.roomName)}</b>Invite ${escapeHtml(snapshot.room.inviteCode)} · level ${snapshot.room.level}</div>`;
     $('mpPlayers').innerHTML = this.playerRows(snapshot.room, snapshot.playerId, 'mp-player'); this.renderLobby();
   }
-  private playerRows(room: RoomState, localId: string | null, cls: string): string { return room.players.map(player =>
-    `<div class="${cls}"><span class="dot" style="background:${escapeHtml(player.color)}"></span><div><b>${escapeHtml(player.name)}${player.id === localId ? ' (you)' : ''}</b><small>${player.host ? 'Host · ' : ''}${player.ready ? 'Ready' : 'Not ready'}</small></div><span class="mp-presence ${player.presence}">${escapeHtml(player.presence)}</span></div>`).join(''); }
+  private playerRows(room: RoomState, localId: string | null, cls: string): string { return room.players.map(player => {
+    const hero = player.hero ? HERO_BY_ID[player.hero] : null;
+    const heroTag = hero ? `${escapeHtml(hero.icon)} ${escapeHtml(hero.name)} · ` : '';
+    return `<div class="${cls}"><span class="dot" style="background:${escapeHtml(player.color)}"></span><div><b>${escapeHtml(player.name)}${player.id === localId ? ' (you)' : ''}</b><small>${heroTag}${player.host ? 'Host · ' : ''}${player.ready ? 'Ready' : 'Not ready'}</small></div><span class="mp-presence ${player.presence}">${escapeHtml(player.presence)}</span></div>`;
+  }).join(''); }
+
+  /** Render this seat's hero + colour pickers (co-op lobby, once connected). */
+  private renderLoadout(room: RoomState, localId: string | null, show: boolean): void {
+    const panel = $('coopLoadout');
+    panel.style.display = show ? 'flex' : 'none';
+    if (!show || !localId) return;
+    const local = room.players.find(player => player.id === localId);
+    const other = room.players.find(player => player.id !== localId);
+    $('coopHeroPick').innerHTML = HEROES.map(hero =>
+      `<button type="button" class="coop-hero-opt${local?.hero === hero.id ? ' selected' : ''}" data-hero="${escapeHtml(hero.id)}" title="${escapeHtml(hero.name)} — ${escapeHtml(hero.title)}"><span class="coop-hero-icon">${escapeHtml(hero.icon)}</span><span class="coop-hero-name">${escapeHtml(hero.name)}</span></button>`,
+    ).join('');
+    $('coopColorPick').innerHTML = PLAYER_COLOR_PRESETS.map(color => {
+      const taken = other?.color === color, selected = local?.color === color;
+      return `<button type="button" class="coop-color-opt${selected ? ' selected' : ''}" data-color="${escapeHtml(color)}" aria-disabled="${taken ? 'true' : 'false'}" title="${taken ? 'Claimed by your ally' : 'Your building colour'}" style="--swatch:${escapeHtml(color)}">${selected ? '✓' : ''}</button>`;
+    }).join('');
+  }
+
+  /** Merge one loadout change over the current seat state and broadcast it. */
+  private sendLoadout(change: { color?: string; hero?: string | null }): void {
+    const snapshot = this.coop.snapshot();
+    const local = snapshot.room?.players.find(player => player.id === snapshot.playerId);
+    if (!local) return;
+    const color = change.color ?? local.color;
+    const hero = 'hero' in change ? change.hero ?? null : local.hero;
+    if (!this.coop.setLoadout(color, hero)) this.ui.toast('Still connecting — try again in a moment', 'err');
+  }
   private handleMessage(message: ServerMessage): void { if (message.type === 'commandAccepted') this.ports.onAccepted(message.accepted); else if (message.type === 'commandRejected') this.ui.toast(`Command rejected: ${message.reason}`, 'err'); }
   private showError(message: string): void { for (const id of ['coopError', 'coopLobbyError']) { const el = document.getElementById(id); if (el) { el.textContent = message; el.style.display = message ? 'block' : 'none'; } } }
   private async copyInvite(id = 'btnCoopCopy'): Promise<void> { const text = this.coop.encryptedInvite(); if (text) await this.copy(text, id, 'Host code copied'); }

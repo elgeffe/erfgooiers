@@ -163,7 +163,15 @@ hard placement pressure.
   shipments, and a four-level Expedition (`src/data/coOpLevels.ts`).
   Every gameplay mutation flows through `Game.submitCommand` → `src/game/commands.ts`;
   co-op swaps that sink for the host sequencer, so never mutate the sim directly from UI/input
-  code. Checkpoint/replay recovery and per-player heroes/shops are not built yet.
+  code. In the lobby each player picks a hero and a preset building colour (`setLoadout`
+  message → `RoomPlayer.color`/`hero`); at level start both peers spawn each player's hero and
+  warband from the shared room state, and `Game.playerColors` recolours that player's buildings
+  (roofs, and the timber attachment on mines while the mound stays grey) via `makeBuilding`'s
+  `playerColor` argument. Player-scoped notifications route through `Game.emitToast(msg, cls,
+  owner)`, which drops the *other* player's events so each seat sees only its own; global events
+  (raids, level messages) carry no owner and show to both. Hero *rule specs* are not applied in
+  co-op yet (only the unit + warband), and checkpoint/replay recovery and per-player shops are
+  not built yet.
 - The physical hero unit and functional equipment slots are not implemented yet.
 - Combat units include soldiers, archers, knights, and several enemy/wild archetypes.
 - Army controls include box/double-click selection, minimap highlighting, groups,

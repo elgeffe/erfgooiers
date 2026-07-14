@@ -2,14 +2,14 @@ import { UNITS, formationRank, type UnitKind } from '../data/units';
 import { buildFlowField, type FlowField } from '../engine/flowfield';
 import { formationSpots } from '../engine/formations';
 import type { View } from '../render/View';
-import type { Building, Coord, Formation, Site, Unit, UnitOrder } from '../types';
+import type { Building, Coord, Formation, OwnerId, Site, Unit, UnitOrder } from '../types';
 import type { World } from '../world/World';
 
 const FLOW_FIELD_MIN_UNITS = 8;
 
 interface OrderPorts {
   siegeTile: (unit: Unit, building: Building) => Coord;
-  toast: (message: string) => void;
+  toast: (message: string, owner?: OwnerId) => void;
   sfx: (name: string) => void;
 }
 
@@ -24,7 +24,7 @@ export class OrderSystem {
   togglePriority(target: Site | Building): void {
     target.priority = !target.priority;
     this.ports.sfx('click');
-    this.ports.toast(target.priority ? `${target.def.name} prioritized` : `${target.def.name} no longer prioritized`);
+    this.ports.toast(target.priority ? `${target.def.name} prioritized` : `${target.def.name} no longer prioritized`, target.owner);
   }
 
   orderUnit(unit: Unit, type: 'move' | 'attack' | 'attackMove', x: number, y: number, foe: Unit | null = null, queue = false, field: FlowField | null = null): void {
@@ -92,7 +92,7 @@ export class OrderSystem {
     // same purple rally pennant so its spawn point reads apart from order flags
     if (!target.rallyMesh) target.rallyMesh = this.view.createFlag(0x8a4fbf);
     target.rallyMesh.position.set(this.world.wx(x), 0, this.world.wz(y));
-    this.ports.toast('Rally point set — trained fighters will muster there');
+    this.ports.toast('Rally point set — trained fighters will muster there', target.owner);
     this.ports.sfx('click');
   }
 

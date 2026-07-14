@@ -1,6 +1,6 @@
 import { ITEMS } from '../data/items';
 import { UNITS, type UnitKind } from '../data/units';
-import type { Building, Coord, ItemKey, PlayerId, Unit } from '../types';
+import type { Building, Coord, ItemKey, OwnerId, PlayerId, Unit } from '../types';
 import type { Modifiers } from './Modifiers';
 import { doorTile, unitLabel } from './util';
 
@@ -17,7 +17,7 @@ interface TrainingPorts {
   removeUnit: (unit: Unit) => void;
   onTrain: () => void;
   onGold: (amount: number) => void;
-  toast: (message: string, cls?: string) => void;
+  toast: (message: string, cls?: string, owner?: OwnerId) => void;
   sfx: (name: string) => void;
 }
 
@@ -38,7 +38,7 @@ export class TrainingSystem {
     for (const item in cost) {
       const amount = cost[item as ItemKey] ?? 0;
       if (this.ports.storeTotal(item, building.owner) < amount) {
-        this.ports.toast(`Not enough ${ITEMS[item as ItemKey].name.toLowerCase()} to train a ${unitLabel(kind).toLowerCase()}`, 'err');
+        this.ports.toast(`Not enough ${ITEMS[item as ItemKey].name.toLowerCase()} to train a ${unitLabel(kind).toLowerCase()}`, 'err', building.owner);
         this.ports.sfx('error');
         return false;
       }
