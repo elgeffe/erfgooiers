@@ -324,6 +324,18 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 #storyObjective .ckrow.done .cknm{text-decoration:line-through;opacity:.75;}
 #storyCard h1{font-size:23px;color:var(--ink);margin-bottom:12px;line-height:1.2;}
 #storyCard .story-body{font-size:13.5px;line-height:1.65;color:var(--ink-dim);margin-bottom:18px;}
+/* victory outputs: the run's achievements as individually-marked badges */
+.victory-outputs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
+.vout{display:flex;flex-direction:column;align-items:center;gap:2px;background:rgba(217,164,65,.1);border:1px solid rgba(217,164,65,.32);border-radius:10px;padding:11px 8px;text-align:center;}
+.vout .vout-ico{font-size:19px;line-height:1;}
+.vout b{font-size:20px;color:var(--accent);font-variant-numeric:tabular-nums;line-height:1.1;}
+.vout small{font-size:9.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--ink-dim);}
+.vout-banner{display:flex;align-items:center;gap:11px;margin-bottom:12px;background:linear-gradient(90deg,rgba(217,164,65,.22),rgba(217,164,65,.08));border:1px solid var(--accent);border-radius:10px;padding:11px 13px;}
+.vout-banner .vout-ico{font-size:20px;line-height:1;}
+.vout-banner-tx{display:flex;flex-direction:column;gap:2px;}
+.vout-banner-tx b{font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);}
+.vout-banner-tx span{font-size:12px;line-height:1.45;color:var(--ink);}
+.vout-note{font-size:12.5px;line-height:1.55;color:var(--ink-dim);margin-bottom:20px;padding-left:2px;}
 #storyCard .story-goal-head{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--accent);font-weight:700;margin-bottom:9px;}
 #storyCard .story-how{list-style:none;display:flex;flex-direction:column;gap:8px;margin-bottom:20px;}
 #storyCard .story-how li{position:relative;padding-left:20px;font-size:12.5px;line-height:1.5;color:var(--ink);}
