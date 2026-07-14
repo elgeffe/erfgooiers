@@ -518,10 +518,16 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 .rtag-rare{background:rgba(170,110,220,.25);color:#d3b0f0;}
 /* the five equipped cards spread across one responsive row instead of stacking
    into a second row with a big gap */
-.shopgrid.owned{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));}
+/* a fixed row of five slots: bought cards fill them, the rest sit empty */
+.shopgrid.owned{grid-template-columns:repeat(5,minmax(0,1fr));}
 .shopgrid.owned .scard{padding:7px 10px;flex-direction:column;gap:5px;}
 .shopgrid.owned .scard .sc-icon{width:26px;height:26px;font-size:18px;}
 .shopgrid.owned .scard .sc-desc{margin:2px 0 4px;}
+.scard.empty{cursor:default;align-items:center;justify-content:center;text-align:center;border-style:dashed;border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.015);}
+.scard.empty:hover{transform:none;border-color:rgba(255,255,255,.12);}
+.scard.empty .sc-icon{background:transparent;border-style:dashed;border-color:rgba(255,255,255,.16);color:var(--ink-dim);opacity:.6;}
+.scard.empty .sc-empty{font-size:10px;color:var(--ink-dim);opacity:.65;text-transform:uppercase;letter-spacing:.6px;}
+@media (max-width:560px){.shopgrid.owned{grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;}.shopgrid.owned .scard{padding:6px 4px;}}
 .scard.sellable .sc-price{color:var(--good);}
 .scard.sellable:hover{border-color:var(--bad);}
 /* the reckoning — end-of-level tally */

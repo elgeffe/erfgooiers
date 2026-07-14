@@ -131,6 +131,14 @@ export class Shop {
     this.render();
   }
 
+  /** An empty owned-card slot: a placeholder that a future purchase will fill. */
+  private emptySlot(): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'scard empty';
+    el.innerHTML = '<div class="sc-icon">＋</div><div class="sc-empty">Empty slot</div>';
+    return el;
+  }
+
   private card(def: UpgradeDef, priceLabel: string, cls: string, onClick: () => void): HTMLElement {
     const el = document.createElement('div');
     el.className = `scard rar-${def.rarity}` + (cls ? ' ' + cls : '');
@@ -157,16 +165,17 @@ export class Shop {
     }
     if (!this.slots.length) slots.innerHTML = '<div class="sc-desc">All wares bought.</div>';
 
-    // owned cards — the run's 5 slots, each sellable for half price
+    // owned cards — a fixed row of MAX_CARDS slots, empty until a bought card
+    // fills one, each filled slot sellable for half price
     $('ownedLabel').textContent = `Your cards (${this.run.upgrades.length}/${MAX_CARDS})` +
       (full ? ' — full: sell a card to make room' : ' — click a card to sell it');
     const owned = $('shopOwned'); owned.innerHTML = '';
-    this.run.upgrades.forEach((id, i) => {
-      const def = UPGRADE_BY_ID[id];
-      if (!def) return;
-      owned.appendChild(this.card(def, `sell +${sellPrice(def, this.run.levelIndex)}g`, 'sellable', () => this.sell(i)));
-    });
-    if (!this.run.upgrades.length) owned.innerHTML = '<div class="sc-desc">No cards yet — every card you buy fills one of your five slots.</div>';
+    for (let i = 0; i < MAX_CARDS; i++) {
+      const def = UPGRADE_BY_ID[this.run.upgrades[i]];
+      owned.appendChild(def
+        ? this.card(def, `sell +${sellPrice(def, this.run.levelIndex)}g`, 'sellable', () => this.sell(i))
+        : this.emptySlot());
+    }
 
     this.renderContracts();
   }
