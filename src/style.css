@@ -266,7 +266,7 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 #sandboxbar{position:absolute;left:12px;bottom:12px;display:none;flex-direction:column;align-items:stretch;gap:6px;width:172px;max-height:calc(100vh - 130px);overflow-y:auto;background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:10px;padding:7px 10px;z-index:12;}
 /* the collapse toggle stays pinned to the top of the (scrollable) panel so it
    is always reachable, even on short screens where the spawn groups overflow */
-#sandboxbar .sb-title{position:sticky;top:-7px;z-index:2;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);background:rgba(43,33,25,.97);border:none;cursor:pointer;margin:-7px -10px 0;padding:9px 10px 5px;text-align:left;}
+#sandboxbar .sb-title{position:sticky;top:0;z-index:2;display:flex;align-items:center;min-height:36px;font-size:11px;line-height:1.2;text-transform:uppercase;letter-spacing:1.1px;color:var(--ink-dim);background:rgba(43,33,25,.97);border:none;cursor:pointer;margin:-7px -10px 0;padding:10px 10px 8px;text-align:left;box-shadow:0 1px 0 rgba(255,255,255,.06);}
 #sandboxbar .sb-title:hover{color:var(--accent);}
 #sandboxbar .sb-group{display:flex;flex-direction:column;align-items:stretch;gap:5px;}
 #sandboxbar .sb-group+.sb-group{border-top:1px solid rgba(255,255,255,.12);padding-top:7px;}

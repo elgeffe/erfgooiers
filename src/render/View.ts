@@ -3,7 +3,7 @@ import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { uiRng } from '../engine/rng';
 import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
-import type { Building, BuildingDef, BuildingKey, Coord, Field, Pickup, Tree, Unit } from '../types';
+import type { Building, BuildingDef, BuildingKey, Coord, Faction, Field, Pickup, Tree, Unit } from '../types';
 import { circle, cone, makeArrow, makeBuilding, makeUnitCorpse, makeFireball, makeFlag, makeFlame, makeHero, makeRock, makePlotMarker, makeScaffold, makeTraderCaravan, makeUnit, noOutline, setActiveBiome, stdMat } from './models';
 import { Ambience } from './Ambience';
 import { TerrainRenderer } from './TerrainRenderer';
@@ -397,8 +397,8 @@ export class View {
   createBuildingMesh(key: BuildingKey, def: BuildingDef): THREE.Group { return makeBuilding(key, def, false); }
   createScaffold(key: BuildingKey, def: BuildingDef) { return makeScaffold(key, def); }
 
-  createUnit(colorHex: number, role: string, tileX: number, tileY: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
-    const u = makeUnit(colorHex, role);
+  createUnit(colorHex: number, role: string, tileX: number, tileY: number, faction: Faction = 'player'): { group: THREE.Group; itemMesh: THREE.Mesh } {
+    const u = makeUnit(colorHex, role, faction);
     u.group.position.set(this.world.wx(tileX), 0, this.world.wz(tileY));
     this.worldGroup.add(u.group);
     this.freeze(u.group, false); // the unit walks; its body parts are rigid

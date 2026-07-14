@@ -164,12 +164,12 @@ export const UPGRADES: UpgradeDef[] = [
     apply: [{ stat: 'preserveTrees', add: 1 }, { stat: 'gatherTime', mult: 1.5, filter: 'tree' }] },
 
   // ---- hero-exclusive cards: only offered while their hero leads the run ----
-  { id: 'golden-ledger', name: 'Golden Ledger', desc: "Griet's books: +1 more gold per tavern meal and +10% gold from all sources", icon: '📒',
-    pool: 'hero', hero: 'merchant', rarity: 'rare', unique: true, basePrice: 36,
+  { id: 'golden-ledger', name: 'Golden Ledger', desc: "Marcus's books: +1 more gold per tavern meal and +10% gold from all sources", icon: '📒',
+    pool: 'hero', hero: 'merchant', rarity: 'rare', unique: true, basePrice: 100,
     apply: [{ stat: 'goldPerMeal', add: 1 }, { stat: 'goldGain', mult: 1.1 }] },
 
-  { id: 'iron-discipline', name: 'Iron Discipline', desc: "Wolter's drills: fighters train 40% faster and have +15% health", icon: '🗡️',
-    pool: 'hero', hero: 'warlord', rarity: 'rare', unique: true, basePrice: 34,
+  { id: 'iron-discipline', name: 'Iron Discipline', desc: "Walter's drills: foot soldiers train 40% faster and have +15% health", icon: '🗡️',
+    pool: 'hero', hero: 'warlord', rarity: 'rare', unique: true, basePrice: 100,
     apply: [
       { stat: 'trainTime', mult: 0.6, filter: 'soldier' },
       { stat: 'trainTime', mult: 0.6, filter: 'pikeman' },
@@ -181,9 +181,25 @@ export const UPGRADES: UpgradeDef[] = [
       { stat: 'combat:hp', mult: 1.15, filter: 'knight' },
     ] },
 
-  { id: 'crown-masons', name: 'Crown Masons', desc: "Dirkje's guild: buildings cost 1 less stone and raise 25% faster", icon: '🧱',
-    pool: 'hero', hero: 'reeve', rarity: 'rare', unique: true, basePrice: 34,
+  { id: 'sinew-bows', name: 'Sinew Bows', desc: "Geralds's bows: archers shoot 15% further and deal +20% more damage", icon: '🏹',
+    pool: 'hero', hero: 'captain', rarity: 'rare', unique: true, basePrice: 100,
+    apply: [
+      { stat: 'combat:range', mult: 1.15, filter: 'archer' },
+      { stat: 'combat:damage', mult: 1.2, filter: 'archer' },
+    ] },
+
+  { id: 'crown-masons', name: 'Crown Masons', desc: "Rodericks's guild: buildings cost 1 less stone and raise 25% faster", icon: '🧱',
+    pool: 'hero', hero: 'reeve', rarity: 'rare', unique: true, basePrice: 100,
     apply: [{ stat: 'cost:stone', add: -1 }, { stat: 'buildTime', mult: 0.75 }] },
+
+  { id: 'equestrian-armor', name: 'Equestrian Armor', desc: "Stannis's armor: mounted units take 20% less damage", icon: '🐴',
+    pool: 'hero', hero: 'horselord', rarity: 'rare', unique: true, basePrice: 100,
+    apply: [
+      { stat: 'combat:damageTaken', mult: 0.8, filter: 'lancer' },
+      { stat: 'combat:damageTaken', mult: 0.8, filter: 'horsearcher' },
+      { stat: 'combat:damageTaken', mult: 0.8, filter: 'horseknight' },
+    ] },
+
 ];
 
 export const UPGRADE_BY_ID: Record<string, UpgradeDef> = Object.fromEntries(UPGRADES.map(u => [u.id, u]));

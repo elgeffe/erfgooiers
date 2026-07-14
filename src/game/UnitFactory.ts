@@ -26,8 +26,8 @@ export class UnitFactory {
     private readonly ports: UnitFactoryPorts,
   ) {}
 
-  spawnUnit(role: string, colorHex: number, tile: { x: number; y: number }, owner: PlayerId): Unit {
-    const { group, itemMesh } = this.view.createUnit(colorHex, role, tile.x, tile.y);
+  spawnUnit(role: string, colorHex: number, tile: { x: number; y: number }, owner: PlayerId, faction: Faction = 'player'): Unit {
+    const { group, itemMesh } = this.view.createUnit(colorHex, role, tile.x, tile.y, faction);
     const unit: Unit = {
       id: this.ports.nextId(), owner, role, roleName: role[0].toUpperCase() + role.slice(1), colorHex, mesh: group, itemMesh,
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
@@ -69,14 +69,14 @@ export class UnitFactory {
     const def = UNITS[kind];
     const unitFaction = faction ?? def.faction;
     const unitOwner = owner ?? ownerForFaction(unitFaction, this.localPlayerId);
-    const unit = this.spawnUnit(kind, def.color, tile, unitOwner === 'p2' ? 'p2' : 'p1');
+    const unit = this.spawnUnit(kind, def.color, tile, unitOwner === 'p2' ? 'p2' : 'p1', unitFaction);
     unit.roleName = def.name;
     unit.faction = unitFaction;
     unit.owner = unitOwner;
-    unit.spd = def.speed * this.mods.combatMult('speed', kind);
-    unit.maxHp = unit.hp = Math.round(def.hp * this.mods.combatMult('hp', kind));
-    unit.dmg = def.dmg * this.mods.combatMult('damage', kind);
-    unit.range = def.range * this.mods.combatMult('range', kind);
+    unit.spd = def.speed * this.mods.combatMult('speed', kind, unitFaction);
+    unit.maxHp = unit.hp = Math.round(def.hp * this.mods.combatMult('hp', kind, unitFaction));
+    unit.dmg = def.dmg * this.mods.combatMult('damage', kind, unitFaction);
+    unit.range = def.range * this.mods.combatMult('range', kind, unitFaction);
     unit.atkCd = def.atkCd;
     unit.hunger = 100;
     unit.status = def.name;

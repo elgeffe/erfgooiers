@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type { Faction } from '../types';
 import {
   bakeGroupInto, box, cachedGeo, cone, cyl, flatCone, flatSphere, geoArm,
   geoBelt, geoBlade, geoBody, geoHand, geoHead, geoItem, mat, noOutline,
@@ -74,14 +75,28 @@ export function makeTraderCaravan(): THREE.Group {
   g.add(cart); g.scale.setScalar(1.25); return g;
 }
 
+export function getCavalryStyle(kind: string, colorHex: number, faction: Faction = 'player'): { horse: number; coat: number; trim: number; bard: number; helmet: number } {
+  if (faction === 'enemy') {
+    return { horse: 0x0f0c0b, coat: 0x9c3b3b, trim: 0xb03030, bard: 0x7d2424, helmet: 0x2b1d18 };
+  }
+  return {
+    horse: kind === 'horseknight' ? 0x33302c : kind === 'lancer' ? 0x8a5a2b : 0xa9746a,
+    coat: colorHex,
+    trim: kind === 'horseknight' ? 0x8f97a6 : colorHex,
+    bard: kind === 'horseknight' ? 0x7d8794 : colorHex,
+    helmet: 0xa9b2bd,
+  };
+}
+
 /** Cavalry from the Stable: horse + armed rider, silhouette per kind —
  *  the lancer's couched lance, the horse archer's bow & quiver, the horse
  *  knight's full plate and shield. All face +z like every walker. */
-export function makeCavalry(kind: string, colorHex: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
+export function makeCavalry(kind: string, colorHex: number, faction: Faction = 'player'): { group: THREE.Group; itemMesh: THREE.Mesh } {
   const g = new THREE.Group();
   const dark = umat(0x3a2c1f), skin = umat(0xe8c9a0);
-  const coatM = umat(colorHex);
-  const horseM = umat(kind === 'horseknight' ? 0x33302c : kind === 'lancer' ? 0x8a5a2b : 0xa9746a);
+  const style = getCavalryStyle(kind, colorHex, faction);
+  const coatM = umat(style.coat);
+  const horseM = umat(style.horse);
   addHorse(g, horseM, dark);
   const blanket = new THREE.Mesh(box(0.2, 0.05, 0.24), coatM); blanket.position.y = 0.41; g.add(blanket);
   // the rider
@@ -105,12 +120,12 @@ export function makeCavalry(kind: string, colorHex: number): { group: THREE.Grou
     quiver.position.set(-0.16, 0.55, -0.1); quiver.rotation.x = 0.5; g.add(quiver);
     const hood = new THREE.Mesh(cone(0.1, 0.13, 7), coatM); hood.position.y = 0.95; g.add(hood);
   } else { // horseknight
-    const helm = new THREE.Mesh(sphere(0.1, 8, 6), umat(0xa9b2bd)); helm.scale.y = 0.8; helm.position.y = 0.9; g.add(helm);
-    const plume = new THREE.Mesh(cone(0.028, 0.13, 5), umat(0xb03030)); plume.position.y = 1.02; g.add(plume);
+    const helm = new THREE.Mesh(sphere(0.1, 8, 6), umat(style.helmet)); helm.scale.y = 0.8; helm.position.y = 0.9; g.add(helm);
+    const plume = new THREE.Mesh(cone(0.028, 0.13, 5), umat(style.trim)); plume.position.y = 1.02; g.add(plume);
     const shield = new THREE.Mesh(cyl(0.09, 0.09, 0.03, 10), umat(0x5a6470));
     shield.rotation.z = Math.PI / 2; shield.position.set(-0.19, 0.62, 0.05); g.add(shield);
     // barding: an armoured skirt over the horse
-    const bard = new THREE.Mesh(box(0.26, 0.14, 0.5), umat(0x7d8794)); bard.position.y = 0.3; g.add(bard);
+    const bard = new THREE.Mesh(box(0.26, 0.14, 0.5), umat(style.bard)); bard.position.y = 0.3; g.add(bard);
   }
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
   item.position.y = 1.1; item.visible = false;
@@ -166,14 +181,16 @@ export function makeSiege(kind: string): { group: THREE.Group; itemMesh: THREE.M
 }
 
 /** The run's hero: a mounted rider, dressed per hero so each reads at a
- *  glance — straw hat commoner, hooded merchant, plumed warlord, capped reeve.
+ *  glance — straw hat commoner, hooded merchant, plumed warlord, plumed captain, capped reeve, plumed horselord.
  *  Faces +z like every walker (the sim rotates the group to the travel vector). */
 export function makeHero(heroId: string): { group: THREE.Group; itemMesh: THREE.Mesh } {
   const style: Record<string, { horse: number; coat: number; trim: number; hat: number }> = {
     erfgooier: { horse: 0x8a5a2b, coat: 0x5a7a3f, trim: 0xd9b95c, hat: 0xd9b95c },
     merchant: { horse: 0xa9746a, coat: 0x7a4b8a, trim: 0xd4af37, hat: 0x7a4b8a },
     warlord: { horse: 0x33302c, coat: 0x8f97a6, trim: 0xb03030, hat: 0x8f97a6 },
+    captain: { horse: 0x8a5a2b, coat: 0x2d5a2d, trim: 0xd4af37, hat: 0x2d5a2d },
     reeve: { horse: 0x9d938a, coat: 0x3f5aa0, trim: 0xece3cf, hat: 0x2a2a30 },
+    horselord: { horse: 0x8a5a2b, coat: 0x800020, trim: 0x3d2817, hat: 0x800020 },
   };
   const s = style[heroId] ?? style.erfgooier;
   const g = new THREE.Group();
@@ -192,18 +209,30 @@ export function makeHero(heroId: string): { group: THREE.Group; itemMesh: THREE.
   // a little cape off the back
   const cape = new THREE.Mesh(box(0.2, 0.24, 0.03), trimM); cape.position.set(0, 0.6, -0.12); cape.rotation.x = -0.15; g.add(cape);
   // per-hero headgear
-  if (heroId === 'warlord') {
-    const helm = new THREE.Mesh(sphere(0.1, 8, 6), hatM); helm.scale.y = 0.75; helm.position.y = 0.92; g.add(helm);
-    const plume = new THREE.Mesh(cone(0.03, 0.14, 5), trimM); plume.position.y = 1.04; g.add(plume);
-  } else if (heroId === 'merchant') {
-    const hood = new THREE.Mesh(cone(0.11, 0.16, 7), hatM); hood.position.y = 0.96; g.add(hood);
-    const brooch = new THREE.Mesh(sphere(0.02, 6, 5), trimM); brooch.position.set(0, 0.72, 0.11); g.add(brooch);
-  } else if (heroId === 'reeve') {
-    const cap = new THREE.Mesh(cyl(0.1, 0.1, 0.045, 8), hatM); cap.position.y = 0.94; g.add(cap);
-    const collar = new THREE.Mesh(cyl(0.08, 0.09, 0.03, 8), trimM); collar.position.y = 0.74; g.add(collar);
-  } else {
-    const brim = new THREE.Mesh(cyl(0.13, 0.13, 0.02, 9), hatM); brim.position.y = 0.93; g.add(brim);
-    const crown = new THREE.Mesh(cyl(0.07, 0.08, 0.07, 9), hatM); crown.position.y = 0.97; g.add(crown);
+  switch (heroId) {
+    case 'warlord':
+      const helm = new THREE.Mesh(sphere(0.1, 8, 6), hatM); helm.scale.y = 0.75; helm.position.y = 0.92; g.add(helm);
+      const plume = new THREE.Mesh(cone(0.03, 0.14, 5), trimM); plume.position.y = 1.04; g.add(plume);
+      break;
+    case 'merchant':
+      const hood = new THREE.Mesh(cone(0.11, 0.16, 7), hatM); hood.position.y = 0.96; g.add(hood);
+      const brooch = new THREE.Mesh(sphere(0.02, 6, 5), trimM); brooch.position.set(0, 0.72, 0.11); g.add(brooch);
+      break;
+    case 'reeve':
+      const cap = new THREE.Mesh(cyl(0.1, 0.1, 0.045, 8), hatM); cap.position.y = 0.94; g.add(cap);
+      const collar = new THREE.Mesh(cyl(0.08, 0.09, 0.03, 8), trimM); collar.position.y = 0.74; g.add(collar);
+      break;
+    case 'captain':
+      const captainHelm = new THREE.Mesh(sphere(0.1, 8, 6), hatM); captainHelm.scale.y = 0.75; captainHelm.position.y = 0.92; g.add(captainHelm);
+      const captainPlume = new THREE.Mesh(cone(0.03, 0.14, 5), trimM); captainPlume.position.y = 1.04; g.add(captainPlume);
+      break;
+    case 'horselord':
+      const horselordHelm = new THREE.Mesh(sphere(0.1, 8, 6), hatM); horselordHelm.scale.y = 0.75; horselordHelm.position.y = 0.92; g.add(horselordHelm);
+      const horselordPlume = new THREE.Mesh(cone(0.03, 0.14, 5), trimM); horselordPlume.position.y = 1.04; g.add(horselordPlume);
+      break;
+    default:
+      const brim = new THREE.Mesh(cyl(0.13, 0.13, 0.02, 9), hatM); brim.position.y = 0.93; g.add(brim);
+      const crown = new THREE.Mesh(cyl(0.07, 0.08, 0.07, 9), hatM); crown.position.y = 0.97; g.add(crown);
   }
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
   item.position.y = 1.1; item.visible = false;
@@ -211,11 +240,11 @@ export function makeHero(heroId: string): { group: THREE.Group; itemMesh: THREE.
   return bakeUnit({ group: g, itemMesh: item }, false);
 }
 
-export function makeUnit(colorHex: number, role = 'serf'): { group: THREE.Group; itemMesh: THREE.Mesh } {
+export function makeUnit(colorHex: number, role = 'serf', faction: Faction = 'player'): { group: THREE.Group; itemMesh: THREE.Mesh } {
   // fliers keep their part meshes — the sim flaps their wings every tick
   if (role === 'dragon') return makeDragon(colorHex);
   if (role === 'demon') return makeDemon(colorHex);
-  if (role === 'lancer' || role === 'horseknight' || role === 'horsearcher') return makeCavalry(role, colorHex);
+  if (role === 'lancer' || role === 'horseknight' || role === 'horsearcher') return makeCavalry(role, colorHex, faction);
   if (role === 'ballista' || role === 'onager' || role === 'trebuchet') return makeSiege(role);
   if (role === 'boar') return bakeUnit(makeBeast(colorHex));
   if (role === 'wolf') return bakeUnit(makeWolf(colorHex));

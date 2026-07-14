@@ -43,7 +43,7 @@ export const LEVEL_STORY: Record<number, LevelStory> = {
   },
   3: {
     title: 'The Weight of Coin',
-    story: 'Word comes from the passes: the beast was seen wheeling south, toward the high stone country. To chase it you will need coin — for coin buys weapons, and weapons buy time. Koenraad, a mine-captain the villagers only half-trust, offers his diggers. He is a hard man and asks no thanks, only that you keep the furnaces lit.',
+    story: 'Word comes from the passes: the beast was seen wheeling south, toward the high stone country. To chase it you will need coin — for coin buys weapons, and weapons buy time. Koenraad the Greedy, a mine-captain the villagers only half-trust, offers his diggers. He is a hard man and asks no thanks, only that you keep the furnaces lit.',
     how: [
       'Your goal: produce 5 Coin.',
       'Build a Gold Mine on gold deposits and a Coal Mine on coal — mines must sit right on the coloured rocks.',

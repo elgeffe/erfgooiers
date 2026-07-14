@@ -106,6 +106,15 @@ describe('Modifiers', () => {
     expect(cost.coin).toBe(5);   // 2 * 2 + 1 = 5
   });
 
+  it('keeps unit-role buffs on player units and off enemy units by default', () => {
+    const m = new Modifiers([{ stat: 'combat:damage', mult: 2, filter: 'soldier' }]);
+    expect(m.combatMult('damage', 'soldier', 'player')).toBe(2);
+    expect(m.combatMult('damage', 'soldier', 'enemy')).toBe(1);
+    expect(m.unitSpeed({ role: 'serf', spd: BASE_SPEED, faction: 'player' } as Unit)).toBeCloseTo(BASE_SPEED);
+    const enemySpeed = m.unitSpeed({ role: 'serf', spd: BASE_SPEED, faction: 'enemy' } as Unit);
+    expect(enemySpeed).toBeCloseTo(BASE_SPEED);
+  });
+
   it('an empty modifier set is the identity', () => {
     const m = new Modifiers();
     expect(m.buildTime()).toBe(BUILD_TIME);

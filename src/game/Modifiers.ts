@@ -1,5 +1,5 @@
 import { BASE_SPEED, BUILD_TIME, CARRY_CAP, OUT_CAP, ROAD_STONE_COST } from '../constants';
-import type { BuildingDef, ItemKey, Unit } from '../types';
+import type { BuildingDef, Faction, ItemKey, Unit } from '../types';
 
 /**
  * A single upgrade/perk effect, expressed as pure data (see data/upgrades.ts).
@@ -27,6 +27,7 @@ export interface ModifierSpec {
   mult?: number;
   add?: number;
   filter?: string;
+  faction?: Faction;
 }
 
 /** Hunger's effect on walk speed: well-fed workers hustle, starving ones drag. */
@@ -55,39 +56,49 @@ export class Modifiers {
    *  scratch (base perks + whatever cards you currently hold) so removals take. */
   setSpecs(specs: readonly ModifierSpec[]): void { this.specs.length = 0; this.specs.push(...specs); }
 
-  private accMult(stat: string, ctx?: string): number {
+  private accMult(stat: string, ctx?: string, faction: Faction = 'player', playerScoped = false): number {
     let m = 1;
     for (const s of this.specs) {
       if (s.stat !== stat || s.mult === undefined) continue;
       if (s.filter !== undefined && s.filter !== ctx) continue;
+      if (playerScoped) {
+        if (s.faction !== undefined && s.faction !== faction) continue;
+        if (s.faction === undefined && faction !== 'player') continue;
+      }
       m *= s.mult;
     }
     return m;
   }
 
-  private accAdd(stat: string, ctx?: string): number {
+  private accAdd(stat: string, ctx?: string, faction: Faction = 'player', playerScoped = false): number {
     let a = 0;
     for (const s of this.specs) {
       if (s.stat !== stat || s.add === undefined) continue;
       if (s.filter !== undefined && s.filter !== ctx) continue;
+      if (playerScoped) {
+        if (s.faction !== undefined && s.faction !== faction) continue;
+        if (s.faction === undefined && faction !== 'player') continue;
+      }
       a += s.add;
     }
     return a;
   }
 
   /** Walk speed (tiles/s) for a unit, before the road bonus. */
-  unitSpeed(u: Unit): number { return (u.spd || BASE_SPEED) * this.accMult('unitSpeed', u.role) * hungerFactor(u.hunger); }
+  unitSpeed(u: Unit): number {
+    return (u.spd || BASE_SPEED) * this.accMult('unitSpeed', u.role, u.faction ?? 'player', true) * hungerFactor(u.hunger);
+  }
 
   /** Combat stat multiplier for a unit kind — upgrades/mutators scale these at spawn. */
-  combatMult(stat: 'hp' | 'damage' | 'speed' | 'range', kind: string): number {
-    return this.accMult('combat:' + stat, kind);
+  combatMult(stat: 'hp' | 'damage' | 'speed' | 'range', kind: string, faction: Faction = 'player'): number {
+    return this.accMult('combat:' + stat, kind, faction, true);
   }
 
   /** Multiplier on a building's max HP (castle-toughness upgrades, enemy mutators). */
   buildingHpMult(faction: string): number { return this.accMult('buildingHp', faction); }
 
   /** Multiplier on barracks/guild-hall training time for a unit kind. */
-  trainTime(kind: string): number { return this.accMult('trainTime', kind); }
+  trainTime(kind: string, faction: Faction = 'player'): number { return this.accMult('trainTime', kind, faction, true); }
 
   /** Multiplier on the player's castle HP (Heritage 'Stout Castle'). */
   castleHpMult(): number { return this.accMult('castleHp'); }
@@ -160,13 +171,13 @@ export class Modifiers {
   }
 
   /** A unit's training/purchase cost after modifications (never below zero). */
-  unitCost(kind: string, baseCost: Partial<Record<ItemKey, number>>): Partial<Record<ItemKey, number>> {
+  unitCost(kind: string, baseCost: Partial<Record<ItemKey, number>>, faction: Faction = 'player'): Partial<Record<ItemKey, number>> {
     const out: Partial<Record<ItemKey, number>> = {};
-    const mult = this.accMult('trainCost', kind);
+    const mult = this.accMult('trainCost', kind, faction, true);
     for (const k in baseCost) {
       const item = k as ItemKey;
       const base = baseCost[item] ?? 0;
-      out[item] = Math.max(0, Math.round(base * mult + this.accAdd('cost:' + k, kind)));
+      out[item] = Math.max(0, Math.round(base * mult + this.accAdd('cost:' + k, kind, faction, true)));
     }
     return out;
   }
