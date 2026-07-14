@@ -1,5 +1,5 @@
 import type { PeerCoOpClient, ConnectionSnapshot } from '../net/PeerCoOpClient';
-import type { AcceptedCommand, ExpeditionDifficulty, RoomState, ServerMessage } from '../net/protocol';
+import type { AcceptedCommand, ExpeditionDifficulty, RoomSettings, RoomState, ServerMessage } from '../net/protocol';
 import { PLAYER_COLOR_PRESETS } from '../net/protocol';
 import { HEROES, HERO_BY_ID } from '../data/heroes';
 import type { UI } from './UI';
@@ -19,10 +19,15 @@ export interface CoOpControllerPorts {
 /** Owns direct-handshake/lobby DOM. Expedition construction and command
  * application remain in main.ts through narrow callbacks. */
 export class CoOpController {
+  /** Which mode the host will create — set by the main-menu button that opened
+   *  this screen. The guest ignores it (mode comes from the host's room). */
+  private hostMode: RoomSettings['mode'] = 'expedition';
+
   constructor(private coop: PeerCoOpClient, private ui: UI, private ports: CoOpControllerPorts) {}
 
   install(): void {
-    ($('btnCoop') as HTMLButtonElement).onclick = () => this.open();
+    ($('btnCoop') as HTMLButtonElement).onclick = () => this.open('expedition');
+    ($('btnSkirmish') as HTMLButtonElement).onclick = () => this.open('skirmish');
     ($('btnCoopBack') as HTMLButtonElement).onclick = this.ports.onBack;
     ($('btnCoopHost') as HTMLButtonElement).onclick = () => void this.host();
     ($('btnCoopJoin') as HTMLButtonElement).onclick = () => void this.join();
@@ -61,11 +66,28 @@ export class CoOpController {
     window.setInterval(() => { if (this.coop.snapshot().status === 'connected') this.coop.ping(); }, 3000);
   }
 
-  open(): void {
+  open(mode: RoomSettings['mode'] = 'expedition'): void {
     this.showError('');
+    this.hostMode = mode;
+    this.themeMenu(mode);
     const code = new URL(location.href).searchParams.get('coop');
     if (code) ($('coopInviteCode') as HTMLTextAreaElement).value = code;
     this.ports.showScreen('coopmenu');
+  }
+
+  /** Re-label the shared co-op/join screen for whichever mode was chosen on the
+   *  main menu. The join column is identical for both; only the host side and
+   *  the headings differ (skirmish has no difficulty tiers). */
+  private themeMenu(mode: RoomSettings['mode']): void {
+    const skirmish = mode === 'skirmish';
+    $('coopMenuTitle').textContent = skirmish ? '1v1 Skirmish' : 'Co-op Expedition';
+    $('coopMenuTag').textContent = skirmish
+      ? 'Fight one friend head-to-head. Host or join a direct match below.'
+      : 'Play directly with one friend. Choose one path below.';
+    $('coopHostHeading').textContent = skirmish ? 'Host a Skirmish' : 'Host an Expedition';
+    $('coopHostSub').textContent = skirmish ? 'Create the battlefield and invite a rival.' : 'Create the world and invite a friend.';
+    ($('coopRoomName') as HTMLInputElement).value = skirmish ? 'Border Clash' : 'Polder Expedition';
+    $('coopDifficultyField').style.display = skirmish ? 'none' : '';
   }
 
   renderLobby(): void {
@@ -103,7 +125,7 @@ export class CoOpController {
     this.showError(''); await this.coop.createRoom(($('coopPlayerName') as HTMLInputElement).value, {
       visibility: 'unlisted', roomName: ($('coopRoomName') as HTMLInputElement).value, region: 'Europe',
       difficulty: ($('coopDifficulty') as HTMLSelectElement).value as ExpeditionDifficulty,
-      mode: ($('coopMode') as HTMLSelectElement).value === 'skirmish' ? 'skirmish' : 'expedition', passwordProtected: false,
+      mode: this.hostMode, passwordProtected: false,
     }); this.renderLobby(); this.ports.showScreen('cooplobby');
   }); }
   private async join(): Promise<void> { await this.withButton('btnCoopJoin', 'Opening host code…', async () => {
