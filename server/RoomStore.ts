@@ -229,6 +229,19 @@ export class RoomStore {
     return cloneRoom(room.state);
   }
 
+  /** Claim a preset colour + hero for a seat (lobby only). Colours stay unique. */
+  setLoadout(roomId: string, playerId: PlayerId, color: string, hero: string | null): RoomState {
+    const room = this.roomById(roomId);
+    const seat = room.seats[playerId];
+    if (!seat) throw new RoomError('seat_missing', 'Reserved seat no longer exists', 409);
+    const taken = room.state.players.some(player => player.id !== playerId && player.color === color);
+    if (!taken) seat.player.color = color;
+    seat.player.hero = hero;
+    seat.player.ready = false;
+    room.updatedAt = this.now();
+    return cloneRoom(room.state);
+  }
+
   updateHostTick(roomId: string, actor: PlayerId, tick: number): void {
     const room = this.roomById(roomId);
     if (!room.seats[actor]?.player.host) throw new RoomError('host_only', 'Only the host may update the authoritative tick', 403);
@@ -353,7 +366,7 @@ export class RoomStore {
 }
 
 function makePlayer(id: PlayerId, name: string, host: boolean, now: number): RoomPlayer {
-  return { id, name, host, color: PLAYER_COLORS[id], ready: false, presence: 'offline', lastSeenAt: now };
+  return { id, name, host, color: PLAYER_COLORS[id], hero: null, ready: false, presence: 'offline', lastSeenAt: now };
 }
 
 function validateSettings(value: RoomSettings): RoomSettings {

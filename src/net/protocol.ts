@@ -14,6 +14,25 @@ export const MAX_BATCH_CELLS = 128;
 export const MAX_ORDER_UNITS = MAX_UNITS;
 export const MAX_TRADE_AMOUNT = 999;
 
+/**
+ * The preset building colours a co-op player can claim in the lobby. Each
+ * player's pick recolours their buildings so ownership reads at a glance;
+ * p1/p2 default to the first two. Shared by the lobby picker and the sim's
+ * renderer, so both agree on the exact palette.
+ */
+export const PLAYER_COLOR_PRESETS: readonly string[] = [
+  '#5b8c5a', // moss green (p1 default)
+  '#d59b45', // amber (p2 default)
+  '#4f79c4', // slate blue
+  '#b0503f', // brick red
+  '#8a4fbf', // violet
+  '#3aa6a0', // teal
+];
+
+export function isColorPreset(value: unknown): value is string {
+  return typeof value === 'string' && PLAYER_COLOR_PRESETS.includes(value);
+}
+
 export type EntityId = number;
 export type TradeRequestId = string;
 export type TradeShipmentId = string;
@@ -35,6 +54,8 @@ export interface RoomPlayer {
   id: PlayerId;
   name: string;
   color: string;
+  /** Chosen hero id, or null for none. Selected in the lobby before start. */
+  hero: string | null;
   host: boolean;
   ready: boolean;
   presence: Presence;
@@ -107,6 +128,7 @@ export interface AcceptedCommand {
 export type ClientMessage =
   | { type: 'command'; commandId: string; command: GameCommand }
   | { type: 'ready'; ready: boolean }
+  | { type: 'setLoadout'; color: string; hero: string | null }
   | { type: 'hostTick'; tick: number }
   | { type: 'ping'; sentAt: number }
   | { type: 'checkpoint'; tick: number; sequence: number; payload: string }
@@ -180,6 +202,10 @@ export function parseClientMessage(raw: unknown): ParseResult<ClientMessage> {
       return typeof value.ready === 'boolean'
         ? { ok: true, value: value as unknown as ClientMessage }
         : { ok: false, error: 'invalid_ready' };
+    case 'setLoadout':
+      return isColorPreset(value.color) && (value.hero === null || shortString(value.hero, 32))
+        ? { ok: true, value: value as unknown as ClientMessage }
+        : { ok: false, error: 'invalid_loadout' };
     case 'ping':
       return finite(value.sentAt)
         ? { ok: true, value: value as unknown as ClientMessage }

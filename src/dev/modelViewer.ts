@@ -31,6 +31,9 @@ let ghost = params.get('ghost') === '1';
 let spin = params.get('spin') === '1';
 let wire = false;
 let seed = Math.max(1, Number(params.get('seed')) || 1);
+// color=<hex> previews a co-op player colour (roof recolour + mine headframe).
+const colorParam = params.get('color');
+const playerColor = colorParam ? parseInt(colorParam.replace('#', ''), 16) : undefined;
 
 const FOOTPRINT_LIMIT = 1.05; // world half-extent of a building's 2×2 tile footprint
 
@@ -180,7 +183,7 @@ function build(key: BuildingKey): void {
   currentKey = key;
   setActiveBiome(BIOMES[biomeKey]);
   // seed the cosmetic scatter so a given seed always yields the same props
-  const g = withSeededScatter(seed, () => makeBuilding(key, DEFS[key], ghost));
+  const g = withSeededScatter(seed, () => makeBuilding(key, DEFS[key], ghost, playerColor));
   g.traverse(o => {
     const m = o as THREE.Mesh;
     if (m.isMesh) { m.castShadow = !ghost; m.receiveShadow = false; }

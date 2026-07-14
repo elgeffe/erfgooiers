@@ -166,6 +166,15 @@ Shipped (first playable slice):
   Erfgooiers / Veldheer) routed through `Modifiers`; both-ready lobbies auto-start from
   a shared seed, raids target either castle, defeat ends the run for both, and a
   disconnected peer freezes rather than drifting.
+- A per-seat lobby loadout: each player claims a preset building colour (kept unique
+  across seats) and a hero. At level start both peers spawn each player's hero and
+  warband, that player gets their own `Modifiers` (difficulty base + hero) resolved
+  through `Game.modsFor(owner)` so their hero's boons and banes shape only their own
+  economy, and every building they raise is painted in their colour (roofs, and the
+  timber attachment on mines while the mound stays grey).
+- Player-scoped event toasts: each seat sees only its own settlement's notifications
+  (buildings, staffing, market, bell, hero) while shared events (raids, level clears)
+  still reach both.
 - Fixed `1x` speed, strict ownership, shared team victory, and no host migration.
 
 Still to build before co-op is release-ready:
@@ -175,8 +184,9 @@ Still to build before co-op is release-ready:
   long sessions rely on both sims staying in step).
 - Tick-aligned command application under measured latency/jitter (commands currently
   apply on receipt in server order).
-- Per-player heroes, shops, cards, contracts, participation rewards, and co-op resume
-  saves; scale difficulty through fronts and logistics before HP inflation.
+- Per-player shops, cards, contracts, participation rewards, and co-op resume saves
+  (per-player hero rule sets already apply through `Game.modsFor`); scale difficulty
+  through fronts and logistics before HP inflation.
 
 The staged architecture, protocol, recovery model, security boundaries, risks, and exit
 criteria are documented in [docs/co-op-design.md](docs/co-op-design.md).

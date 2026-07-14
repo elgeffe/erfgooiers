@@ -9,12 +9,22 @@ import { makeFish } from './faunaModels';
 // =====================================================================
 //  Buildings
 // =====================================================================
-export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean): THREE.Group {
+/**
+ * Build a building mesh. In co-op each player picks a preset colour; passing
+ * that colour recolours the building's roof to it so ownership reads at a
+ * glance. Mines have no roof — their headframe (the timber attachment on the
+ * grey mound) takes the colour instead. Single player passes no colour and
+ * every building keeps its own palette from `def`.
+ */
+export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean, playerColor?: number): THREE.Group {
+  // A shallow copy with the roof recoloured drives every roof mesh (they all
+  // read def.roof) without mutating the shared, frozen BuildingDef.
+  if (playerColor != null) def = { ...def, roof: playerColor };
   switch (key) {
     case 'woodcutter': return woodcutterHut(def, ghost);
     case 'forester': return foresterLodge(def, ghost);
     case 'sawmill': return sawmillBuilding(def, ghost);
-    case 'quarry': return quarryBuilding(def, ghost);
+    case 'quarry': return quarryBuilding(def, ghost, playerColor);
     case 'bakery': return bakeryBuilding(def, ghost);
     case 'mint': return mintBuilding(def, ghost);
     case 'vineyard': return vineyardHouse(def, ghost);
@@ -38,7 +48,7 @@ export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean)
     case 'windmill': return windmill(def, ghost);
     case 'farm': return farmhouse(def, ghost);
     case 'barn': return barn(def, ghost);
-    case 'mine': return mine(key, def, ghost);
+    case 'mine': return mine(key, def, ghost, playerColor);
     case 'tavern': return tavern(def, ghost);
     case 'castle': return castle(key, def, ghost);
     case 'guildhall': return guildhall(def, ghost);
@@ -187,13 +197,13 @@ function guildhall(def: BuildingDef, ghost: boolean): THREE.Group {
 }
 
 /** Scaffold shown while a building is under construction. */
-export function makeScaffold(key: BuildingKey, def: BuildingDef): { group: THREE.Group; frame: THREE.Group } {
+export function makeScaffold(key: BuildingKey, def: BuildingDef, playerColor?: number): { group: THREE.Group; frame: THREE.Group } {
   const g = new THREE.Group();
   const pad = new THREE.Mesh(box(1.9, 0.08, 1.9), mat(0x8a6b42)); pad.position.y = 0.04; g.add(pad);
   for (const [px, pz] of [[-0.85, -0.85], [0.85, -0.85], [-0.85, 0.85], [0.85, 0.85]]) {
     const post = new THREE.Mesh(geoPost, mat(0xc9a06a)); post.position.set(px, 0.35, pz); post.castShadow = true; g.add(post);
   }
-  const frame = makeBuilding(key, def, true);
+  const frame = makeBuilding(key, def, true, playerColor);
   frame.visible = false;
   frame.userData.dynamic = true; // Game scales it up with build progress
   g.add(frame);
@@ -563,8 +573,9 @@ function armoryBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
 }
 
 /** An excavated stone works with cut terraces, lifting crane and block yard. */
-function quarryBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
-  const g = new THREE.Group(), rock = mkMat(def.wall, ghost), cut = mkMat(0xc4cace, ghost), wood = mkMat(0x6b4a2f, ghost);
+function quarryBuilding(def: BuildingDef, ghost: boolean, playerColor?: number): THREE.Group {
+  // Rock steps keep their grey; the timber derrick is the player-colour attachment.
+  const g = new THREE.Group(), rock = mkMat(def.wall, ghost), cut = mkMat(0xc4cace, ghost), wood = mkMat(playerColor ?? 0x6b4a2f, ghost);
   for (const [r, y, x] of [[0.95, 0.18, -0.1], [0.72, 0.38, -0.25], [0.48, 0.58, -0.42]] as [number, number, number][]) { const step = new THREE.Mesh(dodeca(r), rock); step.scale.y = 0.42; step.position.set(x, y, -0.25); step.castShadow = !ghost; g.add(step); }
   const mast = new THREE.Mesh(cyl(0.06, 0.08, 1.7, 8), wood); mast.position.set(0.62, 0.85, 0.1); g.add(mast);
   const jib = new THREE.Mesh(box(1.05, 0.08, 0.08), wood); jib.position.set(0.18, 1.55, 0.1); jib.rotation.z = -0.15; g.add(jib);
@@ -858,14 +869,16 @@ function castle(key: BuildingKey, def: BuildingDef, ghost: boolean): THREE.Group
 }
 
 // ---------- mine (quarry, gold mine, coal mine) — rocky mound + adit ----------
-function mine(key: BuildingKey, def: BuildingDef, ghost: boolean): THREE.Group {
+function mine(key: BuildingKey, def: BuildingDef, ghost: boolean, playerColor?: number): THREE.Group {
   const g = new THREE.Group();
+  // The mound keeps its natural grey/earth wall colour in every mode — only the
+  // timber headframe attached to it takes the co-op player colour.
   const mound = new THREE.Mesh(dodeca(1.05), mkMat(def.wall, ghost));
   mound.position.y = 0.35; mound.scale.set(1, 0.72, 1); mound.rotation.y = 0.5; mound.castShadow = !ghost; mound.receiveShadow = !ghost; g.add(mound);
   // dark timber-framed entrance
   const ent = new THREE.Mesh(box(0.58, 0.68, 0.5), mkMat(0x241f1b, ghost));
   ent.position.set(0, 0.34, 0.82); ent.userData.marker = true; g.add(ent);
-  const beamMat = mkMat(0x6b4a2f, ghost);
+  const beamMat = mkMat(playerColor ?? 0x6b4a2f, ghost);
   for (const sx of [-0.33, 0.33]) {
     const beam = new THREE.Mesh(box(0.1, 0.78, 0.1), beamMat);
     beam.position.set(sx, 0.4, 1.02); beam.userData.marker = true; g.add(beam);
@@ -882,17 +895,17 @@ function mine(key: BuildingKey, def: BuildingDef, ghost: boolean): THREE.Group {
   }
   // Each ore operation has different headworks, readable even without colour.
   if (key === 'goldmine') {
-    const timber = mkMat(0x6b4a2f, ghost);
+    const timber = mkMat(playerColor ?? 0x6b4a2f, ghost);
     for (const x of [-0.52, 0.52]) { const leg = new THREE.Mesh(box(0.11, 1.35, 0.11), timber); leg.position.set(x, 1.05, 0.05); leg.rotation.z = x < 0 ? -0.18 : 0.18; g.add(leg); }
     const cross = new THREE.Mesh(box(1.25, 0.12, 0.14), timber); cross.position.set(0, 1.72, 0.05); g.add(cross);
     const wheel = new THREE.Mesh(torus(0.28, 0.035, 6, 14), mkMat(0xb8912e, ghost)); wheel.rotation.y = Math.PI / 2; wheel.position.set(0, 1.43, 0.06); wheel.userData.marker = true; g.add(wheel);
   } else if (key === 'coalmine') {
     // no breaker house: the big dark box read as a black square sticking out
     // of the mound. The tall stack alone marks the colliery.
-    const chute = new THREE.Mesh(box(0.42, 0.24, 0.52), mkMat(0x2f3035, ghost)); chute.position.set(0.1, 0.52, 0.38); chute.rotation.z = -0.35; g.add(chute);
-    const stack = new THREE.Mesh(cyl(0.13, 0.18, 1.35, 9), mkMat(0x313137, ghost)); stack.position.set(0.58, 1.16, -0.36); stack.castShadow = !ghost; g.add(stack);
+    const chute = new THREE.Mesh(box(0.42, 0.24, 0.52), mkMat(playerColor ?? 0x2f3035, ghost)); chute.position.set(0.1, 0.52, 0.38); chute.rotation.z = -0.35; g.add(chute);
+    const stack = new THREE.Mesh(cyl(0.13, 0.18, 1.35, 9), mkMat(playerColor ?? 0x313137, ghost)); stack.position.set(0.58, 1.16, -0.36); stack.castShadow = !ghost; g.add(stack);
   } else if (key === 'ironmine') {
-    const steel = mkMat(0x6d6260, ghost);
+    const steel = mkMat(playerColor ?? 0x6d6260, ghost);
     const mast = new THREE.Mesh(box(0.16, 1.55, 0.16), steel); mast.position.set(0.5, 1.0, -0.2); g.add(mast);
     const arm = new THREE.Mesh(box(1.0, 0.12, 0.12), steel); arm.position.set(0.08, 1.72, -0.2); arm.rotation.z = -0.18; g.add(arm);
     // hoist the ore skip on a cable from the arm's tip so it hangs above the

@@ -87,6 +87,10 @@ export function createCoOpServer(options: CoOpServerOptions = {}) {
             store.setReady(roomId, playerId, message.ready);
             broadcastRoom(roomId);
             break;
+          case 'setLoadout':
+            store.setLoadout(roomId, playerId, message.color, message.hero);
+            broadcastRoom(roomId);
+            break;
           case 'hostTick':
             store.updateHostTick(roomId, playerId, message.tick);
             break;

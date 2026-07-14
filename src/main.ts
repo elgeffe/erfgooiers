@@ -377,6 +377,16 @@ function startCoopLevel(seed: number, levelIndex: number): void {
   const world = new World({ seed, ...level.world, biome: 'gooi' });
   view.loadWorld(world);
   game = new Game(world, view, new Modifiers([...diff.specs]), playerId);
+  // Each player's chosen preset colour paints their buildings, and their hero's
+  // rule specs layer onto the shared difficulty base to form that player's own
+  // Modifiers — so one player's hero never buffs the other. Set both before
+  // initCoOp so the starting settlement already reflects them (colour, and
+  // hero perks like the transporter's extra serfs). Single player populates
+  // neither map, so every owner resolves to the one shared rule set.
+  for (const roomPlayer of snapshot.room?.players ?? []) {
+    if (roomPlayer.color?.startsWith('#')) game.playerColors.set(roomPlayer.id, parseInt(roomPlayer.color.slice(1), 16));
+    game.setPlayerMods(roomPlayer.id, [...diff.specs, ...heroSpecsFor(roomPlayer.hero)]);
+  }
   game.toast = (m, c) => ui.toast(m, c);
   game.onSelect = o => ui.showInspector(o);
   game.sfx = name => audio.play(name as any);
@@ -395,17 +405,29 @@ function startCoopLevel(seed: number, levelIndex: number): void {
   controls.setGame(game);
   game.setEnemies(level.enemies ?? null);
   ui.setMutators([]);
-  // both settlements get the same starting garrison, each owned by its player
-  if (level.startArmy) {
-    for (const pid of ['p1', 'p2'] as const) {
-      const st = game.storeFor(pid);
-      const sx = world.wx(st.x) + 0.5, sz = world.wz(st.y) + 0.5;
-      for (const a of level.startArmy) {
-        for (const u of game.spawnSquad(a.kind, a.count, sx, sz, 'player')) u.owner = pid;
-      }
+  // Each settlement gets the shared level garrison plus its player's chosen
+  // hero and that hero's warband — spawned identically on both peers from the
+  // shared room state so the two sims stay in lockstep.
+  const roomById = new Map((snapshot.room?.players ?? []).map(p => [p.id, p]));
+  for (const pid of ['p1', 'p2'] as const) {
+    const st = game.storeFor(pid);
+    const sx = world.wx(st.x) + 0.5, sz = world.wz(st.y) + 0.5;
+    const heroDef = roomById.get(pid)?.hero ? HERO_BY_ID[roomById.get(pid)!.hero!] : null;
+    for (const a of [...(level.startArmy ?? []), ...(heroDef?.startArmy ?? [])]) {
+      // Pass the owner so each fighter's combat stats bake from that player's
+      // hero rule set — identically on both peers.
+      game.spawnSquad(a.kind, a.count, sx, sz, 'player', pid);
     }
+    if (heroDef) game.spawnHero(heroDef.id, heroDef.name, pid);
   }
-  ($('heroChip') as HTMLElement).style.display = 'none'; // no mounted hero in co-op v1
+  // Mount the local player's hero on the HUD chip (co-op runs no shared hero).
+  const localHeroDef = roomById.get(playerId)?.hero ? HERO_BY_ID[roomById.get(playerId)!.hero!] : null;
+  const coopHeroChip = $('heroChip') as HTMLElement;
+  if (localHeroDef) {
+    $('heroIcon').textContent = localHeroDef.icon;
+    $('heroName').textContent = localHeroDef.name;
+    coopHeroChip.style.display = 'flex';
+  } else coopHeroChip.style.display = 'none';
   ui.setGold(run!.gold);
   ui.setSandbox(false);
   ui.setCoOp(true);

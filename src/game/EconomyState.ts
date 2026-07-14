@@ -1,4 +1,4 @@
-import type { Building, PlayerId, Site, Unit } from '../types';
+import type { Building, OwnerId, PlayerId, Site, Unit } from '../types';
 import type { Modifiers } from './Modifiers';
 
 export type WorkerMetrics = Record<'serf' | 'villager' | 'builder', {
@@ -15,7 +15,7 @@ export class EconomyState {
     private readonly buildings: readonly Building[],
     private readonly sites: readonly Site[],
     private readonly units: readonly Unit[],
-    private readonly mods: Modifiers,
+    private readonly modsFor: (owner: OwnerId) => Modifiers,
     private readonly storeFor: (owner: PlayerId) => Building,
     private readonly localPlayerId: PlayerId,
   ) {}
@@ -87,12 +87,12 @@ export class EconomyState {
       else if (unit.role === 'villager') { villagers++; if (!unit.home) idleVillagers++; }
       else if (unit.role === 'laborer') builders++;
     }
-    const carryCap = this.mods.carryCap();
     let haulLoad = 0;
     for (const site of this.sites) for (const item in site.needs) haulLoad += Math.max(0, site.needs[item] - (site.delivered[item] || 0) - (site.incoming[item] || 0));
     for (const building of this.buildings) {
       if (building.removed || !building.active) continue;
-      if (building.def.recipe) for (const item in this.mods.recipeInputs(building.def)) if ((building.inp[item] || 0) + (building.incoming[item] || 0) < carryCap) haulLoad++;
+      const carryCap = this.modsFor(building.owner).carryCap();
+      if (building.def.recipe) for (const item in this.modsFor(building.owner).recipeInputs(building.def)) if ((building.inp[item] || 0) + (building.incoming[item] || 0) < carryCap) haulLoad++;
       if (!building.def.store) for (const item in building.out) if (building.out[item] > 0) haulLoad++;
     }
     const serfStatus = (serfs === 0 && haulLoad > 0) || haulLoad > serfs * 2 ? 'bad' : haulLoad > 0 && idleSerfs === 0 ? 'warn' : 'good';

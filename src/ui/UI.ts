@@ -182,7 +182,9 @@ export class UI {
   /** Update build-menu card costs to reflect the run's cost-reducing upgrades. */
   private refreshBuildCosts(): void {
     if (!this.game) return;
-    const mods = this.game.mods;
+    // The build menu belongs to the local player, so preview costs through their
+    // own rule set (in co-op that carries their hero's discounts/penalties).
+    const mods = this.game.modsFor(this.game.localPlayerId);
     document.querySelectorAll<HTMLElement>('.bcard[data-key]').forEach(el => {
       const key = el.dataset.key!;
       if (!(key in DEFS)) return;
@@ -411,7 +413,7 @@ export class UI {
   }
   /** Seconds to produce/gather one item (mods-adjusted once a Game is bound). */
   private prodTime(def: BuildingDef): number | null {
-    const mods = this.game?.mods;
+    const mods = this.game ? this.game.modsFor(this.game.localPlayerId) : null;
     if (def.recipe) return mods ? mods.recipeTime(def) : def.recipe.time;
     if (def.gather && def.gather.out) return mods ? mods.gatherTime(def) : def.gather.time;
     return null;
@@ -666,7 +668,8 @@ export class UI {
       }
       if (o.def.military || o.def.trainer) {
         const mil = o.def.military || o.def.trainer;
-        const mods = this.game!.mods;
+        // Preview training cost/time through the building owner's rule set.
+        const mods = this.game!.modsFor(o.owner);
         body += '<div class="sect">Train</div>';
         if (!o.active) body += '<div class="hnote">Building still being raised…</div>';
         else {

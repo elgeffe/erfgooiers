@@ -1,5 +1,5 @@
 import type { View } from '../render/View';
-import type { Building, Coord, PlayerId, Site, Unit } from '../types';
+import type { Building, Coord, OwnerId, PlayerId, Site, Unit } from '../types';
 import type { World } from '../world/World';
 import type { Modifiers } from './Modifiers';
 import { buildingEntranceTiles } from './util';
@@ -22,7 +22,7 @@ export class InteractionSystem {
   constructor(
     private readonly world: World,
     private readonly view: View,
-    private readonly mods: Modifiers,
+    private readonly modsFor: (owner: OwnerId) => Modifiers,
     private readonly buildings: readonly Building[],
     private readonly sites: readonly Site[],
     private readonly units: readonly Unit[],
@@ -71,7 +71,7 @@ export class InteractionSystem {
   collectGoldAt(tx: number, ty: number, owner: PlayerId, collector?: Unit): void {
     const tile = this.world.T(tx, ty);
     if (!tile?.pickup) return;
-    const gain = Math.max(1, Math.round(tile.pickup.gold * this.mods.goldMult()));
+    const gain = Math.max(1, Math.round(tile.pickup.gold * this.modsFor(owner).goldMult()));
     this.view.removeMeshes(tile.pickup.meshes);
     tile.pickup = null;
     const index = this.pickups.findIndex(pickup => pickup.x === tx && pickup.y === ty);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONTENT_VERSION, MAX_BATCH_CELLS, MAX_ORDER_UNITS, PROTOCOL_VERSION, parseClientMessage, roomCompatible } from './protocol';
+import { CONTENT_VERSION, MAX_BATCH_CELLS, MAX_ORDER_UNITS, PLAYER_COLOR_PRESETS, PROTOCOL_VERSION, parseClientMessage, roomCompatible } from './protocol';
 
 describe('network protocol validation', () => {
   it('accepts bounded gameplay commands', () => {
@@ -31,6 +31,13 @@ describe('network protocol validation', () => {
     expect(parseClientMessage({ type: 'ready', ready: true }).ok).toBe(true);
     expect(parseClientMessage({ type: 'ping', sentAt: 123.5 }).ok).toBe(true);
     expect(parseClientMessage({ type: 'checkpoint', tick: -1, sequence: 0, payload: '' }).ok).toBe(false);
+  });
+
+  it('accepts a lobby loadout with a preset colour and hero, and rejects off-palette picks', () => {
+    expect(parseClientMessage({ type: 'setLoadout', color: PLAYER_COLOR_PRESETS[0], hero: 'warlord' }).ok).toBe(true);
+    expect(parseClientMessage({ type: 'setLoadout', color: PLAYER_COLOR_PRESETS[2], hero: null }).ok).toBe(true);
+    expect(parseClientMessage({ type: 'setLoadout', color: '#ffffff', hero: null }).ok).toBe(false);
+    expect(parseClientMessage({ type: 'setLoadout', color: PLAYER_COLOR_PRESETS[0], hero: 42 }).ok).toBe(false);
   });
 
   it('rejects incompatible room versions', () => {

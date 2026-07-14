@@ -1,6 +1,6 @@
 import { UNITS, damageMultiplier, structureDamage, type UnitKind } from '../data/units';
 import { simRng } from '../engine/rng';
-import type { Building, Faction, PlayerId, Unit } from '../types';
+import type { Building, Faction, OwnerId, PlayerId, Unit } from '../types';
 
 const random = () => simRng.next();
 
@@ -15,7 +15,7 @@ export interface DamagePort {
   onObjectiveKill(role: string, faction: Faction): void;
   onStructureDestroyed(faction: Faction): void;
   markDefeat(): void;
-  toast(message: string, cls?: string): void;
+  toast(message: string, cls?: string, owner?: OwnerId): void;
   sfx(name: string): void;
 }
 
@@ -69,7 +69,10 @@ export class DamageSystem {
     for (const unit of this.port.units()) if (unit.foeB === building) unit.foeB = null;
     const castle = (building.owner === 'p1' || building.owner === 'p2') && this.port.playerStore(building.owner) === building;
     this.port.removeBuilding(building);
-    this.port.toast(building.def.name + (building.faction === 'player' ? ' has fallen!' : ' destroyed!'), 'err');
+    // A player's own building falling is their news alone; an enemy stronghold
+    // going down is a shared win, so it carries no owner and shows to both.
+    this.port.toast(building.def.name + (building.faction === 'player' ? ' has fallen!' : ' destroyed!'), 'err',
+      building.faction === 'player' ? building.owner : undefined);
     if (castle) this.port.markDefeat();
   }
 

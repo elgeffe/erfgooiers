@@ -1,6 +1,6 @@
 import type * as THREE from 'three';
 import { ITEMS, MARKET_VALUES } from '../data/items';
-import type { Building, ItemKey } from '../types';
+import type { Building, ItemKey, OwnerId } from '../types';
 
 export const MAX_MARKET_ORDERS = 3;
 
@@ -23,7 +23,7 @@ export interface MarketPort {
   createCaravan(): THREE.Group;
   remove(mesh: THREE.Object3D): void;
   sfx(name: string): void;
-  toast(message: string): void;
+  toast(message: string, owner?: OwnerId): void;
   /** Pay the market's proceeds straight into the owner's global coin stock. */
   depositCoin(building: Building, amount: number): void;
 }
@@ -142,7 +142,7 @@ export class MarketSystem {
       if (cargo) cargo.visible = true; // rolled in empty, leaves laden
       this.port.depositCoin(market, earned);
       this.port.sfx('coin');
-      this.port.toast(`Market sold ${parts.join(', ')} (+${earned} coin)`);
+      this.port.toast(`Market sold ${parts.join(', ')} (+${earned} coin)`, market.owner);
     }
   }
 

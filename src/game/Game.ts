@@ -6,9 +6,9 @@ import { findPath } from '../engine/pathfinding';
 import type { FlowField } from '../engine/flowfield';
 import type { World } from '../world/World';
 import type { View } from '../render/View';
-import { type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit } from '../types';
+import { type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit, PLAYER_IDS } from '../types';
 import { doorTile } from './util';
-import { Modifiers } from './Modifiers';
+import { Modifiers, type ModifierSpec } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, ownerForFaction } from './ownership';
 import { TradeSystem } from './TradeSystem';
@@ -67,18 +67,23 @@ export class Game {
   readonly playerStores = new Map<PlayerId, Building>();
   readonly playerGuilds = new Map<PlayerId, Building>();
   readonly playerHeroes = new Map<PlayerId, Unit>();
+  /** Co-op only: each player's chosen preset building colour (empty in single player). */
+  readonly playerColors = new Map<PlayerId, number>();
   selected: any = null;
   simSpeed = 1;
   /** Buildings the first-ascension onboarding has not unlocked yet on this
    *  level (empty on every other tier and in sandbox/co-op). Placement is
    *  refused for these; the UI greys their cards out. */
   lockedBuildings = new Set<BuildingKey>();
-  /** The run's mounted hero on this level (null in sandbox / before spawn). */
-  heroUnit: Unit | null = null;
-  /** Seconds until a fallen hero rides back out of the castle (0 = alive/none). */
-  heroRespawnT = 0;
-  private heroId: string | null = null;
-  private heroName = 'Hero';
+  /** The local player's mounted hero on this level (null in sandbox / before spawn). */
+  get heroUnit(): Unit | null { return this.playerHeroes.get(this.localPlayerId) ?? null; }
+  /** Seconds until the local player's fallen hero rides back out (0 = alive/none). */
+  get heroRespawnT(): number { return this.heroRespawn.get(this.localPlayerId) ?? 0; }
+  /** Per-player hero identity and respawn timers. Co-op runs two heroes at once,
+   *  so death and respawn are tracked per owner and resolved identically on both
+   *  peers — never off the single local hero, which would desync. */
+  private readonly heroIdentity = new Map<PlayerId, { id: string; name: string }>();
+  private readonly heroRespawn = new Map<PlayerId, number>();
 
   /** Sim seconds elapsed this level (drives the hard timer & speed bonus). */
   elapsed = 0;
@@ -88,6 +93,17 @@ export class Game {
   defeat = false;
 
   toast: (msg: string, cls?: string) => void = () => {};
+  /**
+   * Route a toast, but in co-op suppress notifications about the *other*
+   * player's assets so each player only sees events for their own settlement.
+   * An undefined (or enemy/wild) owner is a shared event — a raid, a level
+   * message — and always shows. In single player the local id is always the
+   * acting owner, so nothing is ever dropped.
+   */
+  private emitToast(msg: string, cls?: string, owner?: OwnerId): void {
+    if ((owner === 'p1' || owner === 'p2') && owner !== this.localPlayerId) return;
+    this.toast(msg, cls);
+  }
   onSelect: (obj: any) => void = () => {};
   /** Called when gold is picked up off the map (already run through goldMult). */
   onGold: (amount: number) => void = () => {};
@@ -126,6 +142,24 @@ export class Game {
   readonly tradeRequests: TradeRequest[];
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
+
+  /** Per-player rule sets in co-op (difficulty base + that player's hero). Empty
+   *  in single player, where every owner resolves to the shared `mods`. */
+  private readonly playerMods = new Map<PlayerId, Modifiers>();
+
+  /** The rule set governing an owner's economy, units, and buildings. In co-op
+   *  each player has their own so one player's hero never buffs the other; enemy
+   *  and wild factions (and all of single player) use the shared base. */
+  modsFor(owner: OwnerId): Modifiers {
+    const own = this.playerMods.get(owner as PlayerId);
+    return own ?? this.mods;
+  }
+
+  /** Install a player's co-op rule set. Its ctx is shared with the base so
+   *  road-derived bonuses stay consistent across the two rule sets. */
+  setPlayerMods(owner: PlayerId, specs: ModifierSpec[]): void {
+    this.playerMods.set(owner, new Modifiers(specs, this.mods.ctx));
+  }
 
   constructor(
     private readonly world: World,
@@ -212,7 +246,7 @@ export class Game {
       createCaravan: () => this.view.createTraderCaravan(),
       remove: mesh => this.view.remove(mesh),
       sfx: name => this.sfx(name),
-      toast: message => this.toast(message),
+      toast: (message, owner) => this.emitToast(message, undefined, owner),
       depositCoin: (building, amount) => {
         // markets are always player-owned; pay into that player's castle stock
         const store = this.playerStores.get(building.owner as PlayerId) ?? this.store;
@@ -232,10 +266,10 @@ export class Game {
       onObjectiveKill: (role, faction) => this.objective?.onKill(role, faction),
       onStructureDestroyed: faction => this.objective?.onStructureDestroyed(faction),
       markDefeat: () => { this.defeat = true; },
-      toast: (message, cls) => this.toast(message, cls),
+      toast: (message, cls, owner) => this.emitToast(message, cls, owner),
       sfx: name => this.sfx(name),
     });
-    this.trainingSystem = new TrainingSystem(this.mods, {
+    this.trainingSystem = new TrainingSystem(owner => this.modsFor(owner), {
       buildings: () => this.buildings,
       units: () => this.units,
       storeFor: owner => this.storeFor(owner),
@@ -252,10 +286,10 @@ export class Game {
       },
       onTrain: () => this.objective?.onTrain(),
       onGold: amount => this.onGold(amount),
-      toast: (message, cls) => this.toast(message, cls),
+      toast: (message, cls, owner) => this.emitToast(message, cls, owner),
       sfx: name => this.sfx(name),
     });
-    this.logisticsSystem = new LogisticsSystem(this.mods, {
+    this.logisticsSystem = new LogisticsSystem(owner => this.modsFor(owner), {
       buildings: () => this.buildings,
       sites: () => this.sites,
       units: () => this.units,
@@ -265,7 +299,7 @@ export class Game {
       sendTo: (unit, x, y) => this.unitMovement.sendTo(unit, x, y),
       moveUnit: (unit, dt) => this.unitMovement.moveGround(unit, dt),
     });
-    this.workerSystem = new WorkerSystem(this.world, this.view, this.mods, {
+    this.workerSystem = new WorkerSystem(this.world, this.view, owner => this.modsFor(owner), {
       buildings: () => this.buildings,
       sites: () => this.sites,
       guildFor: owner => this.playerGuilds.get(owner) ?? null,
@@ -280,10 +314,10 @@ export class Game {
       removeDecoration: (x, y) => this.removeDeco(x, y),
       setCarrying: (unit, item) => this.unitMovement.setCarrying(unit, item),
       onProduce: (item, amount) => this.objective?.onProduce(item, amount),
-      toast: message => this.toast(message),
+      toast: (message, owner) => this.emitToast(message, undefined, owner),
       sfx: name => this.sfx(name),
     });
-    this.unitMovement = new UnitMovement(this.world, this.mods);
+    this.unitMovement = new UnitMovement(this.world, owner => this.modsFor(owner));
     this.combatTargeting = new CombatTargeting(this.world, {
       buildings: () => this.buildings,
       visitUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
@@ -302,24 +336,25 @@ export class Game {
       sfx: name => this.sfx(name),
     });
     this.placementSystem = new PlacementSystem(
-      this.world, this.view, this.mods, this.buildings, this.sites, this.units, this.marketSystem,
+      this.world, this.view, owner => this.modsFor(owner), this.buildings, this.sites, this.units, this.marketSystem,
       {
         nextId: () => this.nextEntityId++,
         countItem: (item, owner) => this.countItem(item, owner),
         takeStock: (item, amount, owner) => this.takeStock(item, amount, owner),
         storeFor: owner => this.storeFor(owner),
         playerStore: owner => this.playerStores.get(owner) ?? null,
+        playerColor: owner => (owner === 'p1' || owner === 'p2') ? this.playerColors.get(owner) : undefined,
         cancelTask: unit => this.logisticsSystem.cancelTask(unit),
         checkSiteReady: site => this.logisticsSystem.checkSiteReady(site),
         select: value => this.select(value),
         selected: () => this.selected,
-        toast: (message, cls) => this.toast(message, cls),
+        toast: (message, cls, owner) => this.emitToast(message, cls, owner),
         sfx: name => this.sfx(name),
       },
     );
     this.orderSystem = new OrderSystem(this.world, this.view, {
       siegeTile: (unit, building) => this.combatTargeting.siegeTile(unit, building),
-      toast: message => this.toast(message),
+      toast: (message, owner) => this.emitToast(message, undefined, owner),
       sfx: name => this.sfx(name),
     });
     this.refugeSystem = new RefugeSystem(this.world, this.unitMovement, {
@@ -327,23 +362,21 @@ export class Game {
       storeFor: owner => this.storeFor(owner),
       isFighter: unit => this.isFighter(unit),
       cancelTask: unit => this.logisticsSystem.cancelTask(unit),
-      toast: (message, cls) => this.toast(message, cls),
+      toast: (message, cls, owner) => this.emitToast(message, cls, owner),
       sfx: name => this.sfx(name),
     });
-    this.economyState = new EconomyState(this.buildings, this.sites, this.units, this.mods, owner => this.storeFor(owner), this.localPlayerId);
-    this.unitFactory = new UnitFactory(this.world, this.view, this.mods, this.units, this.localPlayerId, {
+    this.economyState = new EconomyState(this.buildings, this.sites, this.units, owner => this.modsFor(owner), owner => this.storeFor(owner), this.localPlayerId);
+    this.unitFactory = new UnitFactory(this.world, this.view, owner => this.modsFor(owner), this.units, this.localPlayerId, {
       nextId: () => this.nextEntityId++,
       storeFor: owner => this.storeFor(owner),
       primaryStore: () => this.store,
       registerHero: (heroId, roleName, owner, unit) => {
-        this.heroId = heroId;
-        this.heroName = roleName;
         this.playerHeroes.set(owner, unit);
-        if (owner === this.localPlayerId) this.heroUnit = unit;
+        this.heroIdentity.set(owner, { id: heroId, name: roleName });
       },
     });
     this.interactionSystem = new InteractionSystem(
-      this.world, this.view, this.mods, this.buildings, this.sites, this.units, this.localPlayerId,
+      this.world, this.view, owner => this.modsFor(owner), this.buildings, this.sites, this.units, this.localPlayerId,
       {
         visitUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
         select: value => this.select(value),
@@ -421,11 +454,12 @@ export class Game {
     this.playerStores.set(owner, store);
     // base kit stock, then run-upgrade start bonuses on top
     store.stock = Object.fromEntries(Object.keys(ITEMS).map(key => [key, kit.stock[key] ?? 0]));
-    const bonus = this.mods.startStock();
+    const ownerMods = this.modsFor(owner);
+    const bonus = ownerMods.startStock();
     for (const k in bonus) store.stock[k] = (store.stock[k] || 0) + (bonus as Record<string, number>)[k];
     const d = doorTile(store);
-    const serfs = kit.serfs + this.mods.extraSerfs();
-    const laborers = kit.laborers + this.mods.extraLaborers();
+    const serfs = kit.serfs + ownerMods.extraSerfs();
+    const laborers = kit.laborers + ownerMods.extraLaborers();
     for (let i = 0; i < serfs; i++) this.spawnUnit('serf', 0xd8c49a, { x: d.x - 2 + (i % 4), y: d.y + Math.floor(i / 4) }, owner);
     for (let i = 0; i < laborers; i++) {
       const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + (i % 3), y: d.y + Math.floor(i / 3) }, owner);
@@ -682,8 +716,8 @@ export class Game {
     return this.unitFactory.spawnStartArmy(groups);
   }
 
-  spawnSquad(kind: UnitKind, count: number, worldX: number, worldZ: number, faction?: Faction): Unit[] {
-    return this.unitFactory.spawnSquad(kind, count, worldX, worldZ, faction);
+  spawnSquad(kind: UnitKind, count: number, worldX: number, worldZ: number, faction?: Faction, owner?: OwnerId): Unit[] {
+    return this.unitFactory.spawnSquad(kind, count, worldX, worldZ, faction, owner);
   }
 
   // =====================================================================
@@ -836,11 +870,14 @@ export class Game {
     for (let i = this.units.length - 1; i >= 0; i--) {
       const u = this.units[i];
       if (!u.dead) continue;
-      // the hero always returns: a fresh horse is saddled at the castle
-      if (u === this.heroUnit) {
-        this.heroUnit = null;
-        this.heroRespawnT = 45;
-        this.toast(`${this.heroName} has fallen — they will ride again in 45s`, 'err');
+      // the hero always returns: a fresh horse is saddled at the castle. Co-op
+      // tracks each player's hero separately so both peers resolve the same
+      // death/respawn regardless of which hero is local.
+      if ((u.owner === 'p1' || u.owner === 'p2') && this.playerHeroes.get(u.owner) === u) {
+        this.playerHeroes.delete(u.owner);
+        this.heroRespawn.set(u.owner, 45);
+        const name = this.heroIdentity.get(u.owner)?.name ?? 'The hero';
+        this.emitToast(`${name} has fallen — they will ride again in 45s`, 'err', u.owner);
       }
       // a slain specialist reopens their post: the building idles until
       // staffBuildings sends the next free villager to move in
@@ -848,7 +885,7 @@ export class Game {
         u.home.worker = null;
         u.home.active = false;
         u.home.working = false;
-        this.toast(`The ${u.home.def.name}'s ${u.roleName.toLowerCase()} was slain — a new villager is needed`, 'err');
+        this.emitToast(`The ${u.home.def.name}'s ${u.roleName.toLowerCase()} was slain — a new villager is needed`, 'err', u.owner);
       }
       if (this.selected === u) this.select(null);
       this.view.remove(u.mesh);
@@ -888,14 +925,19 @@ export class Game {
       this.taxT += sdt;
       if (this.taxT >= 60) { this.taxT -= 60; this.onGold(-tax); this.toast(`The Taxman collects ${tax} gold`, 'err'); }
     }
-    // a fallen hero rides back out once their timer runs down
-    if (this.heroRespawnT > 0 && this.heroId) {
-      this.heroRespawnT -= sdt;
-      if (this.heroRespawnT <= 0) {
-        this.heroRespawnT = 0;
-        this.spawnHero(this.heroId, this.heroName);
-        this.toast(`${this.heroName} rides again!`);
-        this.sfx('build');
+    // a fallen hero rides back out once their timer runs down — resolved per
+    // player in a fixed order so both co-op peers respawn identically
+    for (const owner of PLAYER_IDS) {
+      const remaining = this.heroRespawn.get(owner);
+      if (remaining === undefined) continue;
+      const next = remaining - sdt;
+      if (next > 0) { this.heroRespawn.set(owner, next); continue; }
+      this.heroRespawn.delete(owner);
+      const identity = this.heroIdentity.get(owner);
+      if (identity) {
+        this.spawnHero(identity.id, identity.name, owner);
+        this.emitToast(`${identity.name} rides again!`, undefined, owner);
+        if (owner === this.localPlayerId) this.sfx('build');
       }
     }
     const hungerRate = this.mods.hungerRate();
