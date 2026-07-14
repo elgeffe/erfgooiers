@@ -3,37 +3,7 @@ fix each of these items, always start with bugs first, then design changes > imp
 ## Bugs DOING
 
 ## Design changes
-- sometimes maps are produced where a sea and a mountain range are blocking off an area that contains gold or enemies.
 
-- re-order all workers order: Villagers first (tooltip should say: Ready to work), Serfs, Builders
-
-- when the game is run on small screens, the sandbox spawn panel does not properly display (the collapse button is underneath the panel. the button to collapse should always be visible.)
-
-- add some spacing in between the fullscreen and mute button 
-
-- villagers not showing in expanded workers panel as a pill (show negative number in the pill of villagers if buildings are missing)
-
-- the 'no curses' pill is now using the whole card width. let it adapt width to its content
-
-- remove tooltip info for rotation with R when mouse over on the build menu cards, only tooltip for the specific building.
-
-- remove coin requirement for Castle, Market, Monastery, stone watchtower
-
-- move defensive military buildings to 'Fortifications' tab in the build menu
-
-- move Guild Hall to the left of Castle in build menu
-
-- Some building models have objects running through (saw mill has a log, woodcutter has a log. etc.). move these items so that they don't intersect other building elements.
-
-- Barracks model is nice, but needs slightly larger inner cube to reach the outline of the building. add windows like the castle.
-
-- barracks train buttons should have resources under the title and responsive (show resource titles instead of just icons)
-
-- there is something sticking out out that looks red cube in the iron mine. remove that or hang it correctly from the beam structure?
-
-- the weaponsmith has something orange sticking out of the front door? make this nicer.
-
-- rallypoint flag should be purple for barracks
 
 ## Improvements
 - improve map tile details to make it look prettier, especially the standard grass tiles
@@ -47,8 +17,6 @@ fix each of these items, always start with bugs first, then design changes > imp
 - increase loudness of background music a bit
 
 - add card to shop: increases carry capacity of serfs to two (uncommon)
-
-- cards cannot stack in the shop or should they?
 
 - what does Crafting mean in the shop cards? shouldn't this be 'Production' is 18% faster?
 
@@ -88,13 +56,9 @@ fix each of these items, always start with bugs first, then design changes > imp
 
 - improve the cloud designs, make them look more like real clouds, improve the fidelity of the animal shapes that sometimes pass by.
 
-- make the mouth of the mountain range wider for levels with enemies, also get more creative with the shape of the mountain range instead of just a circle. > the main castle of ours does not have to be dead center, it can also be in the opposite corner of the enemy. DOING
-
 - remove clear save data button from main menu
 
 - when targeting a building when using demolish, show a red outline or something similar to indicate destruction. show returned resources (if any, otherwise warn that no resources are returned)
-
-- the red arrow above the farm (or other plot buildings) does not appear directly after construction is finished
 
 - remove the melody notes from the songs, i only want pads and chords (use extended chords or chord substitutions to make it more dynamic.) make sure only 1 melody plays at the home screen and continues into the new game. only change the melody on a new run or refresh of the whole page or returning to the home screen. FIXED
 
@@ -125,16 +89,7 @@ the castle is a prime target for serf piling
 
 - let the dragon in the last level restore health very slowly to annoy the player, in higher ascensions restore speed is increased. let the restore start after a minute of last damage received. TESTING
 
-
-- in the coin build tab, add a market building. users can assign additional resources there with an input field and see a timer with expected coin income (per minute?). a great way to monetize overproduction of a resource. a caravan of traders with horses passes by the market, goes in and leaves again automatically. the caravan cannot be attacked or slain by enemies. TESTING
-
-
-
-- maybe we need to grey out some of the buildings in early levels in the first ascension to reduce the overload to the user? just enable some beginner things and slowly unlock the build menu throughout the levels. make sure we do not block any objectives, otherwise fix the issue.
-
-
 - in the beginner ascension level, allow destruction of buildings that return the resources fully. in later levels deminish by half, in final levels no resource return.
-
 
 - add a defensive construction objective level in hard+ ascensions in early levels (build a gated wall with x amount of wall pieces (10/20?), with 4 defense towers), and a harder multi wave defense level where the player has to defend their encampment from ever stronger enemies in higher ascensions. give ample time to build the objective, only after the objective is completed in the level start the waves.
 
@@ -159,11 +114,7 @@ the castle is a prime target for serf piling
 
 ## Epics
 
-- we need to help new players to guide them in the objectives. i'm thinking either a modal at the start of the level with a cute, but slowly evolving brutal story that reads like a japanase anime but with a Het Gooi / Netherlands / Europe kind of vibe. almost like lord of the rings? pick names that sound dutch and english at the same time like Henk the Brave, Pieter the Wise, Koenraad the Merciless. the dragon of het gooi in their journey leads them to the alps as they chase him because he attacked het gooi recently. once they get to the alps the dragon flies over the player into the sky and flies down again on het gooi, it was a trap. in the end the player arrives just in time to defeat or get beaten by the dragon. in the modal you show how to produce the objective briefly with hints, as the levels go by the hints get fewer so the player has to put some effort in. when the player wins the first time against the dragon there is a final modal with a congratulations for the player of saving het gooi. in the hard ascension no more story just gameplay, only have the modal to show the objective and the timer and other stats. let users click the objective panel in the game to revisit the modal with instructions. adapt the biomes to the storyline in the first ascension run.
-
 - Implement next generation enemy AI in (local) skirmish multiplayer to implement later online multiplayer, with 3 exponantially increasing difficulty levels: Easy, Hard, Godlike > use simulations and machine learning + quantum-inspired algorithms to design an AI that feels 'human-like' based on different core strategies: defensive, offensive, balanced. first implement basic AI as baseline. i want to use this feature to innovate on algorithmic design using stuff like tensor networks and new insights from ML to design innovative experimental AI systems in gaming. the game is actually an optimization problem in disguise. the idea is that tensor networks or ML models can play 'adaptively' based on my own actions. we can probably use a ML technique to let me play against the model and record and adapt my actions to fine tune the enemy ai. let users select the type of AI (classic / any experimental model) when configuring the skirmish.
 
 ## Architecture
 - move all tests to a proper folder
-
-- refactor main.ts to be minimal
