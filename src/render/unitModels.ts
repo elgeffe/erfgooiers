@@ -290,8 +290,10 @@ function makeHumanoid(colorHex: number, role: string, teamHex?: number): { group
   }
 
   dressUnit(g, role, teamHex);
+  // Carried goods ride on top of the head, clear of the tallest worker hat (the
+  // serf's fez tops out around y≈0.88): at 0.82 the crate sank into the hat.
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
-  item.position.y = 0.82; item.visible = false;
+  item.position.y = 0.98; item.visible = false;
   g.add(item);
   return { group: g, itemMesh: item };
 }
