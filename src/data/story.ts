@@ -22,13 +22,13 @@ export interface LevelStory {
 export const LEVEL_STORY: Record<number, LevelStory> = {
   1: {
     title: 'The Ember on the Horizon',
-    story: 'For a hundred quiet years the erfgooiers held the heath of Het Gooi — commoners with an ancient right to the land, answerable to no lord. Then, on a still autumn night, a red light climbed over the Alps far to the south, and by dawn a farmstead near Laren lay in ash. Henk the Brave, chosen speaker of the free-holders, calls the villages to muster. But an army marches on more than courage: first it needs timber, and timber needs hands. Raise the first workshops before the smoke reaches your own door.',
+    story: 'For a hundred quiet years the erfgooiers held the heath of Het Gooi — commoners with an ancient right to the land, answerable to no lord. Then, on a still autumn night, a red light climbed over the Alps far to the south, and by dawn a farmstead near Laren lay in ash. Henk the Brave, chosen speaker of the free-holders, calls the villages to muster. But an army marches on more than courage: first it needs timber, and timber needs hands. Raise the first workshops before the danger reaches your own door.',
     how: [
       'Your goal: produce 8 Timber. Watch the objective card, top-right.',
       'From the build menu at the bottom, place a Woodcutter’s Hut next to some trees — serfs carry the timber & stone from your castle, then a builder raises it.',
       'Place a Sawmill nearby: it turns the woodcutter’s trunks into finished Timber.',
-      'Build a Guild Hall and train Villagers there (cost: 1 coin each) — each one walks out to staff an empty workshop.',
-      'Tip: click any building to inspect it. Speed the world up with the 3× button, top-left, once the chain is flowing.',
+      'Open the Guild Hall and train Villagers there (cost: 1 coin each) — each one walks out to staff an empty workshop.',
+      'Tip: click any building to inspect it. Speed the world up with the 3× button, once the chain is flowing.',
     ],
   },
   2: {
