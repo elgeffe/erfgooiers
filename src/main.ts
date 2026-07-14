@@ -1007,18 +1007,14 @@ $('objective').addEventListener('click', () => {
 
 // ---------- audio ----------
 const btnSound = $('btnSound') as HTMLButtonElement;
-const btnMenuSound = $('btnMenuSound') as HTMLButtonElement;
 function renderSound(): void {
-  // both the in-game control and the homepage button reflect the same state
-  for (const btn of [btnSound, btnMenuSound]) {
-    btn.textContent = audio.isMuted ? '🔇' : '🔊';
-    btn.classList.toggle('off', audio.isMuted);
-    btn.title = audio.isMuted ? 'Sound off — click to unmute' : 'Sound on — click to mute';
-  }
+  // the in-game control reflects the current mute state
+  btnSound.textContent = audio.isMuted ? '🔇' : '🔊';
+  btnSound.classList.toggle('off', audio.isMuted);
+  btnSound.title = audio.isMuted ? 'Sound off — click to unmute' : 'Sound on — click to mute';
 }
 const toggleSound = (e: Event): void => { e.stopPropagation(); audio.toggleMute(); renderSound(); };
 btnSound.onclick = toggleSound;
-btnMenuSound.onclick = toggleSound;
 // Start the score immediately where the browser allows it (returning visitors
 // with prior engagement); everyone else gets it on their very first gesture.
 audio.unlock();

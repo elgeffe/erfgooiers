@@ -5,7 +5,7 @@ import { World } from '../world/World';
 import { LEVELS } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { Game } from './Game';
-import { doorTile } from './util';
+import { buildingEntranceTiles, doorTile } from './util';
 
 function headlessView(world: World, caravan?: { created: number; removed: number }): View {
   const unit = (_color: number, _role: string, x: number, y: number) => {
@@ -686,5 +686,27 @@ describe('Dragon\u2019s Hoard encounter route', () => {
     expect(depth(dragon.tx, dragon.ty)).toBeGreaterThan(depth(keeps[1].x, keeps[1].y) + 8);
     expect(game.buildings.some(b => b.key === 'enemywall' || b.key === 'enemygate')).toBe(true);
     expect(game.buildings.filter(b => b.key === 'enemywatchtower').length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('placement keeps doorways clear', () => {
+  it('refuses a footprint on a neighbour’s entrance and an entrance that lands on a building', () => {
+    const { game } = openBattleGame();
+    // A clear anchor well away from the starting castle at (23,23).
+    expect(game.canPlace('bakery', 10, 10, 0)).toBe(true);
+    const bakery = game.placeBuilding('bakery', 10, 10, true);
+    const door = buildingEntranceTiles(bakery)[0]; // single south door at (10,12)
+    expect(door).toEqual({ x: 10, y: 12 });
+
+    // A new 2x2 whose footprint covers that doorway is rejected, even though it
+    // sits clear of the bakery's own body — the neighbour would be sealed in.
+    expect(game.canPlace('bakery', door.x, door.y, 0)).toBe(false);
+
+    // A new building whose own entrance would land on the bakery is rejected:
+    // a bakery two tiles north drops its south door onto the bakery's top row.
+    expect(game.canPlace('bakery', 10, 8, 0)).toBe(false);
+
+    // A spot clear of every footprint and doorway still builds.
+    expect(game.canPlace('bakery', 16, 10, 0)).toBe(true);
   });
 });
