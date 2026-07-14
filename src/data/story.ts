@@ -62,7 +62,7 @@ export const LEVEL_STORY: Record<number, LevelStory> = {
   },
   5: {
     title: 'Raiders at the Gate',
-    story: 'They come before you can leave — the dragon’s outriders, a warband of bandits drawn to the smell of a wine and bread. This is the first challenge: bleed the erfgooiers here, and there will be no army to chase anything. Hold the line!',
+    story: 'They come before you can leave — the dragon’s outriders, a warband of bandits drawn to the smell of wine and bread. This is the first challenge: bleed the erfgooiers here, and there will be no army to chase anything. Hold the line!',
     how: [
       'Your goal: survive the raids. Grow your army to provoke the first wave, then weather two.',
       'Train at the Barracks; build Watchtowers along the raiders’ path — they shoot on their own.',
