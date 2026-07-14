@@ -38,6 +38,7 @@
   <div class="obj-head"><span id="objLabel">Objective</span><b id="objText">—</b></div>
   <div class="obj-bar"><div id="objBar"></div></div>
   <div id="objMutators"></div>
+  <div id="objChecklist"></div>
 </div>
 
 <button id="unitsToggle">Workers</button>
@@ -279,6 +280,7 @@
         <label class="setrow chk"><input id="setInvZoom" type="checkbox">Invert scroll zoom</label>
         <label class="setrow chk"><input id="setEdgePan" type="checkbox">Edge panning — the pointer at a screen edge pans the camera</label>
         <label class="setrow chk"><input id="setAutoPause" type="checkbox">Pause when the window loses focus</label>
+        <label class="setrow chk"><input id="setTutorials" type="checkbox">Tutorials — story, build checklist &amp; hints on Normal difficulty</label>
         <label class="setrow">Render quality<select id="setQuality">
           <option value="auto">Auto — adapts to your frame rate</option>
           <option value="high">High — full resolution, always</option>
@@ -330,6 +332,7 @@
     <div id="heroGrid" class="shopgrid"></div>
     <div class="shopsect">2 · Choose your difficulty</div>
     <div id="ascensionRow"></div>
+    <label class="setrow chk" id="newRunTutorialsRow"><input id="newRunTutorials" type="checkbox">Turn off tutorials — skip the story, build checklist &amp; hints (Normal only)</label>
     <div class="btns row">
       <button id="btnHeroBack" class="ghost">Back to menu</button>
       <button id="btnStartRun">Start run →</button>
@@ -411,7 +414,8 @@
     <h1 class="serif"><span id="introLogo"></span>How to play</h1>
     <div class="tag">A cozy physical economy — every plank, loaf and coin is carried by hand.</div>
     <ul>
-      <li><span class="k">Story</span><span>On <b>Normal</b> difficulty each level opens with a short briefing: a paragraph of the tale and exactly how to reach the goal. Click the <b>objective card</b> (top-right) any time to read it again. Harder ascensions drop the story.</span></li>
+      <li><span class="k">Story</span><span>On <b>Normal</b> difficulty each level opens with a short briefing: a paragraph of the tale and exactly how to reach the goal. Click the <b>objective card</b> (top-right) any time to read it again. Turn these tutorials off in <b>Settings</b> or on the start-a-run panel; harder ascensions drop them automatically.</span></li>
+      <li><span class="k">Checklist</span><span>On the early Normal levels the objective card lists the <b>buildings to construct</b> and ticks them off as you build, and the next one to place <b>glows</b> in the build menu — follow the glow.</span></li>
       <li><span class="k">Unlock</span><span>On Normal the build menu starts small and <b>unlocks a few buildings each level</b> — locked cards show a 🔒 and are greyed out. The top resource bar shows only what you can currently make, so there’s less to take in at first. From level 5 the whole menu is open.</span></li>
       <li><span class="k">Build</span><span>Place buildings from the bottom menu. Serfs haul timber &amp; stone from your castle to the site, then a laborer constructs it.</span></li>
       <li><span class="k">Watch</span><span>Specialists gather and craft; serfs automatically carry goods between buildings. Nothing teleports.</span></li>

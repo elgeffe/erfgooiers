@@ -1,4 +1,5 @@
 import type { BuildingDef, BuildingKey, ItemKey } from '../types';
+import type { ObjectiveDef } from '../game/Objectives';
 
 export const DEFS: Record<BuildingKey, BuildingDef> = {
   storehouse: { name: 'Castle', desc: 'A fortified depot: stores every good and looses arrows at raiders. Build more to shorten haul routes', model: 'castle',
@@ -252,4 +253,49 @@ export function unlockedResourcesAt(level: number): Set<ItemKey> {
   const items = new Set<ItemKey>(['timber', 'stone', 'coin']);
   for (const k of unlockedBuildingsAt(level)) for (const it of buildingResources(k)) items.add(it);
   return items;
+}
+
+/** The single player building that outputs an item (gather or craft), if any. */
+function producerOf(item: ItemKey): BuildingKey | null {
+  for (const key of MENU_KEYS) {
+    const def = DEFS[key];
+    if (def.gather?.out === item || def.recipe?.out === item) return key;
+  }
+  return null;
+}
+
+/** The player buildings needed to produce `item`, dependencies first and
+ *  deduped: it recurses through recipe inputs (bread ← flour ← wheat) down to
+ *  the raw gatherers. Raw materials that come straight from the castle contribute
+ *  nothing. Drives the onboarding's build checklist and card highlights. */
+export function productionChain(item: ItemKey, seen = new Set<BuildingKey>()): BuildingKey[] {
+  const key = producerOf(item);
+  if (!key || seen.has(key)) return [];
+  seen.add(key);
+  const def = DEFS[key];
+  const chain: BuildingKey[] = [];
+  if (def.recipe) for (const inp in def.recipe.inp) chain.push(...productionChain(inp as ItemKey, seen));
+  chain.push(key);
+  return chain;
+}
+
+/** The ordered set of buildings a first-ascension player should construct to
+ *  meet an economy objective — the full production chain(s), plus the barracks
+ *  and weapon chain when the goal also asks for trained fighters. Combat and
+ *  collection goals return nothing (their levels open the whole menu). */
+export function objectiveBuildings(def: ObjectiveDef): BuildingKey[] {
+  const out: BuildingKey[] = [];
+  const add = (keys: BuildingKey[]) => { for (const k of keys) if (!out.includes(k)) out.push(k); };
+  switch (def.kind) {
+    case 'produce': add(productionChain(def.item)); break;
+    case 'produceMulti':
+    case 'stock': for (const r of def.reqs) add(productionChain(r.item)); break;
+    case 'produceTrain':
+      for (const r of def.reqs) add(productionChain(r.item));
+      add(productionChain('weapon')); // fielding soldiers needs a weapon chain…
+      add(['barracks']);              // …and somewhere to train them
+      break;
+    default: break; // combat / collect goals carry no economy checklist
+  }
+  return out;
 }

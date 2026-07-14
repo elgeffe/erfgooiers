@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MENU_KEYS, lockedBuildingsAt, unlockedBuildingsAt, unlockedResourcesAt } from './buildings';
+import { MENU_KEYS, lockedBuildingsAt, objectiveBuildings, productionChain, unlockedBuildingsAt, unlockedResourcesAt } from './buildings';
 import { LEVELS } from './levels';
 
 describe('first-ascension building onboarding', () => {
@@ -37,6 +37,30 @@ describe('first-ascension building onboarding', () => {
     for (let l = 1; l <= LEVELS.length; l++) {
       for (const k of lockedBuildingsAt(l)) expect(MENU_KEYS).toContain(k);
     }
+  });
+
+  it('resolves production chains dependency-first', () => {
+    expect(productionChain('timber')).toEqual(['woodcutter', 'sawmill']);
+    expect(productionChain('bread')).toEqual(['farm', 'mill', 'bakery']);
+    expect(productionChain('coin')).toEqual(['goldmine', 'coalmine', 'mint']);
+    // the final building in a chain is the one that outputs the item itself
+    const coinChain = productionChain('coin');
+    expect(coinChain[coinChain.length - 1]).toBe('mint');
+  });
+
+  it('builds an objective checklist a first-time player can follow', () => {
+    // level 1 produce-timber → just the two-building timber chain
+    expect(objectiveBuildings({ kind: 'produce', item: 'timber', n: 8 }))
+      .toEqual(['woodcutter', 'sawmill']);
+    // produceTrain adds the weapon chain and the barracks to the food chains,
+    // and every listed building is unlocked by its level (level 4)
+    const l4 = objectiveBuildings({ kind: 'produceTrain', reqs: [{ item: 'bread', n: 8 }, { item: 'wine', n: 6 }], train: 5 });
+    for (const k of ['farm', 'mill', 'bakery', 'vineyard', 'winery', 'smithy', 'barracks']) expect(l4).toContain(k);
+    const unlocked = unlockedBuildingsAt(4);
+    for (const k of l4) expect(unlocked.has(k)).toBe(true);
+    // combat goals carry no economy checklist
+    expect(objectiveBuildings({ kind: 'destroy', n: 2 })).toEqual([]);
+    expect(objectiveBuildings({ kind: 'slay', unit: 'boar', n: 8 })).toEqual([]);
   });
 
   it('surfaces only resources tied to the unlocked buildings', () => {

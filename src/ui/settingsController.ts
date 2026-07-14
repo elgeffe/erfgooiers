@@ -22,6 +22,7 @@ export function installSettingsController(view: View, controls: Controls, onAuto
     ($('setInvZoom') as HTMLInputElement).checked = settings.invertZoom;
     ($('setEdgePan') as HTMLInputElement).checked = settings.edgePan;
     ($('setAutoPause') as HTMLInputElement).checked = settings.autoPauseOnBlur;
+    ($('setTutorials') as HTMLInputElement).checked = settings.tutorials;
     ($('setQuality') as HTMLSelectElement).value = settings.quality;
     $('setMusicVal').textContent = `${Math.round(settings.musicVol * 100)}%`;
     $('setSfxVal').textContent = `${Math.round(settings.sfxVol * 100)}%`;
@@ -60,6 +61,7 @@ export function installSettingsController(view: View, controls: Controls, onAuto
   ($('setInvZoom') as HTMLInputElement).onchange = e => { settings.invertZoom = (e.target as HTMLInputElement).checked; saveSettings(settings); };
   ($('setEdgePan') as HTMLInputElement).onchange = e => { settings.edgePan = (e.target as HTMLInputElement).checked; saveSettings(settings); };
   ($('setAutoPause') as HTMLInputElement).onchange = e => { settings.autoPauseOnBlur = (e.target as HTMLInputElement).checked; saveSettings(settings); };
+  ($('setTutorials') as HTMLInputElement).onchange = e => { settings.tutorials = (e.target as HTMLInputElement).checked; saveSettings(settings); };
   ($('setQuality') as HTMLSelectElement).onchange = e => {
     settings.quality = (e.target as HTMLSelectElement).value as GameSettings['quality'];
     view.setQualityMode(settings.quality); saveSettings(settings);

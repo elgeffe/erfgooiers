@@ -14,8 +14,9 @@ import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutat
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
 import { DEFAULT_SANDBOX, MAX_SANDBOX_STRONGHOLDS, biomeWater, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
-import { lockedBuildingsAt, unlockedResourcesAt } from './data/buildings';
+import { lockedBuildingsAt, objectiveBuildings, unlockedResourcesAt } from './data/buildings';
 import { VICTORY_STORY, storyFor } from './data/story';
+import type { GameSettings } from './game/Settings';
 import { campaignBiome } from './data/biomes';
 import type { BiomeKey } from './data/biomes';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
@@ -139,13 +140,16 @@ function startLevel(): void {
   // First-ascension onboarding: unlock the build menu a few buildings at a time
   // and surface only the resources those buildings involve. Every harder tier
   // (and the sandbox) opens the whole menu at once.
-  const onboarding = !sandbox && run.ascension === 0;
+  const onboarding = !sandbox && run.ascension === 0 && run.tutorials;
   if (onboarding) {
     const locked = lockedBuildingsAt(run.levelIndex);
     game.lockedBuildings = new Set(locked);
     ui.applyProgression(locked, unlockedResourcesAt(run.levelIndex));
+    // the objective's build checklist drives the ticking list and card highlight
+    ui.setChecklist(game.objective ? objectiveBuildings(game.objective.def) : []);
   } else {
     ui.applyProgression(null, null);
+    ui.setChecklist([]);
   }
   ui.setPerks(run.upgrades, meta.activeGlobalBuff ? [meta.activeGlobalBuff] : []);
   controls.setGame(game);
@@ -438,10 +442,16 @@ let pickedHero = 'erfgooier';
 /** How extreme each tier feels, at a glance (matches ASCENSION_NAMES). */
 const ASCENSION_ICONS = ['🌱', '⚔️', '🔥', '💀', '❄️', '😈'];
 
+/** Whether this run's onboarding aids are on. The very first run forces them
+ *  on (first-run flag); afterwards it follows the saved Tutorials setting.
+ *  Either can be overridden per run by the new-run panel checkbox. */
+let pickedTutorials = true;
+
 function openHeroSelect(): void {
   phase = 'heroSelect';
   pickedAscension = Math.min(pickedAscension, meta.ascension);
   if (!heroAvailable(pickedHero, meta.unlocks)) pickedHero = 'erfgooier';
+  pickedTutorials = meta.tutorialSeen ? settings.tutorials : true;
   renderHeroSelect();
   showScreen('heroselect');
 }
@@ -483,16 +493,24 @@ function renderHeroSelect(): void {
     grid.appendChild(el);
   }
   renderAscensionRow();
+  // tutorials only exist on Normal — grey the toggle out on harder tiers
+  const normal = pickedAscension === 0;
+  const row = $('newRunTutorialsRow');
+  row.style.opacity = normal ? '' : '.45';
+  const box = $('newRunTutorials') as HTMLInputElement;
+  box.disabled = !normal;
+  box.checked = !pickedTutorials; // the checkbox turns tutorials OFF
 }
 
 function startRun(): void {
   if (!heroAvailable(pickedHero, meta.unlocks)) pickedHero = 'erfgooier';
   sandbox = false;
-  run = newRun(randomSeed(), Math.min(pickedAscension, meta.ascension));
+  run = newRun(randomSeed(), Math.min(pickedAscension, meta.ascension), pickedTutorials);
   run.hero = pickedHero;
   run.gold = metaSpecialValue(meta.activeGlobalBuff, 'startGold');
   stampContract(run);
   meta.stats.runs++;
+  meta.tutorialSeen = true; // the first-run auto-on no longer applies after this
   Save.saveMeta(meta);
   clearedThisRun = 0;
   goldEarnedThisRun = 0;
@@ -843,6 +861,8 @@ $('introLogo').innerHTML = logoSVG(40);
 ($('btnNewRun') as HTMLButtonElement).onclick = openHeroSelect;
 ($('btnHeroBack') as HTMLButtonElement).onclick = goMenu;
 ($('btnStartRun') as HTMLButtonElement).onclick = startRun;
+// per-run tutorials toggle (checkbox turns them OFF); default follows the setting
+($('newRunTutorials') as HTMLInputElement).onchange = e => { pickedTutorials = !(e.target as HTMLInputElement).checked; };
 // the hero chip selects the mounted hero and swings the camera to them
 $('heroChip').onclick = () => {
   if (!game || !game.heroUnit || game.heroUnit.dead) return;
@@ -864,7 +884,7 @@ installSandboxTools(view, ui, {
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
 
 // ---------- settings screen ----------
-installSettingsController(view, controls, openPauseMenu);
+const settings: GameSettings = installSettingsController(view, controls, openPauseMenu);
 
 // save export / import: a downloadable JSON bundle of run + Heritage progress
 ($('btnExportSave') as HTMLButtonElement).onclick = () => {
@@ -901,7 +921,7 @@ installSettingsController(view, controls, openPauseMenu);
 ($('storyStart') as HTMLButtonElement).onclick = () => { audio.play('click'); hideStory(); };
 // the objective card reopens the first-ascension story briefing mid-level
 $('objective').addEventListener('click', () => {
-  if (phase !== 'playing' || !run || sandbox || coopRun || run.ascension !== 0 || !currentLevel) return;
+  if (phase !== 'playing' || !run || sandbox || coopRun || run.ascension !== 0 || !run.tutorials || !currentLevel) return;
   if (!storyFor(currentLevel.index)) return;
   audio.play('click');
   showStoryModal(currentLevel.index, true);
