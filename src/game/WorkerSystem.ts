@@ -433,7 +433,7 @@ export class WorkerSystem {
     candidates.sort((a, b) => a.distance - b.distance);
     const from = doorTile(building);
     for (const { node } of candidates) {
-      if (findPath(this.world, from.x, from.y, node.x, node.y, building.faction) !== null) return node;
+      if (findPath(this.world, from.x, from.y, node.x, node.y, building.owner) !== null) return node;
     }
     return null;
   }

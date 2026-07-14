@@ -10,7 +10,7 @@ import { type Building, type BuildingKey, type Coord, type Faction, type Formati
 import { doorTile } from './util';
 import { Modifiers, type ModifierSpec } from './Modifiers';
 import type { Objective } from './Objectives';
-import { canControl, ownerForFaction } from './ownership';
+import { canControl, factionForOwner, ownerForFaction } from './ownership';
 import { TradeSystem } from './TradeSystem';
 import { EncounterDirector } from './EncounterDirector';
 import { ProjectileSystem } from './ProjectileSystem';
@@ -189,6 +189,10 @@ export class Game {
     readonly mods: Modifiers = new Modifiers(),
     readonly localPlayerId: PlayerId = 'p1',
   ) {
+    // Gates stay own-side only, and PvP additionally walls out hostile players:
+    // a skirmish rival may share your faction but never your gates.
+    world.gatePass = (mover, gateOwner) =>
+      factionForOwner(mover) === factionForOwner(gateOwner) && !this.hostileOwners(mover, gateOwner);
     this.trade = new TradeSystem({
       localPlayerId,
       now: () => this.elapsed,
@@ -300,7 +304,7 @@ export class Game {
       takeStock: (item, amount, owner) => this.takeStock(item, amount, owner),
       spawnUnit: (role, color, tile, owner) => this.spawnUnit(role, color, tile, owner),
       spawnFighter: (kind, tile, owner) => this.spawnFighter(kind, tile, 'player', owner),
-      pathTo: (unit, x, y) => findPath(this.world, unit.tx, unit.ty, x, y, unit.faction),
+      pathTo: (unit, x, y) => findPath(this.world, unit.tx, unit.ty, x, y, unit.owner),
       orderAttackMove: (unit, x, y) => this.orderUnit(unit, 'attackMove', x, y),
       removeUnit: unit => {
         this.view.remove(unit.mesh);

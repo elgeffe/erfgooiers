@@ -1,7 +1,7 @@
 import { TILE_COST_ROAD, TILE_COST_GRASS } from '../constants';
 import { DIRS, MinHeap, findPath, smooth } from './pathfinding';
 import type { World } from '../world/World';
-import type { Coord, Faction } from '../types';
+import type { Coord, OwnerId } from '../types';
 
 /**
  * A shared flow field for group orders. A mass command ("300 soldiers, march
@@ -30,7 +30,7 @@ export interface FlowField {
 
 /** Flood the map outward from the order's destination tiles. Seeds are always
  *  enterable (the same goal-tile exemption findPath grants door tiles). */
-export function buildFlowField(world: World, seeds: Coord[], faction?: Faction): FlowField {
+export function buildFlowField(world: World, seeds: Coord[], mover?: OwnerId): FlowField {
   const W = world.W, H = world.H, size = W * H;
   const dist = new Float32Array(size); dist.fill(Infinity);
   const toSeed = new Int32Array(size); toSeed.fill(-1);
@@ -55,9 +55,9 @@ export function buildFlowField(world: World, seeds: Coord[], faction?: Faction):
     for (const [dx, dy, mult] of DIRS) {
       const nx = cur.x + dx, ny = cur.y + dy;
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-      if (!world.passable(nx, ny, faction)) continue;
+      if (!world.passable(nx, ny, mover)) continue;
       // no corner cutting: a diagonal step needs both orthogonal shoulders clear
-      if (dx !== 0 && dy !== 0 && (!world.passable(cur.x + dx, cur.y, faction) || !world.passable(cur.x, cur.y + dy, faction))) continue;
+      if (dx !== 0 && dy !== 0 && (!world.passable(cur.x + dx, cur.y, mover) || !world.passable(cur.x, cur.y + dy, mover))) continue;
       const t = tiles[ny][nx];
       const cost = (t.road ? TILE_COST_ROAD : TILE_COST_GRASS) * mult;
       const nd = dist[ck] + cost, nk = ny * W + nx;
@@ -81,7 +81,7 @@ export function buildFlowField(world: World, seeds: Coord[], faction?: Faction):
  *  Omit `ex`/`ey` to accept whichever seed the descent reaches (sieges spread
  *  around the ring afterwards on their own). Returns null when the field
  *  cannot serve this unit; the caller falls back to a budgeted global search. */
-export function fieldPath(world: World, field: FlowField, sx: number, sy: number, ex?: number, ey?: number, faction?: Faction): Coord[] | null {
+export function fieldPath(world: World, field: FlowField, sx: number, sy: number, ex?: number, ey?: number, mover?: OwnerId): Coord[] | null {
   const W = world.W;
   let k = sy * W + sx;
   if (field.dist[k] === Infinity) return null;
@@ -100,9 +100,9 @@ export function fieldPath(world: World, field: FlowField, sx: number, sy: number
     px = x; py = y;
   }
   const end = chain.length ? chain[chain.length - 1] : { x: sx, y: sy };
-  const out = smooth(world, sx, sy, chain, faction);
+  const out = smooth(world, sx, sy, chain, mover);
   if (ex === undefined || ey === undefined || (end.x === ex && end.y === ey)) return out;
-  const hop = findPath(world, end.x, end.y, ex, ey, faction, field);
+  const hop = findPath(world, end.x, end.y, ex, ey, mover, field);
   if (!hop) return null;
   out.push(...hop);
   return out;

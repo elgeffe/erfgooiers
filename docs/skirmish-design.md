@@ -16,7 +16,10 @@ backlog for taking Skirmish past beta.
   default (`p1:0, p2:0, enemy:1, wild:1`) reproduces the old faction rule exactly;
   `startCoopLevel` arms skirmish with `p1:0, p2:1, enemy:2, wild:2`. Every combat
   system (targeting, projectiles, damage retaliation, tower fire, attack-order
-  validation in `commands.ts`) now keys off entity `owner`, not `faction`.
+  validation in `commands.ts`) now keys off entity `owner`, not `faction`. Gate
+  passability is owner-aware too: pathfinding movers are `OwnerId`s and
+  `World.gatePass` (installed by `Game`) lets allies through while walling out
+  hostile players — co-op allies still share gates, skirmish rivals do not.
 - **Level data**: `src/data/skirmishLevels.ts` defines one `LevelDef` (`Border Clash`)
   with no `enemies` block, so the EncounterDirector spawns nothing. `Game.initCoOp`'s
   existing mirrored spawns (28% / 72% of map width on the mid-axis) provide symmetry.
@@ -55,8 +58,6 @@ The beta is two seats, but new code was written so more players is data, not sur
 - **Trade with the enemy**: the co-op Trade tab still works in skirmish, so players
   can gift the rival goods. Harmless but silly — hide the tab / reject trade commands
   between hostile owners.
-- **Gates**: pathability is still faction-based, so both players can walk through
-  each other's gates. Should key off `hostileOwners` (owner-aware pathfinding).
 - **Toast asymmetry**: you get no notification when you damage the rival's economy;
   they see "has fallen" messages. Consider attacker-side combat feedback.
 - **Balance**: kit, start army, map density and the 60-minute draw timer are first

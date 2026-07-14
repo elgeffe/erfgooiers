@@ -57,7 +57,7 @@ export class OrderSystem {
       return;
     }
     const spots = formationSpots(x, y, units.length, formation, units.map(unit => ({ x: unit.tx, y: unit.ty })), this.formationGround, facing);
-    const field = units.length >= FLOW_FIELD_MIN_UNITS ? buildFlowField(this.world, spots, units[0].faction) : null;
+    const field = units.length >= FLOW_FIELD_MIN_UNITS ? buildFlowField(this.world, spots, units[0].owner) : null;
     const ordered = units
       .map((unit, index) => ({ unit, index, rank: formationRank(unit.role) }))
       .sort((left, right) => left.rank - right.rank || left.index - right.index);
@@ -78,7 +78,7 @@ export class OrderSystem {
     const assigned = units.map(unit => ({ unit, spot: this.ports.siegeTile(unit, building) }));
     const ring = new Map<string, Coord>();
     for (const { spot } of assigned) ring.set(`${spot.x},${spot.y}`, spot);
-    const field = units.length >= FLOW_FIELD_MIN_UNITS ? buildFlowField(this.world, [...ring.values()], units[0].faction) : null;
+    const field = units.length >= FLOW_FIELD_MIN_UNITS ? buildFlowField(this.world, [...ring.values()], units[0].owner) : null;
     for (const { unit, spot } of assigned) {
       if (UNITS[unit.role as UnitKind]?.heal) this.orderUnit(unit, 'attackMove', spot.x, spot.y, null, queue, field);
       else this.queueOrder(unit, { type: 'attackMove', x: spot.x, y: spot.y, foe: null, building, field }, queue);

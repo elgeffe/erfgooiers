@@ -141,7 +141,7 @@ export class CombatSystem {
             if (field) {
               if (this.flowBudget > 0) {
                 this.flowBudget--;
-                const path = fieldPath(this.world, field, unit.tx, unit.ty, undefined, undefined, unit.faction);
+                const path = fieldPath(this.world, field, unit.tx, unit.ty, undefined, undefined, unit.owner);
                 if (path === null) { unit.order!.field = null; this.siegeBlocked(unit, building); }
                 else if (path.length) { unit.path = path; unit.pathI = 0; unit.timer = 0.5 + rnd() * 0.4; }
                 else unit.order!.field = null;
@@ -169,7 +169,7 @@ export class CombatSystem {
         else if (unit.order.field) {
           if (this.flowBudget > 0) {
             this.flowBudget--;
-            const path = fieldPath(this.world, unit.order.field, unit.tx, unit.ty, unit.order.x, unit.order.y, unit.faction);
+            const path = fieldPath(this.world, unit.order.field, unit.tx, unit.ty, unit.order.x, unit.order.y, unit.owner);
             if (path?.length) { unit.path = path; unit.pathI = 0; }
             else unit.order.field = null;
           }
@@ -223,7 +223,7 @@ export class CombatSystem {
       else if (!unit.path && unit.order.field) {
         if (this.flowBudget > 0) {
           this.flowBudget--;
-          const path = fieldPath(this.world, unit.order.field, unit.tx, unit.ty, unit.order.x, unit.order.y, unit.faction);
+          const path = fieldPath(this.world, unit.order.field, unit.tx, unit.ty, unit.order.x, unit.order.y, unit.owner);
           if (path?.length) { unit.path = path; unit.pathI = 0; } else unit.order.field = null;
         }
       } else if (!unit.path && this.pathBudget > 0) {
@@ -254,7 +254,7 @@ export class CombatSystem {
       let best: Coord | null = null, bestScore = Infinity;
       for (let oy = -3; oy <= 3; oy++) for (let ox = -3; ox <= 3; ox++) {
         const x = baseX + ox, y = baseY + oy;
-        if (!this.world.passable(x, y, unit.faction)) continue;
+        if (!this.world.passable(x, y, unit.owner)) continue;
         const worldX = this.world.wx(x), worldZ = this.world.wz(y);
         const safety = Math.hypot(worldX - foeX, worldZ - foeZ);
         if (safety <= currentDistance + 0.2) continue;

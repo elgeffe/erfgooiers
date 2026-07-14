@@ -87,6 +87,18 @@ describe('skirmish diplomacy', () => {
     expect(objective.evaluate(game).done).toBe(true);
   });
 
+  it('allies walk through each other\'s gates but skirmish rivals are walled out', () => {
+    const { game, world } = makeTestGame();
+    const gate = game.placeBuilding('gate', 10, 10, true, 0, 'player', 'p2');
+    expect(gate.def.gate).toBe(true);
+    expect(world.passable(gate.x, gate.y, 'p2')).toBe(true);      // own gate
+    expect(world.passable(gate.x, gate.y, 'p1')).toBe(true);      // co-op ally
+    expect(world.passable(gate.x, gate.y, 'enemy')).toBe(false);  // raiders must break it
+    armSkirmish(game);
+    expect(world.passable(gate.x, gate.y, 'p1')).toBe(false);     // rival is walled out
+    expect(world.passable(gate.x, gate.y, 'p2')).toBe(true);
+  });
+
   it('skirmish soldiers auto-acquire the rival player\'s units', () => {
     const { game } = makeTestGame();
     armSkirmish(game);
