@@ -1,13 +1,20 @@
 import { PLOT_RANGE } from '../constants';
 import { DEFS } from '../data/buildings';
 import { ITEMS } from '../data/items';
+import { DIRS } from '../engine/pathfinding';
 import { simRng } from '../engine/rng';
 import type { View } from '../render/View';
-import type { Building, BuildingKey, Faction, OwnerId, PlayerId, Site, Unit } from '../types';
+import type { Building, BuildingKey, Coord, Faction, OwnerId, PlayerId, Site, Unit } from '../types';
 import type { World } from '../world/World';
 import type { MarketSystem } from './MarketSystem';
 import type { Modifiers } from './Modifiers';
 import { buildingEntranceTiles } from './util';
+
+// Doorway-seal check: only doorways within SEAL_SCAN tiles of the new footprint
+// are flooded; a door counts as escaped once the flood reaches ESCAPE tiles from
+// the footprint centre (the wider map) or CAP tiles are visited. ESCAPE sits
+// outside SEAL_SCAN so a door at the scan edge still has room to prove an escape.
+const SEAL_SCAN = 5, ESCAPE = 9, CAP = 400;
 
 interface PlacementPorts {
   nextId: () => number;
@@ -171,14 +178,68 @@ export class PlacementSystem {
     // cover an existing building's or site's entrance tile — otherwise the
     // neighbour is sealed in and its serfs can never reach it.
     const blockedEntrances = this.entranceTileKeys();
+    const footprint = new Set<string>();
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) {
       const tile = this.world.T(x, y);
       if (!tile || tile.type !== 'grass' || tile.b || tile.site || tile.dep || tile.road || tile.field || tile.tree?.dense) return false;
       if (blockedEntrances.has(`${x},${y}`)) return false;
+      footprint.add(`${x},${y}`);
     }
-    // The new building's own entrance tiles must be walkable; passable() rejects
-    // occupied tiles, so an entrance can never land on another building either.
-    return buildingEntranceTiles({ x: tx, y: ty, rot, def: DEFS[key] }).every(tile => this.world.passable(tile.x, tile.y));
+    // The new building's own entrance tiles must be walkable (passable() rejects
+    // occupied tiles, so an entrance can never land on another building), and
+    // they may not coincide with a neighbour's doorway — two green squares
+    // sharing a tile would leave both buildings fighting over one approach.
+    for (const tile of buildingEntranceTiles({ x: tx, y: ty, rot, def: DEFS[key] })) {
+      if (!this.world.passable(tile.x, tile.y)) return false;
+      if (blockedEntrances.has(`${tile.x},${tile.y}`)) return false;
+    }
+    // Covering a doorway is rejected above, but a building set down sideways can
+    // still wall off the corridor a doorway opens onto without touching the door
+    // tile itself. Reject placements that would seal any neighbouring doorway in.
+    return !this.sealsNeighbourDoorway(footprint, tx, ty);
+  }
+
+  /** True if the pending footprint would trap a nearby building/site doorway,
+   *  leaving its owner's serfs unable to walk out to open ground. */
+  private sealsNeighbourDoorway(footprint: Set<string>, tx: number, ty: number): boolean {
+    // Only doorways close enough that the new footprint could plug their escape
+    // corridor are worth flooding — anything further can't be walled in by a
+    // single 2×2. Chebyshev distance from the footprint centre keeps it cheap.
+    const cx = tx + 0.5, cy = ty + 0.5;
+    for (const b of [...this.buildings, ...this.sites]) {
+      for (const door of buildingEntranceTiles(b)) {
+        if (footprint.has(`${door.x},${door.y}`)) continue;
+        if (Math.max(Math.abs(door.x - cx), Math.abs(door.y - cy)) > SEAL_SCAN) continue;
+        if (!this.doorwayEscapes(door, footprint, b.owner, cx, cy)) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Flood out from a doorway across walkable tiles (treating the pending
+   *  footprint as solid). Escaping the local pocket — reaching the edge of a
+   *  box around the new footprint, or a large connected area — means the door
+   *  still reaches the wider map. A flood that exhausts inside the pocket is
+   *  sealed. */
+  private doorwayEscapes(start: Coord, footprint: Set<string>, mover: OwnerId, cx: number, cy: number): boolean {
+    const walkable = (x: number, y: number) => !footprint.has(`${x},${y}`) && this.world.passable(x, y, mover);
+    if (!walkable(start.x, start.y)) return true; // door already blocked — handled by other checks
+    const seen = new Set<string>([`${start.x},${start.y}`]);
+    const queue: Coord[] = [start];
+    while (queue.length) {
+      const cur = queue.shift()!;
+      if (seen.size > CAP) return true;
+      for (const [dx, dy] of DIRS) {
+        const nx = cur.x + dx, ny = cur.y + dy;
+        if (seen.has(`${nx},${ny}`) || !walkable(nx, ny)) continue;
+        // Serfs cannot cut corners: a diagonal step needs both shoulders clear.
+        if (dx !== 0 && dy !== 0 && (!walkable(cur.x + dx, cur.y) || !walkable(cur.x, cur.y + dy))) continue;
+        if (Math.abs(nx - cx) > ESCAPE || Math.abs(ny - cy) > ESCAPE) return true;
+        seen.add(`${nx},${ny}`);
+        queue.push({ x: nx, y: ny });
+      }
+    }
+    return false;
   }
 
   /** "x,y" keys of every tile that is a doorway of a standing building or site. */
@@ -202,7 +263,7 @@ export class PlacementSystem {
       return;
     }
     if (!this.canPlace(key, tx, ty, rot)) {
-      this.ports.sfx('error'); this.ports.toast('Cannot build here — keep the footprint and entrance clear of other doorways', 'err', owner); return;
+      this.ports.sfx('error'); this.ports.toast("Cannot build here — don't cover or seal off another building's doorway", 'err', owner); return;
     }
     const def = DEFS[key];
     if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.ports.toast('No stone deposits in range — build near the grey rocks', 'err', owner); return; }

@@ -1,11 +1,16 @@
 fix each of these items, always start with bugs first, then design changes > improvements > features > epics should always be last and first written out as docs/.md file.
 
-## Bugs DOING
+## Bugs
+- it should not be possible to build a building in front of the only exit of a block of other buildings. when you overlap 3 building their exits on top of each other, you can place another building sideways to block it. also make buildings not have their entries overlap (the green square). FIXED
+
+- the transported blocks are not exactly on top of the hats, but are inside of the hats now and 
 
 ## Design changes
 
 
 ## Improvements
+- redesign harder first levels on ascensions. think about multi objective goals with way higher counts
+
 - improve map tile details to make it look prettier, especially the standard grass tiles
 
 - coin and gold share the same icon. can we give the gold coins (the one we use for purchasing in the shop) a unique symbol. maybe a crown inside the coin emblem? > also design a unique coin for heritage with a erfgooiers game emblem in it

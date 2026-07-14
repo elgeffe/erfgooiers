@@ -710,6 +710,37 @@ describe('placement keeps doorways clear', () => {
     // A spot clear of every footprint and doorway still builds.
     expect(game.canPlace('bakery', 16, 10, 0)).toBe(true);
   });
+
+  it('refuses a building whose own doorway would land on a neighbour’s doorway', () => {
+    const { game } = openBattleGame();
+    const bakery = game.placeBuilding('bakery', 10, 10, true);
+    expect(buildingEntranceTiles(bakery)[0]).toEqual({ x: 10, y: 12 }); // south door
+
+    // A bakery at (9,13) rotated to face north drops its door onto (10,12) — the
+    // exact tile the first bakery's door already claims. Two green squares may
+    // not share a tile, so this is rejected even though no footprint overlaps.
+    expect(buildingEntranceTiles({ x: 9, y: 13, rot: 2, def: bakery.def })[0]).toEqual({ x: 10, y: 12 });
+    expect(game.canPlace('bakery', 9, 13, 2)).toBe(false);
+  });
+
+  it('refuses a building set down sideways that walls off a doorway’s only corridor', () => {
+    const { game } = openBattleGame();
+    const bakery = game.placeBuilding('bakery', 10, 10, true);
+    expect(buildingEntranceTiles(bakery)[0]).toEqual({ x: 10, y: 12 }); // south door
+
+    // Wall the door into a one-tile-wide southbound corridor: doorless stone
+    // walls down columns 9 and 11 leave only column 10 open from (10,12).
+    for (const [x, y] of [[8, 12], [8, 14], [11, 12], [11, 13]] as const) {
+      game.placeBuilding('wall', x, y, true);
+    }
+    // The corridor still opens onto the map, so a far-off spot builds fine.
+    expect(game.canPlace('bakery', 20, 20, 0)).toBe(true);
+
+    // Dropping a bakery across the mouth of the corridor at (10,15) seals the
+    // door — its serfs could never leave — so the placement is refused, even
+    // though the footprint never touches the door tile itself.
+    expect(game.canPlace('bakery', 10, 15, 0)).toBe(false);
+  });
 });
 
 describe('co-op unit colours mark ownership', () => {
