@@ -237,7 +237,8 @@ function objectiveBreakdownHTML(): string {
   const rows = game.objective.steps(game)
     .map(s => `<div class="ckrow ${s.done ? 'done' : 'todo'}"><span class="ckmark">${s.done ? '✓' : '○'}</span><span class="cknm">${s.label}</span></div>`)
     .join('');
-  return `<div class="ck-head">Objective — full checklist</div>${rows}`;
+  // the onboarding "Build these" list now lives here in the modal, not the HUD panel
+  return `<div class="ck-head">Objective — full checklist</div>${rows}${ui.buildChecklistHTML()}`;
 }
 
 /** Show a level's story + how-to briefing. `reopened` is the objective-card

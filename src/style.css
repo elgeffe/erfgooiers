@@ -172,7 +172,10 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 /* the three labour-pool pills read as a consistent stack: same full width,
    label left and count right, instead of each hugging its own content */
 #unitsToggle .wkpis{display:flex;flex-direction:column;align-items:stretch;align-self:stretch;gap:4px;}
-#unitsToggle .wkpis .utab{width:100%;justify-content:space-between;}
+#unitsToggle .wkpis .utab{width:100%;justify-content:flex-start;gap:8px;}
+/* label flexes so the counts line up in one column, dot pinned to the right */
+#unitsToggle .wkpis .ulbl{flex:1;}
+#unitsToggle .wkpis .utab b{min-width:1.5em;text-align:right;}
 #unitsToggle.warn{border-color:var(--bad);color:#f0c0ac;animation:workerpulse 1.6s ease-in-out infinite;}
 @keyframes workerpulse{0%,100%{box-shadow:0 0 0 0 rgba(201,107,74,0);}50%{box-shadow:0 0 0 3px rgba(201,107,74,.4);}}
 .hnote{font-size:9.5px;color:var(--ink-dim);margin-top:6px;font-style:italic;}
