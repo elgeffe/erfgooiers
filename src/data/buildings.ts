@@ -159,7 +159,7 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: { timber: 2, stone: 3 }, roof: 0x77593a, wall: 0x9aa0a3, accent: 0x6b4a2f, hp: 450, bulwark: true, gate: true, entrance: 'through' },
 
   banditcamp: { name: 'Bandit Camp', desc: 'A den of raiders', model: 'barn',
-    cost: {}, roof: 0x4a2e20, wall: 0x6b4a34, accent: 0x3a2a20, hp: 180 },
+    cost: {}, roof: 0x4a2e20, wall: 0x6b4a34, accent: 0x3a2a20, hp: 400 },
 
   enemywatchtower: { name: 'Watchtower', desc: 'A fortified enemy archer tower', model: 'mine',
     cost: {}, roof: 0x4a5056, wall: 0x777d82, accent: 0x9c3b3b, hp: 260,

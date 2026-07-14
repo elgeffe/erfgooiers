@@ -71,7 +71,7 @@ export const LEVEL_STORY: Record<number, LevelStory> = {
   },
   6: {
     title: 'The Wild Hunt',
-    story: 'The raiders routed, the land itself turns feral in the dragon’s wake — boars and wolves driven mad, encroaching the woods south. A local villager warrants the approaching army. “Please defeat the beasts,” she says, “or they’ll take your lives before any dragon does.”',
+    story: 'The raiders routed, the land itself turns feral in the dragon’s wake — boars and wolves driven mad, encroaching the woods south. A local villager warns the approaching army. “Please defeat the beasts,” she says, “or they’ll take your lives before any dragon does.”',
     how: [
       'Your goal: hunt down the beasts and survive.',
       'Keep your economy training fresh troops, then send fighters to slay the packs on the map.',
@@ -86,22 +86,22 @@ export const LEVEL_STORY: Record<number, LevelStory> = {
     ],
   },
   8: {
-    title: 'The Fortified Village',
-    story: 'Deeper south the dead keep watch. A village long dead.. mans its own walls — skeletons on the ramparts, more stirring behind the gate. Koenraad spits. “I will break their bones and stomp on their skulls!”',
+    title: 'The Undead Village',
+    story: 'Deeper south the dead keep watch. A village long dead.. — skeletons on the battlefield, more stirring behind the horizon. Koenraad spits. “I will break their bones and crush their skulls!”',
     how: [
-      'Your goal: raze the fortified village’s structures. Bring patience and numbers.',
+      'Your goal: raze the village’s structures. Bring courage and numbers.',
     ],
   },
   9: {
-    title: 'The Enemy Keep',
-    story: 'The last hold before the peaks: the dragon’s own lair lies beyond. But what is this? Your scouts report the Dragon has fled the scene and has crossed the sky over us and heads straight to Het Gooi! His foul army remains, and they have fortified the keep. Henk the Brave raises his sword. “We will take it, or die trying!”',
+    title: 'The Fortified Keep',
+    story: 'The last hold before the peaks: the dragon’s own lair lies beyond. But what is this? Your scouts report the Dragon has fooled us and is heading straight for Het Gooi, he crossed straight over us! His foul army remains, and they have fortified the keep. Henk the Brave raises his sword. “We will take it, or die trying!”',
     how: [
       'Your goal: break the keep. Then turn for home — everything has led to this moment.',
     ],
   },
   10: {
     title: 'Dragon’s Hoard',
-    story: 'You arrive as the sun sets red over the heath, and the dragon of Het Gooi returns from the ruin of your home in flame; to face the ragged army that chased it across a continent. Henk the Brave, or what the road left of him, raises his blade one last time. This is the end of his hunt. Save Het Gooi, or fall with it.',
+    story: 'You arrive as the sun sets red over the heath, and the dragon of Het Gooi returns from the ruin of your home in flame; to face the ragged army that chased it across a continent. Henk the Brave, or what the road left of him, raises his sword one last time. This is the end of his hunt. Save Het Gooi, or fall with it. "For Het Gooi!"',
     how: [
       'Your goal: slay the dragon. Gather your courage and fight!',
     ],

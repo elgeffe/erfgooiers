@@ -3,12 +3,20 @@ fix each of these items, always start with bugs first, then design changes > imp
 ## Bugs
 - it should not be possible to build a building in front of the only exit of a block of other buildings. when you overlap 3 building their exits on top of each other, you can place another building sideways to block it. also make buildings not have their entries overlap (the green square). FIXED
 
-- the transported blocks are not exactly on top of the hats, but are inside of the hats now and 
+- the transported blocks are not exactly on top of the hats, but are inside of the hats now and it doesnt look nice
+
+- the fisherman is not doing anything after i built a fish hut next to a large pond
+
+- the market resource picklists are not working. i select something but nothing is saved.
 
 ## Design changes
 
 
 ## Improvements
+- make the enemy bandit camp buildings have higher hp
+
+- walls need to be cheaper or stone ore's need way more default resource in it.
+
 - redesign harder first levels on ascensions. think about multi objective goals with way higher counts
 
 - improve map tile details to make it look prettier, especially the standard grass tiles
