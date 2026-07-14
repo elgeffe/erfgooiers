@@ -190,7 +190,15 @@ export const UPGRADES: UpgradeDef[] = [
 
   { id: 'crown-masons', name: 'Crown Masons', desc: "Rodericks's guild: buildings cost 1 less stone and raise 25% faster", icon: '🧱',
     pool: 'hero', hero: 'reeve', rarity: 'rare', unique: true, basePrice: 100,
-    apply: [{ stat: 'cost:stone', add: -1 }, { stat: 'buildTime', mult: 0.75 }] },
+    apply: [
+      { stat: 'cost:stone', add: -1 }, 
+      { stat: 'buildTime', mult: 0.75 }
+    ] },
+
+  { id: 'running-shoes', name: 'Running Shoes', desc: "Harold's shoes: serfs move 30% faster", icon: '👟',
+    pool: 'hero', hero: 'transporter', rarity: 'rare', unique: true, basePrice: 100,
+    apply: [{ stat: 'unitSpeed', mult: 1.3, filter: 'serf' },
+    ] },
 
   { id: 'equestrian-armor', name: 'Equestrian Armor', desc: "Stannis's armor: mounted units take 20% less damage", icon: '🐴',
     pool: 'hero', hero: 'horselord', rarity: 'rare', unique: true, basePrice: 100,

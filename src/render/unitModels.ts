@@ -191,6 +191,7 @@ export function makeHero(heroId: string): { group: THREE.Group; itemMesh: THREE.
     captain: { horse: 0x8a5a2b, coat: 0x2d5a2d, trim: 0xd4af37, hat: 0x2d5a2d },
     reeve: { horse: 0x9d938a, coat: 0x3f5aa0, trim: 0xece3cf, hat: 0x2a2a30 },
     horselord: { horse: 0x8a5a2b, coat: 0x800020, trim: 0x3d2817, hat: 0x800020 },
+    transporter: { horse: 0xb8956a, coat: 0xd4af37, trim: 0x4a4a4a, hat: 0x4a4a4a },
   };
   const s = style[heroId] ?? style.erfgooier;
   const g = new THREE.Group();
@@ -229,6 +230,10 @@ export function makeHero(heroId: string): { group: THREE.Group; itemMesh: THREE.
     case 'horselord':
       const horselordHelm = new THREE.Mesh(sphere(0.1, 8, 6), hatM); horselordHelm.scale.y = 0.75; horselordHelm.position.y = 0.92; g.add(horselordHelm);
       const horselordPlume = new THREE.Mesh(cone(0.03, 0.14, 5), trimM); horselordPlume.position.y = 1.04; g.add(horselordPlume);
+      break;
+    case 'transporter':
+      const transporterCap = new THREE.Mesh(cyl(0.1, 0.1, 0.045, 8), hatM); transporterCap.position.y = 0.94; g.add(transporterCap);
+      const transporterCollar = new THREE.Mesh(cyl(0.08, 0.09, 0.03, 8), trimM); transporterCollar.position.y = 0.74; g.add(transporterCollar);
       break;
     default:
       const brim = new THREE.Mesh(cyl(0.13, 0.13, 0.02, 9), hatM); brim.position.y = 0.93; g.add(brim);
