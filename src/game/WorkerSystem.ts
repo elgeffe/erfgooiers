@@ -393,7 +393,7 @@ export class WorkerSystem {
       for (let y = Math.max(0, building.y - gather.range); y <= Math.min(H - 1, building.y + 1 + gather.range); y++) {
         for (let x = Math.max(0, building.x - gather.range); x <= Math.min(W - 1, building.x + 1 + gather.range); x++) {
           const tile = tiles[y][x];
-          if (tile.type !== 'grass' || tile.b || tile.site || tile.tree || tile.dep || tile.road || tile.field || !this.adjacentLake(x, y)) continue;
+          if (tile.type !== 'grass' || tile.b || tile.site || tile.tree || tile.dep || tile.road || tile.field || !this.adjacentWater(x, y)) continue;
           const distance = Math.hypot(x - cx, y - cy);
           if (distance < bestDistance) {
             bestDistance = distance;
@@ -438,9 +438,11 @@ export class WorkerSystem {
     return null;
   }
 
-  private adjacentLake(x: number, y: number): boolean {
-    return !!this.world.T(x + 1, y)?.lake || !!this.world.T(x - 1, y)?.lake
-      || !!this.world.T(x, y + 1)?.lake || !!this.world.T(x, y - 1)?.lake;
+  /** Any open water on the four sides — ponds are fishable too, not just the
+   *  big `lake`-tagged body, so a fishery on a pond shore actually works. */
+  private adjacentWater(x: number, y: number): boolean {
+    return this.world.T(x + 1, y)?.type === 'water' || this.world.T(x - 1, y)?.type === 'water'
+      || this.world.T(x, y + 1)?.type === 'water' || this.world.T(x, y - 1)?.type === 'water';
   }
 
   private outputTotal(building: Building): number {
