@@ -22,7 +22,7 @@ export interface LevelStory {
 export const LEVEL_STORY: Record<number, LevelStory> = {
   1: {
     title: 'The Ember on the Horizon',
-    story: 'For a hundred quiet years the erfgooiers held the heath of Het Gooi — commoners with an ancient right to the land, answerable to no lord. Then, on a still autumn night, a red light climbed over the Alps far to the south, and by dawn a farmstead near Laren lay in ash. Henk the Brave, chosen speaker of the free-holders, calls the villages to army. But an army marches on more than courage: first it needs timber, and timber needs hands. Raise the first workshops before the danger reaches your own door.',
+    story: 'For a hundred quiet years the erfgooiers held the heath of Het Gooi — commoners with an ancient right to the land, answerable to no lord. Then, on a still autumn night, a red light climbed over the Alps far to the south, and by dawn a farmstead near Laren lay in ash. Henk the Brave, your commander in-arms, calls the villages to muster. But an army marches on more than courage: first it needs timber, and timber needs hands. Raise the first workshops before the danger reaches your own door.',
     how: [
       'Your goal: produce 8 Timber. Watch the objective card, top-right.',
       'From the build menu at the bottom, place a Woodcutter’s Hut next to some trees — serfs carry the timber & stone from your castle, then a builder raises it.',
@@ -79,7 +79,7 @@ export const LEVEL_STORY: Record<number, LevelStory> = {
   },
   7: {
     title: 'Bandit Country',
-    story: 'You cross into the marches at last — a broken frontier of camps and cutthroats who took the dragon’s coin. Beyond the mountain pass lies the road south, and the road south is barred. Break the bandit holds and force the gap.',
+    story: 'You cross into the marches at last — a broken frontier of camps and cutthroats who prey on travelers. Beyond the mountain pass lies the road south, and the road south is barred. Break the bandit holds with your might.',
     how: [
       'Your goal: destroy the enemy structures.',
       'March your army through the pass and besiege their camps — right-click walls and buildings to attack them.',
@@ -87,23 +87,23 @@ export const LEVEL_STORY: Record<number, LevelStory> = {
   },
   8: {
     title: 'The Fortified Village',
-    story: 'Deeper south the dead keep watch. A village long dead mans its own walls — skeletons on the ramparts, and something older stirring behind the gate. Koenraad spits. “The beast leaves graves for a rearguard. It knows we’re close.”',
+    story: 'Deeper south the dead keep watch. A village long dead.. mans its own walls — skeletons on the ramparts, more stirring behind the gate. Koenraad spits. “I will break their bones and stomp on their skulls!”',
     how: [
-      'Your goal: raze the fortified village’s structures. Bring siege patience and numbers.',
+      'Your goal: raze the fortified village’s structures. Bring patience and numbers.',
     ],
   },
   9: {
     title: 'The Enemy Keep',
-    story: 'The last hold before the peaks: a demon-crowned keep barring the final pass. Take it, and the dragon’s own lair lies open beyond. But a runner has come from the north, grey-faced and half-dead — Het Gooi is burning. The trap has closed. The dragon was never ahead of you at all.',
+    story: 'The last hold before the peaks: the dragon’s own lair lies beyond. But what is this? Your scouts report the Dragon has fled the scene and has crossed the sky over us and heads straight to Het Gooi! His foul army remains, and they have fortified the keep. Henk the Brave raises his sword. “We will take it, or die trying!”',
     how: [
-      'Your goal: break the keep. Then turn for home — everything has led here.',
+      'Your goal: break the keep. Then turn for home — everything has led to this moment.',
     ],
   },
   10: {
     title: 'Dragon’s Hoard',
-    story: 'You arrive as the sun sets red over the heath, and the dragon of Het Gooi turns from the ruin of your home to face the ragged army that chased it across a continent. Henk the Brave, or what the road left of him, raises his blade one last time. This is the end of the hunt. Save Het Gooi, or fall with it.',
+    story: 'You arrive as the sun sets red over the heath, and the dragon of Het Gooi returns from the ruin of your home in flame; to face the ragged army that chased it across a continent. Henk the Brave, or what the road left of him, raises his blade one last time. This is the end of his hunt. Save Het Gooi, or fall with it.',
     how: [
-      'Your goal: slay the dragon. Muster everything and end it.',
+      'Your goal: slay the dragon. Gather your courage and fight!',
     ],
   },
 };
