@@ -5,6 +5,7 @@ import { World } from '../world/World';
 import { LEVELS } from '../data/levels';
 import { simRng } from '../engine/rng';
 import { Game } from './Game';
+import { UNITS } from '../data/units';
 import { buildingEntranceTiles, doorTile } from './util';
 
 function headlessView(world: World, caravan?: { created: number; removed: number }): View {
@@ -708,5 +709,35 @@ describe('placement keeps doorways clear', () => {
 
     // A spot clear of every footprint and doorway still builds.
     expect(game.canPlace('bakery', 16, 10, 0)).toBe(true);
+  });
+});
+
+describe('co-op unit colours mark ownership', () => {
+  it('paints a player military unit in that player’s colour, but keeps the kind palette in single player', () => {
+    const { game } = openBattleGame();
+
+    // No colour registered (single player): the soldier keeps its kind palette.
+    const solo = game.spawnFighter('soldier', { x: 10, y: 10 }, 'player', 'p1');
+    expect(solo.colorHex).toBe(UNITS.soldier.color);
+
+    // Once each seat picks a co-op colour, trained fighters take the owner's.
+    game.playerColors.set('p1', 0x123456);
+    game.playerColors.set('p2', 0xabcdef);
+    expect(game.spawnFighter('soldier', { x: 12, y: 10 }, 'player', 'p1').colorHex).toBe(0x123456);
+    expect(game.spawnFighter('archer', { x: 14, y: 10 }, 'player', 'p2').colorHex).toBe(0xabcdef);
+  });
+
+  it('leaves enemy fighters and civilians on their own colours', () => {
+    const { game } = openBattleGame();
+    game.playerColors.set('p1', 0x123456);
+
+    // Enemies never wear a player's colour, even when one is registered.
+    const bandit = game.spawnFighter('bandit', { x: 10, y: 10 }, 'enemy');
+    expect(bandit.colorHex).toBe(UNITS.bandit.color);
+
+    // A worker keeps its natural body colour — only its hat is team-tinted, and
+    // the hat lives in the mesh, not on the unit record.
+    const serf = game.spawnUnit('serf', 0xd8c49a, { x: 12, y: 10 }, 'p1');
+    expect(serf.colorHex).toBe(0xd8c49a);
   });
 });

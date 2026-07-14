@@ -13,6 +13,9 @@ interface UnitFactoryPorts {
   storeFor: (owner: PlayerId) => Building;
   primaryStore: () => Building;
   registerHero: (heroId: string, roleName: string, owner: PlayerId, unit: Unit) => void;
+  // The owner's chosen co-op colour (undefined in single player), used to tint
+  // ownership markers so each player's units read at a glance.
+  playerColor: (owner: OwnerId) => number | undefined;
 }
 
 /** Creates units and deterministic level/sandbox spawn layouts. */
@@ -27,7 +30,11 @@ export class UnitFactory {
   ) {}
 
   spawnUnit(role: string, colorHex: number, tile: { x: number; y: number }, owner: PlayerId, faction: Faction = 'player'): Unit {
-    const { group, itemMesh } = this.view.createUnit(colorHex, role, tile.x, tile.y, faction);
+    // In co-op the owner's colour tints ownership markers: a worker's hat, a
+    // soldier's plate & shield. Only player units carry it; enemies and single
+    // player (no colour registered) keep their role palettes.
+    const teamHex = faction === 'player' ? this.ports.playerColor(owner) : undefined;
+    const { group, itemMesh } = this.view.createUnit(colorHex, role, tile.x, tile.y, faction, teamHex);
     const unit: Unit = {
       id: this.ports.nextId(), owner, role, roleName: role[0].toUpperCase() + role.slice(1), colorHex, mesh: group, itemMesh,
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
@@ -70,7 +77,10 @@ export class UnitFactory {
     const def = UNITS[kind];
     const unitFaction = faction ?? def.faction;
     const unitOwner = owner ?? ownerForFaction(unitFaction, this.localPlayerId);
-    const unit = this.spawnUnit(kind, def.color, tile, unitOwner === 'p2' ? 'p2' : 'p1', unitFaction);
+    // Military outfits take the owner's co-op colour so it's clear whose army is
+    // whose; single player and enemies fall back to the kind's own colour.
+    const teamHex = unitFaction === 'player' ? this.ports.playerColor(unitOwner) : undefined;
+    const unit = this.spawnUnit(kind, teamHex ?? def.color, tile, unitOwner === 'p2' ? 'p2' : 'p1', unitFaction);
     unit.roleName = def.name;
     unit.faction = unitFaction;
     unit.owner = unitOwner;

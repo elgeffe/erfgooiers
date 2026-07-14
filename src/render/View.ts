@@ -397,8 +397,8 @@ export class View {
   createBuildingMesh(key: BuildingKey, def: BuildingDef, playerColor?: number): THREE.Group { return makeBuilding(key, def, false, playerColor); }
   createScaffold(key: BuildingKey, def: BuildingDef, playerColor?: number) { return makeScaffold(key, def, playerColor); }
 
-  createUnit(colorHex: number, role: string, tileX: number, tileY: number, faction: Faction = 'player'): { group: THREE.Group; itemMesh: THREE.Mesh } {
-    const u = makeUnit(colorHex, role, faction);
+  createUnit(colorHex: number, role: string, tileX: number, tileY: number, faction: Faction = 'player', teamHex?: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
+    const u = makeUnit(colorHex, role, faction, teamHex);
     u.group.position.set(this.world.wx(tileX), 0, this.world.wz(tileY));
     this.worldGroup.add(u.group);
     this.freeze(u.group, false); // the unit walks; its body parts are rigid
