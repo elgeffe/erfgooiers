@@ -666,15 +666,18 @@ export class UI {
       }
       if (o.def.military || o.def.trainer) {
         const mil = o.def.military || o.def.trainer;
+        const mods = this.game!.mods;
         body += '<div class="sect">Train</div>';
         if (!o.active) body += '<div class="hnote">Building still being raised…</div>';
         else {
           for (const t of mil.units) {
-            const cost = Object.entries(t.cost).map(([k, n]) =>
+            const dynamicCost = mods.unitCost(t.kind, t.cost);
+            const cost = Object.entries(dynamicCost).map(([k, n]) =>
               `<i>${itemIconSVG(k as ItemKey, 13)}<span class="tcname">${ITEMS[k as ItemKey].name}</span> ${n}</i>`).join('')
               || '<i class="tcfree">free</i>';
+            const dynamicTime = Math.round(t.time * mods.trainTime(t.kind));
             body += `<button class="inspbtn train" data-train="${t.kind}" ${t.desc ? `title="${t.desc}"` : ''}>`
-              + `<span class="trow"><span class="tname">+ ${unitLabel(t.kind)}</span><span class="ttime">${t.time}s</span></span>`
+              + `<span class="trow"><span class="tname">+ ${unitLabel(t.kind)}</span><span class="ttime">${dynamicTime}s</span></span>`
               + `<span class="tcost">${cost}</span></button>`;
             if (t.desc) body += `<div class="tinfo">${t.desc}</div>`;
           }

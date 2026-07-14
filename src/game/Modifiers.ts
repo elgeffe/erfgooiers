@@ -159,6 +159,18 @@ export class Modifiers {
     return out;
   }
 
+  /** A unit's training/purchase cost after modifications (never below zero). */
+  unitCost(kind: string, baseCost: Partial<Record<ItemKey, number>>): Partial<Record<ItemKey, number>> {
+    const out: Partial<Record<ItemKey, number>> = {};
+    const mult = this.accMult('trainCost', kind);
+    for (const k in baseCost) {
+      const item = k as ItemKey;
+      const base = baseCost[item] ?? 0;
+      out[item] = Math.max(0, Math.round(base * mult + this.accAdd('cost:' + k, kind)));
+    }
+    return out;
+  }
+
   /** Extra goods added to the level's starting-kit stock. */
   startStock(): Partial<Record<ItemKey, number>> {
     const s: Partial<Record<ItemKey, number>> = {};

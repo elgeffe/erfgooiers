@@ -1,6 +1,6 @@
 import { ITEMS } from '../data/items';
 import { UNITS, type UnitKind } from '../data/units';
-import type { Building, Coord, PlayerId, Unit } from '../types';
+import type { Building, Coord, ItemKey, PlayerId, Unit } from '../types';
 import type { Modifiers } from './Modifiers';
 import { doorTile, unitLabel } from './util';
 
@@ -34,16 +34,17 @@ export class TrainingSystem {
     if (!training || !building.active) return false;
     if (building.owner !== 'p1' && building.owner !== 'p2') return false;
     if (!this.ports.storeFor(building.owner).stock) return false;
-    for (const item in training.cost) {
-      const amount = training.cost[item as keyof typeof training.cost] ?? 0;
+    const cost = this.mods.unitCost(kind, training.cost);
+    for (const item in cost) {
+      const amount = cost[item as ItemKey] ?? 0;
       if (this.ports.storeTotal(item, building.owner) < amount) {
-        this.ports.toast(`Not enough ${ITEMS[item as keyof typeof ITEMS].name.toLowerCase()} to train a ${unitLabel(kind).toLowerCase()}`, 'err');
+        this.ports.toast(`Not enough ${ITEMS[item as ItemKey].name.toLowerCase()} to train a ${unitLabel(kind).toLowerCase()}`, 'err');
         this.ports.sfx('error');
         return false;
       }
     }
-    for (const item in training.cost) {
-      this.ports.takeStock(item, training.cost[item as keyof typeof training.cost] ?? 0, building.owner);
+    for (const item in cost) {
+      this.ports.takeStock(item, cost[item as ItemKey] ?? 0, building.owner);
     }
     (building.trainQ ||= []).push(kind);
     this.ports.sfx('click');
@@ -53,13 +54,15 @@ export class TrainingSystem {
   cancelTrain(building: Building, index: number): void {
     if (!building.trainQ || index < 0 || index >= building.trainQ.length) return;
     const spec = building.def.military ?? building.def.trainer;
-    const training = spec?.units.find(unit => unit.kind === building.trainQ![index]);
+    const kind = building.trainQ[index];
+    const training = spec?.units.find(unit => unit.kind === kind);
     building.trainQ.splice(index, 1);
     if (index === 0) building.prog = 0;
     if (training && (building.owner === 'p1' || building.owner === 'p2')) {
       const store = this.ports.storeFor(building.owner);
-      for (const item in training.cost) {
-        const amount = training.cost[item as keyof typeof training.cost] ?? 0;
+      const cost = this.mods.unitCost(kind, training.cost);
+      for (const item in cost) {
+        const amount = cost[item as ItemKey] ?? 0;
         store.stock![item] = (store.stock![item] || 0) + amount;
       }
     }

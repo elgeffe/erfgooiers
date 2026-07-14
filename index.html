@@ -181,7 +181,7 @@
       <button id="btnContinue">Continue run</button>
       <button id="btnNewRun">New run</button>
       <button id="btnCoop">Co-op Expedition (Beta)</button>
-      <button id="btnHeritage" class="ghost">Heritage — spend Erfgoed</button>
+      <button id="btnHeritage" class="ghost">Heritage Cards — spend Erfgoed</button>
       <button id="btnSandbox" class="ghost">Sandbox — free build</button>
       <button id="btnHelp" class="ghost">How to play</button>
       <button id="btnSettings" class="ghost">Settings</button>
@@ -331,7 +331,7 @@
     <div id="heroGrid" class="shopgrid"></div>
     <div class="shopsect">2 · Choose your difficulty</div>
     <div id="ascensionRow"></div>
-    <label class="setrow chk" id="newRunTutorialsRow"><input id="newRunTutorials" type="checkbox">Turn off tutorials — skip the story, build checklist &amp; hints (Normal only)</label>
+    <label class="setrow chk" id="newRunTutorialsRow"><input id="newRunTutorials" type="checkbox">Skip tutorials (Normal only)</label>
     <div class="btns row">
       <button id="btnHeroBack" class="ghost">Back to menu</button>
       <button id="btnStartRun">Start run →</button>
@@ -411,19 +411,19 @@
 <div id="intro">
   <div id="introCard">
     <h1 class="serif"><span id="introLogo"></span>How to play</h1>
-    <div class="tag">A cozy physical economy — every plank, loaf and coin is carried by hand.</div>
+    <div class="tag">A cozy physical economy and military game — every plank, loaf and coin is carried automatically by hand. You control the action and strategy.</div>
     <ul>
       <li><span class="k">Story</span><span>On <b>Normal</b> difficulty each level opens with a short briefing: a paragraph of the tale and exactly how to reach the goal. Click the <b>objective card</b> (top-right) any time to read it again. Turn these tutorials off in <b>Settings</b> or on the start-a-run panel; harder ascensions drop them automatically.</span></li>
       <li><span class="k">Checklist</span><span>On the early Normal levels the objective card lists the <b>buildings to construct</b> and ticks them off as you build, and the next one to place <b>glows</b> in the build menu — follow the glow.</span></li>
       <li><span class="k">Unlock</span><span>On Normal the build menu starts small and <b>unlocks a few buildings each level</b> — locked cards show a 🔒 and are greyed out. The top resource bar shows only what you can currently make, so there’s less to take in at first. From level 5 the whole menu is open.</span></li>
-      <li><span class="k">Build</span><span>Place buildings from the bottom menu. Serfs haul timber &amp; stone from your castle to the site, then a laborer constructs it.</span></li>
-      <li><span class="k">Watch</span><span>Specialists gather and craft; serfs automatically carry goods between buildings. Nothing teleports.</span></li>
-      <li><span class="k">Roads</span><span>Paint roads for 1 stone each — workers prefer them and walk 30% faster on them.</span></li>
-      <li><span class="k">Plots</span><span>Farms, vineyards &amp; pig farms need plots — use the <b>Plot</b> tool to add crop &amp; pasture tiles around them (each building has a plot limit); demolish to clear them.</span></li>
+      <li><span class="k">Build</span><span>Place buildings from the bottom menu. Serfs (Transport Units) haul timber &amp; stone from your castle to the site, then a laborer constructs it.</span></li>
+      <li><span class="k">Watch</span><span>Villagers become Specialists, they gather and craft; serfs automatically carry goods between buildings. Nothing teleports.</span></li>
+      <li><span class="k">Roads</span><span>Paint roads for 1 stone each — all workers prefer them and walk 30% faster on them.</span></li>
+      <li><span class="k">Plots</span><span>Farms, vineyards &amp; pig farms need plots — open the building by clicking on it, then use the <b>Plot</b> tool to add crop &amp; pasture tiles closely around them (each building has a plot limit); use demolish to clear them.</span></li>
       <li><span class="k">Chains</span><span>Trees → trunks → timber · Farm → mill → bakery (bread) · Vineyard → winery (wine) · Pig farm → butchery (sausage) · Gold + coal → the Mint (coins) · Fishery nets fish from the lake shore.</span></li>
-      <li><span class="k">Gold</span><span>Gold piles glint in the grass — send any unit (or your hero) over one and it is scooped straight into your purse.</span></li>
-      <li><span class="k">War</span><span>Iron mine → weaponsmith (weapons) &amp; armorer (armor) → the Barracks trains soldiers, archers &amp; knights. Watchtowers shoot raiders on their own.</span></li>
-      <li><span class="k">Army</span><span>Drag a box over fighters to select them · right-click to attack or move (they fan out) · right-click an enemy wall, gate, or stronghold to besiege it · <b>Shift+1–5</b> saves a squad, <b>1–5</b> recalls it · right-click with a barracks selected plants its rally flag.</span></li>
+      <li><span class="k">Gold</span><span>Gold piles glint in the grass — send any unit (or your hero) by right clicking (use shift+right click / cmd+right click to chain commands) over one and it is scooped straight into your purse.</span></li>
+      <li><span class="k">War</span><span>Iron mine → weaponsmith (weapons) &amp; armorer (armor) → the Barracks trains soldiers, archers &amp; knights. Watchtowers shoot enemies on their own.</span></li>
+      <li><span class="k">Army</span><span>Drag a box over fighters to select them · right-click to move or attack (use shift+right click / cmd+right click to chain commands) · right-click an enemy wall, gate, or stronghold to besiege it · <b>Shift+1–5</b> saves a squad, <b>1–5</b> recalls it · right-click with a barracks selected plants its rally flag.</span></li>
       <li><span class="k">Run</span><span>Clear each level to reach the shop; a failed level ends the run. Debug “✓ Win” advances a level for now.</span></li>
       <li><span class="k">Controls</span><span>WASD / arrows or right-drag to pan · wheel to zoom · <b>R</b> rotates a building while placing · click a building to inspect · Esc cancels.</span></li>
     </ul>

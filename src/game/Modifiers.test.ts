@@ -96,6 +96,16 @@ describe('Modifiers', () => {
     expect(m.objectiveWeight('bread')).toBe(1);
   });
 
+  it('unitCost scales training cost and respects flat cost additions', () => {
+    const m = new Modifiers([
+      { stat: 'trainCost', mult: 2, filter: 'soldier' },
+      { stat: 'cost:coin', add: 1, filter: 'soldier' }
+    ]);
+    const cost = m.unitCost('soldier', { weapon: 1, coin: 2 });
+    expect(cost.weapon).toBe(2); // 1 * 2 = 2
+    expect(cost.coin).toBe(5);   // 2 * 2 + 1 = 5
+  });
+
   it('an empty modifier set is the identity', () => {
     const m = new Modifiers();
     expect(m.buildTime()).toBe(BUILD_TIME);
