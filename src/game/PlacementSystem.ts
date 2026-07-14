@@ -162,11 +162,26 @@ export class PlacementSystem {
   }
 
   canPlace(key: BuildingKey, tx: number, ty: number, rot: number): boolean {
+    // A neighbour's doorway must stay walkable, so the new footprint may not
+    // cover an existing building's or site's entrance tile — otherwise the
+    // neighbour is sealed in and its serfs can never reach it.
+    const blockedEntrances = this.entranceTileKeys();
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) {
       const tile = this.world.T(x, y);
       if (!tile || tile.type !== 'grass' || tile.b || tile.site || tile.dep || tile.road || tile.field || tile.tree?.dense) return false;
+      if (blockedEntrances.has(`${x},${y}`)) return false;
     }
+    // The new building's own entrance tiles must be walkable; passable() rejects
+    // occupied tiles, so an entrance can never land on another building either.
     return buildingEntranceTiles({ x: tx, y: ty, rot, def: DEFS[key] }).every(tile => this.world.passable(tile.x, tile.y));
+  }
+
+  /** "x,y" keys of every tile that is a doorway of a standing building or site. */
+  private entranceTileKeys(): Set<string> {
+    const keys = new Set<string>();
+    for (const building of this.buildings) for (const tile of buildingEntranceTiles(building)) keys.add(`${tile.x},${tile.y}`);
+    for (const site of this.sites) for (const tile of buildingEntranceTiles(site)) keys.add(`${tile.x},${tile.y}`);
+    return keys;
   }
 
   disabledBuildings(): BuildingKey[] {
@@ -182,7 +197,7 @@ export class PlacementSystem {
       return;
     }
     if (!this.canPlace(key, tx, ty, rot)) {
-      this.ports.sfx('error'); this.ports.toast('Cannot build here — the entrance tile must be clear too', 'err'); return;
+      this.ports.sfx('error'); this.ports.toast('Cannot build here — keep the footprint and entrance clear of other doorways', 'err'); return;
     }
     const def = DEFS[key];
     if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.ports.toast('No stone deposits in range — build near the grey rocks', 'err'); return; }
