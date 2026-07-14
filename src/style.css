@@ -416,6 +416,7 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 .coopplayers{display:flex;flex-direction:column;gap:7px;margin:12px 0;}
 .coopplayer{display:grid;grid-template-columns:12px 1fr auto;gap:9px;align-items:center;background:var(--panel2);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px;}
 .coopplayer .dot{width:11px;height:11px;border-radius:50%;}
+.coopplayer > div{display:flex;flex-direction:column;gap:2px;}
 .coopplayer small{color:var(--ink-dim);}
 .coop-loadout{display:none;flex-direction:column;gap:10px;margin:12px 0;padding:12px;background:var(--panel2);border:1px solid rgba(255,255,255,.08);border-radius:8px;}
 .coop-loadout-row{display:flex;align-items:flex-start;gap:10px;}
