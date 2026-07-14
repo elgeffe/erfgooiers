@@ -114,11 +114,11 @@ export function storyFor(level: number): LevelStory | undefined {
 }
 
 /** A proud, self-contained victory banner for the dragon-slain modal: a golden
- *  sunrise over Het Gooi, a lone armoured knight on the mound with their sword
- *  raised, and the slain dragon laid low across the background. Inline SVG (no
- *  external asset), sized to the modal width and theme-agnostic. */
+ *  sunrise over Het Gooi and a lone armoured knight on the mound with their
+ *  sword raised high. Inline SVG (no external asset), sized to the modal width
+ *  and theme-agnostic. */
 export const VICTORY_IMAGE = `
-<svg viewBox="0 0 440 168" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="A knight raises their sword in victory over a slain dragon" style="display:block">
+<svg viewBox="0 0 440 168" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="A knight raises their sword in victory" style="display:block">
   <defs>
     <linearGradient id="vsky" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#3a2b4a"/><stop offset=".5" stop-color="#8a4a3a"/><stop offset="1" stop-color="#e0a341"/>
@@ -137,24 +137,8 @@ export const VICTORY_IMAGE = `
   </g>
   <path d="M0 150 Q90 116 180 138 T440 128 V168 H0 Z" fill="#3f6d3a"/>
   <path d="M0 168 Q120 132 250 152 T440 150 V168 H0 Z" fill="#2f5330"/>
-  <!-- the slain dragon, laid low across the background behind the knight -->
-  <g transform="translate(244 90)" opacity=".9">
-    <!-- collapsed wing -->
-    <path d="M44 24 L98 -10 L122 4 L152 -4 L152 18 L64 40 Z" fill="#2c4428"/>
-    <path d="M98 -10 L106 22 M122 4 L126 28 M152 -4 L150 24" stroke="#223420" stroke-width="2" fill="none"/>
-    <!-- body slumped on the grass -->
-    <path d="M22 40 Q72 16 152 28 Q152 46 120 48 Q60 52 22 44 Z" fill="#365234"/>
-    <!-- long neck sweeping down, head resting on the ground -->
-    <path d="M22 42 Q-24 40 -56 54 Q-38 62 -12 58 Q8 54 22 46 Z" fill="#2f4a2c"/>
-    <!-- head + horns, eye shut in death -->
-    <path d="M-56 54 q-20 0 -30 12 q16 8 34 3 q8 -8 -4 -15 Z" fill="#28401f"/>
-    <path d="M-72 50 l-10 -12 M-64 52 l-6 -14" stroke="#1c2916" stroke-width="3" fill="none" stroke-linecap="round"/>
-    <path d="M-80 60 l9 2" stroke="#131c0f" stroke-width="2" stroke-linecap="round"/>
-    <!-- tail curling off toward the light -->
-    <path d="M152 32 q42 2 68 -12 q-4 10 -18 16 q-26 8 -50 2 Z" fill="#2f4a2c"/>
-  </g>
   <!-- the victorious knight on the central mound, sword raised high -->
-  <g transform="translate(196 78)">
+  <g transform="translate(214 78)">
     <ellipse cx="6" cy="70" rx="38" ry="8" fill="#284226"/>
     <!-- legs in plate -->
     <rect x="-3" y="44" width="8" height="24" rx="3" fill="#6a7480"/>
