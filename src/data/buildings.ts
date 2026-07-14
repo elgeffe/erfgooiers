@@ -208,7 +208,7 @@ export const TUTORIAL_UNLOCKS: Record<number, BuildingKey[]> = {
   2: ['farm', 'mill', 'bakery', 'fishery', 'tavern'],
   // First Coin — the gold/coal → mint coin chain, and the market to sell surplus.
   3: ['goldmine', 'coalmine', 'mint', 'market'],
-  // The Vintner's Gamble — wine & meat chains, plus the first muster (iron →
+  // The Vintner's Gamble — wine & meat chains, plus the first army (iron →
   // smithy → barracks) the level's train goal demands.
   4: ['vineyard', 'winery', 'pigfarm', 'butcher', 'ironmine', 'smithy', 'barracks'],
   // Raiders at the Gate onward — the whole menu: heavy military and fortifications.

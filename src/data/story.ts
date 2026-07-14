@@ -22,18 +22,18 @@ export interface LevelStory {
 export const LEVEL_STORY: Record<number, LevelStory> = {
   1: {
     title: 'The Ember on the Horizon',
-    story: 'For a hundred quiet years the erfgooiers held the heath of Het Gooi — commoners with an ancient right to the land, answerable to no lord. Then, on a still autumn night, a red light climbed over the Alps far to the south, and by dawn a farmstead near Laren lay in ash. Henk the Brave, chosen speaker of the free-holders, calls the villages to muster. But an army marches on more than courage: first it needs timber, and timber needs hands. Raise the first workshops before the danger reaches your own door.',
+    story: 'For a hundred quiet years the erfgooiers held the heath of Het Gooi — commoners with an ancient right to the land, answerable to no lord. Then, on a still autumn night, a red light climbed over the Alps far to the south, and by dawn a farmstead near Laren lay in ash. Henk the Brave, chosen speaker of the free-holders, calls the villages to army. But an army marches on more than courage: first it needs timber, and timber needs hands. Raise the first workshops before the danger reaches your own door.',
     how: [
       'Your goal: produce 8 Timber. Watch the objective card, top-right.',
       'From the build menu at the bottom, place a Woodcutter’s Hut next to some trees — serfs carry the timber & stone from your castle, then a builder raises it.',
       'Place a Sawmill nearby: it turns the woodcutter’s trunks into finished Timber.',
-      'Open the Guild Hall and train Villagers there (cost: 1 coin each) — each one walks out to staff an empty workshop.',
+      'Open the Guild Hall and train Serfs and Villagers there (cost: 1 coin each).',
       'Tip: click any building to inspect it. Speed the world up with the 3× button, once the chain is flowing.',
     ],
   },
   2: {
     title: 'Bread Before Spears',
-    story: 'The muster grows, and a growing muster grows hungry. Pieter the Wise, an old miller with flour in his beard, reminds the council of a truth every campaign forgets: a warband fed is a warband that fights, and a warband starved simply goes home. Before you sharpen a single blade, fill the granaries. The dragon has not been seen since Laren — but the crows have flown south, and the crows are seldom wrong.',
+    story: 'The army grows, and a growing army grows hungry. Pieter the Wise, an old miller with flour in his beard, reminds the council of a truth every campaign forgets: a warband fed is a warband that fights, and a warband starved simply goes home. Before you sharpen a single blade, fill the granaries. The dragon has not been seen since Laren — but the crows have flown south, and the crows are seldom wrong.',
     how: [
       'Your goal: produce 8 Bread.',
       'Place a Farm and add crop Plots around it (select the farm, then use its Plot button) so a farmer can grow wheat.',
@@ -43,7 +43,7 @@ export const LEVEL_STORY: Record<number, LevelStory> = {
   },
   3: {
     title: 'The Weight of Coin',
-    story: 'Word comes from the passes: the beast was seen wheeling south, toward the high stone country. To chase it you will need coin — for coin buys weapons, and weapons buy time. Koenraad the Greedy, a mine-captain the villagers only half-trust, offers his diggers. He is a hard man and asks no thanks, only that you keep the furnaces lit.',
+    story: 'Word comes from the passes: the beast was seen escaping south, toward the high stone country. To chase it you will need coin — for coin buys weapons, and weapons give power. Koenraad the Greedy, a mine-captain the villagers only half-trust, offers diggers. He is a hard man and asks no thanks, only that you keep the furnaces lit.',
     how: [
       'Your goal: produce 5 Coin.',
       'Build a Gold Mine on gold deposits and a Coal Mine on coal — mines must sit right on the coloured rocks.',
@@ -53,7 +53,7 @@ export const LEVEL_STORY: Record<number, LevelStory> = {
   },
   4: {
     title: 'The Vintner’s Gamble',
-    story: 'On the eve of the march, the free-holders drink to the dead of Laren. Wine loosens tongues, and a scout’s tale hardens every face at the table: the dragon is not fleeing at all — it is leading you on, deeper and deeper from home. Henk sets down his cup. “Then we drink tonight, and drill tomorrow. Fill the cellars, and give me soldiers by dusk.”',
+    story: 'On the eve of the march, the free-holders drink to the dead of Het Gooi. Wine loosens tongues, and a scout’s tale hardens every face at the table: the dragon is not fleeing at all — it is leading you on, deeper and deeper from home. Henk sets down his cup. “Then we drink tonight, and die tomorrow. Fill the cellars, and arm my soldiers by dusk.”',
     how: [
       'Your goal: produce the food & wine the contract names, then train 5 fighters.',
       'Wine chain: Vineyard (with plots) → Winery. Keep the bakery running for bread.',
@@ -62,19 +62,19 @@ export const LEVEL_STORY: Record<number, LevelStory> = {
   },
   5: {
     title: 'Raiders at the Gate',
-    story: 'They come before you can leave — the dragon’s outriders, a warband of bandits drawn to the smell of a rich, distracted village. This is the trap’s first jaw: bleed the erfgooiers here, and there will be no army to chase anything. Hold the heath.',
+    story: 'They come before you can leave — the dragon’s outriders, a warband of bandits drawn to the smell of a wine and bread. This is the first challenge: bleed the erfgooiers here, and there will be no army to chase anything. Hold the line!',
     how: [
-      'Your goal: survive the raids. Grow your muster to provoke the first wave, then weather two.',
+      'Your goal: survive the raids. Grow your army to provoke the first wave, then weather two.',
       'Train at the Barracks; build Watchtowers along the raiders’ path — they shoot on their own.',
-      'Box-select fighters (drag), right-click to position them at the gate.',
+      'Box-select fighters (drag), right-click to position them.',
     ],
   },
   6: {
     title: 'The Wild Hunt',
-    story: 'The raiders broken, the land itself turns feral in the dragon’s wake — boars and wolves driven mad, fouling the roads south. Vrouwe Aefke, huntress of the eastern woods, joins the column with her hounds. “Clear the beasts,” she says, “or they’ll take your baggage train before any dragon does.”',
+    story: 'The raiders routed, the land itself turns feral in the dragon’s wake — boars and wolves driven mad, encroaching the woods south. A local villager warrants the approaching army. “Please defeat the beasts,” she says, “or they’ll take your lives before any dragon does.”',
     how: [
-      'Your goal: hunt down the beasts the contract names.',
-      'Keep your economy arming fresh troops, then send fighters to kill the packs on the map.',
+      'Your goal: hunt down the beasts and survive.',
+      'Keep your economy training fresh troops, then send fighters to slay the packs on the map.',
     ],
   },
   7: {

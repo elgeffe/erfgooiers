@@ -303,7 +303,7 @@ export class World {
         // through the encampments and fortresses barring the way.
         const lairRock = (x: number, y: number): void => {
           if (x < 0 || y < 0 || x >= W || y >= H) return;
-          // never wall in the player's own muster apron
+          // never wall in the player's own army apron
           if (Math.hypot(x - startCentre.x, y - startCentre.y) < 7) return;
           // give each peak a grass foot so ranges never rise straight from water
           for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
@@ -657,7 +657,7 @@ export class World {
     }
 
     // Hostile maps open with the town in the corner opposite the enemy route.
-    // Reserve a real muster/build apron there after every terrain/deco pass so
+    // Reserve a real army/build apron there after every terrain/deco pass so
     // a lake, ridge, ore heap or thicket cannot strand the starting army.
     if (frontierCount > 0) {
       const sx = this.playerStart.x + 1, sy = this.playerStart.y + 1;

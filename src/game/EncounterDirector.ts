@@ -131,7 +131,7 @@ export class EncounterDirector {
         else if (this.waveArmT !== null) launch = this.port.now() >= this.waveArmT;
         else if (this.port.playerFighters() >= (wave.whenArmy ?? 1)) {
           this.waveArmT = this.port.now() + (wave.delay ?? 45) * this.prepMult;
-          this.port.toast('Your muster has been spotted — raiders are gathering!', 'err');
+          this.port.toast('Your army has been spotted — raiders are gathering!', 'err');
           this.port.sfx('error');
         }
         if (!launch) break;

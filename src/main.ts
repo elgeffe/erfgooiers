@@ -168,7 +168,7 @@ function startLevel(): void {
   ui.setMutators(mutators.map(id => MUTATOR_BY_ID[id]).filter(d => !!d));
   // hostile sandboxes grant a default garrison too (their LevelDef carries
   // one); higher ascensions thin the granted army but stretch prep time.
-  // The whole granted muster (level army + hero warband) parades in a grid
+  // The whole granted army (level army + hero warband) parades in a grid
   // on the open ground in front of the castle gate, never on the castle.
   const heroDef = selectedHeroId ? HERO_BY_ID[selectedHeroId] : null;
   const startGroups = planStartArmy(level.startArmy, heroDef?.startArmy, run.ascension, sandbox);

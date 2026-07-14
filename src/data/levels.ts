@@ -6,7 +6,7 @@ import type { BiomeKey } from './biomes';
 
 /** One scheduled raid. Either `at` (sim seconds) or `whenArmy` (fires `delay`
  *  seconds after the player's fighter count first reaches it — the raid waits
- *  for YOUR muster, so eco time is never stolen). `bonusTime` extends the
+ *  for YOUR army, so eco time is never stolen). `bonusTime` extends the
  *  level's hard timer when the wave lands. */
 export interface WaveDef {
   kind: UnitKind;
@@ -88,7 +88,7 @@ export const LEVELS: LevelDef[] = [
     kit: { stock: { timber: 12, stone: 10, bread: 8, coin: 4 }, serfs: 2, laborers: 1 },
     timeTarget: 600, hardTimer: 580, reward: 38 },
 
-  // two full chains side by side PLUS a first muster: the level before the
+  // two full chains side by side PLUS a first army: the level before the
   // combat arc doubles as military drill \u2014 hit the food goal, then train a
   // small warband at the Barracks before the clock runs out.
   { index: 4, name: 'The Vintner\u2019s Gamble', type: 'Economy',
@@ -107,7 +107,7 @@ export const LEVELS: LevelDef[] = [
     // a proper garrison out of the gate (higher ascensions thin it out but
     // stretch the prep clock in return — see ascensionArmyMult/PrepMult)
     startArmy: [{ kind: 'soldier', count: 10 }, { kind: 'archer', count: 4 }, { kind: 'knight', count: 1 }],
-    // no raid until the player grows the muster past the starting eight: build
+    // no raid until the player grows the army past the starting eight: build
     // and train at your own pace, then provoke wave one. Wave two follows the
     // same trigger and pays its fight out in extra clock.
     enemies: { waves: [

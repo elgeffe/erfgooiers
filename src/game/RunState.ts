@@ -31,7 +31,7 @@ export const ASCENSION_DESCS = [
   'Very Hard · Timers 15% shorter, and the opening level demands a whole economy (timber + bread) — level 7 follows the Delta coast (clams!), and the Black Forest swallows 8+ (no farmland under the canopy)',
   'Absurd · Every level cursed and every economy goal swells by half — the hunt crosses to Texel, and the run ends among the peaks of the Alps',
   'Grim · Armies thinner still, and the opening level adds coin to its ledger — winter freezes level 9 (no farmland under the snow)',
-  'Infernal · The thinnest muster of all — and the dragon waits at the gates of Hell (nothing grows, nothing swims)',
+  'Infernal · The thinnest army of all — and the dragon waits at the gates of Hell (nothing grows, nothing swims)',
 ];
 
 /** How many wares the between-level shop rolls at this tier. */
