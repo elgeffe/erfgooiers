@@ -372,65 +372,61 @@ describe('priest healing', () => {
 });
 
 describe('market exports', () => {
-  it('has serfs deliver exports and return caravan proceeds to storage', () => {
+  it('has serfs deliver exports and a trader pays coin straight into global stock', () => {
     const world = new World({ seed: 406, w: 32, h: 32, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
     for (const row of world.tiles) for (const t of row) { t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; }
     const caravan = { created: 0, removed: 0 };
     const game = new Game(world, headlessView(world, caravan));
     game.init({ stock: { bread: 10, coin: 0 }, serfs: 4, laborers: 0, villagers: 0 });
     const market = game.placeBuilding('market', 5, 5, true);
-    const enemy = game.spawnFighter('bandit', { x: 8, y: 8 }, 'enemy');
-    enemy.dmg = 0;
     let runGold = 0; game.onGold = n => { runGold += n; };
 
-    game.configureMarket(market, 'bread', 4);
+    game.configureMarket(market, [{ item: 'bread', amount: 4 }]);
     expect(game.marketIncomePerMinute(market)).toBe(12);
-    for (let i = 0; i < 10; i++) game.update(0.05);
-    expect(market.inp.bread || 0).toBe(0);
-    expect(market.incoming.bread).toBe(4);
+    // serfs haul four bread out of the castle into the market's stall
     for (let i = 0; i < 1200 && (market.inp.bread || 0) < 4; i++) game.update(0.05);
     expect(market.inp.bread).toBe(4);
-    expect(market.incoming.bread || 0).toBe(0);
     expect(game.store.stock!.bread).toBe(6);
 
-    market.marketTimer = 0.05;
-    game.update(0.05);
-    expect(caravan.created).toBe(1);
-    expect(game.marketCaravansInTransit(market)).toBe(1);
-    expect(game.units).toHaveLength(5); // four serfs plus the enemy; caravans are not targetable Units
-
-    for (let i = 0; i < 2400 && game.store.stock!.coin < 12; i++) game.update(0.05);
-    expect(game.store.stock!.coin).toBe(12);
+    // fire the trader and run the full arrive→load→leave cycle
+    market.marketTimer = 0;
+    for (let i = 0; i < 4000 && caravan.removed === 0; i++) game.update(0.05);
+    expect(caravan.created).toBeGreaterThanOrEqual(1);
+    expect(caravan.removed).toBeGreaterThanOrEqual(1);
+    // the sale drained the stall and the proceeds landed in the global stock,
+    // not the run's shop gold and not a pickup pile at the market
+    expect(game.store.stock!.coin).toBeGreaterThanOrEqual(12);
     expect(runGold).toBe(0);
-    expect(caravan.removed).toBe(1);
-    expect(game.marketCaravansInTransit(market)).toBe(0);
+    expect(market.out.coin || 0).toBe(0);
+    expect(game.units).toHaveLength(4); // the four serfs; caravans are not targetable Units
   });
 
-  it('waits for delivered stock and sells only the market inventory', () => {
+  it('caps, dedupes and sells only the goods waiting at the market', () => {
     const world = new World({ seed: 407, w: 32, h: 32, treeStands: 0, oreVeins: 0, waterScale: 0, meadows: 0 });
     for (const row of world.tiles) for (const t of row) { t.type = 'grass'; t.rock = undefined; t.tree = null; t.dep = null; }
     const caravan = { created: 0, removed: 0 };
     const game = new Game(world, headlessView(world, caravan));
-    game.init({ stock: { bread: 2, coin: 0 }, serfs: 0, laborers: 0, villagers: 0 });
+    game.init({ stock: { coin: 0 }, serfs: 0, laborers: 0, villagers: 0 });
     const market = game.placeBuilding('market', 5, 5, true);
-    game.configureMarket(market, 'bread', 99);
-    expect(market.marketAmount).toBe(50);
-    game.configureMarket(market, 'coin', 3);
-    expect(market.marketItem).toBe('bread');
-    market.marketTimer = 0;
-    game.update(0.05);
-    expect(caravan.created).toBe(0);
-    expect(game.store.stock!.bread).toBe(2);
 
-    game.configureMarket(market, 'bread', 2);
-    game.store.stock!.bread = 0;
+    // one order, amount clamped to the 50 ceiling
+    game.configureMarket(market, [{ item: 'bread', amount: 99 }]);
+    expect(market.marketOrders![0].amount).toBe(50);
+    // dedupe, drop non-exportable coin and zero amounts, keep at most three
+    game.configureMarket(market, [
+      { item: 'bread', amount: 5 }, { item: 'bread', amount: 9 }, { item: 'wine', amount: 3 },
+      { item: 'coin', amount: 2 }, { item: 'timber', amount: 0 }, { item: 'stone', amount: 4 },
+    ]);
+    expect(market.marketOrders!.map(o => o.item)).toEqual(['bread', 'wine', 'stone']);
+
+    // only two bread are actually waiting, though the order asks for five
+    game.configureMarket(market, [{ item: 'bread', amount: 5 }]);
     market.inp.bread = 2;
     market.marketTimer = 0;
-    for (let i = 0; i < 240 && caravan.removed === 0; i++) game.update(0.05);
+    for (let i = 0; i < 4000 && caravan.removed === 0; i++) game.update(0.05);
     expect(caravan.created).toBe(1);
-    expect(market.inp.bread).toBe(0);
-    expect(market.out.coin).toBe(6);
-    expect(game.store.stock!.coin).toBe(0); // no serf exists to return the proceeds
+    expect(market.inp.bread || 0).toBe(0);
+    expect(game.store.stock!.coin).toBe(6); // 2 bread × 3 coin, straight to stock
   });
 });
 

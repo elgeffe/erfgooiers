@@ -213,6 +213,11 @@ export class Game {
       remove: mesh => this.view.remove(mesh),
       sfx: name => this.sfx(name),
       toast: message => this.toast(message),
+      depositCoin: (building, amount) => {
+        // markets are always player-owned; pay into that player's castle stock
+        const store = this.playerStores.get(building.owner as PlayerId) ?? this.store;
+        if (store.stock) store.stock.coin = (store.stock.coin || 0) + amount;
+      },
     });
     this.separationSystem = new SeparationSystem(this.world, this.units);
     this.unitSpatialIndex = new UnitSpatialIndex(this.world, this.units);
@@ -856,9 +861,9 @@ export class Game {
   // =====================================================================
   private taxT = 0;
 
-  /** Configure how many units of one surplus resource this market offers per visit. */
-  configureMarket(b: Building, item: ItemKey, amount: number): void {
-    this.marketSystem.configure(b, item, amount);
+  /** Set a market's export list (up to three surplus goods sold per visit). */
+  configureMarket(b: Building, orders: { item: ItemKey; amount: number }[]): void {
+    this.marketSystem.configure(b, orders);
   }
 
   /** Projected income at one scheduled trader visit per minute. */

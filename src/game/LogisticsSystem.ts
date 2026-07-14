@@ -125,10 +125,10 @@ export class LogisticsSystem {
     }
     for (const building of this.ports.buildings()) {
       if (!building.active || building.key !== 'market' || building.faction !== 'player') continue;
-      const item = building.marketItem ?? 'timber';
-      const target = building.marketAmount ?? 0;
-      const missing = target - (building.inp[item] || 0) - (building.incoming[item] || 0);
-      for (let i = 0; i < missing; i++) demands.push({ pri: 1.5, to: building, item });
+      for (const order of building.marketOrders ?? []) {
+        const missing = order.amount - (building.inp[order.item] || 0) - (building.incoming[order.item] || 0);
+        for (let i = 0; i < missing; i++) demands.push({ pri: 1.5, to: building, item: order.item });
+      }
     }
     for (const building of this.ports.buildings()) {
       if (building.owner !== owner || !building.active || building.def.store) continue;

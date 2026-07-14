@@ -57,8 +57,20 @@ function specialMark(key: BuildingKey): string {
 export function buildingIconSVG(key: BuildingKey, def: BuildingDef): string {
   const roof = `#${def.roof.toString(16).padStart(6, '0')}`, wall = `#${def.wall.toString(16).padStart(6, '0')}`;
   const output = OUTPUT_ICON[key];
-  const mark = output
-    ? `<g transform="translate(8 6) scale(.68)" style="color:${ITEMS[output].color};fill:${ITEMS[output].color}">${itemShapes(output)}</g>`
-    : `<g transform="translate(8 6) scale(.68)" style="color:${def.accent ? `#${def.accent.toString(16).padStart(6, '0')}` : roof};fill:${def.accent ? `#${def.accent.toString(16).padStart(6, '0')}` : roof}">${specialMark(key)}</g>`;
+  const accent = def.accent ? `#${def.accent.toString(16).padStart(6, '0')}` : roof;
+  // The house is only a frame — the mark it carries is what the player reads at
+  // a glance. Sit the produced-resource pictogram on a legible disc centred on
+  // the building so it stays clear at 38px (a tiny corner glyph was unreadable).
+  if (output) {
+    const col = ITEMS[output].color;
+    return `<svg width="38" height="32" viewBox="0 0 40 34" aria-hidden="true">`
+      + `<path d="M4 15L20 3l16 12v16H4z" fill="${wall}" stroke="#211912" stroke-width="1.5"/>`
+      + `<path d="M2 16L20 1l18 15-3 3L20 7 5 19z" fill="${roof}" stroke="#211912" stroke-width="1.5"/>`
+      + `<circle cx="20" cy="21" r="10.5" fill="#241a10" stroke="#0f0b07" stroke-width="1.2" opacity=".92"/>`
+      + `<g transform="translate(20 21) scale(.72) translate(-12 -12)" style="color:${col};fill:${col}">${itemShapes(output)}</g>`
+      + `</svg>`;
+  }
+  // Non-producers keep their bespoke silhouette mark, tucked under the roof.
+  const mark = `<g transform="translate(8 6) scale(.68)" style="color:${accent};fill:${accent}">${specialMark(key)}</g>`;
   return `<svg width="38" height="32" viewBox="0 0 40 34" aria-hidden="true"><path d="M4 15L20 3l16 12v16H4z" fill="${wall}" stroke="#211912" stroke-width="1.5"/><path d="M2 16L20 1l18 15-3 3L20 7 5 19z" fill="${roof}" stroke="#211912" stroke-width="1.5"/>${mark}</svg>`;
 }

@@ -15,7 +15,7 @@ import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './dat
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
 import { DEFAULT_SANDBOX, MAX_SANDBOX_STRONGHOLDS, biomeWater, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
 import { lockedBuildingsAt, objectiveBuildings, unlockedResourcesAt } from './data/buildings';
-import { VICTORY_STORY, storyFor } from './data/story';
+import { VICTORY_IMAGE, VICTORY_STORY, storyFor } from './data/story';
 import type { GameSettings } from './game/Settings';
 import { campaignBiome } from './data/biomes';
 import type { BiomeKey } from './data/biomes';
@@ -191,7 +191,7 @@ function startLevel(): void {
   if (game.objective) {
     ui.setLevel(level.index, level.name);
     ui.setObjective(game.objective.brief());
-    ui.updateObjective(game.objective.evaluate(game).label, 0, levelHardTimer);
+    ui.updateObjective(game.objective.nextStepLabel(game), 0, levelHardTimer);
   }
   view.centerOn(world.wx(game.store.x) + 0.5, world.wz(game.store.y) + 2);
   view.drawMinimap(game.units);
@@ -205,8 +205,10 @@ function startLevel(): void {
   // the story briefing opens the level (Normal tier only) and the objective
   // card becomes a doorway back to it
   const story = onboarding ? storyFor(run.levelIndex) : undefined;
-  $('objective').classList.toggle('clickable', !!story);
-  $('objective').title = story ? 'Click to revisit the story & how-to' : '';
+  // the objective card always opens a modal: the story briefing on a tutorial
+  // level, the full objective checklist otherwise
+  $('objective').classList.toggle('clickable', !sandbox);
+  $('objective').title = sandbox ? '' : story ? 'Click to revisit the story & how-to' : 'Click for the full objective checklist';
   if (story) showStoryModal(run.levelIndex);
 }
 
@@ -228,6 +230,16 @@ function hideStory(): void {
   const cb = storyOnClose; storyOnClose = () => {}; cb();
 }
 
+/** The full objective breakdown as checklist rows, for the modals (the panel
+ *  itself only shows the next step). Reuses the build-checklist row styling. */
+function objectiveBreakdownHTML(): string {
+  if (!game || !game.objective) return '';
+  const rows = game.objective.steps(game)
+    .map(s => `<div class="ckrow ${s.done ? 'done' : 'todo'}"><span class="ckmark">${s.done ? '✓' : '○'}</span><span class="cknm">${s.label}</span></div>`)
+    .join('');
+  return `<div class="ck-head">Objective — full checklist</div>${rows}`;
+}
+
 /** Show a level's story + how-to briefing. `reopened` is the objective-card
  *  revisit — it keeps the current speed rather than assuming a fresh 1×. */
 function showStoryModal(levelIndex: number, reopened = false): void {
@@ -238,6 +250,8 @@ function showStoryModal(levelIndex: number, reopened = false): void {
   $('storyText').textContent = s.story;
   ($('storyGoalHead') as HTMLElement).style.display = s.how.length ? '' : 'none';
   $('storyHow').innerHTML = s.how.map(h => `<li>${h}</li>`).join('');
+  $('storyObjective').innerHTML = objectiveBreakdownHTML();
+  ($('storyImage') as HTMLElement).style.display = 'none';
   ($('storyStart') as HTMLButtonElement).textContent = reopened ? 'Back to the field' : 'Begin';
   // pause while the briefing is up, then restore the speed we came in on
   if (game) { storyPrevSpeed = reopened ? game.simSpeed : 1; ui.setSpeed(0); }
@@ -245,16 +259,42 @@ function showStoryModal(levelIndex: number, reopened = false): void {
   $('story').style.display = 'flex';
 }
 
-/** The one-time congratulations when the dragon falls on Normal — layered over
- *  the run summary, inviting the player onward to the Hard ascension. */
-function showVictoryModal(): void {
+/** The objective card's modal for non-tutorial runs: the full objective
+ *  checklist (no story), so long multi-part goals live here rather than
+ *  overflowing the compact objective panel. Pauses (a no-op in co-op). */
+function showObjectiveModal(): void {
+  if (!game || !currentLevel) return;
+  $('storyChapter').textContent = `Level ${currentLevel.index} · ${currentLevel.name}`;
+  $('storyTitle').textContent = 'Objective';
+  $('storyText').textContent = game.objective ? game.objective.brief() : '';
+  ($('storyGoalHead') as HTMLElement).style.display = 'none';
+  $('storyHow').innerHTML = '';
+  $('storyObjective').innerHTML = objectiveBreakdownHTML();
+  ($('storyImage') as HTMLElement).style.display = 'none';
+  ($('storyStart') as HTMLButtonElement).textContent = 'Back to the field';
+  storyPrevSpeed = game.simSpeed; ui.setSpeed(0);
+  storyOnClose = () => { if (phase === 'playing') ui.setSpeed(storyPrevSpeed || 1); };
+  $('story').style.display = 'flex';
+}
+
+/** The one-time congratulations when the dragon falls on Normal. Merges the
+ *  story payoff, the run tally and the ascension unlock into a single modal
+ *  (with a proud banner) so the first win ends in one click, not two screens.
+ *  Its button returns to the menu. */
+function showVictoryModal(ascensionNote = ''): void {
+  ($('storyImage') as HTMLElement).style.display = '';
+  $('storyImage').innerHTML = VICTORY_IMAGE;
   $('storyChapter').textContent = 'The Hunt is Ended';
   $('storyTitle').textContent = VICTORY_STORY.title;
   $('storyText').textContent = VICTORY_STORY.story;
   ($('storyGoalHead') as HTMLElement).style.display = 'none';
-  $('storyHow').innerHTML = `<li>${VICTORY_STORY.cta}</li>`;
-  ($('storyStart') as HTMLButtonElement).textContent = 'Continue';
-  storyOnClose = () => {};
+  const bits = [`<li>${VICTORY_STORY.cta}</li>`];
+  if (ascensionNote) bits.push(`<li><b>⬆ ${ascensionNote}</b></li>`);
+  bits.push(`<li>Cleared all ${RUN_LEVELS} levels of Het Gooi · gold earned <b>${goldEarnedThisRun}</b> · <b>${meta.heritage}</b> Heritage banked.</li>`);
+  $('storyHow').innerHTML = bits.join('');
+  $('storyObjective').innerHTML = '';
+  ($('storyStart') as HTMLButtonElement).textContent = 'Return to Het Gooi';
+  storyOnClose = () => goMenu();
   $('story').style.display = 'flex';
 }
 
@@ -348,14 +388,15 @@ function startCoopLevel(seed: number, levelIndex: number): void {
   ui.setGold(run!.gold);
   ui.setSandbox(false);
   ui.setCoOp(true);
-  $('objective').classList.remove('clickable'); // no story briefings in co-op
-  $('objective').title = '';
+  // no story briefings in co-op, but the objective card still opens its checklist
+  $('objective').classList.add('clickable');
+  $('objective').title = 'Click for the full objective checklist';
   ($('btnDebugWin') as HTMLElement).style.display = 'none'; // a local-only win would desync
   ($('sandboxbar') as HTMLElement).style.display = 'none';
   levelHardTimer = Math.round(level.hardTimer * diff.timerMult);
   ui.setLevel(level.index, level.name);
   ui.setObjective(game.objective.brief());
-  ui.updateObjective(game.objective.evaluate(game).label, 0, levelHardTimer);
+  ui.updateObjective(game.objective.nextStepLabel(game), 0, levelHardTimer);
   const home = game.storeFor(playerId);
   view.centerOn(world.wx(home.x) + 0.5, world.wz(home.y) + 2);
   view.drawMinimap(game.units);
@@ -669,12 +710,19 @@ function onLevelClear(): void {
   Save.saveMeta(meta);
   announceCardUnlocks(statsBefore);
   const normalVictory = last && run.ascension === 0;
+  const ascensionNote = summaryNote;
   disposeLevel();
   if (last) {
-    phase = 'summary'; renderSummary(true); showScreen('summary'); Save.clearRun(); run = null;
-    // the dragon fell on Normal: a congratulations layered over the summary,
-    // pointing the player onward to the Hard ascension
-    if (normalVictory) showVictoryModal();
+    Save.clearRun(); run = null;
+    phase = 'summary';
+    if (normalVictory) {
+      // one merged congratulations — story payoff + ascension unlock + tally —
+      // ending in a single click instead of a victory modal over a summary screen
+      showScreen(null); // hide the HUD; the modal brings its own backdrop
+      showVictoryModal(ascensionNote);
+    } else {
+      renderSummary(true); showScreen('summary');
+    }
   }
   else {
     const next = run.levelIndex + 1;
@@ -919,12 +967,16 @@ const settings: GameSettings = installSettingsController(view, controls, openPau
 ($('btnHelp') as HTMLButtonElement).onclick = () => $('intro').style.display = 'flex';
 ($('startBtn') as HTMLButtonElement).onclick = () => $('intro').style.display = 'none';
 ($('storyStart') as HTMLButtonElement).onclick = () => { audio.play('click'); hideStory(); };
-// the objective card reopens the first-ascension story briefing mid-level
+// the objective card opens the objective modal (full checklist); on a
+// first-ascension tutorial level it reopens the story briefing instead
 $('objective').addEventListener('click', () => {
-  if (phase !== 'playing' || !run || sandbox || coopRun || run.ascension !== 0 || !run.tutorials || !currentLevel) return;
-  if (!storyFor(currentLevel.index)) return;
+  if (phase !== 'playing' || !game || !game.objective || sandbox) return;
   audio.play('click');
-  showStoryModal(currentLevel.index, true);
+  if (run && !coopRun && run.ascension === 0 && run.tutorials && currentLevel && storyFor(currentLevel.index)) {
+    showStoryModal(currentLevel.index, true);
+  } else {
+    showObjectiveModal();
+  }
 });
 ($('btnSumMenu') as HTMLButtonElement).onclick = goMenu;
 ($('btnDebugWin') as HTMLButtonElement).onclick = debugWin;
@@ -1027,7 +1079,7 @@ function frame(now: number): void {
 
     const st = game.objective.evaluate(game);
     const remaining = levelHardTimer + game.bonusTime - game.elapsed;
-    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateObjective(st.label, st.ratio, remaining); ui.updateWave(game.nextWave()); }
+    uiT += dt; if (uiT > 0.3) { uiT = 0; ui.tick(); ui.updateObjective(game.objective.nextStepLabel(game), st.ratio, remaining); ui.updateWave(game.nextWave()); }
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
 
     // resolve the level last: win, castle lost, or timeout tears the level down

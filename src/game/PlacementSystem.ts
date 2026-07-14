@@ -53,7 +53,7 @@ export class PlacementSystem {
       fieldsList: [], mesh, name: def.name, faction, hp: maxHp, maxHp,
     };
     if (def.store) building.stock = {};
-    if (key === 'market') { building.marketItem = 'timber'; building.marketAmount = 0; building.marketTimer = 60; }
+    if (key === 'market') { building.marketOrders = []; building.marketTimer = 60; }
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) {
       const tile = this.world.tiles[y][x];
       tile.b = building;

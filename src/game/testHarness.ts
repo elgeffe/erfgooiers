@@ -109,7 +109,7 @@ export function gameplayFingerprint(game: Game, includeLocalPresentation = true)
     worker: ref(b.worker), inp: record(b.inp), out: record(b.out), incoming: record(b.incoming),
     stock: record(b.stock), trainQ: b.trainQ ?? [], rally: b.rally ?? null,
     priority: !!b.priority, removed: !!b.removed,
-    market: b.marketItem ? [b.marketItem, b.marketAmount ?? 0, round(b.marketTimer ?? 0)] : null,
+    market: b.marketOrders?.length ? [b.marketOrders.map(o => `${o.item}:${o.amount}`).join(','), round(b.marketTimer ?? 0)] : null,
   });
   const unit = (u: Unit): unknown => ({
     id: u.id, owner: u.owner, role: u.role, tx: u.tx, ty: u.ty,
