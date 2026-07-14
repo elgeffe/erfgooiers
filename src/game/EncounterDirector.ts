@@ -18,7 +18,7 @@ export interface EncounterPort {
   spawnBoss(kind: UnitKind, fromEdge?: boolean, zone?: EnemyZone | null): void;
   spawnStronghold(key: BuildingKey, guards: number, kinds?: UnitKind[], zone?: EnemyZone): Building | null;
   spawnCampNear(x: number, y: number, guards: number, kinds: UnitKind[]): void;
-  fortifyStronghold(building: Building): void;
+  fortifyStronghold(building: Building, innerTowers?: number): void;
   spawnTowerNear(building: Building): void;
   spawnRaid(kind: UnitKind, count: number, from: 'edge' | 'camp'): Unit[];
   summonWave(kind: UnitKind, count: number): number;
@@ -84,8 +84,10 @@ export class EncounterDirector {
     }
     if (!setup.stages && setup.keep) {
       const keep = this.port.spawnStronghold('enemycastle', setup.keep.guards, setup.keep.kinds);
-      if (keep && setup.towers) for (let i = 0; i < setup.towers; i++) this.port.spawnTowerNear(keep);
-      if (keep && setup.keep.fortified) this.port.fortifyStronghold(keep);
+      // a fortified keep is a proper fortress: its towers stand behind the
+      // curtain wall. An unwalled keep keeps its towers scattered around it.
+      if (keep && setup.keep.fortified) this.port.fortifyStronghold(keep, setup.towers ?? 0);
+      else if (keep && setup.towers) for (let i = 0; i < setup.towers; i++) this.port.spawnTowerNear(keep);
     }
     if (!setup.stages && setup.strongholds) {
       const strongholds = setup.strongholds;

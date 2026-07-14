@@ -294,46 +294,61 @@ export class World {
         const vx = enemyEnd.x - startCentre.x, vy = enemyEnd.y - startCentre.y;
         const vl = Math.max(1, Math.hypot(vx, vy));
         const nx = vx / vl, ny = vy / vl, pxv = -ny, pyv = nx;
-        const bend = (rnd() < 0.5 ? -1 : 1) * Math.min(W, H) * (0.07 + rnd() * 0.025);
         const stages = Math.max(1, this.p.lairStages);
-        for (let z = 0; z < stages; z++) {
-          const t = stages === 1 ? 0.72 : 0.32 + z * 0.55 / (stages - 1);
-          const stagger = (z % 2 === 0 ? -1 : 1) * Math.min(W, H) * 0.025;
-          const curve = Math.sin(t * Math.PI) * bend + stagger;
-          const zx = Math.round(startCentre.x + vx * t + pxv * curve);
-          const zy = Math.round(startCentre.y + vy * t + pyv * curve);
-          const R = Math.max(7, Math.round(Math.min(W, H) * 0.085 + z * 0.55));
-          const phase = rnd() * Math.PI * 2;
-          const lairRock = (x: number, y: number): void => {
-            // The authored silhouette wins over a wandering lake. Give every
-            // peak its usual grass foot so ranges remain continuous and never
-            // rise directly out of water.
-            for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
-              const t = this.T(x + ox, y + oy);
-              if (t?.type === 'water') { t.type = 'grass'; t.lake = false; t.deco = null; }
-            }
-            rockTile(x, y, 'peak');
-          };
-          // A craggy U: long unequal arms and an irregular back wall. Its broad
-          // mouth faces the player's previous encounter along the route.
-          for (let y = Math.max(0, zy - R - 4); y <= Math.min(H - 1, zy + R + 4); y++) {
-            for (let x = Math.max(0, zx - R - 4); x <= Math.min(W - 1, zx + R + 4); x++) {
-              const dx = x - zx, dy = y - zy;
-              const along = dx * nx + dy * ny;
-              const across = dx * pxv + dy * pyv;
-              const half = R * (0.72 + Math.sin(along * 0.42 + phase) * 0.09);
-              const leftArm = Math.abs(across + half) < 1.2 && along > -R * 0.62 && along < R * 0.9;
-              const rightArm = Math.abs(across - half) < 1.2 && along > -R * 0.42 && along < R * 0.9;
-              const back = R * 0.86 + Math.sin(across * 0.55 + phase) * 1.4;
-              const backWall = Math.abs(along - back) < 1.2 && Math.abs(across) <= half + 0.8;
-              if (leftArm || rightArm || backWall) lairRock(x, y);
-            }
+        // The lair route is ONE connected mountain complex: two long flanking
+        // ridges run the length of a diagonal corridor, and a gated cross-wall
+        // seals it at every stage. The army can only advance by breaching each
+        // gate in turn — and every gate is held by that stage's garrison — so
+        // the dragon's own quarter can never be reached without first fighting
+        // through the encampments and fortresses barring the way.
+        const lairRock = (x: number, y: number): void => {
+          if (x < 0 || y < 0 || x >= W || y >= H) return;
+          // never wall in the player's own muster apron
+          if (Math.hypot(x - startCentre.x, y - startCentre.y) < 7) return;
+          // give each peak a grass foot so ranges never rise straight from water
+          for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+            const n = this.T(x + ox, y + oy);
+            if (n?.type === 'water') { n.type = 'grass'; n.lake = false; n.deco = null; }
           }
+          const t = this.tiles[y][x];
+          t.type = 'rock'; t.rock = 'peak'; t.lake = false; t.deco = null;
+        };
+        const place = (ax: number, s: number, thick: boolean): void => {
+          const bx = startCentre.x + nx * ax + pxv * s;
+          const by = startCentre.y + ny * ax + pyv * s;
+          lairRock(Math.round(bx), Math.round(by));
+          if (thick) lairRock(Math.round(bx + nx), Math.round(by + ny));
+        };
+        const alongOf = (z: number): number =>
+          (stages === 1 ? 0.72 : 0.32 + z * 0.55 / (stages - 1)) * vl;
+        const HW = Math.max(6, Math.round(Math.min(W, H) * 0.11));   // corridor half-width
+        const flankStart = Math.max(6, alongOf(0) - HW);             // open mouth on the player side
+        const flankEnd = Math.min(vl - 1, alongOf(stages - 1) + HW * 0.7);
+        // the two corridor walls, running the whole route
+        for (let a = flankStart; a <= flankEnd; a += 0.5) {
+          place(a, -HW, false); place(a, -HW - 1, false);
+          place(a, HW, false); place(a, HW + 1, false);
+        }
+        // a back wall behind the deepest lair, joining the two flanks so the
+        // dragon's quarter is sealed except through the corridor
+        for (let s = -HW - 1; s <= HW + 1; s += 0.5) place(flankEnd, s, true);
+        for (let z = 0; z < stages; z++) {
+          const alongZ = alongOf(z);
+          const wallAlong = alongZ - 3;                     // the gate sits just ahead of the garrison
+          const gapOff = (z % 2 === 0 ? 1 : -1) * HW * 0.45; // gates alternate sides → the army snakes
+          const gapHalf = 3.5;
+          for (let s = -HW; s <= HW; s += 0.5) {
+            if (Math.abs(s - gapOff) < gapHalf) continue;   // leave the gate open
+            place(wallAlong, s, true);
+          }
+          // the garrison stands right behind its own gate, blocking the way on
+          const zx = Math.round(startCentre.x + nx * alongZ + pxv * gapOff);
+          const zy = Math.round(startCentre.y + ny * alongZ + pyv * gapOff);
           const pass = {
-            x: Math.round(zx - nx * R * 0.58),
-            y: Math.round(zy - ny * R * 0.58),
+            x: Math.max(2, Math.min(W - 3, Math.round(startCentre.x + nx * wallAlong + pxv * gapOff))),
+            y: Math.max(2, Math.min(H - 3, Math.round(startCentre.y + ny * wallAlong + pyv * gapOff))),
           };
-          this.enemyZones.push({ x: zx, y: zy, r: Math.max(4, Math.round(R * 0.48)), pass });
+          this.enemyZones.push({ x: zx, y: zy, r: Math.max(4, Math.round(HW * 0.5)), pass });
         }
         // Single-zone callers (notably boss placement) want the deepest lair.
         this.enemyZone = this.enemyZones[this.enemyZones.length - 1];
