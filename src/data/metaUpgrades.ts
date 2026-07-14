@@ -18,14 +18,14 @@ export interface MetaUpgradeDef {
 }
 
 export const META_UPGRADES: MetaUpgradeDef[] = [
-  { id: 'full-larder', name: 'Full Larder', desc: 'Start every level with +8 bread', icon: '🍞', cost: 50, tier: 1,
-    apply: [{ stat: 'startBread', add: 8 }] },
+  { id: 'extra-resources', name: 'Extra Resources', desc: 'Start every level with +10 timber and +10 stone', icon: '🪨', cost: 50, tier: 1,
+    apply: [{ stat: 'startTimber', add: 10 }, { stat: 'startStone', add: 10 }] },
   { id: 'willing-hands', name: 'Willing Hands', desc: 'Start every level with +2 serfs', icon: '🧺', cost: 100, tier: 2,
     apply: [{ stat: 'extraSerf', add: 2 }] },
   { id: 'seasoned-hands', name: 'Seasoned Hands', desc: 'Start every level with +2 builders', icon: '🧑\u200d🔧', cost: 150, tier: 3,
     apply: [{ stat: 'extraLaborer', add: 2 }] },
-  { id: 'quartermaster', name: 'Quartermaster', desc: 'Start every level with +12 timber & +12 stone', icon: '📦', cost: 200, tier: 4,
-    apply: [{ stat: 'startTimber', add: 12 }, { stat: 'startStone', add: 12 }] },
+  { id: 'wild-walker', name: 'Wild Walker', desc: 'Serfs walk off-road 25% faster', icon: '🌲', cost: 200, tier: 4,
+    apply: [{ stat: 'offRoadSpeed', mult: 1.25, filter: 'serf' }] },
   { id: 'merchant-ties', name: 'Merchant Ties', desc: 'One free shop reroll each visit', icon: '🔄', cost: 300, tier: 5, special: 'freeReroll', specialValue: 1 },
   { id: 'stout-castle', name: 'Stout Castle', desc: 'Your castle has +75% HP', icon: '🏰', cost: 400, tier: 6,
     apply: [{ stat: 'castleHp', mult: 1.75 }] },

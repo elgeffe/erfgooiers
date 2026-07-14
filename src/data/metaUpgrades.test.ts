@@ -10,7 +10,7 @@ describe('Heritage global blessings', () => {
   });
 
   it('returns effects for only the selected blessing', () => {
-    expect(metaSpecsFor('full-larder')).toEqual([{ stat: 'startBread', add: 8 }]);
+    expect(metaSpecsFor('extra-resources')).toEqual([{ stat: 'startTimber', add: 10 }, { stat: 'startStone', add: 10 }]);
     expect(metaSpecsFor('willing-hands')).toEqual([{ stat: 'extraSerf', add: 2 }]);
     expect(metaSpecsFor(null)).toEqual([]);
   });
