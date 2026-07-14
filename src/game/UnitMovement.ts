@@ -20,7 +20,7 @@ export class UnitMovement {
   }
 
   sendTo(unit: Unit, x: number, y: number): boolean {
-    const path = findPath(this.world, unit.tx, unit.ty, x, y, unit.faction);
+    const path = findPath(this.world, unit.tx, unit.ty, x, y, unit.owner);
     if (path === null) {
       unit.path = null;
       return false;

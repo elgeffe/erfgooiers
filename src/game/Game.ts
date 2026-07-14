@@ -10,7 +10,7 @@ import { type Building, type BuildingKey, type Coord, type Faction, type Formati
 import { doorTile } from './util';
 import { Modifiers, type ModifierSpec } from './Modifiers';
 import type { Objective } from './Objectives';
-import { canControl, ownerForFaction } from './ownership';
+import { canControl, factionForOwner, ownerForFaction } from './ownership';
 import { TradeSystem } from './TradeSystem';
 import { EncounterDirector } from './EncounterDirector';
 import { ProjectileSystem } from './ProjectileSystem';
@@ -91,6 +91,28 @@ export class Game {
   objective: Objective | null = null;
   /** Set true when the castle is razed (or later, the hero dies) — main ends the run. */
   defeat = false;
+  /**
+   * Diplomacy as data: owners on different teams are hostile. The solo/co-op
+   * default keeps every player seat on one team against enemy+wild (who share
+   * a side, matching the old faction rule). Skirmish gives each player their
+   * own team; supporting more seats or team games later is only more entries.
+   */
+  private teams: Record<OwnerId, number> = { p1: 0, p2: 0, enemy: 1, wild: 1 };
+  /** True when at least two player seats are mutually hostile (PvP skirmish). */
+  pvp = false;
+  /** Player seats whose castle has fallen. In PvP main resolves win/lose off
+   *  this instead of the shared `defeat` flag — identical on both peers. */
+  readonly eliminated = new Set<PlayerId>();
+
+  setTeams(teams: Record<OwnerId, number>): void {
+    this.teams = { ...teams };
+    this.pvp = PLAYER_IDS.some(a => PLAYER_IDS.some(b => a !== b && this.hostileOwners(a, b)));
+  }
+
+  /** Are two owners hostile? The single diplomacy predicate for every combat system. */
+  hostileOwners(a: OwnerId, b: OwnerId): boolean {
+    return this.teams[a] !== this.teams[b];
+  }
 
   toast: (msg: string, cls?: string) => void = () => {};
   /**
@@ -167,6 +189,10 @@ export class Game {
     readonly mods: Modifiers = new Modifiers(),
     readonly localPlayerId: PlayerId = 'p1',
   ) {
+    // Gates stay own-side only, and PvP additionally walls out hostile players:
+    // a skirmish rival may share your faction but never your gates.
+    world.gatePass = (mover, gateOwner) =>
+      factionForOwner(mover) === factionForOwner(gateOwner) && !this.hostileOwners(mover, gateOwner);
     this.trade = new TradeSystem({
       localPlayerId,
       now: () => this.elapsed,
@@ -229,7 +255,7 @@ export class Game {
       remove: mesh => this.view.remove(mesh),
       sfx: name => this.sfx(name),
       forUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
-      hostile: (from, to) => this.hostile(from, to),
+      hostile: (from, to) => this.hostileOwners(from, to),
       hurtUnit: (shooter, target, damage) => this.damageSystem.hurtUnit(shooter, target, damage),
       buildingCenter: building => this.buildingCenter(building),
       hurtBuilding: (building, damage, x, z) => {
@@ -265,7 +291,8 @@ export class Game {
       onKill: unit => this.onKill(unit),
       onObjectiveKill: (role, faction) => this.objective?.onKill(role, faction),
       onStructureDestroyed: faction => this.objective?.onStructureDestroyed(faction),
-      markDefeat: () => { this.defeat = true; },
+      hostile: (a, b) => this.hostileOwners(a, b),
+      onCastleLost: owner => { this.eliminated.add(owner); if (!this.pvp) this.defeat = true; },
       toast: (message, cls, owner) => this.emitToast(message, cls, owner),
       sfx: name => this.sfx(name),
     });
@@ -277,7 +304,7 @@ export class Game {
       takeStock: (item, amount, owner) => this.takeStock(item, amount, owner),
       spawnUnit: (role, color, tile, owner) => this.spawnUnit(role, color, tile, owner),
       spawnFighter: (kind, tile, owner) => this.spawnFighter(kind, tile, 'player', owner),
-      pathTo: (unit, x, y) => findPath(this.world, unit.tx, unit.ty, x, y, unit.faction),
+      pathTo: (unit, x, y) => findPath(this.world, unit.tx, unit.ty, x, y, unit.owner),
       orderAttackMove: (unit, x, y) => this.orderUnit(unit, 'attackMove', x, y),
       removeUnit: unit => {
         this.view.remove(unit.mesh);
@@ -321,7 +348,7 @@ export class Game {
     this.combatTargeting = new CombatTargeting(this.world, {
       buildings: () => this.buildings,
       visitUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
-      hostile: (left, right) => this.hostile(left, right),
+      hostile: (left, right) => this.hostileOwners(left, right),
       buildingCenter: building => this.buildingCenter(building),
     });
     this.combatSystem = new CombatSystem(this.world, this.combatTargeting, this.unitMovement, {
@@ -619,12 +646,6 @@ export class Game {
   // =====================================================================
   //  Combat
   // =====================================================================
-  /** Are two factions hostile? Player fights all non-player; enemy/wild fight the player. */
-  private hostile(a: Faction, b: Faction): boolean {
-    if (a === b) return false;
-    return a === 'player' ? b !== 'player' : b === 'player';
-  }
-
   /** True for units that run the combat behavior (soldiers, bandits, boars, dragon…). */
   private isFighter(u: Unit): boolean { return (UNITS as any)[u.role] !== undefined; }
 
@@ -636,11 +657,11 @@ export class Game {
     return { x: this.world.wx(b.x) + 0.5, z: this.world.wz(b.y) + 0.5 };
   }
 
-  private fireArrow(shooter: Unit | null, from: Faction, x: number, y: number, z: number, target: Unit, damage: number): void {
+  private fireArrow(shooter: Unit | null, from: OwnerId, x: number, y: number, z: number, target: Unit, damage: number): void {
     this.projectileSystem.fireArrow(shooter, from, x, y, z, target, damage);
   }
 
-  private fireRock(shooter: Unit | null, from: Faction, x: number, y: number, z: number, endX: number, endZ: number, damage: number, radius: number): void {
+  private fireRock(shooter: Unit | null, from: OwnerId, x: number, y: number, z: number, endX: number, endZ: number, damage: number, radius: number): void {
     this.projectileSystem.fireRock(shooter, from, x, y, z, endX, endZ, damage, radius);
   }
 
@@ -762,13 +783,13 @@ export class Game {
       const c = this.buildingCenter(b);
       let best: Unit | null = null, bd = tw.range * tw.range;
       this.forUnitsNear(b.x, b.y, Math.ceil(tw.range) + 2, u => {
-        if (u.dead || !this.hostile(b.faction, u.faction) || u.dmg <= 0) return;
+        if (u.dead || !this.hostileOwners(b.owner, u.owner) || u.dmg <= 0) return;
         const dx = u.mesh.position.x - c.x, dz = u.mesh.position.z - c.z, d2 = dx * dx + dz * dz;
         if (d2 < bd) { bd = d2; best = u; }
       });
       if (!best) continue; // stay drawn until something wanders into range
       b.prog = 0;
-      this.fireArrow(null, b.faction, c.x, 2.1, c.z, best, tw.dmg);
+      this.fireArrow(null, b.owner, c.x, 2.1, c.z, best, tw.dmg);
     }
   }
 

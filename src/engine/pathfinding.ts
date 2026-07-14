@@ -1,6 +1,6 @@
 import { TILE_COST_ROAD, TILE_COST_GRASS } from '../constants';
 import type { World } from '../world/World';
-import type { Coord, Faction } from '../types';
+import type { Coord, OwnerId } from '../types';
 
 // A* over the tile grid, 8-directional. Open ground costs TILE_COST_GRASS per
 // step while roads cost TILE_COST_ROAD, so units take a paved detour whenever
@@ -65,7 +65,7 @@ let gScratch = new Float64Array(0);
 let cameScratch = new Int32Array(0);
 let closedScratch = new Uint8Array(0);
 
-export function findPath(world: World, sx: number, sy: number, ex: number, ey: number, faction?: Faction, box?: SearchBox): Coord[] | null {
+export function findPath(world: World, sx: number, sy: number, ex: number, ey: number, mover?: OwnerId, box?: SearchBox): Coord[] | null {
   if (sx === ex && sy === ey) return [];
   const W = world.W, H = world.H;
   const tiles = world.tiles;
@@ -97,15 +97,15 @@ export function findPath(world: World, sx: number, sy: number, ex: number, ey: n
       let k = ck;
       while (came[k] >= 0) { path.push({ x: k % W, y: Math.floor(k / W) }); k = came[k]; }
       path.reverse();
-      return smooth(world, sx, sy, path, faction);
+      return smooth(world, sx, sy, path, mover);
     }
     for (const [dx, dy, mult] of DIRS) {
       const nx = cur.x + dx, ny = cur.y + dy;
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
       if (box && (nx < box.x0 || ny < box.y0 || nx > box.x1 || ny > box.y1)) continue;
-      if (!(nx === ex && ny === ey) && !world.passable(nx, ny, faction)) continue;
+      if (!(nx === ex && ny === ey) && !world.passable(nx, ny, mover)) continue;
       // no corner cutting: a diagonal step needs both orthogonal shoulders clear
-      if (dx !== 0 && dy !== 0 && (!world.passable(cur.x + dx, cur.y, faction) || !world.passable(cur.x, cur.y + dy, faction))) continue;
+      if (dx !== 0 && dy !== 0 && (!world.passable(cur.x + dx, cur.y, mover) || !world.passable(cur.x, cur.y + dy, mover))) continue;
       const t = tiles[ny][nx];
       if (t.type !== 'grass') continue; // water & rock both block
       const cost = (t.road ? TILE_COST_ROAD : TILE_COST_GRASS) * mult;
@@ -125,7 +125,7 @@ export function findPath(world: World, sx: number, sy: number, ex: number, ey: n
  * Road nodes are never skipped over — a paved detour the A* paid for stays a
  * paved detour, so units keep their road speed bonus.
  */
-export function smooth(world: World, sx: number, sy: number, path: Coord[], faction?: Faction): Coord[] {
+export function smooth(world: World, sx: number, sy: number, path: Coord[], mover?: OwnerId): Coord[] {
   if (path.length <= 1) return path;
   const out: Coord[] = [];
   let ax = sx, ay = sy, i = 0;
@@ -138,7 +138,7 @@ export function smooth(world: World, sx: number, sy: number, path: Coord[], fact
       // don't cut across intermediate road nodes (keep the detour) and stop
       // extending once the straight line is blocked
       if (world.tiles[path[j - 1].y][path[j - 1].x].road) break;
-      if (!lineClear(world, ax, ay, path[j].x, path[j].y, faction)) break;
+      if (!lineClear(world, ax, ay, path[j].x, path[j].y, mover)) break;
       far = j;
     }
     out.push(path[far]);
@@ -150,14 +150,14 @@ export function smooth(world: World, sx: number, sy: number, path: Coord[], fact
 
 /** Can a unit walk the straight segment between two tile centres? The end tile
  *  itself is exempt (door tiles are occupied but enterable). */
-function lineClear(world: World, x0: number, y0: number, x1: number, y1: number, faction?: Faction): boolean {
+function lineClear(world: World, x0: number, y0: number, x1: number, y1: number, mover?: OwnerId): boolean {
   const dx = x1 - x0, dy = y1 - y0;
   const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 4);
   for (let s = 1; s < steps; s++) {
     const t = s / steps;
     const tx = Math.round(x0 + dx * t), ty = Math.round(y0 + dy * t);
     if (tx === x1 && ty === y1) continue;
-    if (!world.passable(tx, ty, faction)) return false;
+    if (!world.passable(tx, ty, mover)) return false;
   }
   return true;
 }

@@ -1,12 +1,13 @@
 import type * as THREE from 'three';
-import type { Building, Faction, Unit } from '../types';
+import type { Building, Faction, OwnerId, Unit } from '../types';
+import { factionForOwner } from './ownership';
 
 interface Projectile {
   mesh: THREE.Object3D;
   sx: number; sy: number; sz: number;
   ex: number; ey: number; ez: number;
   t: number; dur: number; arc: number;
-  from: Faction; shooter: Unit | null; target: Unit | null;
+  from: OwnerId; shooter: Unit | null; target: Unit | null;
   dmg: number; kind: 'arrow' | 'fire' | 'rock'; radius?: number;
 }
 
@@ -21,7 +22,7 @@ export interface ProjectilePort {
   remove(mesh: THREE.Object3D): void;
   sfx(name: string): void;
   forUnitsNear(x: number, y: number, radius: number, visit: (unit: Unit) => void): void;
-  hostile(from: Faction, to: Faction): boolean;
+  hostile(from: OwnerId, to: OwnerId): boolean;
   hurtUnit(shooter: Unit | null, target: Unit, damage: number): void;
   buildingCenter(building: Building): { x: number; z: number };
   hurtBuilding(building: Building, damage: number, x: number, z: number): void;
@@ -35,7 +36,7 @@ export class ProjectileSystem {
 
   constructor(private readonly port: ProjectilePort) {}
 
-  fireArrow(shooter: Unit | null, from: Faction, x: number, y: number, z: number, target: Unit, damage: number): void {
+  fireArrow(shooter: Unit | null, from: OwnerId, x: number, y: number, z: number, target: Unit, damage: number): void {
     const tx = target.mesh.position.x, tz = target.mesh.position.z;
     const distance = Math.hypot(tx - x, tz - z);
     const mesh = this.port.createArrow();
@@ -48,7 +49,7 @@ export class ProjectileSystem {
     });
   }
 
-  fireRock(shooter: Unit | null, from: Faction, x: number, y: number, z: number, ex: number, ez: number, damage: number, radius: number): void {
+  fireRock(shooter: Unit | null, from: OwnerId, x: number, y: number, z: number, ex: number, ez: number, damage: number, radius: number): void {
     const distance = Math.hypot(ex - x, ez - z);
     const mesh = this.port.createRock();
     mesh.position.set(x, y, z);
@@ -60,7 +61,7 @@ export class ProjectileSystem {
     });
   }
 
-  fireFlame(shooter: Unit | null, from: Faction, x: number, y: number, z: number, ex: number, ez: number, damage: number): void {
+  fireFlame(shooter: Unit | null, from: OwnerId, x: number, y: number, z: number, ex: number, ez: number, damage: number): void {
     const distance = Math.hypot(ex - x, ez - z);
     const mesh = this.port.createFireball();
     mesh.position.set(x, y, z);
@@ -108,29 +109,29 @@ export class ProjectileSystem {
     if (projectile.kind === 'rock') {
       const radius = projectile.radius ?? 1.6, radius2 = radius * radius, cells = Math.ceil(radius) + 2;
       this.port.forUnitsNear(tileX, tileY, cells, unit => {
-        if (unit.dead || !this.port.hostile(projectile.from, unit.faction)) return;
+        if (unit.dead || !this.port.hostile(projectile.from, unit.owner)) return;
         const dx = unit.mesh.position.x - projectile.ex, dz = unit.mesh.position.z - projectile.ez;
         if (dx * dx + dz * dz <= radius2) this.port.hurtUnit(projectile.shooter, unit, projectile.dmg);
       });
       for (const building of this.port.buildings()) {
-        if (building.removed || !this.port.hostile(projectile.from, building.faction)) continue;
+        if (building.removed || !this.port.hostile(projectile.from, building.owner)) continue;
         const center = this.port.buildingCenter(building);
         const dx = center.x - projectile.ex, dz = center.z - projectile.ez;
         if (dx * dx + dz * dz <= (radius + 0.4) * (radius + 0.4)) {
           this.port.hurtBuilding(building, projectile.dmg, center.x, center.z);
         }
       }
-      this.port.onHurt(projectile.ex, projectile.ez, projectile.from === 'player' ? 'enemy' : 'player');
+      this.port.onHurt(projectile.ex, projectile.ez, factionForOwner(projectile.from) === 'player' ? 'enemy' : 'player');
       return;
     }
     if (projectile.kind === 'fire') {
       this.port.forUnitsNear(tileX, tileY, 4, unit => {
-        if (unit.dead || !this.port.hostile(projectile.from, unit.faction)) return;
+        if (unit.dead || !this.port.hostile(projectile.from, unit.owner)) return;
         const dx = unit.mesh.position.x - projectile.ex, dz = unit.mesh.position.z - projectile.ez;
         if (dx * dx + dz * dz <= 1.3 * 1.3) this.port.hurtUnit(projectile.shooter, unit, projectile.dmg);
       });
       for (const building of this.port.buildings()) {
-        if (building.removed || !this.port.hostile(projectile.from, building.faction)) continue;
+        if (building.removed || !this.port.hostile(projectile.from, building.owner)) continue;
         const center = this.port.buildingCenter(building);
         const dx = center.x - projectile.ex, dz = center.z - projectile.ez;
         if (dx * dx + dz * dz <= 1.7 * 1.7) this.port.hurtBuilding(building, projectile.dmg, center.x, center.z);
@@ -147,7 +148,7 @@ export class ProjectileSystem {
     }
     let best: Unit | null = null, bestDistance = 0.6 * 0.6;
     this.port.forUnitsNear(tileX, tileY, 3, unit => {
-      if (unit.dead || !this.port.hostile(projectile.from, unit.faction)) return;
+      if (unit.dead || !this.port.hostile(projectile.from, unit.owner)) return;
       const dx = unit.mesh.position.x - projectile.ex, dz = unit.mesh.position.z - projectile.ez, distance = dx * dx + dz * dz;
       if (distance < bestDistance) { bestDistance = distance; best = unit; }
     });

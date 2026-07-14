@@ -26,7 +26,10 @@ export type ObjectiveDef =
   | { kind: 'destroy'; n: number }
   /** Total war (top ascensions): raze every enemy stronghold, kill every
    *  hostile unit and outlast every raid still to come. */
-  | { kind: 'clearAll' };
+  | { kind: 'clearAll' }
+  /** PvP skirmish: the level ends when a player's storehouse falls. The card
+   *  shows the goal; main resolves the winner off Game.eliminated. */
+  | { kind: 'skirmish' };
 
 /**
  * Adapt a level's objective to the run's ascension tier.
@@ -124,6 +127,7 @@ export class Objective {
     if (d.kind === 'slayMulti') return 'Slay ' + d.reqs.map(r => `${r.n} ${UNITS[r.unit].name.toLowerCase()}${r.n > 1 ? 's' : ''}`).join(' + ');
     if (d.kind === 'destroy') return `Destroy ${d.n} enemy ${d.n > 1 ? 'strongholds' : 'stronghold'}`;
     if (d.kind === 'clearAll') return 'Clear the map — every stronghold, every foe, every raid';
+    if (d.kind === 'skirmish') return "Destroy your rival's storehouse before yours falls";
     return `Collect ${d.n} gold piles`;
   }
 
@@ -154,6 +158,8 @@ export class Objective {
       case 'slayMulti':
         return d.reqs.map(r => { const k = Math.min(r.n, this.kills[r.unit] || 0); return { label: `${UNITS[r.unit].name}s ${k}/${r.n}`, done: (this.kills[r.unit] || 0) >= r.n }; });
       case 'destroy': { const s = Math.min(d.n, this.structures); return one(`Strongholds razed ${s}/${d.n}`, this.structures >= d.n); }
+      case 'skirmish':
+        return one('The rival storehouse stands', game.eliminated.size > 0);
       case 'clearAll': {
         const foes = game.hostileUnitsLeft(), holds = game.enemyStructuresLeft(), pending = game.scheduledWavesPending();
         return [
@@ -243,6 +249,10 @@ export class Objective {
         if ((this.kills[r.unit] || 0) < r.n) done = false;
       }
       return { done, label: parts.join(' · '), ratio: need ? have / need : 1 };
+    }
+    if (d.kind === 'skirmish') {
+      const done = game.eliminated.size > 0;
+      return { done, label: done ? 'A storehouse has fallen' : 'The rival storehouse stands', ratio: done ? 1 : 0 };
     }
     if (d.kind === 'clearAll') {
       const foes = game.hostileUnitsLeft();

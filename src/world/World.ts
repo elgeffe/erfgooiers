@@ -1,7 +1,8 @@
 import { W as DEFAULT_W, H as DEFAULT_H } from '../constants';
 import { worldRng } from '../engine/rng';
 import { BIOMES, pickTreeKind, type BiomeDef, type BiomeKey } from '../data/biomes';
-import type { DecoKind, DepositKind, Faction, Tile } from '../types';
+import type { DecoKind, DepositKind, OwnerId, Tile } from '../types';
+import { factionForOwner } from '../game/ownership';
 
 // Worldgen pulls exclusively from this stream (reseeded per level) so a level's
 // map is fully determined by its seed, independent of sim/cosmetic call order.
@@ -109,14 +110,20 @@ export class World {
   wx(tx: number): number { return tx - this.W / 2 + 0.5; }
   wz(ty: number): number { return ty - this.H / 2 + 0.5; }
 
-  /** Can a unit stand on / walk through this tile? A `faction` lets that
+  /** Diplomacy hook for gates, installed by Game: may `mover` walk through a
+   *  gate held by `gateOwner`? The default matches the old faction rule (own
+   *  side only); Game additionally walls out hostile players in PvP. */
+  gatePass: (mover: OwnerId, gateOwner: OwnerId) => boolean =
+    (mover, gateOwner) => factionForOwner(mover) === factionForOwner(gateOwner);
+
+  /** Can a unit stand on / walk through this tile? A `mover` owner lets that
    *  side's units walk through its own gates; everyone else is walled out. */
-  passable(x: number, y: number, faction?: Faction): boolean {
+  passable(x: number, y: number, mover?: OwnerId): boolean {
     const t = this.T(x, y);
     if (!t) return false;
     if (t.type !== 'grass') return false; // water & rock both block
     if (t.b || t.site) {
-      const ownGate = !!faction && !!t.b && !t.site && t.b.def.gate && t.b.faction === faction;
+      const ownGate = mover !== undefined && !!t.b && !t.site && t.b.def.gate && this.gatePass(mover, t.b.owner);
       if (!ownGate) return false;
     }
     if (t.dep) return false;              // ore heaps are solid — mine from beside them

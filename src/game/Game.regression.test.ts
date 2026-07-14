@@ -55,7 +55,7 @@ describe('Game deterministic regression guardrails', () => {
     game.onKill = () => { kills++; };
     // Invoke the private launch seam directly: this test locks projectile
     // timing independently from target-acquisition and archer movement policy.
-    (game as any).fireArrow(archer, 'player', archer.mesh.position.x, 1.2, archer.mesh.position.z, target, archer.dmg);
+    (game as any).fireArrow(archer, 'p1', archer.mesh.position.x, 1.2, archer.mesh.position.z, target, archer.dmg);
 
     game.update(0.05);
     expect(target.hp).toBe(1);
@@ -84,7 +84,7 @@ describe('Game deterministic regression guardrails', () => {
     onager.dmg = target.dmg = ally.dmg = 0;
     const x = target.mesh.position.x, z = target.mesh.position.z;
 
-    (game as any).fireRock(onager, 'player', onager.mesh.position.x, 1, onager.mesh.position.z, x, z, 20, 2);
+    (game as any).fireRock(onager, 'p1', onager.mesh.position.x, 1, onager.mesh.position.z, x, z, 20, 2);
     game.update(0.05);
     expect([target.hp, ally.hp, camp.hp]).toEqual([100, 100, 100]);
 

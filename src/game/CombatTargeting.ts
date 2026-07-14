@@ -1,11 +1,11 @@
-import type { Building, Coord, Faction, Unit } from '../types';
+import type { Building, Coord, OwnerId, Unit } from '../types';
 import type { World } from '../world/World';
 import { doorTile } from './util';
 
 interface CombatTargetingPorts {
   buildings: () => readonly Building[];
   visitUnitsNear: (x: number, y: number, radius: number, visit: (unit: Unit) => void) => void;
-  hostile: (left: Faction, right: Faction) => boolean;
+  hostile: (left: OwnerId, right: OwnerId) => boolean;
   buildingCenter: (building: Building) => { x: number; z: number };
 }
 
@@ -20,7 +20,7 @@ export class CombatTargeting {
     let best: Unit | null = null;
     let bestDistance = aggro * aggro;
     this.ports.visitUnitsNear(unit.tx, unit.ty, Math.ceil(aggro) + 1, candidate => {
-      if (candidate.dead || candidate === unit || !this.ports.hostile(unit.faction, candidate.faction)) return;
+      if (candidate.dead || candidate === unit || !this.ports.hostile(unit.owner, candidate.owner)) return;
       const dx = candidate.tx - unit.tx;
       const dy = candidate.ty - unit.ty;
       const distance = dx * dx + dy * dy;
@@ -38,7 +38,7 @@ export class CombatTargeting {
     let best: Building | null = null;
     let bestDistance = range * range;
     for (const building of this.ports.buildings()) {
-      if (building.removed || !this.ports.hostile(unit.faction, building.faction)) continue;
+      if (building.removed || !this.ports.hostile(unit.owner, building.owner)) continue;
       const center = this.ports.buildingCenter(building);
       const dx = center.x - unit.mesh.position.x;
       const dz = center.z - unit.mesh.position.z;

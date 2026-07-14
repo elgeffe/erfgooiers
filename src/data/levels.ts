@@ -216,7 +216,7 @@ export interface SandboxConfig {
 export const MAX_SANDBOX_STRONGHOLDS = 6;
 
 export const DEFAULT_SANDBOX: SandboxConfig = {
-  size: 'large', biome: 'gooi', water: 'normal', mapRes: 'rich', startRes: 'plentiful', wildBeasts: false, banditCamps: false, strongholds: 0, hero: 'none',
+  size: 'large', biome: 'gooi', water: 'normal', mapRes: 'rich', startRes: 'cornucopia', wildBeasts: false, banditCamps: false, strongholds: 0, hero: 'none',
 };
 
 /** The water level is a property of the biome, not a separate knob: waterlogged

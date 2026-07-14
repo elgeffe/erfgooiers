@@ -71,7 +71,8 @@ export class CoOpController {
   renderLobby(): void {
     const snapshot = this.coop.snapshot(), room = snapshot.room;
     if (!room) return;
-    $('coopLobbyMeta').innerHTML = `<b>${escapeHtml(room.settings.roomName)}</b> · direct room ${escapeHtml(room.inviteCode)} · ${escapeHtml(room.settings.difficulty)} · level ${room.level}`;
+    const modeTag = room.settings.mode === 'skirmish' ? '1v1 Skirmish (beta)' : `${escapeHtml(room.settings.difficulty)} · level ${room.level}`;
+    $('coopLobbyMeta').innerHTML = `<b>${escapeHtml(room.settings.roomName)}</b> · direct room ${escapeHtml(room.inviteCode)} · ${modeTag}`;
     $('coopLobbyPlayers').innerHTML = this.playerRows(room, snapshot.playerId, 'coopplayer');
     const local = room.players.find(player => player.id === snapshot.playerId);
     const bothReady = room.players.length === 2 && room.players.every(player => player.ready);
@@ -80,7 +81,7 @@ export class CoOpController {
       : snapshot.status === 'error' ? snapshot.error ?? 'The direct connection failed.'
       : snapshot.role === 'guest' && snapshot.status !== 'connected' ? 'Share the response code with the host, then wait for them to accept it.'
       : room.players.length < 2 ? this.coop.pendingJoin() ? 'Review this player, then accept or reject the request.' : 'Share your code, then paste the guest response below.'
-      : bothReady ? 'Both players ready — the Expedition is starting.' : 'Choose Ready when your connection is stable.';
+      : bothReady ? (room.settings.mode === 'skirmish' ? 'Both players ready — the Skirmish is starting.' : 'Both players ready — the Expedition is starting.') : 'Choose Ready when your connection is stable.';
     status.className = `tag coop-status ${snapshot.status === 'error' ? 'error' : snapshot.status === 'connected' ? 'connected' : 'waiting'}`;
     const ready = $('btnCoopReady') as HTMLButtonElement; ready.textContent = local?.ready ? 'Cancel ready' : 'Ready to start';
     ready.classList.toggle('ghost', !!local?.ready); ready.style.display = snapshot.status === 'connected' ? '' : 'none';
@@ -101,7 +102,8 @@ export class CoOpController {
   private async host(): Promise<void> { await this.withButton('btnCoopHost', 'Creating secure code…', async () => {
     this.showError(''); await this.coop.createRoom(($('coopPlayerName') as HTMLInputElement).value, {
       visibility: 'unlisted', roomName: ($('coopRoomName') as HTMLInputElement).value, region: 'Europe',
-      difficulty: ($('coopDifficulty') as HTMLSelectElement).value as ExpeditionDifficulty, mode: 'expedition', passwordProtected: false,
+      difficulty: ($('coopDifficulty') as HTMLSelectElement).value as ExpeditionDifficulty,
+      mode: ($('coopMode') as HTMLSelectElement).value === 'skirmish' ? 'skirmish' : 'expedition', passwordProtected: false,
     }); this.renderLobby(); this.ports.showScreen('cooplobby');
   }); }
   private async join(): Promise<void> { await this.withButton('btnCoopJoin', 'Opening host code…', async () => {
