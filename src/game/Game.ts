@@ -336,7 +336,7 @@ export class Game {
       sfx: name => this.sfx(name),
     });
     this.placementSystem = new PlacementSystem(
-      this.world, this.view, owner => this.modsFor(owner), this.buildings, this.sites, this.units, this.marketSystem,
+      this.world, this.view, owner => this.modsFor(owner), this.buildings, this.sites, this.units, this.marketSystem, this.localPlayerId,
       {
         nextId: () => this.nextEntityId++,
         countItem: (item, owner) => this.countItem(item, owner),
@@ -374,6 +374,7 @@ export class Game {
         this.playerHeroes.set(owner, unit);
         this.heroIdentity.set(owner, { id: heroId, name: roleName });
       },
+      playerColor: owner => (owner === 'p1' || owner === 'p2') ? this.playerColors.get(owner) : undefined,
     });
     this.interactionSystem = new InteractionSystem(
       this.world, this.view, owner => this.modsFor(owner), this.buildings, this.sites, this.units, this.localPlayerId,

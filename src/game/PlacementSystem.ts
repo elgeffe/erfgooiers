@@ -38,6 +38,7 @@ export class PlacementSystem {
     private readonly sites: Site[],
     private readonly units: Unit[],
     private readonly markets: MarketSystem,
+    private readonly localPlayerId: PlayerId,
     private readonly ports: PlacementPorts,
   ) {}
 
@@ -64,7 +65,9 @@ export class PlacementSystem {
     }
     this.buildings.push(building);
     if (instant) building.active = true;
-    if (def.fields && faction === 'player') {
+    // The "wants plots" crystal is a prompt to its owner, so only the player who
+    // placed the building sees it — in co-op the ally's fields carry no marker.
+    if (def.fields && owner === this.localPlayerId) {
       const marker = this.view.createPlotMarker();
       marker.userData.dynamic = true;
       marker.position.y = 2.4;

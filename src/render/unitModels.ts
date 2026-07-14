@@ -245,7 +245,15 @@ export function makeHero(heroId: string): { group: THREE.Group; itemMesh: THREE.
   return bakeUnit({ group: g, itemMesh: item }, false);
 }
 
-export function makeUnit(colorHex: number, role = 'serf', faction: Faction = 'player'): { group: THREE.Group; itemMesh: THREE.Mesh } {
+/**
+ * `teamHex` is the owning player's primary colour in co-op (undefined in single
+ * player and for non-player factions). It recolours the pieces that mark
+ * ownership at a glance — a worker's hat, a soldier's plate & shield — so you
+ * can tell whose units are whose. Military bodies are already the team colour
+ * (spawnFighter passes it as `colorHex`); heroes keep their own palette and
+ * never receive a teamHex.
+ */
+export function makeUnit(colorHex: number, role = 'serf', faction: Faction = 'player', teamHex?: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
   // fliers keep their part meshes — the sim flaps their wings every tick
   if (role === 'dragon') return makeDragon(colorHex);
   if (role === 'demon') return makeDemon(colorHex);
@@ -253,10 +261,10 @@ export function makeUnit(colorHex: number, role = 'serf', faction: Faction = 'pl
   if (role === 'ballista' || role === 'onager' || role === 'trebuchet') return makeSiege(role);
   if (role === 'boar') return bakeUnit(makeBeast(colorHex));
   if (role === 'wolf') return bakeUnit(makeWolf(colorHex));
-  return bakeUnit(makeHumanoid(colorHex, role), false);
+  return bakeUnit(makeHumanoid(colorHex, role, teamHex), false);
 }
 
-function makeHumanoid(colorHex: number, role: string): { group: THREE.Group; itemMesh: THREE.Mesh } {
+function makeHumanoid(colorHex: number, role: string, teamHex?: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
   // greenskins & trolls get their own hide, the undead bone or rot;
   // everyone else the usual complexion
   const skinHex = role === 'orc' ? 0x7a9a4a : role === 'troll' ? 0x8fa08a
@@ -281,7 +289,7 @@ function makeHumanoid(colorHex: number, role: string): { group: THREE.Group; ite
     g.add(arm, hand);
   }
 
-  dressUnit(g, role);
+  dressUnit(g, role, teamHex);
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
   item.position.y = 0.82; item.visible = false;
   g.add(item);
@@ -290,7 +298,12 @@ function makeHumanoid(colorHex: number, role: string): { group: THREE.Group; ite
 
 // Give each role its own little hat + outfit accent so trades read at a glance.
 // Head sits at y≈0.55 (r 0.14); hats perch around y≈0.66–0.9.
-function dressUnit(g: THREE.Group, role: string): void {
+// In co-op `teamHex` is the owner's primary colour: it tints the ownership
+// markers — a worker's hat, a soldier's plate & shield — leaving weapons,
+// skin and bare metal alone. `tc(fallback)` returns it when set, else the
+// role's own colour (single player and enemies always get the fallback).
+function dressUnit(g: THREE.Group, role: string, teamHex?: number): void {
+  const tc = (fallback: number): number => teamHex ?? fallback;
   // Hats, aprons and weapons share the units' crisper ink, not the scenery cache.
   const mat = umat;
   const add = (m: THREE.Object3D, castsShadow = true) => { m.castShadow = castsShadow; g.add(m); };
@@ -324,48 +337,48 @@ function dressUnit(g: THREE.Group, role: string): void {
 
   switch (role) {
     case 'woodcutter': { // red knit beanie
-      add(dome(0xb5352f, 0.16, 0.66));
+      add(dome(tc(0xb5352f), 0.16, 0.66));
       break;
     }
     case 'forester': { // green pointed hood
-      const hat = hatCone(0x3f6d3a, 0.18, 0.3, 8); hat.position.y = 0.74; add(hat);
+      const hat = hatCone(tc(0x3f6d3a), 0.18, 0.3, 8); hat.position.y = 0.74; add(hat);
       break;
     }
     case 'carpenter': { // brown work cap + apron
-      add(dome(0x6b4a2f, 0.15, 0.66));
+      add(dome(tc(0x6b4a2f), 0.15, 0.66));
       add(apron(0x8a6a44));
       break;
     }
     case 'stonemason': { // grey dusty cap
-      add(dome(0x9aa0a3, 0.16, 0.66));
+      add(dome(tc(0x9aa0a3), 0.16, 0.66));
       break;
     }
     case 'farmer': { // wide straw hat
-      add(hatCone(0xd9bd63, 0.22, 0.16, 10).translateY(0.72));
+      add(hatCone(tc(0xd9bd63), 0.22, 0.16, 10).translateY(0.72));
       add(strap(-0.09)); add(strap(0.09)); // overalls
       break;
     }
     case 'miller': { // soft white cap
-      add(dome(0xefe9dc, 0.17, 0.66));
+      add(dome(tc(0xefe9dc), 0.17, 0.66));
       break;
     }
     case 'baker': { // tall white toque
-      add(dome(0xfbf7ef, 0.18, 0.75));
+      add(dome(tc(0xfbf7ef), 0.18, 0.75));
       add(apron(0xf0e6d2));
       break;
     }
     case 'miner': case 'collier': { // hard hat + head lamp
       const helmCol = role === 'miner' ? 0xd8af43 : 0x35353c;
-      add(dome(helmCol, 0.165, 0.66));
+      add(dome(tc(helmCol), 0.165, 0.66));
       const lamp = new THREE.Mesh(sphere(0.045, 7, 6), mat(0xfff2a8)); lamp.position.set(0, 0.69, 0.15); add(lamp, false);
       break;
     }
     case 'minter': { // green cap
-      add(dome(0x2f6f52, 0.16, 0.67));
+      add(dome(tc(0x2f6f52), 0.16, 0.67));
       break;
     }
     case 'laborer': { // brown flat cap (builders)
-      add(brim(0x8a5a34, 0.17, 0.08, 0.65));
+      add(brim(tc(0x8a5a34), 0.17, 0.08, 0.65));
       break;
     }
     case 'priest': { // pointed white mitre, Christian cross and crozier
@@ -383,34 +396,34 @@ function dressUnit(g: THREE.Group, role: string): void {
     case 'soldier': { // steel helmet with a crest, breastplate, sword & shield
       add(dome(0x9298a0, 0.175, 0.66));
       const crest = new THREE.Mesh(box(0.04, 0.11, 0.22), mat(0xb5352f)); crest.position.set(0, 0.79, 0); crest.userData.marker = true; add(crest);
-      add(plate(0x8f97a6));
-      add(shield(0x3f5aa0));
+      add(plate(tc(0x8f97a6)));
+      add(shield(tc(0x3f5aa0)));
       add(sword());
       break;
     }
     case 'pikeman': { // open helm, breastplate and a conspicuously long ash pike
       add(dome(0x858b93, 0.17, 0.66));
-      add(plate(0x7d8794));
+      add(plate(tc(0x7d8794)));
       const pike = new THREE.Group();
       const shaft = new THREE.Mesh(box(0.045, 1.25, 0.045), mat(0x76512f)); shaft.position.y = 0.48;
       const head = new THREE.Mesh(cone(0.07, 0.25, 5), mat(0xd8dde2)); head.position.y = 1.22;
       pike.add(shaft, head); pike.position.set(0.27, 0.05, 0.08); pike.rotation.z = -0.28; pike.userData.marker = true; add(pike);
-      add(shield(0x6b568f));
+      add(shield(tc(0x6b568f)));
       break;
     }
     case 'knight': { // full helm with plume, heavy plate, sword & kite shield
       add(dome(0x7d8794, 0.185, 0.64));
       const plume = hatCone(0xd9a441, 0.05, 0.22, 6); plume.position.set(0, 0.86, -0.02); plume.userData.marker = true; add(plume);
-      add(plate(0x9aa3b0));
+      add(plate(tc(0x9aa3b0)));
       const pauldronMat = mat(0x7d8794);
       for (const sx of [-1, 1]) { const p = new THREE.Mesh(sphere(0.09, 7, 6), pauldronMat); p.position.set(sx * 0.2, 0.4, 0.02); p.userData.marker = true; add(p); }
-      add(shield(0x8f2f3a));
+      add(shield(tc(0x8f2f3a)));
       add(sword());
       break;
     }
     case 'archer': { // leather cap, green tunic accent, bow & quiver
       add(dome(0x5c6b3a, 0.16, 0.66));
-      add(plate(0x6b7a44));
+      add(plate(tc(0x6b7a44)));
       add(bow());
       add(quiver());
       break;
@@ -473,13 +486,13 @@ function dressUnit(g: THREE.Group, role: string): void {
       break;
     }
     case 'villager': { // unposted recruit — simple flat red cap
-      add(brim(0xb5352f, 0.16, 0.07, 0.66));
+      add(brim(tc(0xb5352f), 0.16, 0.07, 0.66));
       break;
     }
     default: { // serf — a jaunty maroon fez
-      const fez = new THREE.Mesh(cyl(0.115, 0.145, 0.2, 14), mat(0x9e2b25));
+      const fez = new THREE.Mesh(cyl(0.115, 0.145, 0.2, 14), mat(tc(0x9e2b25)));
       fez.position.y = 0.77; add(fez);
-      add(brim(0x7f2019, 0.115, 0.02, 0.87), false);
+      add(brim(tc(0x7f2019), 0.115, 0.02, 0.87), false);
       break;
     }
   }
