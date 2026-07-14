@@ -33,7 +33,7 @@ export class PlacementSystem {
   constructor(
     private readonly world: World,
     private readonly view: View,
-    private readonly mods: Modifiers,
+    private readonly modsFor: (owner: OwnerId) => Modifiers,
     private readonly buildings: Building[],
     private readonly sites: Site[],
     private readonly units: Unit[],
@@ -47,7 +47,7 @@ export class PlacementSystem {
     mesh.rotation.y = -rot * Math.PI / 2;
     mesh.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
     this.view.add(mesh);
-    const factionMultiplier = faction === 'player' ? (def.store ? this.mods.castleHpMult() : 1) : (this.mods.buildingHpMult(faction) || 1);
+    const factionMultiplier = faction === 'player' ? (def.store ? this.modsFor(owner).castleHpMult() : 1) : (this.modsFor(owner).buildingHpMult(faction) || 1);
     const maxHp = Math.round((def.hp ?? 100) * factionMultiplier);
     const building: Building = {
       id: this.ports.nextId(), owner, key, def, x: tx, y: ty, rot, active: false,
@@ -123,7 +123,7 @@ export class PlacementSystem {
     this.view.add(group);
     const site: Site = {
       id: this.ports.nextId(), owner, key, def, x: tx, y: ty, rot,
-      needs: this.mods.buildingCost(def) as Record<string, number>, delivered: {}, incoming: {},
+      needs: this.modsFor(owner).buildingCost(def) as Record<string, number>, delivered: {}, incoming: {},
       progress: 0, ready: false, builder: null, mesh: group, frame, isSite: true, name: `${def.name} (site)`,
     };
     for (const item in site.needs) { site.delivered[item] = 0; site.incoming[item] = 0; }
@@ -208,7 +208,7 @@ export class PlacementSystem {
     if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.ports.toast('No iron deposits in range — build near the rusty rocks', 'err', owner); return; }
     if (def.gather?.node === 'fish' && !this.lakeInRange(tx, ty, def.gather.range)) { this.ports.toast('No open water in range — build on the shore', 'err', owner); return; }
     if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.ports.toast('Warning: few trees nearby', 'err', owner);
-    const cost = this.mods.buildingCost(def) as Record<string, number>;
+    const cost = this.modsFor(owner).buildingCost(def) as Record<string, number>;
     for (const item in cost) {
       if (this.ports.countItem(item, owner) < cost[item]) {
         this.ports.toast(`Not enough ${ITEMS[item as keyof typeof ITEMS].name} in your economy — site will wait`, 'err', owner);
@@ -223,7 +223,7 @@ export class PlacementSystem {
   paintRoad(tx: number, ty: number, owner: PlayerId): void {
     if (!this.openGround(tx, ty)) return;
     const tile = this.world.T(tx, ty)!;
-    const cost = this.mods.roadCost();
+    const cost = this.modsFor(owner).roadCost();
     if (cost > 0 && !this.ports.takeStock('stone', cost, owner)) {
       const now = Date.now();
       if (now - this.roadWarnT > 1500) {
@@ -235,7 +235,7 @@ export class PlacementSystem {
     if (tile.deco) this.removeDecoration(tx, ty);
     tile.road = true;
     tile.roadOwner = owner;
-    this.mods.ctx.roadTiles++;
+    this.modsFor(owner).ctx.roadTiles++;
     this.view.refreshTile(tx, ty);
     this.view.addRoad(tx, ty);
   }
@@ -245,9 +245,9 @@ export class PlacementSystem {
     if (!tile) return;
     if (tile.road) {
       if (tile.roadOwner !== owner) return;
-      tile.road = false; tile.roadOwner = null; this.mods.ctx.roadTiles = Math.max(0, this.mods.ctx.roadTiles - 1);
+      tile.road = false; tile.roadOwner = null; this.modsFor(owner).ctx.roadTiles = Math.max(0, this.modsFor(owner).ctx.roadTiles - 1);
       const store = this.ports.storeFor(owner);
-      store.stock!.stone = (store.stock!.stone || 0) + this.mods.roadCost();
+      store.stock!.stone = (store.stock!.stone || 0) + this.modsFor(owner).roadCost();
       this.view.refreshTile(tx, ty); this.view.removeRoad(tx, ty); return;
     }
     if (tile.field) {

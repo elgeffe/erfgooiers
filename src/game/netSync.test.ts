@@ -2,8 +2,36 @@ import { describe, expect, it } from 'vitest';
 import { simRng } from '../engine/rng';
 import { applyGameCommand } from './commands';
 import { gameplayFingerprint, makeTestGame } from './testHarness';
+import { heroSpecsFor } from '../data/heroes';
 import type { GameCommand } from '../net/protocol';
 import type { PlayerId } from '../types';
+
+describe('per-player co-op modifiers', () => {
+  it('applies a player\'s hero rules only to their own units', () => {
+    const { game } = makeTestGame({ localPlayerId: 'p1' });
+    game.setPlayerMods('p1', heroSpecsFor('warlord'));   // soldiers deal x2 damage
+    game.setPlayerMods('p2', heroSpecsFor('erfgooier')); // the plain baseline
+    const [p1Soldier] = game.spawnSquad('soldier', 1, 0, 0, 'player', 'p1');
+    const [p2Soldier] = game.spawnSquad('soldier', 1, 0, 0, 'player', 'p2');
+    expect(p1Soldier && p2Soldier).toBeTruthy();
+    expect(p1Soldier.dmg).toBeCloseTo(p2Soldier.dmg * 2);
+  });
+
+  it('bakes identical stats on both peers regardless of which seat is local', () => {
+    const install = (localPlayerId: PlayerId) => {
+      const { game } = makeTestGame({ seed: 909, localPlayerId });
+      game.setPlayerMods('p1', heroSpecsFor('warlord'));
+      game.setPlayerMods('p2', heroSpecsFor('captain'));
+      // Spawn each player's fighter deterministically, owner-tagged.
+      simRng.reseed(1234); const p1 = game.spawnSquad('soldier', 1, 0, 0, 'player', 'p1')[0];
+      simRng.reseed(1234); const p2 = game.spawnSquad('archer', 1, 0, 0, 'player', 'p2')[0];
+      return { p1, p2 };
+    };
+    const host = install('p1'), guest = install('p2');
+    expect(host.p1.dmg).toBe(guest.p1.dmg);
+    expect(host.p2.dmg).toBe(guest.p2.dmg);
+  });
+});
 
 describe('per-player event toasts', () => {
   it('shows a player only their own settlement events, not their ally\'s', () => {

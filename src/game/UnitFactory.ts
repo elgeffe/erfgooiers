@@ -20,7 +20,7 @@ export class UnitFactory {
   constructor(
     private readonly world: World,
     private readonly view: View,
-    private readonly mods: Modifiers,
+    private readonly modsFor: (owner: OwnerId) => Modifiers,
     private readonly units: Unit[],
     private readonly localPlayerId: PlayerId,
     private readonly ports: UnitFactoryPorts,
@@ -50,13 +50,14 @@ export class UnitFactory {
           if (this.world.passable(door.x + dx, door.y + dy)) tile = { x: door.x + dx, y: door.y + dy };
     }
     const { group, itemMesh } = this.view.createHero(heroId, tile.x, tile.y);
-    const hp = Math.round(def.hp * this.mods.combatMult('hp', 'hero'));
+    const mods = this.modsFor(owner);
+    const hp = Math.round(def.hp * mods.combatMult('hp', 'hero'));
     const unit: Unit = {
       id: this.ports.nextId(), owner, role: 'hero', roleName, colorHex: def.color, mesh: group, itemMesh,
       tx: tile.x, ty: tile.y, path: null, pathI: 0, task: null, carrying: null, collect: null,
       home: null, wstate: 'idle', timer: 0, target: null, hunger: 100, bob: 0, status: 'Ready to ride',
-      faction: 'player', spd: def.speed * this.mods.combatMult('speed', 'hero'), hp, maxHp: hp,
-      dmg: def.dmg * this.mods.combatMult('damage', 'hero'), range: def.range, atkCd: def.atkCd, atkTimer: 0,
+      faction: 'player', spd: def.speed * mods.combatMult('speed', 'hero'), hp, maxHp: hp,
+      dmg: def.dmg * mods.combatMult('damage', 'hero'), range: def.range, atkCd: def.atkCd, atkTimer: 0,
       dead: false, raider: false, foe: null, foeB: null, order: null, orderQueue: [], obeyT: 0, special: 0,
       anchor: null, lungeT: 0, hpBar: null, sepI: 0,
     };
@@ -73,10 +74,11 @@ export class UnitFactory {
     unit.roleName = def.name;
     unit.faction = unitFaction;
     unit.owner = unitOwner;
-    unit.spd = def.speed * this.mods.combatMult('speed', kind, unitFaction);
-    unit.maxHp = unit.hp = Math.round(def.hp * this.mods.combatMult('hp', kind, unitFaction));
-    unit.dmg = def.dmg * this.mods.combatMult('damage', kind, unitFaction);
-    unit.range = def.range * this.mods.combatMult('range', kind, unitFaction);
+    const mods = this.modsFor(unitOwner);
+    unit.spd = def.speed * mods.combatMult('speed', kind, unitFaction);
+    unit.maxHp = unit.hp = Math.round(def.hp * mods.combatMult('hp', kind, unitFaction));
+    unit.dmg = def.dmg * mods.combatMult('damage', kind, unitFaction);
+    unit.range = def.range * mods.combatMult('range', kind, unitFaction);
     unit.atkCd = def.atkCd;
     unit.hunger = 100;
     unit.status = def.name;
@@ -113,7 +115,7 @@ export class UnitFactory {
     return result;
   }
 
-  spawnSquad(kind: UnitKind, count: number, worldX: number, worldZ: number, faction?: Faction): Unit[] {
+  spawnSquad(kind: UnitKind, count: number, worldX: number, worldZ: number, faction?: Faction, owner?: OwnerId): Unit[] {
     const centerX = Math.max(2, Math.min(this.world.W - 3, Math.floor(worldX + this.world.W / 2)));
     const centerY = Math.max(2, Math.min(this.world.H - 3, Math.floor(worldZ + this.world.H / 2)));
     const result: Unit[] = [];
@@ -121,7 +123,9 @@ export class UnitFactory {
       if (result.length >= count || this.units.length >= MAX_UNITS) return;
       const tile = this.world.T(x, y);
       if (!tile || tile.type !== 'grass' || tile.b || tile.site || tile.dep) return;
-      result.push(this.spawnFighter(kind, { x, y }, faction));
+      // owner must be set at spawn so combat stats bake from the right player's
+      // rule set (and identically on both co-op peers, not the local seat's).
+      result.push(this.spawnFighter(kind, { x, y }, faction, owner));
     };
     tryTile(centerX, centerY);
     for (let radius = 1; radius < 14 && result.length < count; radius++)

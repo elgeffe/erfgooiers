@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ITEMS } from '../data/items';
 import { findPath } from '../engine/pathfinding';
 import { simRng } from '../engine/rng';
-import type { Unit } from '../types';
+import type { OwnerId, Unit } from '../types';
 import type { World } from '../world/World';
 import type { Modifiers } from './Modifiers';
 
@@ -10,7 +10,7 @@ import type { Modifiers } from './Modifiers';
 export class UnitMovement {
   constructor(
     private readonly world: World,
-    private readonly mods: Modifiers,
+    private readonly modsFor: (owner: OwnerId) => Modifiers,
   ) {}
 
   setCarrying(unit: Unit, item: string | null): void {
@@ -40,8 +40,9 @@ export class UnitMovement {
     const targetZ = this.world.wz(node.y);
     const position = unit.mesh.position;
     const tile = this.world.T(unit.tx, unit.ty);
-    const offRoad = unit.faction === 'player' ? this.mods.offRoadMult() : 1;
-    const speed = this.mods.unitSpeed(unit) * (tile?.road ? 1.3 : offRoad);
+    const mods = this.modsFor(unit.owner);
+    const offRoad = unit.faction === 'player' ? mods.offRoadMult() : 1;
+    const speed = mods.unitSpeed(unit) * (tile?.road ? 1.3 : offRoad);
     const dx = targetX - position.x;
     const dz = targetZ - position.z;
     const distance = Math.hypot(dx, dz);
@@ -73,7 +74,7 @@ export class UnitMovement {
     const dx = worldX - position.x;
     const dz = worldZ - position.z;
     const distance = Math.hypot(dx, dz);
-    const step = this.mods.unitSpeed(unit) * dt;
+    const step = this.modsFor(unit.owner).unitSpeed(unit) * dt;
     if (distance > 0.01) unit.mesh.rotation.y = Math.atan2(dx, dz);
     if (distance <= step) {
       position.x = worldX;

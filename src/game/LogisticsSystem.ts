@@ -1,5 +1,5 @@
 import { ITEMS } from '../data/items';
-import { PLAYER_IDS, type Building, type PlayerId, type Site, type Unit } from '../types';
+import { PLAYER_IDS, type Building, type OwnerId, type PlayerId, type Site, type Unit } from '../types';
 import type { Modifiers } from './Modifiers';
 import { doorTile } from './util';
 
@@ -24,7 +24,7 @@ interface Demand {
 /** Assigns physical deliveries and advances serfs through their current task. */
 export class LogisticsSystem {
   constructor(
-    private readonly mods: Modifiers,
+    private readonly modsFor: (owner: OwnerId) => Modifiers,
     private readonly ports: LogisticsPorts,
   ) {}
 
@@ -95,8 +95,8 @@ export class LogisticsSystem {
   private dispatchOwner(owner: PlayerId): void {
     let idle = this.ports.units().filter(unit => unit.owner === owner && unit.role === 'serf' && !unit.task && !unit.collect);
     if (!idle.length) return;
-    const carryCap = this.mods.carryCap();
-    const outCap = this.mods.outCap();
+    const carryCap = this.modsFor(owner).carryCap();
+    const outCap = this.modsFor(owner).outCap();
     const demands: Demand[] = [];
 
     for (const site of this.ports.sites()) {
@@ -108,7 +108,7 @@ export class LogisticsSystem {
     }
     for (const building of this.ports.buildings()) {
       if (building.owner !== owner || !building.active || !building.def.recipe) continue;
-      for (const item in this.mods.recipeInputs(building.def)) {
+      for (const item in this.modsFor(owner).recipeInputs(building.def)) {
         const have = (building.inp[item] || 0) + (building.incoming[item] || 0);
         if (have < carryCap) demands.push({ pri: building.priority ? 0.75 : 1, to: building, item });
       }

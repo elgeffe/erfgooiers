@@ -377,11 +377,15 @@ function startCoopLevel(seed: number, levelIndex: number): void {
   const world = new World({ seed, ...level.world, biome: 'gooi' });
   view.loadWorld(world);
   game = new Game(world, view, new Modifiers([...diff.specs]), playerId);
-  // Each player's chosen preset colour paints their buildings; set it before
-  // initCoOp so the starting castle/guild already carry it. Single player never
-  // populates this map, so those buildings keep their own palette.
+  // Each player's chosen preset colour paints their buildings, and their hero's
+  // rule specs layer onto the shared difficulty base to form that player's own
+  // Modifiers — so one player's hero never buffs the other. Set both before
+  // initCoOp so the starting settlement already reflects them (colour, and
+  // hero perks like the transporter's extra serfs). Single player populates
+  // neither map, so every owner resolves to the one shared rule set.
   for (const roomPlayer of snapshot.room?.players ?? []) {
     if (roomPlayer.color?.startsWith('#')) game.playerColors.set(roomPlayer.id, parseInt(roomPlayer.color.slice(1), 16));
+    game.setPlayerMods(roomPlayer.id, [...diff.specs, ...heroSpecsFor(roomPlayer.hero)]);
   }
   game.toast = (m, c) => ui.toast(m, c);
   game.onSelect = o => ui.showInspector(o);
@@ -410,7 +414,9 @@ function startCoopLevel(seed: number, levelIndex: number): void {
     const sx = world.wx(st.x) + 0.5, sz = world.wz(st.y) + 0.5;
     const heroDef = roomById.get(pid)?.hero ? HERO_BY_ID[roomById.get(pid)!.hero!] : null;
     for (const a of [...(level.startArmy ?? []), ...(heroDef?.startArmy ?? [])]) {
-      for (const u of game.spawnSquad(a.kind, a.count, sx, sz, 'player')) u.owner = pid;
+      // Pass the owner so each fighter's combat stats bake from that player's
+      // hero rule set — identically on both peers.
+      game.spawnSquad(a.kind, a.count, sx, sz, 'player', pid);
     }
     if (heroDef) game.spawnHero(heroDef.id, heroDef.name, pid);
   }

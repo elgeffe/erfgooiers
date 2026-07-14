@@ -42,7 +42,7 @@ export class WorkerSystem {
   constructor(
     private readonly world: World,
     private readonly view: View,
-    private readonly mods: Modifiers,
+    private readonly modsFor: (owner: OwnerId) => Modifiers,
     private readonly ports: WorkerPorts,
   ) {}
 
@@ -57,7 +57,7 @@ export class WorkerSystem {
       const door = doorTile(site);
       if (unit.tx === door.x && unit.ty === door.y && !unit.path) {
         unit.status = `Building ${site.def.name}`;
-        site.progress += dt / this.mods.buildTime();
+        site.progress += dt / this.modsFor(site.owner).buildTime();
         unit.bob += dt * 12;
         unit.mesh.position.y = Math.abs(Math.sin(unit.bob)) * 0.07;
         site.frame.scale.y = Math.max(0.05, site.progress);
@@ -150,7 +150,7 @@ export class WorkerSystem {
         unit.status = 'Working';
         unit.bob += dt * 10;
         unit.mesh.position.y = Math.abs(Math.sin(unit.bob)) * 0.05;
-        building.prog += dt / this.mods.recipeTime(def);
+        building.prog += dt / this.modsFor(building.owner).recipeTime(def);
         if (building.prog >= 1) {
           building.prog = 0;
           building.working = false;
@@ -161,12 +161,12 @@ export class WorkerSystem {
           } else {
             building.out[output] = (building.out[output] || 0) + 1;
           }
-          this.ports.onProduce(output, this.mods.objectiveWeight(output));
+          this.ports.onProduce(output, this.modsFor(building.owner).objectiveWeight(output));
         }
       } else {
         unit.status = 'Waiting for materials';
-        if (this.outputTotal(building) < this.mods.outCap()) {
-          const inputs = this.mods.recipeInputs(def);
+        if (this.outputTotal(building) < this.modsFor(building.owner).outCap()) {
+          const inputs = this.modsFor(building.owner).recipeInputs(def);
           const amounts = inputs as Record<string, number | undefined>;
           let canStart = true;
           for (const item in inputs) if ((building.inp[item] || 0) < (amounts[item] ?? 0)) canStart = false;
@@ -190,7 +190,7 @@ export class WorkerSystem {
     if (unit.wstate === 'home') {
       unit.mesh.visible = false;
       unit.mesh.position.y = 0;
-      if (this.outputTotal(building) >= this.mods.outCap()) {
+      if (this.outputTotal(building) >= this.modsFor(building.owner).outCap()) {
         unit.status = 'Output full';
         return;
       }
@@ -208,7 +208,7 @@ export class WorkerSystem {
       const node = unit.target as GatherNode;
       if (unit.tx === node.x && unit.ty === node.y && !unit.path) {
         unit.wstate = 'gather';
-        unit.timer = this.mods.gatherTime(def);
+        unit.timer = this.modsFor(building.owner).gatherTime(def);
       } else if (!unit.path && !this.ports.sendTo(unit, node.x, node.y)) {
         unit.wstate = 'home';
         unit.target = null;
@@ -233,7 +233,7 @@ export class WorkerSystem {
       if (unit.tx === door.x && unit.ty === door.y && !unit.path) {
         if (unit.carrying) {
           building.out[unit.carrying] = (building.out[unit.carrying] || 0) + 1;
-          this.ports.onProduce(unit.carrying, this.mods.objectiveWeight(unit.carrying));
+          this.ports.onProduce(unit.carrying, this.modsFor(building.owner).objectiveWeight(unit.carrying));
           this.ports.setCarrying(unit, null);
         }
         unit.wstate = 'home';
@@ -284,9 +284,9 @@ export class WorkerSystem {
 
   updateGrowth(dt: number): void {
     const { W, H, tiles } = this.world;
-    const fieldGrowth = this.mods.fieldGrowth();
     for (const building of this.ports.buildings()) {
       if (!building.def.fields) continue;
+      const fieldGrowth = this.modsFor(building.owner).fieldGrowth();
       for (const field of building.fieldsList) {
         const tile = tiles[field.y][field.x];
         if (!tile.field || tile.field.growth >= 1) continue;
@@ -321,7 +321,7 @@ export class WorkerSystem {
     const tile = this.world.tiles[node.y][node.x];
     if (gather.node === 'tree') {
       if (tile.tree) {
-        if (this.mods.preserveTrees()) tile.tree.reserved = false;
+        if (this.modsFor(building.owner).preserveTrees()) tile.tree.reserved = false;
         else this.ports.removeTree(node.x, node.y);
       }
       this.ports.setCarrying(unit, 'trunk');

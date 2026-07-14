@@ -44,10 +44,14 @@ export function hungerFactor(hunger: number): number {
  * in Game (ROADMAP §10).
  */
 export class Modifiers {
-  /** Live sim context consumed by dynamic modifiers (Game keeps it current). */
-  readonly ctx = { roadTiles: 0 };
+  /** Live sim context consumed by dynamic modifiers (Game keeps it current).
+   *  Co-op's per-player Modifiers share one ctx so road-derived bonuses read the
+   *  same paved-tile count regardless of which player's rule set is consulted. */
+  readonly ctx: { roadTiles: number };
 
-  constructor(private readonly specs: ModifierSpec[] = []) {}
+  constructor(private readonly specs: ModifierSpec[] = [], ctx?: { roadTiles: number }) {
+    this.ctx = ctx ?? { roadTiles: 0 };
+  }
 
   /** Add live rules (sandbox cards use this without rebuilding the level). */
   addSpecs(specs: readonly ModifierSpec[]): void { this.specs.push(...specs); }

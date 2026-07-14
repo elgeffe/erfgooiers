@@ -80,6 +80,14 @@ Every card, hero rule, curse, Heritage bonus, and Ascension stat adjustment flow
 `recipeTime`, `buildingCost`, `combatMult`, and `trainTime`. Extend `Modifiers` for a new
 tunable rather than reading upgrade ids inside the simulation.
 
+Rule sets are per-owner. Systems never hold a single `Modifiers`; they resolve one through
+`Game.modsFor(owner)`. In single player every owner (and enemy/wild) maps to the one shared
+`mods`. In co-op each player gets their own `Modifiers` (difficulty base + that player's
+hero) via `setPlayerMods`, so one player's hero never buffs the other; enemy/wild fall back
+to the base. Always resolve by the acting entity's owner (`building.owner`, `unit.owner`,
+`site.owner`) — this is intrinsic and identical on both peers, so it stays deterministic.
+Combat stats bake at spawn, so `spawnFighter`/`spawnSquad` must be given the real owner.
+
 ### Determinism
 
 `src/engine/rng.ts` has three seeded streams:
@@ -165,13 +173,13 @@ hard placement pressure.
   co-op swaps that sink for the host sequencer, so never mutate the sim directly from UI/input
   code. In the lobby each player picks a hero and a preset building colour (`setLoadout`
   message → `RoomPlayer.color`/`hero`); at level start both peers spawn each player's hero and
-  warband from the shared room state, and `Game.playerColors` recolours that player's buildings
-  (roofs, and the timber attachment on mines while the mound stays grey) via `makeBuilding`'s
-  `playerColor` argument. Player-scoped notifications route through `Game.emitToast(msg, cls,
-  owner)`, which drops the *other* player's events so each seat sees only its own; global events
-  (raids, level messages) carry no owner and show to both. Hero *rule specs* are not applied in
-  co-op yet (only the unit + warband), and checkpoint/replay recovery and per-player shops are
-  not built yet.
+  warband from the shared room state, `Game.setPlayerMods` installs that player's rule set
+  (difficulty base + hero) so their hero perks/banes apply to their economy alone, and
+  `Game.playerColors` recolours that player's buildings (roofs, and the timber attachment on
+  mines while the mound stays grey) via `makeBuilding`'s `playerColor` argument. Player-scoped
+  notifications route through `Game.emitToast(msg, cls, owner)`, which drops the *other*
+  player's events so each seat sees only its own; global events (raids, level messages) carry
+  no owner and show to both. Checkpoint/replay recovery and per-player shops are not built yet.
 - The physical hero unit and functional equipment slots are not implemented yet.
 - Combat units include soldiers, archers, knights, and several enemy/wild archetypes.
 - Army controls include box/double-click selection, minimap highlighting, groups,

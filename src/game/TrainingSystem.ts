@@ -24,7 +24,7 @@ interface TrainingPorts {
 /** Training queues and the civilian services operated by staffed buildings. */
 export class TrainingSystem {
   constructor(
-    private readonly mods: Modifiers,
+    private readonly modsFor: (owner: OwnerId) => Modifiers,
     private readonly ports: TrainingPorts,
   ) {}
 
@@ -34,7 +34,7 @@ export class TrainingSystem {
     if (!training || !building.active) return false;
     if (building.owner !== 'p1' && building.owner !== 'p2') return false;
     if (!this.ports.storeFor(building.owner).stock) return false;
-    const cost = this.mods.unitCost(kind, training.cost);
+    const cost = this.modsFor(building.owner).unitCost(kind, training.cost);
     for (const item in cost) {
       const amount = cost[item as ItemKey] ?? 0;
       if (this.ports.storeTotal(item, building.owner) < amount) {
@@ -60,7 +60,7 @@ export class TrainingSystem {
     if (index === 0) building.prog = 0;
     if (training && (building.owner === 'p1' || building.owner === 'p2')) {
       const store = this.ports.storeFor(building.owner);
-      const cost = this.mods.unitCost(kind, training.cost);
+      const cost = this.modsFor(building.owner).unitCost(kind, training.cost);
       for (const item in cost) {
         const amount = cost[item as ItemKey] ?? 0;
         store.stock![item] = (store.stock![item] || 0) + amount;
@@ -92,7 +92,7 @@ export class TrainingSystem {
         continue;
       }
       const head = spec.units.find(unit => unit.kind === building.trainQ![0]);
-      const time = (head?.time ?? 6) * this.mods.trainTime(building.trainQ[0]);
+      const time = (head?.time ?? 6) * this.modsFor(building.owner).trainTime(building.trainQ[0]);
       building.prog += dt / time;
       if (building.prog < 1) continue;
 
@@ -164,7 +164,7 @@ export class TrainingSystem {
         fed.push(unit);
       }
       building.fedUnits = fed;
-      const tithe = this.mods.goldPerMeal();
+      const tithe = this.modsFor(building.owner).goldPerMeal();
       if (tithe > 0 && fed.length) {
         this.ports.onGold(tithe * fed.length);
         this.ports.sfx('coin');

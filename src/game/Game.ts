@@ -8,7 +8,7 @@ import type { World } from '../world/World';
 import type { View } from '../render/View';
 import { type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit, PLAYER_IDS } from '../types';
 import { doorTile } from './util';
-import { Modifiers } from './Modifiers';
+import { Modifiers, type ModifierSpec } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, ownerForFaction } from './ownership';
 import { TradeSystem } from './TradeSystem';
@@ -143,6 +143,24 @@ export class Game {
   readonly tradeShipments: TradeShipment[];
   readonly tradeHistory: TradeHistoryEntry[];
 
+  /** Per-player rule sets in co-op (difficulty base + that player's hero). Empty
+   *  in single player, where every owner resolves to the shared `mods`. */
+  private readonly playerMods = new Map<PlayerId, Modifiers>();
+
+  /** The rule set governing an owner's economy, units, and buildings. In co-op
+   *  each player has their own so one player's hero never buffs the other; enemy
+   *  and wild factions (and all of single player) use the shared base. */
+  modsFor(owner: OwnerId): Modifiers {
+    const own = this.playerMods.get(owner as PlayerId);
+    return own ?? this.mods;
+  }
+
+  /** Install a player's co-op rule set. Its ctx is shared with the base so
+   *  road-derived bonuses stay consistent across the two rule sets. */
+  setPlayerMods(owner: PlayerId, specs: ModifierSpec[]): void {
+    this.playerMods.set(owner, new Modifiers(specs, this.mods.ctx));
+  }
+
   constructor(
     private readonly world: World,
     private readonly view: View,
@@ -251,7 +269,7 @@ export class Game {
       toast: (message, cls, owner) => this.emitToast(message, cls, owner),
       sfx: name => this.sfx(name),
     });
-    this.trainingSystem = new TrainingSystem(this.mods, {
+    this.trainingSystem = new TrainingSystem(owner => this.modsFor(owner), {
       buildings: () => this.buildings,
       units: () => this.units,
       storeFor: owner => this.storeFor(owner),
@@ -271,7 +289,7 @@ export class Game {
       toast: (message, cls, owner) => this.emitToast(message, cls, owner),
       sfx: name => this.sfx(name),
     });
-    this.logisticsSystem = new LogisticsSystem(this.mods, {
+    this.logisticsSystem = new LogisticsSystem(owner => this.modsFor(owner), {
       buildings: () => this.buildings,
       sites: () => this.sites,
       units: () => this.units,
@@ -281,7 +299,7 @@ export class Game {
       sendTo: (unit, x, y) => this.unitMovement.sendTo(unit, x, y),
       moveUnit: (unit, dt) => this.unitMovement.moveGround(unit, dt),
     });
-    this.workerSystem = new WorkerSystem(this.world, this.view, this.mods, {
+    this.workerSystem = new WorkerSystem(this.world, this.view, owner => this.modsFor(owner), {
       buildings: () => this.buildings,
       sites: () => this.sites,
       guildFor: owner => this.playerGuilds.get(owner) ?? null,
@@ -299,7 +317,7 @@ export class Game {
       toast: (message, owner) => this.emitToast(message, undefined, owner),
       sfx: name => this.sfx(name),
     });
-    this.unitMovement = new UnitMovement(this.world, this.mods);
+    this.unitMovement = new UnitMovement(this.world, owner => this.modsFor(owner));
     this.combatTargeting = new CombatTargeting(this.world, {
       buildings: () => this.buildings,
       visitUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
@@ -318,7 +336,7 @@ export class Game {
       sfx: name => this.sfx(name),
     });
     this.placementSystem = new PlacementSystem(
-      this.world, this.view, this.mods, this.buildings, this.sites, this.units, this.marketSystem,
+      this.world, this.view, owner => this.modsFor(owner), this.buildings, this.sites, this.units, this.marketSystem,
       {
         nextId: () => this.nextEntityId++,
         countItem: (item, owner) => this.countItem(item, owner),
@@ -347,8 +365,8 @@ export class Game {
       toast: (message, cls, owner) => this.emitToast(message, cls, owner),
       sfx: name => this.sfx(name),
     });
-    this.economyState = new EconomyState(this.buildings, this.sites, this.units, this.mods, owner => this.storeFor(owner), this.localPlayerId);
-    this.unitFactory = new UnitFactory(this.world, this.view, this.mods, this.units, this.localPlayerId, {
+    this.economyState = new EconomyState(this.buildings, this.sites, this.units, owner => this.modsFor(owner), owner => this.storeFor(owner), this.localPlayerId);
+    this.unitFactory = new UnitFactory(this.world, this.view, owner => this.modsFor(owner), this.units, this.localPlayerId, {
       nextId: () => this.nextEntityId++,
       storeFor: owner => this.storeFor(owner),
       primaryStore: () => this.store,
@@ -358,7 +376,7 @@ export class Game {
       },
     });
     this.interactionSystem = new InteractionSystem(
-      this.world, this.view, this.mods, this.buildings, this.sites, this.units, this.localPlayerId,
+      this.world, this.view, owner => this.modsFor(owner), this.buildings, this.sites, this.units, this.localPlayerId,
       {
         visitUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
         select: value => this.select(value),
@@ -436,11 +454,12 @@ export class Game {
     this.playerStores.set(owner, store);
     // base kit stock, then run-upgrade start bonuses on top
     store.stock = Object.fromEntries(Object.keys(ITEMS).map(key => [key, kit.stock[key] ?? 0]));
-    const bonus = this.mods.startStock();
+    const ownerMods = this.modsFor(owner);
+    const bonus = ownerMods.startStock();
     for (const k in bonus) store.stock[k] = (store.stock[k] || 0) + (bonus as Record<string, number>)[k];
     const d = doorTile(store);
-    const serfs = kit.serfs + this.mods.extraSerfs();
-    const laborers = kit.laborers + this.mods.extraLaborers();
+    const serfs = kit.serfs + ownerMods.extraSerfs();
+    const laborers = kit.laborers + ownerMods.extraLaborers();
     for (let i = 0; i < serfs; i++) this.spawnUnit('serf', 0xd8c49a, { x: d.x - 2 + (i % 4), y: d.y + Math.floor(i / 4) }, owner);
     for (let i = 0; i < laborers; i++) {
       const u = this.spawnUnit('laborer', 0xc97b3d, { x: d.x + 2 + (i % 3), y: d.y + Math.floor(i / 3) }, owner);
@@ -697,8 +716,8 @@ export class Game {
     return this.unitFactory.spawnStartArmy(groups);
   }
 
-  spawnSquad(kind: UnitKind, count: number, worldX: number, worldZ: number, faction?: Faction): Unit[] {
-    return this.unitFactory.spawnSquad(kind, count, worldX, worldZ, faction);
+  spawnSquad(kind: UnitKind, count: number, worldX: number, worldZ: number, faction?: Faction, owner?: OwnerId): Unit[] {
+    return this.unitFactory.spawnSquad(kind, count, worldX, worldZ, faction, owner);
   }
 
   // =====================================================================
