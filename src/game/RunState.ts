@@ -60,6 +60,7 @@ export interface RunState {
   hero: string | null;          // chosen run-wide hero rule set
   equipment: (string | null)[]; // reserved weapon / boots / trinket slots
   ascension: number;            // difficulty tier this run is played at (Phase 4)
+  tutorials: boolean;           // onboarding aids active this run (Normal tier only)
 }
 
 /** Meta-progress that persists across all runs forever. */
@@ -68,15 +69,16 @@ export interface MetaState {
   unlocks: string[];            // global unlock ids
   activeGlobalBuff: string | null; // at most one owned META_UPGRADE affects runs
   ascension: number;            // highest ascension tier unlocked (0..MAX_ASCENSION)
+  tutorialSeen: boolean;        // first-run flag — cleared once the player has begun a run
   stats: { runs: number; levelsCleared: number; bestLevel: number; wins: number };
 }
 
-export function newRun(seed: number, ascension = 0): RunState {
-  return { runSeed: seed >>> 0, levelIndex: 1, gold: 0, upgrades: [], mutators: [], rewardMult: 1, objectiveIdx: null, hero: null, equipment: [null, null, null], ascension };
+export function newRun(seed: number, ascension = 0, tutorials = true): RunState {
+  return { runSeed: seed >>> 0, levelIndex: 1, gold: 0, upgrades: [], mutators: [], rewardMult: 1, objectiveIdx: null, hero: null, equipment: [null, null, null], ascension, tutorials };
 }
 
 export function newMeta(): MetaState {
-  return { heritage: 0, unlocks: [], activeGlobalBuff: null, ascension: 0, stats: { runs: 0, levelsCleared: 0, bestLevel: 0, wins: 0 } };
+  return { heritage: 0, unlocks: [], activeGlobalBuff: null, ascension: 0, tutorialSeen: false, stats: { runs: 0, levelsCleared: 0, bestLevel: 0, wins: 0 } };
 }
 
 /** The deterministic map seed for the run's current level. */

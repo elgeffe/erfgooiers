@@ -40,6 +40,7 @@ export function loadMeta(): MetaState {
   if (!m) return newMeta();
   // fields added after v2 shipped — normalize older documents in place
   m.ascension ??= 0;
+  m.tutorialSeen ??= false;
   m.stats.wins ??= 0;
   // Pre-single-blessing v2 saves stacked every permanent unlock. Preserve the
   // first owned blessing as active, while hero unlock ids remain unaffected.
@@ -52,7 +53,7 @@ export function saveMeta(meta: MetaState): void { write(META_KEY, meta); }
 
 export function loadRun(): RunState | null {
   const r = read<RunState>(RUN_KEY);
-  if (r) r.ascension ??= 0;
+  if (r) { r.ascension ??= 0; r.tutorials ??= true; }
   return r;
 }
 export function saveRun(run: RunState): void { write(RUN_KEY, run); }

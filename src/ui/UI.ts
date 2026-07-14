@@ -46,6 +46,9 @@ export class UI {
   private pendingRequestId: string | null = null;
   private speedLocked = false;   // co-op runs at a fixed 1× — a local pause would desync
   private sandbox = false;
+  // first-ascension onboarding: the buildings to construct for this level's
+  // objective (empty when tutorials are off / on combat levels)
+  private checklistKeys: string[] = [];
 
   constructor() {
     $('logo').innerHTML = logoSVG(30);
@@ -69,6 +72,10 @@ export class UI {
     document.querySelectorAll<HTMLElement>('.bcard[data-key]').forEach(el => {
       el.classList.toggle('bio-hidden', banned.has(el.dataset.key!));
     });
+    // clear any prior level's onboarding locks/filters; main re-applies them
+    // for a first-ascension level right after this call
+    this.applyProgression(null, null);
+    this.setChecklist([]);
     this.showCategory('materials');
     this.showInspector(null);
     this.updateWave(null);
@@ -77,6 +84,61 @@ export class UI {
     this.refreshResbar();
     this.refreshBuildCosts();
     this.renderUnits();
+  }
+
+  /** First-ascension onboarding: grey out the buildings not yet unlocked and
+   *  surface only the resources those unlocked buildings involve, so a first
+   *  time player meets the menu a handful of cards at a time. Pass nulls to
+   *  clear — every harder tier and the sandbox show the whole menu and every
+   *  resource. Called by main after {@link setGame}. */
+  applyProgression(locked: string[] | null, resources: Set<string> | null): void {
+    const lockedSet = new Set<string>(locked ?? []);
+    document.querySelectorAll<HTMLElement>('.bcard[data-key]').forEach(el => {
+      el.classList.toggle('locked', lockedSet.has(el.dataset.key!));
+    });
+    for (const k of RES_SHOWN) {
+      this.resRowEls[k].style.display = !resources || resources.has(k) ? '' : 'none';
+    }
+  }
+
+  /** First-ascension onboarding: the ordered buildings to construct for this
+   *  level's objective. Rendered as a ticking checklist under the objective and
+   *  used to highlight the next card to place. Empty clears both. */
+  setChecklist(keys: string[]): void {
+    this.checklistKeys = keys;
+    this.renderChecklist();
+  }
+
+  /** Redraw the objective checklist and move the "build this next" card
+   *  highlight to the first building not yet placed. Cheap; called each tick. */
+  private renderChecklist(): void {
+    const box = $('objChecklist');
+    // clear any previous suggestion highlight before recomputing
+    document.querySelectorAll<HTMLElement>('.bcard.suggest').forEach(el => el.classList.remove('suggest'));
+    if (!this.game || !this.checklistKeys.length) { box.style.display = 'none'; box.innerHTML = ''; this.placeInspector(); return; }
+    const g = this.game;
+    const built = (key: string) => g.buildings.some(b => b.key === key);
+    const placed = (key: string) => built(key) || g.sites.some(s => s.key === key);
+    let rows = '<div class="ck-head">Build these</div>';
+    let nextKey: string | null = null;
+    for (const key of this.checklistKeys) {
+      const def = DEFS[key as keyof typeof DEFS];
+      if (!def) continue;
+      const done = built(key);
+      // the first not-yet-placed building is the one we nudge the player toward
+      if (!nextKey && !placed(key)) nextKey = key;
+      const state = done ? 'done' : placed(key) ? 'wip' : 'todo';
+      const mark = done ? '✓' : placed(key) ? '…' : '○';
+      rows += `<div class="ckrow ${state}"><span class="ckmark">${mark}</span><span class="ckicon">${buildingIconSVG(key as any, def)}</span><span class="cknm">${def.name}</span></div>`;
+    }
+    box.innerHTML = rows;
+    box.style.display = 'flex';
+    if (nextKey) {
+      const card = document.querySelector<HTMLElement>(`.bcard[data-key="${nextKey}"]`);
+      if (card && !card.classList.contains('bio-hidden')) card.classList.add('suggest');
+    }
+    // the checklist changes the objective card's height — keep the inspector clear
+    this.placeInspector();
   }
 
   /** Update build-menu card costs to reflect the run's cost-reducing upgrades. */
@@ -336,8 +398,12 @@ export class UI {
       for (const key of cat.keys) {
         const def = DEFS[key];
         const el = document.createElement('div'); el.className = 'bcard'; el.dataset.key = key; el.dataset.cat = cat.id; el.title = def.desc;
-        el.innerHTML = `<div class="icon">${buildingIconSVG(key, def)}</div><div class="nm">${def.name}</div><div class="cost">${this.costHTML(def.cost)}</div><div class="ptime">${this.timeHTML(def)}</div>`;
-        el.onclick = () => { audio.play('click'); this.onMode(el.classList.contains('on') ? null : { type: 'build', key }); };
+        el.innerHTML = `<div class="icon">${buildingIconSVG(key, def)}</div><div class="nm">${def.name}</div><div class="cost">${this.costHTML(def.cost)}</div><div class="ptime">${this.timeHTML(def)}</div><div class="lockmark">🔒</div>`;
+        el.onclick = () => {
+          // buildings the first-ascension onboarding hasn't unlocked yet are inert
+          if (el.classList.contains('locked')) { audio.play('error'); this.toast(`${def.name} unlocks on a later level`); return; }
+          audio.play('click'); this.onMode(el.classList.contains('on') ? null : { type: 'build', key });
+        };
         row.appendChild(el);
       }
       if (cat.stub) {
@@ -758,6 +824,7 @@ export class UI {
     if (!this.game) return;
     this.refreshResbar();
     this.renderUnits();
+    if (this.checklistKeys.length) this.renderChecklist();
     const focused = document.activeElement as HTMLElement | null;
     if (this.game.selected && !focused?.matches('[data-market-control]')) this.renderInspector();
     if (this.tradeOpen) this.renderTrade();

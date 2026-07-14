@@ -11,12 +11,13 @@ export interface GameSettings {
   edgePan: boolean;                  // pan when the pointer rests at a screen edge
   autoPauseOnBlur: boolean;          // open the pause menu when the tab loses focus
   quality: 'auto' | 'high' | 'low';  // render pixel-ratio strategy
+  tutorials: boolean;                // Normal-tier story briefings, build checklist & hints
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
   musicVol: 1, sfxVol: 1, panSpeed: 1,
   invertZoom: false, edgePan: false, autoPauseOnBlur: false,
-  quality: 'auto',
+  quality: 'auto', tutorials: true,
 };
 
 const KEY = 'erfgooiers.settings.v1';
@@ -36,6 +37,7 @@ export function loadSettings(): GameSettings {
       edgePan: !!s.edgePan,
       autoPauseOnBlur: !!s.autoPauseOnBlur,
       quality: s.quality === 'high' || s.quality === 'low' ? s.quality : 'auto',
+      tutorials: s.tutorials !== false, // default on for anyone without the key set
     };
   } catch { return { ...DEFAULT_SETTINGS }; }
 }

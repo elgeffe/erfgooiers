@@ -14,6 +14,9 @@ import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutat
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
 import { DEFAULT_SANDBOX, MAX_SANDBOX_STRONGHOLDS, biomeWater, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
+import { lockedBuildingsAt, objectiveBuildings, unlockedResourcesAt } from './data/buildings';
+import { VICTORY_STORY, storyFor } from './data/story';
+import type { GameSettings } from './game/Settings';
 import { campaignBiome } from './data/biomes';
 import type { BiomeKey } from './data/biomes';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
@@ -134,6 +137,20 @@ function startLevel(): void {
   }
   game.init(level.kit);
   ui.setGame(game);
+  // First-ascension onboarding: unlock the build menu a few buildings at a time
+  // and surface only the resources those buildings involve. Every harder tier
+  // (and the sandbox) opens the whole menu at once.
+  const onboarding = !sandbox && run.ascension === 0 && run.tutorials;
+  if (onboarding) {
+    const locked = lockedBuildingsAt(run.levelIndex);
+    game.lockedBuildings = new Set(locked);
+    ui.applyProgression(locked, unlockedResourcesAt(run.levelIndex));
+    // the objective's build checklist drives the ticking list and card highlight
+    ui.setChecklist(game.objective ? objectiveBuildings(game.objective.def) : []);
+  } else {
+    ui.applyProgression(null, null);
+    ui.setChecklist([]);
+  }
   ui.setPerks(run.upgrades, meta.activeGlobalBuff ? [meta.activeGlobalBuff] : []);
   controls.setGame(game);
   // sandbox trouble is configured on the setup screen; runs use the level table
@@ -185,12 +202,60 @@ function startLevel(): void {
   if ((import.meta as any).env?.DEV) (window as any).game = game;
   showScreen(null);
   if (!sandbox) Save.saveRun(run); // persist at the level's start so a reload resumes here
+  // the story briefing opens the level (Normal tier only) and the objective
+  // card becomes a doorway back to it
+  const story = onboarding ? storyFor(run.levelIndex) : undefined;
+  $('objective').classList.toggle('clickable', !!story);
+  $('objective').title = story ? 'Click to revisit the story & how-to' : '';
+  if (story) showStoryModal(run.levelIndex);
 }
 
 function disposeLevel(): void {
   view.clearWorld();
   game = null;
   currentLevel = null;
+}
+
+// ---------- first-ascension story briefings ----------
+// A briefing modal opens each Normal-tier level with one paragraph of the
+// evolving dragon-of-Het-Gooi story and concrete how-to-win hints (thinning as
+// the run goes on). It pauses the sim while open; the objective card reopens it.
+let storyPrevSpeed = 1;
+let storyOnClose: () => void = () => {};
+
+function hideStory(): void {
+  $('story').style.display = 'none';
+  const cb = storyOnClose; storyOnClose = () => {}; cb();
+}
+
+/** Show a level's story + how-to briefing. `reopened` is the objective-card
+ *  revisit — it keeps the current speed rather than assuming a fresh 1×. */
+function showStoryModal(levelIndex: number, reopened = false): void {
+  const s = storyFor(levelIndex);
+  if (!s) return;
+  $('storyChapter').textContent = `Chapter ${levelIndex} of ${RUN_LEVELS} · Het Gooi`;
+  $('storyTitle').textContent = s.title;
+  $('storyText').textContent = s.story;
+  ($('storyGoalHead') as HTMLElement).style.display = s.how.length ? '' : 'none';
+  $('storyHow').innerHTML = s.how.map(h => `<li>${h}</li>`).join('');
+  ($('storyStart') as HTMLButtonElement).textContent = reopened ? 'Back to the field' : 'Begin';
+  // pause while the briefing is up, then restore the speed we came in on
+  if (game) { storyPrevSpeed = reopened ? game.simSpeed : 1; ui.setSpeed(0); }
+  storyOnClose = () => { if (phase === 'playing') ui.setSpeed(storyPrevSpeed || 1); };
+  $('story').style.display = 'flex';
+}
+
+/** The one-time congratulations when the dragon falls on Normal — layered over
+ *  the run summary, inviting the player onward to the Hard ascension. */
+function showVictoryModal(): void {
+  $('storyChapter').textContent = 'The Hunt is Ended';
+  $('storyTitle').textContent = VICTORY_STORY.title;
+  $('storyText').textContent = VICTORY_STORY.story;
+  ($('storyGoalHead') as HTMLElement).style.display = 'none';
+  $('storyHow').innerHTML = `<li>${VICTORY_STORY.cta}</li>`;
+  ($('storyStart') as HTMLButtonElement).textContent = 'Continue';
+  storyOnClose = () => {};
+  $('story').style.display = 'flex';
 }
 
 // ---------- co-op expedition lifecycle ----------
@@ -283,6 +348,8 @@ function startCoopLevel(seed: number, levelIndex: number): void {
   ui.setGold(run!.gold);
   ui.setSandbox(false);
   ui.setCoOp(true);
+  $('objective').classList.remove('clickable'); // no story briefings in co-op
+  $('objective').title = '';
   ($('btnDebugWin') as HTMLElement).style.display = 'none'; // a local-only win would desync
   ($('sandboxbar') as HTMLElement).style.display = 'none';
   levelHardTimer = Math.round(level.hardTimer * diff.timerMult);
@@ -375,10 +442,16 @@ let pickedHero = 'erfgooier';
 /** How extreme each tier feels, at a glance (matches ASCENSION_NAMES). */
 const ASCENSION_ICONS = ['🌱', '⚔️', '🔥', '💀', '❄️', '😈'];
 
+/** Whether this run's onboarding aids are on. The very first run forces them
+ *  on (first-run flag); afterwards it follows the saved Tutorials setting.
+ *  Either can be overridden per run by the new-run panel checkbox. */
+let pickedTutorials = true;
+
 function openHeroSelect(): void {
   phase = 'heroSelect';
   pickedAscension = Math.min(pickedAscension, meta.ascension);
   if (!heroAvailable(pickedHero, meta.unlocks)) pickedHero = 'erfgooier';
+  pickedTutorials = meta.tutorialSeen ? settings.tutorials : true;
   renderHeroSelect();
   showScreen('heroselect');
 }
@@ -420,16 +493,24 @@ function renderHeroSelect(): void {
     grid.appendChild(el);
   }
   renderAscensionRow();
+  // tutorials only exist on Normal — grey the toggle out on harder tiers
+  const normal = pickedAscension === 0;
+  const row = $('newRunTutorialsRow');
+  row.style.opacity = normal ? '' : '.45';
+  const box = $('newRunTutorials') as HTMLInputElement;
+  box.disabled = !normal;
+  box.checked = !pickedTutorials; // the checkbox turns tutorials OFF
 }
 
 function startRun(): void {
   if (!heroAvailable(pickedHero, meta.unlocks)) pickedHero = 'erfgooier';
   sandbox = false;
-  run = newRun(randomSeed(), Math.min(pickedAscension, meta.ascension));
+  run = newRun(randomSeed(), Math.min(pickedAscension, meta.ascension), pickedTutorials);
   run.hero = pickedHero;
   run.gold = metaSpecialValue(meta.activeGlobalBuff, 'startGold');
   stampContract(run);
   meta.stats.runs++;
+  meta.tutorialSeen = true; // the first-run auto-on no longer applies after this
   Save.saveMeta(meta);
   clearedThisRun = 0;
   goldEarnedThisRun = 0;
@@ -587,8 +668,14 @@ function onLevelClear(): void {
   }
   Save.saveMeta(meta);
   announceCardUnlocks(statsBefore);
+  const normalVictory = last && run.ascension === 0;
   disposeLevel();
-  if (last) { phase = 'summary'; renderSummary(true); showScreen('summary'); Save.clearRun(); run = null; }
+  if (last) {
+    phase = 'summary'; renderSummary(true); showScreen('summary'); Save.clearRun(); run = null;
+    // the dragon fell on Normal: a congratulations layered over the summary,
+    // pointing the player onward to the Hard ascension
+    if (normalVictory) showVictoryModal();
+  }
   else {
     const next = run.levelIndex + 1;
     const contracts = contractsFor(run.runSeed, next, levelFor(next).objectives.length, levelFor(next).reward, ascensionForcesCurse(run.ascension));
@@ -774,6 +861,8 @@ $('introLogo').innerHTML = logoSVG(40);
 ($('btnNewRun') as HTMLButtonElement).onclick = openHeroSelect;
 ($('btnHeroBack') as HTMLButtonElement).onclick = goMenu;
 ($('btnStartRun') as HTMLButtonElement).onclick = startRun;
+// per-run tutorials toggle (checkbox turns them OFF); default follows the setting
+($('newRunTutorials') as HTMLInputElement).onchange = e => { pickedTutorials = !(e.target as HTMLInputElement).checked; };
 // the hero chip selects the mounted hero and swings the camera to them
 $('heroChip').onclick = () => {
   if (!game || !game.heroUnit || game.heroUnit.dead) return;
@@ -795,7 +884,7 @@ installSandboxTools(view, ui, {
 ($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
 
 // ---------- settings screen ----------
-installSettingsController(view, controls, openPauseMenu);
+const settings: GameSettings = installSettingsController(view, controls, openPauseMenu);
 
 // save export / import: a downloadable JSON bundle of run + Heritage progress
 ($('btnExportSave') as HTMLButtonElement).onclick = () => {
@@ -829,6 +918,14 @@ installSettingsController(view, controls, openPauseMenu);
 
 ($('btnHelp') as HTMLButtonElement).onclick = () => $('intro').style.display = 'flex';
 ($('startBtn') as HTMLButtonElement).onclick = () => $('intro').style.display = 'none';
+($('storyStart') as HTMLButtonElement).onclick = () => { audio.play('click'); hideStory(); };
+// the objective card reopens the first-ascension story briefing mid-level
+$('objective').addEventListener('click', () => {
+  if (phase !== 'playing' || !run || sandbox || coopRun || run.ascension !== 0 || !run.tutorials || !currentLevel) return;
+  if (!storyFor(currentLevel.index)) return;
+  audio.play('click');
+  showStoryModal(currentLevel.index, true);
+});
 ($('btnSumMenu') as HTMLButtonElement).onclick = goMenu;
 ($('btnDebugWin') as HTMLButtonElement).onclick = debugWin;
 ($('btnHeritage') as HTMLButtonElement).onclick = openHeritage;
