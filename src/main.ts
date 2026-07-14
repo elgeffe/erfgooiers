@@ -237,7 +237,8 @@ function objectiveBreakdownHTML(): string {
   const rows = game.objective.steps(game)
     .map(s => `<div class="ckrow ${s.done ? 'done' : 'todo'}"><span class="ckmark">${s.done ? '✓' : '○'}</span><span class="cknm">${s.label}</span></div>`)
     .join('');
-  return `<div class="ck-head">Objective — full checklist</div>${rows}`;
+  // the onboarding "Build these" list now lives here in the modal, not the HUD panel
+  return `<div class="ck-head">Objective — full checklist</div>${rows}${ui.buildChecklistHTML()}`;
 }
 
 /** Show a level's story + how-to briefing. `reopened` is the objective-card
@@ -277,22 +278,42 @@ function showObjectiveModal(): void {
   $('story').style.display = 'flex';
 }
 
-/** The one-time congratulations when the dragon falls on Normal. Merges the
- *  story payoff, the run tally and the ascension unlock into a single modal
- *  (with a proud banner) so the first win ends in one click, not two screens.
- *  Its button returns to the menu. */
-function showVictoryModal(ascensionNote = ''): void {
+/** The run's achievements as individually-marked badges: the level tally, gold
+ *  earned and Heritage banked, plus a highlighted banner when a new ascension
+ *  opens. Shared by both the Normal and the higher-ascension victory modals so
+ *  every win reads the same, proud way. */
+function victoryOutputsHTML(ascensionNote: string, cta = ''): string {
+  const badge = (ico: string, val: string, label: string) =>
+    `<div class="vout"><span class="vout-ico">${ico}</span><b>${val}</b><small>${label}</small></div>`;
+  let s = '<div class="victory-outputs">';
+  s += badge('🏆', `${clearedThisRun}/${RUN_LEVELS}`, 'Levels cleared');
+  s += badge('🪙', `${goldEarnedThisRun}`, 'Gold earned');
+  s += badge('🏛️', `${meta.heritage}`, 'Heritage banked');
+  s += badge('🗺️', `${meta.stats.levelsCleared}`, 'Lifetime cleared');
+  s += '</div>';
+  if (ascensionNote) s += `<div class="vout-banner"><span class="vout-ico">⬆</span><div class="vout-banner-tx"><b>New ascension unlocked</b><span>${ascensionNote.replace(/^New ascension unlocked:\s*/, '')}</span></div></div>`;
+  if (cta) s += `<div class="vout-note">${cta}</div>`;
+  return s;
+}
+
+/** The one-time congratulations when the dragon falls. Merges the story payoff,
+ *  the run tally and any ascension unlock into a single proud modal so a win
+ *  ends in one click, not two screens. `higher` is a win above Normal, which
+ *  drops the first-run onboarding story for a shorter salute. Button → menu. */
+function showVictoryModal(opts: { ascensionNote?: string; higher?: boolean; tierName?: string } = {}): void {
+  const { ascensionNote = '', higher = false, tierName = '' } = opts;
   ($('storyImage') as HTMLElement).style.display = '';
   $('storyImage').innerHTML = VICTORY_IMAGE;
-  $('storyChapter').textContent = 'The Hunt is Ended';
-  $('storyTitle').textContent = VICTORY_STORY.title;
-  $('storyText').textContent = VICTORY_STORY.story;
+  $('storyChapter').textContent = higher
+    ? `${tierName || 'Ascension'} cleared · Het Gooi`
+    : 'The Hunt is Ended';
+  $('storyTitle').textContent = higher ? 'The Dragon Falls Again' : VICTORY_STORY.title;
+  $('storyText').textContent = higher
+    ? 'The beast is slain once more, on a harder road than the last. Het Gooi stands, its people free, and the songs grow longer with every dragon dragged home to die.'
+    : VICTORY_STORY.story;
   ($('storyGoalHead') as HTMLElement).style.display = 'none';
-  const bits = [`<li>${VICTORY_STORY.cta}</li>`];
-  if (ascensionNote) bits.push(`<li><b>⬆ ${ascensionNote}</b></li>`);
-  bits.push(`<li>Cleared all ${RUN_LEVELS} levels of Het Gooi · gold earned <b>${goldEarnedThisRun}</b> · <b>${meta.heritage}</b> Heritage banked.</li>`);
-  $('storyHow').innerHTML = bits.join('');
-  $('storyObjective').innerHTML = '';
+  $('storyHow').innerHTML = '';
+  $('storyObjective').innerHTML = victoryOutputsHTML(ascensionNote, higher ? '' : VICTORY_STORY.cta);
   ($('storyStart') as HTMLButtonElement).textContent = 'Return to Het Gooi';
   storyOnClose = () => goMenu();
   $('story').style.display = 'flex';
@@ -711,18 +732,15 @@ function onLevelClear(): void {
   announceCardUnlocks(statsBefore);
   const normalVictory = last && run.ascension === 0;
   const ascensionNote = summaryNote;
+  const clearedTierName = last ? ASCENSION_NAMES[run.ascension] : '';
   disposeLevel();
   if (last) {
     Save.clearRun(); run = null;
     phase = 'summary';
-    if (normalVictory) {
-      // one merged congratulations — story payoff + ascension unlock + tally —
-      // ending in a single click instead of a victory modal over a summary screen
-      showScreen(null); // hide the HUD; the modal brings its own backdrop
-      showVictoryModal(ascensionNote);
-    } else {
-      renderSummary(true); showScreen('summary');
-    }
+    // every win — Normal or higher — ends on the same proud victory modal with
+    // its badged outputs, ending in a single click instead of a summary screen
+    showScreen(null); // hide the HUD; the modal brings its own backdrop
+    showVictoryModal({ ascensionNote, higher: !normalVictory, tierName: clearedTierName });
   }
   else {
     const next = run.levelIndex + 1;
@@ -929,7 +947,7 @@ installSandboxTools(view, ui, {
   getRun: () => run,
   rebuildModifiers: rebuildSandboxMods,
 });
-($('btnClearSave') as HTMLButtonElement).onclick = clearSaveData;
+// (the homepage no longer carries a Clear-save button — it lives in Settings)
 
 // ---------- settings screen ----------
 const settings: GameSettings = installSettingsController(view, controls, openPauseMenu);
@@ -989,12 +1007,18 @@ $('objective').addEventListener('click', () => {
 
 // ---------- audio ----------
 const btnSound = $('btnSound') as HTMLButtonElement;
+const btnMenuSound = $('btnMenuSound') as HTMLButtonElement;
 function renderSound(): void {
-  btnSound.textContent = audio.isMuted ? '🔇' : '🔊';
-  btnSound.classList.toggle('off', audio.isMuted);
-  btnSound.title = audio.isMuted ? 'Sound off — click to unmute' : 'Sound on — click to mute';
+  // both the in-game control and the homepage button reflect the same state
+  for (const btn of [btnSound, btnMenuSound]) {
+    btn.textContent = audio.isMuted ? '🔇' : '🔊';
+    btn.classList.toggle('off', audio.isMuted);
+    btn.title = audio.isMuted ? 'Sound off — click to unmute' : 'Sound on — click to mute';
+  }
 }
-btnSound.onclick = e => { e.stopPropagation(); audio.toggleMute(); renderSound(); };
+const toggleSound = (e: Event): void => { e.stopPropagation(); audio.toggleMute(); renderSound(); };
+btnSound.onclick = toggleSound;
+btnMenuSound.onclick = toggleSound;
 // Start the score immediately where the browser allows it (returning visitors
 // with prior engagement); everyone else gets it on their very first gesture.
 audio.unlock();

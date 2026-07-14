@@ -109,8 +109,13 @@ export class UI {
     document.querySelectorAll<HTMLElement>('.bcard[data-key]').forEach(el => {
       el.classList.toggle('locked', lockedSet.has(el.dataset.key!));
     });
+    // clams only exist on coastal maps: where no clam digger can be raised, the
+    // resource is meaningless, so hide it whatever the progression set says
+    const banned = this.game ? new Set(this.game.disabledBuildings()) : new Set<string>();
+    const noClams = banned.has('clamdigger');
     for (const k of RES_SHOWN) {
-      this.resRowEls[k].style.display = !resources || resources.has(k) ? '' : 'none';
+      const show = (!resources || resources.has(k)) && !(k === 'clam' && noClams);
+      this.resRowEls[k].style.display = show ? '' : 'none';
     }
   }
 
@@ -122,30 +127,25 @@ export class UI {
     this.renderChecklist();
   }
 
-  /** Redraw the objective checklist and move the "build this next" card
-   *  highlight to the first building not yet placed. Cheap; called each tick. */
+  /** Move the "build this next" card highlight to the first building not yet
+   *  placed. The full "Build these" list itself lives in the objective modal
+   *  (see buildChecklistHTML), not in the HUD panel. Cheap; called each tick. */
   private renderChecklist(): void {
     const box = $('objChecklist');
+    // the build list is shown in the objective modal now, never in the panel
+    box.style.display = 'none'; box.innerHTML = '';
     // clear any previous suggestion highlight (cards and their tabs) first
     document.querySelectorAll<HTMLElement>('.bcard.suggest, .btab.suggest').forEach(el => el.classList.remove('suggest'));
-    if (!this.game || !this.checklistKeys.length) { box.style.display = 'none'; box.innerHTML = ''; this.placeInspector(); return; }
+    if (!this.game || !this.checklistKeys.length) { this.placeInspector(); return; }
     const g = this.game;
     const built = (key: string) => g.buildings.some(b => b.key === key);
     const placed = (key: string) => built(key) || g.sites.some(s => s.key === key);
-    let rows = '<div class="ck-head">Build these</div>';
     let nextKey: string | null = null;
+    // the first not-yet-placed building is the one we nudge the player toward
     for (const key of this.checklistKeys) {
-      const def = DEFS[key as keyof typeof DEFS];
-      if (!def) continue;
-      const done = built(key);
-      // the first not-yet-placed building is the one we nudge the player toward
-      if (!nextKey && !placed(key)) nextKey = key;
-      const state = done ? 'done' : placed(key) ? 'wip' : 'todo';
-      const mark = done ? '✓' : placed(key) ? '…' : '○';
-      rows += `<div class="ckrow ${state}"><span class="ckmark">${mark}</span><span class="ckicon">${buildingIconSVG(key as any, def)}</span><span class="cknm">${def.name}</span></div>`;
+      if (!(key in DEFS)) continue;
+      if (!placed(key)) { nextKey = key; break; }
     }
-    box.innerHTML = rows;
-    box.style.display = 'flex';
     if (nextKey) {
       const card = document.querySelector<HTMLElement>(`.bcard[data-key="${nextKey}"]`);
       if (card && !card.classList.contains('bio-hidden')) {
@@ -157,8 +157,26 @@ export class UI {
         if (tab && !tab.classList.contains('on')) tab.classList.add('suggest');
       }
     }
-    // the checklist changes the objective card's height — keep the inspector clear
     this.placeInspector();
+  }
+
+  /** The onboarding "Build these" list as checklist rows, for the objective
+   *  modal. Empty when there's no checklist (higher ascensions, combat levels). */
+  buildChecklistHTML(): string {
+    if (!this.game || !this.checklistKeys.length) return '';
+    const g = this.game;
+    const built = (key: string) => g.buildings.some(b => b.key === key);
+    const placed = (key: string) => built(key) || g.sites.some(s => s.key === key);
+    let rows = '';
+    for (const key of this.checklistKeys) {
+      const def = DEFS[key as keyof typeof DEFS];
+      if (!def) continue;
+      const done = built(key);
+      const state = done ? 'done' : placed(key) ? 'wip' : 'todo';
+      const mark = done ? '✓' : placed(key) ? '…' : '○';
+      rows += `<div class="ckrow ${state}"><span class="ckmark">${mark}</span><span class="ckicon">${buildingIconSVG(key as any, def)}</span><span class="cknm">${def.name}</span></div>`;
+    }
+    return `<div class="ck-head">Build these</div>${rows}`;
   }
 
   /** Update build-menu card costs to reflect the run's cost-reducing upgrades. */
@@ -717,7 +735,7 @@ export class UI {
       // show the shortfall as a negative pill so the deficit reads at a glance
       const n = k === 'villager' && m.deficit > 0 ? -m.deficit : m.count;
       const tip = k === 'villager' ? `Villagers ready to work · ${m.note}` : `${label}: ${m.note}`;
-      return `<span class="utab${m.status === 'bad' ? ' short' : ''}" title="${tip}">${label} <b>${n}</b> <i class="kpi ${m.status}"></i></span>`;
+      return `<span class="utab${m.status === 'bad' ? ' short' : ''}" title="${tip}"><span class="ulbl">${label}</span><b>${n}</b><i class="kpi ${m.status}"></i></span>`;
     }).join('');
     const total = this.game ? this.game.units.filter(u => !u.dead && u.faction === 'player').length : 0;
     toggle.innerHTML = `<h3 class="serif wtitle">${shortage ? '' : ''}Workers · ${total}</h3><div class="wkpis">${chips}</div>`;

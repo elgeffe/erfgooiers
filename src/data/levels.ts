@@ -148,9 +148,10 @@ export const LEVELS: LevelDef[] = [
     world: { w: 68, h: 68, treeStands: 12, oreVeins: 10, waterScale: 1.05, meadows: 6, goldPiles: 6, mountains: 2, ruins: 3, frontier: true },
     kit: { stock: { timber: 20, stone: 16, bread: 14, coin: 16, weapon: 3, armor: 1 }, serfs: 3, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 11 }, { kind: 'archer', count: 8 }, { kind: 'knight', count: 3 }],
-    // the dead walk the fortified village: skeletons man its outworks
-    enemies: { keep: { guards: 14, kinds: ['orc', 'skeleton', 'skelarcher'], fortified: true }, towers: 3,
-      camps: [{ count: 2, guards: 7, kinds: ['skeleton', 'skelarcher'] }],
+    // the first frontier assault is a cluster of enemy encampments, nothing
+    // walled yet: raze the four skeleton camps that hold the village. (Higher
+    // ascensions add fortified strongholds — see levelPlanning.)
+    enemies: { camps: [{ count: 4, guards: 9, kinds: ['orc', 'skeleton', 'skelarcher'] }],
       commander: { every: 70, kind: 'orc', count: 4, from: 'camp' },
       waves: [{ at: 440, kind: 'troll', count: 3 }, { at: 580, kind: 'zombie', count: 6 }] },
     timeTarget: 900, hardTimer: 840, reward: 95 },
@@ -160,8 +161,9 @@ export const LEVELS: LevelDef[] = [
     world: { w: 80, h: 80, treeStands: 14, oreVeins: 12, waterScale: 1.1, meadows: 6, goldPiles: 7, mountains: 3, ruins: 2, frontier: true, frontiers: 2 },
     kit: { stock: { timber: 22, stone: 18, bread: 16, coin: 20, weapon: 4, armor: 2 }, serfs: 3, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 13 }, { kind: 'archer', count: 10 }, { kind: 'knight', count: 4 }],
-    // the demon broods over the keep's quarter instead of raiding your town;
-    // its garrison is a full host of the living and the dead
+    // a proper fortress this time: a real curtain wall with a barred gate and
+    // watchtowers standing behind the ramparts. The demon broods over the
+    // keep's quarter and its garrison is a full host of the living and the dead
     enemies: { keep: { guards: 18, kinds: ['orc', 'troll', 'skeleton', 'skelarcher', 'zombie'], fortified: true }, towers: 4, boss: 'demon',
       camps: [{ count: 2, guards: 9, kinds: ['zombie', 'skeleton', 'skelarcher'] }],
       commander: { every: 60, kind: 'orc', count: 5, from: 'camp' },
@@ -173,8 +175,10 @@ export const LEVELS: LevelDef[] = [
     world: { w: 86, h: 86, treeStands: 16, oreVeins: 13, waterScale: 1.1, meadows: 7, goldPiles: 9, mountains: 4, frontier: true, lairStages: 4 },
     kit: { stock: { timber: 24, stone: 18, bread: 20, coin: 28, weapon: 5, armor: 2 }, serfs: 3, laborers: 3 },
     startArmy: [{ kind: 'soldier', count: 17 }, { kind: 'archer', count: 12 }, { kind: 'knight', count: 6 }],
-    // Four open mountain pockets form one escalating road: an outlying camp,
-    // a fortress, a walled fortress, and finally the dragon's own lair.
+    // One connected mountain corridor, sealed by a gated cross-wall at every
+    // stage: an outlying camp, a fortress, a walled fortress, and finally the
+    // dragon's own lair. Each gate is held by its garrison, so the dragon's
+    // quarter cannot be reached without fighting through all three in turn.
     enemies: { stages: [
       { structure: 'camp', guards: 8, kinds: ['skeleton', 'skelarcher', 'orc'] },
       { structure: 'fortress', guards: 12, towers: 2, kinds: ['orc', 'skeleton', 'skelarcher', 'zombie'] },

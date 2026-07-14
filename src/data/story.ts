@@ -114,51 +114,53 @@ export function storyFor(level: number): LevelStory | undefined {
 }
 
 /** A proud, self-contained victory banner for the dragon-slain modal: a golden
- *  sunrise over Het Gooi, the erfgooier hero on the mound with sword and pennant
- *  raised, and the fallen dragon beneath. Inline SVG (no external asset), sized
- *  to the modal width and theme-agnostic. */
+ *  sunrise over Het Gooi and a lone armoured knight on the mound with their
+ *  sword raised high. Inline SVG (no external asset), sized to the modal width
+ *  and theme-agnostic. */
 export const VICTORY_IMAGE = `
-<svg viewBox="0 0 440 168" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Victory over the dragon" style="display:block">
+<svg viewBox="0 0 440 168" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="A knight raises their sword in victory" style="display:block">
   <defs>
     <linearGradient id="vsky" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#3a2b4a"/><stop offset=".5" stop-color="#8a4a3a"/><stop offset="1" stop-color="#e0a341"/>
     </linearGradient>
-    <radialGradient id="vsun" cx="50%" cy="88%" r="60%">
+    <radialGradient id="vsun" cx="50%" cy="90%" r="62%">
       <stop offset="0" stop-color="#ffe9a8"/><stop offset=".5" stop-color="#ffd24a" stop-opacity=".9"/><stop offset="1" stop-color="#ffd24a" stop-opacity="0"/>
     </radialGradient>
+    <linearGradient id="vsteel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eef2f7"/><stop offset="1" stop-color="#98a2ae"/>
+    </linearGradient>
   </defs>
   <rect width="440" height="168" fill="url(#vsky)"/>
-  <circle cx="220" cy="150" r="130" fill="url(#vsun)"/>
-  <g stroke="#ffe9a8" stroke-width="2" opacity=".5" stroke-linecap="round">
-    <path d="M220 150 L120 10"/><path d="M220 150 L180 4"/><path d="M220 150 L260 4"/><path d="M220 150 L320 10"/><path d="M220 150 L60 60"/><path d="M220 150 L380 60"/>
+  <circle cx="220" cy="150" r="140" fill="url(#vsun)"/>
+  <g stroke="#ffe9a8" stroke-width="2" opacity=".42" stroke-linecap="round">
+    <path d="M220 150 L120 10"/><path d="M220 150 L180 4"/><path d="M220 150 L260 4"/><path d="M220 150 L320 10"/><path d="M220 150 L50 66"/><path d="M220 150 L390 66"/>
   </g>
   <path d="M0 150 Q90 116 180 138 T440 128 V168 H0 Z" fill="#3f6d3a"/>
   <path d="M0 168 Q120 132 250 152 T440 150 V168 H0 Z" fill="#2f5330"/>
-  <!-- fallen dragon: a long green neck and horned head laid low on the grass -->
-  <g transform="translate(286 130)">
-    <path d="M0 8 Q40 -6 96 6 Q70 20 40 18 Q16 18 0 8 Z" fill="#3c5a34"/>
-    <path d="M96 6 q22 -2 30 8 q-14 8 -30 4 q-8 -6 0 -12 Z" fill="#33512c"/>
-    <path d="M112 2 l10 -12 M120 4 l14 -8" stroke="#25301d" stroke-width="3" fill="none" stroke-linecap="round"/>
-    <circle cx="118" cy="10" r="2.3" fill="#1a1f14"/>
-    <path d="M40 18 l-6 12 M60 16 l4 12" stroke="#33512c" stroke-width="4" fill="none" stroke-linecap="round"/>
-  </g>
-  <!-- the hero triumphant on the mound: sword and pennant raised -->
-  <g transform="translate(150 96)">
-    <ellipse cx="4" cy="60" rx="42" ry="8" fill="#284226"/>
-    <rect x="-3" y="26" width="14" height="30" rx="4" fill="#5a4a6a"/>
-    <circle cx="4" cy="18" r="9" fill="#e8c9a0"/>
-    <path d="M-1 10 a9 9 0 0 1 10 0 l-1 -6 -4 3 -4 -3 Z" fill="#c9a94e"/>
-    <!-- raised sword arm -->
-    <path d="M9 30 L30 -2" stroke="#e8c9a0" stroke-width="6" stroke-linecap="round"/>
-    <path d="M30 -2 L40 -36" stroke="#dfe6ee" stroke-width="5" stroke-linecap="round"/>
-    <path d="M25 -2 L37 -2" stroke="#c9a94e" stroke-width="4" stroke-linecap="round"/>
-    <!-- pennant arm -->
-    <path d="M-1 30 L-20 6" stroke="#e8c9a0" stroke-width="6" stroke-linecap="round"/>
-    <path d="M-20 6 L-24 -34" stroke="#7a4f2d" stroke-width="3"/>
-    <path d="M-24 -32 q22 4 22 14 q-14 -2 -22 6 Z" fill="#8a4fbf"/>
+  <!-- the victorious knight on the central mound, sword raised high -->
+  <g transform="translate(214 78)">
+    <ellipse cx="6" cy="70" rx="38" ry="8" fill="#284226"/>
+    <!-- legs in plate -->
+    <rect x="-3" y="44" width="8" height="24" rx="3" fill="#6a7480"/>
+    <rect x="9" y="44" width="8" height="24" rx="3" fill="#5c6672"/>
+    <!-- torso in steel plate with a red surcoat -->
+    <path d="M-9 20 Q6 11 21 20 L18 47 Q6 53 -6 47 Z" fill="url(#vsteel)"/>
+    <path d="M-3 30 L15 30 L11 49 L1 49 Z" fill="#7b2233"/>
+    <path d="M6 16 L6 47" stroke="#7d8794" stroke-width="1.2"/>
+    <!-- shield-side arm, lowered at the flank -->
+    <path d="M-8 24 L-14 46" stroke="#9aa4b0" stroke-width="6" stroke-linecap="round"/>
+    <!-- helm with a proud plume -->
+    <circle cx="6" cy="8" r="9" fill="url(#vsteel)"/>
+    <rect x="1" y="5" width="10" height="3" fill="#3a4048"/>
+    <path d="M6 -1 q11 -9 5 -21 q-3 11 -9 13 Z" fill="#c9354a"/>
+    <!-- sword arm thrust to the sky -->
+    <path d="M19 22 L35 -6" stroke="#9aa4b0" stroke-width="6" stroke-linecap="round"/>
+    <path d="M35 -6 L47 -48" stroke="#dfe6ee" stroke-width="5" stroke-linecap="round"/>
+    <path d="M30 -4 L44 -8" stroke="#c9a94e" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="48" cy="-50" r="3.6" fill="#fff3c4"/>
   </g>
   <g fill="#ffe9a8" opacity=".85">
-    <circle cx="70" cy="30" r="2"/><circle cx="110" cy="52" r="1.6"/><circle cx="350" cy="34" r="2"/><circle cx="392" cy="58" r="1.6"/><circle cx="250" cy="24" r="1.6"/>
+    <circle cx="70" cy="30" r="2"/><circle cx="110" cy="52" r="1.6"/><circle cx="350" cy="30" r="2"/><circle cx="392" cy="54" r="1.6"/><circle cx="250" cy="20" r="1.6"/>
   </g>
 </svg>`;
 

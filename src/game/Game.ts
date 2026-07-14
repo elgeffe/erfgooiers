@@ -175,7 +175,7 @@ export class Game {
       spawnBoss: (kind, fromEdge, zone) => this.spawnBoss(kind, fromEdge, zone),
       spawnStronghold: (key, guards, kinds, zone) => this.spawnStronghold(key, guards, kinds, zone),
       spawnCampNear: (x, y, guards, kinds) => this.spawnCampNear(x, y, guards, kinds),
-      fortifyStronghold: building => this.fortifyStronghold(building),
+      fortifyStronghold: (building, innerTowers) => this.fortifyStronghold(building, innerTowers),
       spawnTowerNear: building => this.spawnTowerNear(building),
       spawnRaid: (kind, count, from) => this.spawnRaid(kind, count, from),
       summonWave: (kind, count) => this.summonWave(kind, count),
@@ -789,8 +789,8 @@ export class Game {
 
   /** Ring a keep with walls and one barred gate facing the player's town.
    *  Terrain that refuses a segment simply leaves a rough gap. */
-  private fortifyStronghold(b: Building): void {
-    this.enemySpawner.fortifyStronghold(b);
+  private fortifyStronghold(b: Building, innerTowers?: number): void {
+    this.enemySpawner.fortifyStronghold(b, innerTowers);
   }
 
   private spawnTowerNear(b: Building): void {
