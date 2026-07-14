@@ -12,6 +12,17 @@ import type { Coord, Formation, Mode, Unit } from '../types';
 const RIGHT = new THREE.Vector3(1, 0, -1).normalize();
 const FWD = new THREE.Vector3(-1, 0, -1).normalize();
 
+// Firefox on macOS treats Shift+right-click as a hardcoded escape hatch that
+// forces the native context menu and ignores the page's preventDefault, which
+// clobbers the Shift-to-chain order gesture. On the Mac we chain with Cmd
+// (metaKey) instead, which the browser doesn't reserve; everywhere else keeps
+// Shift. `event.metaKey` is Cmd on the Mac and the (unused) Windows key on PCs,
+// so gating on the platform keeps a stray Windows-key press from queueing.
+const IS_MAC = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || navigator.userAgent || '');
+/** True when the pointer event carries the chain-order modifier for this OS. */
+const isQueueModifier = (e: { shiftKey: boolean; metaKey: boolean }): boolean =>
+  IS_MAC ? e.metaKey : e.shiftKey;
+
 /**
  * Camera + pointer/keyboard interaction: panning, zoom, placement mode, road
  * painting, demolishing and selection. Owns the current interaction `mode` and
@@ -307,7 +318,7 @@ export class Controls {
    *  the command behind any already in flight instead of replacing it. */
   private beginOrder(e: PointerEvent): void {
     if (!this.game) return;
-    const queue = e.shiftKey;
+    const queue = isQueueModifier(e);
     const gp = this.view.groundPoint(e.clientX, e.clientY);
     // Screen-space picking matches the visible body in the isometric view;
     // ground-only picking can land behind a tall unit when its torso is clicked.
