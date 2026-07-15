@@ -226,6 +226,10 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 .perkbuy{width:100%;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.05);color:inherit;text-align:left;cursor:pointer;font:inherit;}
 .perkbuy:hover:not(:disabled){background:rgba(217,164,65,.12);}
 .perkbuy:disabled{opacity:.38;cursor:not-allowed;}
+.perksell{display:flex;align-items:center;width:100%;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.05);color:inherit;text-align:left;cursor:pointer;font:inherit;}
+.perksell:hover{background:rgba(210,90,70,.14);}
+.perksell .pk-remove{flex:none;margin-left:auto;padding-left:8px;font-size:10px;font-weight:600;color:var(--bad,#d25a46);opacity:.55;}
+.perksell:hover .pk-remove{opacity:1;}
 #runctl #btnPerks{background:rgba(217,164,65,.16);border-color:rgba(217,164,65,.5);}
 /* ---------- minimap ---------- */
 #minimapWrap{position:absolute;right:12px;bottom:12px;background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:10px;padding:6px;}
