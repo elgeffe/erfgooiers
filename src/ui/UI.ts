@@ -531,7 +531,13 @@ export class UI {
       document.querySelectorAll<HTMLElement>('#inspBody .market-row').forEach(row => {
         const sel = row.querySelector('select') as HTMLSelectElement;
         const amt = row.querySelector('input') as HTMLInputElement;
-        if (sel && sel.value !== '-') orders.push({ item: sel.value as ItemKey, amount: Number(amt.value) });
+        if (!sel || sel.value === '-') return;
+        // A freshly picked resource leaves the units field at its 0 default;
+        // configure() drops zero-amount orders, so seed a sensible quantity
+        // whenever a good is assigned but no amount has been set yet.
+        let amount = Number(amt.value);
+        if (!(amount > 0)) { amount = 10; amt.value = '10'; }
+        orders.push({ item: sel.value as ItemKey, amount });
       });
       this.game!.configureMarket(b, orders);
       audio.play('click');

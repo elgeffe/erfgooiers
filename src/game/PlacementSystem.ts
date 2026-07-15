@@ -270,7 +270,7 @@ export class PlacementSystem {
     if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.ports.toast('No gold deposits in range', 'err', owner); return; }
     if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.ports.toast('No coal deposits in range', 'err', owner); return; }
     if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.ports.toast('No iron deposits in range — build near the rusty rocks', 'err', owner); return; }
-    if (def.gather?.node === 'fish' && !this.lakeInRange(tx, ty, def.gather.range)) { this.ports.toast('No open water in range — build on the shore', 'err', owner); return; }
+    if (def.gather?.node === 'fish' && !this.fishingSpotInRange(tx, ty, def.gather.range)) { this.ports.toast('No open water in range — build on the shore', 'err', owner); return; }
     if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.ports.toast('Warning: few trees nearby', 'err', owner);
     const cost = this.modsFor(owner).buildingCost(def) as Record<string, number>;
     for (const item in cost) {
@@ -386,11 +386,17 @@ export class PlacementSystem {
     return false;
   }
 
-  private lakeInRange(tx: number, ty: number, range: number): boolean {
+  /** Can a fisher actually work from here? Mirror the worker's node search: a
+   *  clear shore tile (grass, not the fishery's own 2×2 footprint) that touches
+   *  open water. Merely having water in range is not enough — if the only water
+   *  is deep beyond the shore, the fisher can never reach a fishing spot. */
+  private fishingSpotInRange(tx: number, ty: number, range: number): boolean {
     for (let y = Math.max(0, ty - range); y <= Math.min(this.world.H - 1, ty + 1 + range); y++)
       for (let x = Math.max(0, tx - range); x <= Math.min(this.world.W - 1, tx + 1 + range); x++) {
+        if (x >= tx && x <= tx + 1 && y >= ty && y <= ty + 1) continue; // the fishery's own footprint
         const tile = this.world.tiles[y][x];
-        if (tile.type === 'water' && tile.lake) return true;
+        if (tile.type !== 'grass' || tile.b || tile.site || tile.tree || tile.dep || tile.road || tile.field) continue;
+        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => this.world.T(x + dx, y + dy)?.type === 'water')) return true;
       }
     return false;
   }
