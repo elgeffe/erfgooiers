@@ -56,13 +56,6 @@
   <div id="inspBody"></div>
 </div>
 
-<div id="perkpanel" class="panel">
-  <button id="closePerks">✕</button>
-  <h3 class="serif">Heritage &amp; Power-ups</h3>
-  <div id="perklist"></div>
-  <div class="hnote">Cards you carry this run — permanent Heritage unlocks and power-ups bought in the shop.</div>
-</div>
-
 <div id="tradepanel" class="panel">
   <button id="closeTrade">✕</button>
   <h3 class="serif">Trade</h3>
@@ -114,9 +107,6 @@
   <div class="sb-group" id="sbWave"><span class="sb-label">Raids</span>
     <button id="sbWaveOpen" title="Compose a raid wave — pick the units, the size and an optional timer">⚔️ Summon wave…</button>
   </div>
-  <div class="sb-group" id="sbCards"><span class="sb-label">Cards</span>
-    <button id="sbCardsOpen" title="Add or remove heritage and power-up cards freely">🃏 Cards…</button>
-  </div>
 </div>
 
 <!-- ---------- sandbox wave composer (modal) ---------- -->
@@ -141,10 +131,12 @@
 <div id="sbcardmodal" class="screen">
   <div class="card sbcard-card">
     <h1 class="serif">Heritage &amp; power-ups</h1>
-    <div class="tag">Stack your run however you like — click a card below to add it, click one of your cards to remove it. No gold, no limits but the five card slots.</div>
+    <div class="tag" id="sbcardTag"></div>
+    <div class="shopsect" id="sbcardHeritageSect">Heritage — permanent</div>
+    <div id="sbcardHeritage" class="shopgrid"></div>
     <div class="shopsect" id="sbcardOwnedLabel">Your cards</div>
     <div id="sbcardOwned" class="shopgrid"></div>
-    <div class="shopsect">Power-ups — click to add</div>
+    <div class="shopsect" id="sbcardAvailSect">Power-ups — click to add</div>
     <div id="sbcardAvail" class="shopgrid"></div>
     <div class="btns row">
       <button id="sbcardDone">Done</button>
