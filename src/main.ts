@@ -73,6 +73,18 @@ ui.onSandboxCard = id => {
   return true;
 };
 
+ui.onSandboxRemoveCard = id => {
+  if (!sandbox || !run || !game) return false;
+  const i = run.upgrades.lastIndexOf(id);
+  if (i === -1) return false;
+  run.upgrades.splice(i, 1);
+  rebuildSandboxMods();
+  audio.play('click');
+  const def = UPGRADE_BY_ID[id];
+  if (def) ui.toast(`${def.name} removed`);
+  return true;
+};
+
 let meta: MetaState = Save.loadMeta();
 let run: RunState | null = null;
 let game: Game | null = null;

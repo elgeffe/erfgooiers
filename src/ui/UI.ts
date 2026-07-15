@@ -33,6 +33,7 @@ function fmtTime(s: number): string {
 export class UI {
   onMode: (m: Mode) => void = () => {};
   onSandboxCard: (id: string) => boolean = () => false;
+  onSandboxRemoveCard: (id: string) => boolean = () => false;
 
   private game: Game | null = null;
   private readonly resEls: Record<string, HTMLElement> = {};
@@ -845,7 +846,14 @@ export class UI {
     const ids = Object.keys(counts);
     s += '<div class="sect">Power-ups this run</div>';
     if (ids.length) {
-      for (const id of ids) { const d = UPGRADE_BY_ID[id]; if (d) s += this.perkRow(d.icon, d.name + (counts[id] > 1 ? ` ×${counts[id]}` : ''), d.desc); }
+      for (const id of ids) {
+        const d = UPGRADE_BY_ID[id]; if (!d) continue;
+        const name = d.name + (counts[id] > 1 ? ` ×${counts[id]}` : '');
+        // in sandbox each held card is clickable to remove one instance
+        s += this.sandbox
+          ? `<button class="perkrow perksell" data-remove="${id}"><span class="pk-icon">${d.icon}</span><span class="pk-body"><span class="pk-name">${name}</span><span class="pk-desc">${d.desc}</span></span><span class="pk-remove">remove ✕</span></button>`
+          : this.perkRow(d.icon, name, d.desc);
+      }
     } else {
       s += `<div class="invrow" style="color:var(--ink-dim)">${this.sandbox ? 'Choose free cards below.' : 'No shop power-ups yet — buy some between levels.'}</div>`;
     }
@@ -858,11 +866,18 @@ export class UI {
       }
     }
     $('perklist').innerHTML = s;
-    if (this.sandbox) $('perklist').querySelectorAll<HTMLButtonElement>('[data-card]').forEach(button => {
-      button.onclick = () => {
-        if (this.onSandboxCard(button.dataset.card!)) this.renderPerks();
-      };
-    });
+    if (this.sandbox) {
+      $('perklist').querySelectorAll<HTMLButtonElement>('[data-card]').forEach(button => {
+        button.onclick = () => {
+          if (this.onSandboxCard(button.dataset.card!)) this.renderPerks();
+        };
+      });
+      $('perklist').querySelectorAll<HTMLButtonElement>('[data-remove]').forEach(button => {
+        button.onclick = () => {
+          if (this.onSandboxRemoveCard(button.dataset.remove!)) this.renderPerks();
+        };
+      });
+    }
   }
 
   // ---------- toasts ----------
