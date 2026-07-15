@@ -50,11 +50,11 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'master-builders', name: 'Master Builders', desc: 'Buildings raise 25% faster', icon: '🔨', pool: 'economy', rarity: 'common', basePrice: 20,
     apply: [{ stat: 'buildTime', mult: 0.75 }] },
 
-  { id: 'sharp-tools', name: 'Sharp Tools', desc: 'Gathering is 18% faster', icon: '🪓', pool: 'economy', rarity: 'common', basePrice: 24,
-    apply: [{ stat: 'gatherTime', mult: 0.82 }] },
+  { id: 'sharp-tools', name: 'Sharp Tools', desc: 'Gathering is 20% faster', icon: '🪓', pool: 'economy', rarity: 'common', basePrice: 24,
+    apply: [{ stat: 'gatherTime', mult: 0.80 }] },
 
-  { id: 'busy-workshops', name: 'Busy Workshops', desc: 'Crafting is 18% faster', icon: '⚙️', pool: 'economy', rarity: 'common', basePrice: 24,
-    apply: [{ stat: 'recipeTime', mult: 0.82 }] },
+  { id: 'busy-workshops', name: 'Busy Workshops', desc: 'Crafting is 20% faster', icon: '⚙️', pool: 'economy', rarity: 'common', basePrice: 24,
+    apply: [{ stat: 'recipeTime', mult: 0.80 }] },
 
   { id: 'deep-veins', name: 'Deep Veins', desc: 'Mining stone, gold & coal 25% faster', icon: '⛏️', pool: 'economy', rarity: 'uncommon', basePrice: 26,
     apply: [
@@ -78,11 +78,14 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'extra-serf', name: 'Willing Hands', desc: 'Start each level with +1 serf', icon: '🧺', pool: 'economy', rarity: 'common', basePrice: 22,
     apply: [{ stat: 'extraSerf', add: 1 }] },
 
-  { id: 'well-fed', name: 'Full Larder', desc: 'Start each level with +4 bread', icon: '🍞', pool: 'economy', rarity: 'common', basePrice: 14,
-    apply: [{ stat: 'startBread', add: 4 }] },
+  { id: 'stone-stockpile', name: 'Stone Stockpile', desc: 'Start each level with +20 stone', icon: '🪨', pool: 'economy', rarity: 'common', basePrice: 14,
+    apply: [{ stat: 'startStone', add: 20 }] },
 
-  { id: 'stout-stores', name: 'Stout Stores', desc: 'Start with +3 timber & +3 stone', icon: '📦', pool: 'economy', rarity: 'common', basePrice: 18,
-    apply: [{ stat: 'startTimber', add: 3 }, { stat: 'startStone', add: 3 }] },
+  { id: 'first-prize', name: 'First Prize', desc: 'Start each level with +10 gold', icon: '🏅', pool: 'economy', rarity: 'common', basePrice: 14,
+    apply: [{ stat: 'startGold', add: 10 }] },
+
+  { id: 'stout-stores', name: 'Stout Stores', desc: 'Start with +10 timber & +10 stone', icon: '📦', pool: 'economy', rarity: 'common', basePrice: 18,
+    apply: [{ stat: 'startTimber', add: 10 }, { stat: 'startStone', add: 10 }] },
 
   // ---- military pool (offered once combat levels are in reach) ----
   { id: 'forged-blades', name: 'Forged Blades', desc: 'Your fighters deal 15% more damage', icon: '⚔️', pool: 'military', rarity: 'uncommon', basePrice: 26,
@@ -93,10 +96,7 @@ export const UPGRADES: UpgradeDef[] = [
       { stat: 'combat:damage', mult: 1.15, filter: 'knight' },
       { stat: 'combat:damage', mult: 1.15, filter: 'lancer' },
       { stat: 'combat:damage', mult: 1.15, filter: 'horseknight' },
-      { stat: 'combat:damage', mult: 1.15, filter: 'horsearcher' },
-      { stat: 'combat:damage', mult: 1.15, filter: 'ballista' },
-      { stat: 'combat:damage', mult: 1.15, filter: 'onager' },
-      { stat: 'combat:damage', mult: 1.15, filter: 'trebuchet' },
+      { stat: 'combat:damage', mult: 1.15, filter: 'horsearcher' }
     ] },
 
   { id: 'oak-shields', name: 'Oak Shields', desc: 'Your fighters have 20% more health', icon: '🛡️', pool: 'military', rarity: 'uncommon', basePrice: 26,
@@ -118,10 +118,7 @@ export const UPGRADES: UpgradeDef[] = [
       { stat: 'trainTime', mult: 0.75, filter: 'knight' },
       { stat: 'trainTime', mult: 0.75, filter: 'lancer' },
       { stat: 'trainTime', mult: 0.75, filter: 'horseknight' },
-      { stat: 'trainTime', mult: 0.75, filter: 'horsearcher' },
-      { stat: 'trainTime', mult: 0.75, filter: 'ballista' },
-      { stat: 'trainTime', mult: 0.75, filter: 'onager' },
-      { stat: 'trainTime', mult: 0.75, filter: 'trebuchet' },
+      { stat: 'trainTime', mult: 0.75, filter: 'horsearcher' }
     ] },
 
   { id: 'fletchers-eye', name: "Fletcher's Eye", desc: 'Archers shoot 15% further', icon: '🏹', pool: 'military', rarity: 'uncommon', basePrice: 22,
