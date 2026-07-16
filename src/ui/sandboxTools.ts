@@ -33,21 +33,22 @@ export interface SandboxToolPorts {
 export function installSandboxTools(view: View, ui: UI, ports: SandboxToolPorts): void {
   let timer: number | null = null;
   const stop = (): void => { if (timer !== null) { clearInterval(timer); timer = null; } };
-  const spawn = (def: SpawnDef, faction: 'player' | 'enemy'): void => {
+  const spawn = (def: SpawnDef, faction: 'player' | 'enemy', mult = 1): void => {
     const game = ports.getGame();
     if (!game) return;
-    const squad = game.spawnSquad(def.kind, def.count, view.camTarget.x, view.camTarget.z, faction);
+    const squad = game.spawnSquad(def.kind, def.count * mult, view.camTarget.x, view.camTarget.z, faction);
     const label = def.kind === 'pikeman' && squad.length > 1 ? 'Pikemen' : UNITS[def.kind].name + (squad.length > 1 ? 's' : '');
     if (squad.length) ui.toast(`Spawned ${squad.length} ${label}`);
   };
   const button = (def: SpawnDef, faction: 'player' | 'enemy'): HTMLButtonElement => {
     const btn = document.createElement('button');
     btn.textContent = `${def.icon} ${def.label}`;
-    btn.title = `Spawn ${faction} ${def.label.toLowerCase()} at the camera`;
+    btn.title = `Spawn ${faction} ${def.label.toLowerCase()} at the camera — Shift+click spawns 10×`;
     btn.addEventListener('pointerdown', e => {
       if (e.button !== 0) return;
-      e.preventDefault(); stop(); spawn(def, faction);
-      timer = window.setInterval(() => spawn(def, faction), 180);
+      const mult = e.shiftKey ? 10 : 1;
+      e.preventDefault(); stop(); spawn(def, faction, mult);
+      timer = window.setInterval(() => spawn(def, faction, mult), 180);
     });
     return btn;
   };
