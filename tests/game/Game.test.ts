@@ -731,6 +731,35 @@ describe('placement keeps doorways clear', () => {
     expect(world.tiles[door.y][door.x + 1].field).not.toBeNull();
   });
 
+  it('refunds a demolished building scaled by the level refund rate', () => {
+    const { game } = openBattleGame();
+    const stock = game.store.stock!;
+
+    // Full refund (beginner ascensions): the bakery's 2 timber + 2 stone return.
+    game.placeBuilding('bakery', 10, 10, true);
+    let timber = stock.timber || 0, stone = stock.stone || 0;
+    game.demolishAt(10, 10, false);
+    expect(stock.timber).toBe(timber + 2);
+    expect(stock.stone).toBe(stone + 2);
+
+    // Half refund (mid ascensions) rounds down per item.
+    game.demolishRefundRate = 0.5;
+    game.placeBuilding('woodcutter', 10, 10, true); // 2 timber + 1 stone
+    expect(game.demolishRefund(game.demolishTargetAt(10, 10)!)).toEqual({ timber: 1 });
+    timber = stock.timber || 0; stone = stock.stone || 0;
+    game.demolishAt(10, 10, false);
+    expect(stock.timber).toBe(timber + 1);
+    expect(stock.stone).toBe(stone);
+
+    // No refund on the final ascensions.
+    game.demolishRefundRate = 0;
+    const bakery = game.placeBuilding('bakery', 10, 10, true);
+    expect(game.demolishRefund(bakery)).toEqual({});
+    timber = stock.timber || 0;
+    game.demolishAt(10, 10, false);
+    expect(stock.timber).toBe(timber);
+  });
+
   it('refuses a building whose own doorway would land on a neighbour’s doorway', () => {
     const { game } = openBattleGame();
     const bakery = game.placeBuilding('bakery', 10, 10, true);

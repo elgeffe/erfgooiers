@@ -592,6 +592,18 @@ export class Game {
     return this.placementSystem.canPlotAt(tx, ty);
   }
 
+  demolishTargetAt(tx: number, ty: number, owner: PlayerId = this.localPlayerId): Building | Site | null {
+    return this.placementSystem.demolishTargetAt(tx, ty, owner);
+  }
+
+  demolishRefund(target: Building | Site): Record<string, number> {
+    return this.placementSystem.demolishRefund(target);
+  }
+
+  /** Fraction of a demolished building's cost refunded (set from the run's ascension). */
+  set demolishRefundRate(rate: number) { this.placementSystem.demolishRefundRate = rate; }
+  get demolishRefundRate(): number { return this.placementSystem.demolishRefundRate; }
+
   demolishableAt(tx: number, ty: number, dragOnly: boolean, owner: PlayerId = this.localPlayerId): boolean {
     return this.placementSystem.demolishableAt(tx, ty, dragOnly, owner);
   }

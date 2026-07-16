@@ -39,6 +39,7 @@ export class View {
   private ghost: THREE.Group = new THREE.Group();
   private ghostKey: string | null = null;
   private readonly roadCursor: THREE.Mesh;
+  private demoTarget!: THREE.Group;
 
   // green markers over building/site entrance tiles, shown while painting roads
   private readonly entranceMarkers: THREE.Mesh[] = [];
@@ -142,6 +143,22 @@ export class View {
     );
     this.roadCursor.rotation.x = -Math.PI / 2; this.roadCursor.position.y = 0.03; this.roadCursor.visible = false;
     this.scene.add(this.roadCursor);
+    // demolish-target marker: a red frame + tint over a doomed building's 2×2
+    this.demoTarget = new THREE.Group();
+    const demoFill = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.15, 2.15),
+      noOutline(new THREE.MeshBasicMaterial({ color: 0xcc3322, transparent: true, opacity: 0.28, side: THREE.DoubleSide })),
+    );
+    demoFill.rotation.x = -Math.PI / 2;
+    this.demoTarget.add(demoFill);
+    const demoRing = new THREE.Mesh(
+      new THREE.RingGeometry(1.32, 1.52, 4),
+      noOutline(new THREE.MeshBasicMaterial({ color: 0xdd2211, transparent: true, opacity: 0.9, side: THREE.DoubleSide })),
+    );
+    demoRing.rotation.x = -Math.PI / 2; demoRing.rotation.z = Math.PI / 4; demoRing.position.y = 0.012;
+    this.demoTarget.add(demoRing);
+    this.demoTarget.position.y = 0.05; this.demoTarget.visible = false;
+    this.scene.add(this.demoTarget);
     this.scene.add(this.ghost); this.ghost.visible = false;
     this.scene.add(this.goreGroup);
     this.scene.add(this.hpBarGroup);
@@ -554,6 +571,14 @@ export class View {
     }
   }
   hideRoadCursor(): void { this.roadCursor.visible = false; }
+
+  /** Frame a 2×2 building/site footprint in red while demolish hovers it. */
+  showDemolishTarget(tx: number, ty: number): void {
+    this.demoTarget.visible = true;
+    this.demoTarget.position.x = this.world.wx(tx) + 0.5;
+    this.demoTarget.position.z = this.world.wz(ty) + 0.5;
+  }
+  hideDemolishTarget(): void { this.demoTarget.visible = false; }
 
   /** Highlight the given entrance tiles in green (used while painting roads). */
   showEntranceMarkers(coords: Coord[]): void {

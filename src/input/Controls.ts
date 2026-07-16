@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { DEFS } from '../data/buildings';
+import { ITEMS } from '../data/items';
 import { MAX_BATCH_CELLS } from '../net/protocol';
 import { isCommandableRole } from '../data/units';
 import type { Game } from '../game/Game';
 import { DEFAULT_SETTINGS, type GameSettings } from '../game/Settings';
 import type { View } from '../render/View';
 import type { UI } from '../ui/UI';
-import type { Coord, Formation, Mode, Unit } from '../types';
+import type { Coord, Formation, ItemKey, Mode, Unit } from '../types';
 
 // Isometric screen-space basis vectors for panning.
 const RIGHT = new THREE.Vector3(1, 0, -1).normalize();
@@ -123,6 +124,7 @@ export class Controls {
       e.classList.toggle('on', !!m && ((m.type === 'road' && e.dataset.key === 'road') || (m.type === 'plot' && e.dataset.key === 'plot') || (m.type === 'demolish' && e.dataset.key === 'demolish') || (m.type === 'build' && e.dataset.key === m.key))));
     this.view.hideGhost();
     this.view.hideRoadCursor();
+    this.view.hideDemolishTarget();
     if (m && m.type === 'road' && this.game) this.view.showEntranceMarkers(this.game.entranceTiles());
     else this.view.hideEntranceMarkers();
     const hint = document.getElementById('hint')!;
@@ -141,6 +143,25 @@ export class Controls {
           : 'Click a building or site — drag over roads & plots to remove — Esc to stop';
       }
     } else hint.style.display = 'none';
+  }
+
+  /** In demolish mode: frame the hovered building/site in red and preview in
+   *  the hint bar what (if anything) tearing it down would give back. */
+  private updateDemolishHover(t: Coord | null): void {
+    const hint = document.getElementById('hint')!;
+    const idle = 'Click a building or site — drag over roads & plots to remove — Esc to stop';
+    const target = t && this.game ? this.game.demolishTargetAt(t.x, t.y) : null;
+    if (!target) {
+      this.view.hideDemolishTarget();
+      if (hint.textContent !== idle) hint.textContent = idle;
+      return;
+    }
+    this.view.showDemolishTarget(target.x, target.y);
+    const refund = this.game!.demolishRefund(target);
+    const parts = Object.entries(refund).map(([item, n]) => `${n} ${ITEMS[item as ItemKey]?.name.toLowerCase() ?? item}`);
+    hint.textContent = parts.length
+      ? `Demolish ${target.name} — returns ${parts.join(', ')}`
+      : `Demolish ${target.name} — ⚠ no resources are returned`;
   }
 
   /** Turn the pending building a quarter-turn (R key or the hint-bar button). */
@@ -209,6 +230,7 @@ export class Controls {
     if (this.game && this.plotPainting && m && m.type === 'plot') { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.bufferPaint(t); }
     if (this.game && this.demoDragging) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.submitDemolish(t, true); }
     if (m && (m.type === 'road' || m.type === 'demolish' || m.type === 'plot')) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.view.showRoadCursor(t.x, t.y, m.type); else this.view.hideRoadCursor(); }
+    if (m && m.type === 'demolish') this.updateDemolishHover(this.view.tileAt(e.clientX, e.clientY));
     if (m && m.type === 'build') { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.refreshGhost(t.x, t.y); }
   }
 

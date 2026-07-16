@@ -19,7 +19,7 @@ import { VICTORY_IMAGE, VICTORY_STORY, storyFor } from './data/story';
 import type { GameSettings } from './game/Settings';
 import { campaignBiome } from './data/biomes';
 import type { BiomeKey } from './data/biomes';
-import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionForcesCurse, ascensionShopSlots, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
+import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionDemolishRefund, ascensionForcesCurse, ascensionShopSlots, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import { planLevel, planStartArmy } from './game/levelPlanning';
 import { installSettingsController } from './ui/settingsController';
 import { installSandboxTools } from './ui/sandboxTools';
@@ -172,6 +172,8 @@ function startLevel(): void {
   // and breathe more life into their bosses
   game.garrisonMult = levelPlan.garrisonMult;
   game.bossHpMult = levelPlan.bossHpMult;
+  // demolition pays back less the higher the ascension (sandbox refunds all)
+  game.demolishRefundRate = sandbox ? 1 : ascensionDemolishRefund(run.ascension);
   game.setEnemies(levelPlan.enemies);
   // mutator payloads beyond stat curses: extra wild packs on the map
   for (const id of mutators) {

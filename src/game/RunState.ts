@@ -43,6 +43,10 @@ export function ascensionTimerMult(a: number): number { return a >= 2 ? 0.85 : 1
 /** Does this tier force at least one curse onto every contract? */
 export function ascensionForcesCurse(a: number): boolean { return a >= 3; }
 
+/** Fraction of a demolished building's cost returned to the castle: the
+ *  beginner tier refunds everything, mid tiers half, the final tiers nothing. */
+export function ascensionDemolishRefund(a: number): number { return [1, 0.5, 0.5, 0.5, 0, 0][Math.min(MAX_ASCENSION, Math.max(0, a))]; }
+
 /** Higher tiers grant a smaller default army… */
 export function ascensionArmyMult(a: number): number { return [1, 0.65, 0.45, 0.3, 0.25, 0.2][Math.min(MAX_ASCENSION, Math.max(0, a))]; }
 /** …but more prep: enemy wave timers & grace delays stretch by this factor. */
