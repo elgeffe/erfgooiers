@@ -295,6 +295,7 @@ export function objectiveBuildings(def: ObjectiveDef): BuildingKey[] {
       add(productionChain('weapon')); // fielding soldiers needs a weapon chain…
       add(['barracks']);              // …and somewhere to train them
       break;
+    case 'fortifyDefend': add(['quarry', 'wall', 'gate', 'watchtower']); break;
     default: break; // combat / collect goals carry no economy checklist
   }
   return out;

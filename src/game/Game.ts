@@ -789,6 +789,37 @@ export class Game {
     return this.encounters.nextWave();
   }
 
+  /** Standing player fortifications (walls, gates, watch/stone towers) — the
+   *  fortify objective and its build progress read these live counts. */
+  playerFortifications(): { walls: number; gates: number; towers: number } {
+    let walls = 0, gates = 0, towers = 0;
+    for (const b of this.buildings) {
+      if (b.removed || b.faction !== 'player' || !b.active) continue;
+      if (b.key === 'wall') walls++;
+      else if (b.key === 'gate') gates++;
+      else if (b.key === 'watchtower' || b.key === 'stonetower') towers++;
+    }
+    return { walls, gates, towers };
+  }
+
+  /** The fortify-and-defend objective: the raids wait until the fortification
+   *  first stands, then an ever-stronger scripted sequence marches in. */
+  private armFortifyWaves(): void {
+    const objective = this.objective;
+    const def = objective?.def;
+    if (!objective || !def || def.kind !== 'fortifyDefend' || objective.fortified) return;
+    const f = this.playerFortifications();
+    if (f.walls < def.walls || f.gates < def.gates || f.towers < def.towers) return;
+    objective.fortified = true;
+    const script: [UnitKind, number][] = [['bandit', 6], ['orc', 6], ['skeleton', 9], ['zombie', 12], ['troll', 5], ['brute', 2]];
+    for (let i = 0; i < def.waves; i++) {
+      const [kind, base] = script[Math.min(i, script.length - 1)];
+      this.scheduleWave(kind, Math.max(2, Math.round(base * this.garrisonMult)), 60 + i * 120);
+    }
+    this.toast?.('The fortification stands — the enemy has taken notice!', 'err');
+    this.sfx?.('error');
+  }
+
   /** Every tower (any faction) looses arrows at the nearest hostile fighter in range. */
   private towerFire(sdt: number): void {
     for (const b of this.buildings) {
@@ -1009,6 +1040,7 @@ export class Game {
     this.encounters.update(sdt);
     this.interactionSystem.update(sdt);
     this.towerFire(sdt); // towers watch on every level, with or without a director
+    this.armFortifyWaves();
     this.fieldT += sdt;
     if (this.fieldT > 0.5) { this.fieldT = 0; this.workerSystem.recolorFields(); }
   }

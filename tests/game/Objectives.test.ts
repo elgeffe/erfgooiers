@@ -118,11 +118,22 @@ describe('ascendObjective', () => {
     expect(ascendObjective(slay, 5, 10)).toEqual(slay);
   });
 
+  it('turns level 5 into fortify-and-defend on every ascension, scaling with the tier', () => {
+    const base = { kind: 'survive', waves: 2 } as const;
+    expect(ascendObjective(base, 0, 5)).toEqual(base);
+    const hard = ascendObjective(base, 1, 5);
+    expect(hard).toEqual({ kind: 'fortifyDefend', walls: 10, gates: 1, towers: 4, waves: 2 });
+    const top = ascendObjective(base, 5, 5);
+    expect(top.kind === 'fortifyDefend' && top.walls).toBe(20);
+    expect(top.kind === 'fortifyDefend' && top.waves).toBe(6);
+    // no longer swallowed by clear-all at Absurd
+    expect(ascendObjective(base, 3, 5).kind).toBe('fortifyDefend');
+  });
+
   it('turns the Defend & assault levels into clear-all from Absurd', () => {
-    const defend = { kind: 'survive', waves: 2 } as const;
     const assault = { kind: 'destroy', n: 5 } as const;
-    expect(ascendObjective(defend, 2, 5)).toEqual(defend);        // untouched below Absurd
-    expect(ascendObjective(defend, 3, 5)).toEqual({ kind: 'clearAll' });
+    expect(ascendObjective(assault, 2, 9)).toEqual(assault);      // untouched below Absurd
+    expect(ascendObjective(assault, 3, 7)).toEqual({ kind: 'clearAll' });
     expect(ascendObjective(assault, 3, 9)).toEqual({ kind: 'clearAll' });
     // the Hunt (6) and Dragon (10) keep their own goals
     expect(ascendObjective({ kind: 'slay', unit: 'boar', n: 8 }, 3, 6).kind).toBe('slayMulti');

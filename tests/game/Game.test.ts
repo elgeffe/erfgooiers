@@ -6,6 +6,8 @@ import { LEVELS } from '../../src/data/levels';
 import { simRng } from '../../src/engine/rng';
 import { Game } from '../../src/game/Game';
 import { UNITS } from '../../src/data/units';
+import { Objective } from '../../src/game/Objectives';
+import { tick } from '../../src/game/testHarness';
 import { buildingEntranceTiles, doorTile } from '../../src/game/util';
 
 function headlessView(world: World, caravan?: { created: number; removed: number }): View {
@@ -709,6 +711,30 @@ describe('unit stances', () => {
     expect(baitA.hp).toBe(baitA.maxHp);
     // …while the auto-stance fighter closed in and drew blood.
     expect(baitB.hp).toBeLessThan(baitB.maxHp);
+  });
+});
+
+describe('fortify-and-defend objective', () => {
+  it('holds its raids until the fortification stands, then arms them', () => {
+    const { game } = openBattleGame();
+    game.objective = new Objective({ kind: 'fortifyDefend', walls: 2, gates: 1, towers: 1, waves: 2 });
+
+    tick(game, 3);
+    expect(game.objective.fortified).toBe(false);
+    expect(game.nextScheduledWave()).toBeNull();
+    expect(game.objective.evaluate(game).done).toBe(false);
+
+    for (const [key, x] of [['wall', 8], ['wall', 11], ['gate', 14], ['watchtower', 17]] as const) {
+      game.placeBuilding(key, x, 8, true);
+    }
+    tick(game, 0.1);
+    expect(game.objective.fortified).toBe(true);
+    expect(game.nextScheduledWave()).not.toBeNull();
+    // losing a wall afterwards does not reset the phase
+    game.demolishAt(8, 8, false);
+    tick(game, 0.1);
+    expect(game.objective.fortified).toBe(true);
+    expect(game.objective.evaluate(game).label).toContain('Raids repelled 0/2');
   });
 });
 

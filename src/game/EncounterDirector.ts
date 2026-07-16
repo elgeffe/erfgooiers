@@ -145,14 +145,6 @@ export class EncounterDirector {
         this.port.toast('A raid approaches!', 'err');
         this.port.sfx('error');
       }
-      for (const wave of this.waves) {
-        if (wave.cleared || !wave.units.length) continue;
-        if (wave.units.every(unit => unit.dead)) {
-          wave.cleared = true;
-          this.port.onWaveCleared();
-          this.port.toast('Raid repelled!');
-        }
-      }
       const commander = this.enemy.commander;
       if (commander && (commander.from !== 'camp' || this.port.enemyStructuresLeft() > 0)) {
         this.commanderT += dt;
@@ -160,6 +152,16 @@ export class EncounterDirector {
           this.commanderT = 0;
           this.port.spawnRaid(commander.kind, commander.count, commander.from ?? 'camp');
         }
+      }
+    }
+    // wave-clear credit covers scripted AND scheduled raids (fortify levels
+    // schedule theirs at runtime, possibly with no static enemy setup at all)
+    for (const wave of this.waves) {
+      if (wave.cleared || !wave.units.length) continue;
+      if (wave.units.every(unit => unit.dead)) {
+        wave.cleared = true;
+        this.port.onWaveCleared();
+        this.port.toast('Raid repelled!');
       }
     }
     this.launchPendingWaves();
@@ -187,9 +189,12 @@ export class EncounterDirector {
   private launchPendingWaves(): void {
     while (this.pendingWaves.length && this.port.now() >= this.pendingWaves[0].at) {
       const wave = this.pendingWaves.shift()!;
-      const spawned = this.port.summonWave(wave.kind, wave.count);
-      if (spawned) {
-        this.port.toast(`The scheduled wave marches — ${spawned} ${unitLabel(wave.kind).toLowerCase()}${spawned > 1 ? 's' : ''}!`, 'err');
+      // spawn through the same raid path as scripted waves and track the
+      // squad, so repelling a scheduled wave counts for survive/fortify goals
+      const units = this.port.spawnRaid(wave.kind, wave.count, 'edge');
+      if (units.length) {
+        this.waves.push({ units, cleared: false });
+        this.port.toast(`The scheduled wave marches — ${units.length} ${unitLabel(wave.kind).toLowerCase()}${units.length > 1 ? 's' : ''}!`, 'err');
         this.port.sfx('error');
       }
     }

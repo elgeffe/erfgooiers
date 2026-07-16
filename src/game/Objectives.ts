@@ -24,6 +24,10 @@ export type ObjectiveDef =
   /** Hunt several kinds at once (higher-difficulty hunts: wolves AND boars). */
   | { kind: 'slayMulti'; reqs: { unit: UnitKind; n: number }[] }
   | { kind: 'destroy'; n: number }
+  /** Ascended defense: raise a gated curtain wall with towers, in your own
+   *  time — the raids (ever stronger, scheduled by Game) begin only once the
+   *  fortification stands. Done when every wave has been repelled. */
+  | { kind: 'fortifyDefend'; walls: number; gates: number; towers: number; waves: number }
   /** Total war (top ascensions): raze every enemy stronghold, kill every
    *  hostile unit and outlast every raid still to come. */
   | { kind: 'clearAll' }
@@ -42,8 +46,21 @@ export type ObjectiveDef =
  *  Combat and collection goals stay untouched: their counts are bounded by
  *  what the map actually spawns.
  */
-/** Combat levels whose goal becomes total annihilation at the top tier. */
-const CLEAR_ALL_LEVELS = new Set([5, 7, 8, 9]);
+/** Combat levels whose goal becomes total annihilation at the top tier.
+ *  (Level 5 is not here: every ascension turns it into the fortify-and-defend
+ *  level below instead.) */
+const CLEAR_ALL_LEVELS = new Set([7, 8, 9]);
+
+/** Level 5 on every ascension: build a gated curtain wall with towers at your
+ *  own pace, then hold it against raids that only then begin — bigger walls
+ *  and ever-stronger waves the higher the tier. */
+const FORTIFY_TIERS: ObjectiveDef[] = [
+  { kind: 'fortifyDefend', walls: 10, gates: 1, towers: 4, waves: 2 },
+  { kind: 'fortifyDefend', walls: 14, gates: 1, towers: 4, waves: 3 },
+  { kind: 'fortifyDefend', walls: 16, gates: 2, towers: 5, waves: 4 },
+  { kind: 'fortifyDefend', walls: 20, gates: 2, towers: 6, waves: 5 },
+  { kind: 'fortifyDefend', walls: 20, gates: 2, towers: 6, waves: 6 },
+];
 
 const req = (item: ItemKey, n: number): StockReq => ({ item, n });
 /** Redesigned opening goals, one row per ascension tier (index 0 = Hard). */
@@ -86,6 +103,7 @@ export function ascendObjective(def: ObjectiveDef, ascension: number, levelIndex
   // hand-tuned per tier, so the generic swell below must not touch them.
   const openings = ascension >= 1 ? ASCENDED_OPENINGS[levelIndex] : undefined;
   if (openings) return openings[Math.min(ascension, openings.length) - 1];
+  if (levelIndex === 5 && ascension >= 1) return FORTIFY_TIERS[Math.min(ascension, FORTIFY_TIERS.length) - 1];
   // the hunt hardens with the tier: from Hard the quarry is wolves AND boars,
   // with counts growing every tier (the map spawns matching packs — see main)
   if (def.kind === 'slay' && ascension >= 1 && (def.unit === 'boar' || def.unit === 'wolf')) {
@@ -121,6 +139,9 @@ export class Objective {
   private structures = 0; // enemy buildings destroyed
   private trained = 0;    // fighters trained at the player's buildings
   private clearAllBase = 0; // clearAll: hostile units + strongholds present at first sight
+  /** fortifyDefend: set by Game the moment the fortification first stands
+   *  (raids arm then; a wall lost to the fighting doesn't reset the phase). */
+  fortified = false;
 
   constructor(readonly def: ObjectiveDef) {}
 
@@ -161,6 +182,7 @@ export class Objective {
     if (d.kind === 'slay') return `Slay ${d.n} ${UNITS[d.unit].name.toLowerCase()}${d.n > 1 ? 's' : ''}`;
     if (d.kind === 'slayMulti') return 'Slay ' + d.reqs.map(r => `${r.n} ${UNITS[r.unit].name.toLowerCase()}${r.n > 1 ? 's' : ''}`).join(' + ');
     if (d.kind === 'destroy') return `Destroy ${d.n} enemy ${d.n > 1 ? 'strongholds' : 'stronghold'}`;
+    if (d.kind === 'fortifyDefend') return `Raise ${d.walls} walls, ${d.gates} gate${d.gates > 1 ? 's' : ''} & ${d.towers} towers — then repel ${d.waves} raids`;
     if (d.kind === 'clearAll') return 'Clear the map — every stronghold, every foe, every raid';
     if (d.kind === 'skirmish') return "Destroy your rival's storehouse before yours falls";
     return `Collect ${d.n} gold piles`;
@@ -193,6 +215,16 @@ export class Objective {
       case 'slayMulti':
         return d.reqs.map(r => { const k = Math.min(r.n, this.kills[r.unit] || 0); return { label: `${UNITS[r.unit].name}s ${k}/${r.n}`, done: (this.kills[r.unit] || 0) >= r.n }; });
       case 'destroy': { const s = Math.min(d.n, this.structures); return one(`Strongholds razed ${s}/${d.n}`, this.structures >= d.n); }
+      case 'fortifyDefend': {
+        const f = game.playerFortifications();
+        const w = Math.min(d.waves, this.wavesCleared);
+        return [
+          { label: `Walls ${Math.min(d.walls, f.walls)}/${d.walls}`, done: this.fortified || f.walls >= d.walls },
+          { label: `Gates ${Math.min(d.gates, f.gates)}/${d.gates}`, done: this.fortified || f.gates >= d.gates },
+          { label: `Towers ${Math.min(d.towers, f.towers)}/${d.towers}`, done: this.fortified || f.towers >= d.towers },
+          { label: this.fortified ? `Raids repelled ${w}/${d.waves}` : 'Raids wait for your walls', done: this.wavesCleared >= d.waves },
+        ];
+      }
       case 'skirmish':
         return one('The rival storehouse stands', game.eliminated.size > 0);
       case 'clearAll': {
@@ -284,6 +316,17 @@ export class Objective {
         if ((this.kills[r.unit] || 0) < r.n) done = false;
       }
       return { done, label: parts.join(' · '), ratio: need ? have / need : 1 };
+    }
+    if (d.kind === 'fortifyDefend') {
+      if (!this.fortified) {
+        const f = game.playerFortifications();
+        const have = Math.min(d.walls, f.walls) + Math.min(d.gates, f.gates) + Math.min(d.towers, f.towers);
+        const need = d.walls + d.gates + d.towers;
+        const label = `Walls ${Math.min(d.walls, f.walls)}/${d.walls} · Gates ${Math.min(d.gates, f.gates)}/${d.gates} · Towers ${Math.min(d.towers, f.towers)}/${d.towers}`;
+        return { done: false, label, ratio: (need ? have / need : 1) * 0.5 };
+      }
+      const w = Math.min(d.waves, this.wavesCleared);
+      return { done: this.wavesCleared >= d.waves, label: `Raids repelled ${w}/${d.waves}`, ratio: 0.5 + 0.5 * w / d.waves };
     }
     if (d.kind === 'skirmish') {
       const done = game.eliminated.size > 0;
