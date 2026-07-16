@@ -28,6 +28,8 @@ export type OwnerId = PlayerId | 'enemy' | 'wild';
 /** Which side a unit or building belongs to. Economy workers are always 'player'. */
 export type Faction = 'player' | 'enemy' | 'wild';
 export type Formation = 'box' | 'line' | 'column' | 'split';
+export type UnitStance = 'auto' | 'defensive' | 'hold';
+export const UNIT_STANCES: UnitStance[] = ['auto', 'defensive', 'hold'];
 
 /** A player-issued command to a controllable unit (hero / soldiers). */
 export interface UnitOrder {
@@ -225,6 +227,9 @@ export interface Unit {
   obeyT: number;        // seconds a fresh move order suppresses re-aggro (commands overrule combat)
   special: number;      // boss ability cooldown (dragon fire breath)
   anchor: Coord | null; // wild beasts & camp guards roam around (and leash to) this
+  /** Player-set aggression: 'auto' chases anything seen (default when unset),
+   *  'defensive' fights near its post then returns, 'hold' never chases. */
+  stance?: UnitStance;
   lungeT: number;       // melee swing animation timer (little hop toward the foe)
   hpBar: THREE.Object3D | null;
   sepI: number;         // transient index within the crowd-separation pass (avoids a per-tick Map)

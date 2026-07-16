@@ -7,7 +7,7 @@ import type { Game } from '../game/Game';
 import { DEFAULT_SETTINGS, type GameSettings } from '../game/Settings';
 import type { View } from '../render/View';
 import type { UI } from '../ui/UI';
-import type { Coord, Formation, ItemKey, Mode, Unit } from '../types';
+import type { Coord, Formation, ItemKey, Mode, Unit, UnitStance } from '../types';
 
 // Isometric screen-space basis vectors for panning.
 const RIGHT = new THREE.Vector3(1, 0, -1).normalize();
@@ -83,10 +83,28 @@ export class Controls {
       button.onclick = e => {
         e.stopPropagation();
         this.formation = button.dataset.formation as Formation;
-        this.formationBar?.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === button));
+        this.formationBar?.querySelectorAll('button[data-formation]').forEach(b => b.classList.toggle('on', b === button));
         this.ui.toast(`${button.title} selected`);
       };
     });
+    this.formationBar?.querySelectorAll<HTMLButtonElement>('button[data-stance]').forEach(button => {
+      button.onclick = e => {
+        e.stopPropagation();
+        if (!this.game || !this.selUnits.length) return;
+        const stance = button.dataset.stance as UnitStance;
+        this.game.submitCommand({ type: 'setStance', unitIds: this.selUnits.map(u => u.id), stance });
+        this.refreshStanceRow();
+        this.ui.toast(`${button.title} selected`);
+      };
+    });
+  }
+
+  /** Light the stance button the whole selection shares (none when mixed). */
+  private refreshStanceRow(): void {
+    const stances = new Set(this.selUnits.map(u => u.stance ?? 'auto'));
+    const shared = stances.size === 1 ? [...stances][0] : null;
+    this.formationBar?.querySelectorAll<HTMLButtonElement>('button[data-stance]')
+      .forEach(b => b.classList.toggle('on', b.dataset.stance === shared));
   }
 
   /** Drop every held key/drag state. Called on window blur and whenever a
@@ -478,7 +496,11 @@ export class Controls {
       // O(selection × all-units) indexOf scan on every rendered frame.
       this.selUnits = this.selUnits.filter(u => !u.dead);
     }
-    if (this.formationBar) this.formationBar.style.display = this.selUnits.length > 1 ? 'flex' : 'none';
+    if (this.formationBar) {
+      const show = this.selUnits.length > 0;
+      this.formationBar.style.display = show ? 'flex' : 'none';
+      if (show) this.refreshStanceRow(); // selection can change while the bar stays up
+    }
     this.view.showSelection(this.selUnits);
   }
 }

@@ -1,5 +1,6 @@
 import { isPlayerId } from '../game/ownership';
 import { MAX_UNITS } from '../constants';
+import { UNIT_STANCES, type UnitStance } from '../types';
 import type { BuildingKey, Coord, Formation, ItemKey, PlayerId } from '../types';
 
 export const PROTOCOL_VERSION = 1;
@@ -107,6 +108,7 @@ export type GameCommand =
   | { type: 'setRally'; buildingId: EntityId; x: number; y: number }
   | { type: 'orderUnits'; unitIds: EntityId[]; order: NetUnitOrder; formation: Formation;
       facing?: { x: number; y: number }; queue?: boolean }
+  | { type: 'setStance'; unitIds: EntityId[]; stance: UnitStance }
   | { type: 'collectPickup'; x: number; y: number }
   | { type: 'setBell'; active: boolean }
   | { type: 'requestTrade'; item: ItemKey; amount: number; destinationId: EntityId }
@@ -175,6 +177,9 @@ function validCommand(value: unknown): value is GameCommand {
         ? integer(value.order.targetId)
         : (value.order.type === 'move' || value.order.type === 'attackMove') && integer(value.order.x) && integer(value.order.y);
     }
+    case 'setStance':
+      return Array.isArray(value.unitIds) && value.unitIds.length <= MAX_ORDER_UNITS && value.unitIds.every(integer)
+        && (UNIT_STANCES as string[]).includes(value.stance as string);
     case 'collectPickup': return integer(value.x) && integer(value.y);
     case 'setBell': return typeof value.active === 'boolean';
     case 'requestTrade': return shortString(value.item, 32) && integer(value.amount) && value.amount > 0 && value.amount <= MAX_TRADE_AMOUNT && integer(value.destinationId);

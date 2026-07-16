@@ -693,6 +693,25 @@ describe('Dragon\u2019s Hoard encounter route', () => {
   });
 });
 
+describe('unit stances', () => {
+  it('hold-ground fighters never chase; auto fighters do', () => {
+    const { game } = openBattleGame();
+    const holder = game.spawnFighter('soldier', { x: 10, y: 10 }, 'player');
+    holder.stance = 'hold';
+    const chaser = game.spawnFighter('soldier', { x: 30, y: 30 }, 'player');
+    const baitA = game.spawnFighter('bandit', { x: 14, y: 10 }, 'enemy');
+    const baitB = game.spawnFighter('bandit', { x: 34, y: 30 }, 'enemy');
+    for (const b of [baitA, baitB]) { b.dmg = 0; b.spd = 1e-6; } // spd 0 would fall back to BASE_SPEED
+
+    for (let s = 0; s < 6; s += 0.05) game.update(0.05);
+    // The holder never left his tile or engaged the bait 4 tiles out…
+    expect(Math.hypot(holder.tx - 10, holder.ty - 10)).toBeLessThan(1.5);
+    expect(baitA.hp).toBe(baitA.maxHp);
+    // …while the auto-stance fighter closed in and drew blood.
+    expect(baitB.hp).toBeLessThan(baitB.maxHp);
+  });
+});
+
 describe('placement keeps doorways clear', () => {
   it('refuses a footprint on a neighbour’s entrance and an entrance that lands on a building', () => {
     const { game } = openBattleGame();

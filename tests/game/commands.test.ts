@@ -88,6 +88,24 @@ describe('command application and ownership boundaries', () => {
     expect(theirs.every(u => u.order === null)).toBe(true);
   });
 
+  it('sets a stance on owned units only, anchoring defensive posts', () => {
+    const { game } = makeTestGame();
+    const mine = game.spawnSquad('soldier', 2, 0, 0, 'player');
+    for (const u of mine) u.owner = 'p1';
+    const theirs = game.spawnSquad('soldier', 1, 2, 2, 'player');
+    for (const u of theirs) u.owner = 'p2';
+
+    const result = applyGameCommand(game, 'p1', {
+      type: 'setStance', unitIds: [...mine, ...theirs].map(u => u.id), stance: 'defensive',
+    });
+    expect(result.ok).toBe(true);
+    expect(mine.every(u => u.stance === 'defensive' && u.anchor !== null)).toBe(true);
+    expect(theirs.every(u => u.stance === undefined)).toBe(true);
+
+    applyGameCommand(game, 'p1', { type: 'setStance', unitIds: mine.map(u => u.id), stance: 'hold' });
+    expect(mine.every(u => u.stance === 'hold' && u.anchor === null)).toBe(true);
+  });
+
   it('scopes the bell to the issuing player', () => {
     const { game } = makeTestGame();
     applyGameCommand(game, 'p2', { type: 'setBell', active: true });
