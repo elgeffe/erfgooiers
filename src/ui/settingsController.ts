@@ -12,6 +12,7 @@ export function installSettingsController(view: View, controls: Controls, onAuto
   audio.setMusicVolume(settings.musicVol);
   audio.setSfxVolume(settings.sfxVol);
   view.setQualityMode(settings.quality);
+  view.setExtendedZoom(settings.extendedZoom);
   controls.settings = settings;
 
   let returnTo: 'menu' | 'pause' = 'menu';
@@ -20,6 +21,7 @@ export function installSettingsController(view: View, controls: Controls, onAuto
     ($('setSfx') as HTMLInputElement).value = String(Math.round(settings.sfxVol * 100));
     ($('setPan') as HTMLInputElement).value = String(Math.round(settings.panSpeed * 100));
     ($('setInvZoom') as HTMLInputElement).checked = settings.invertZoom;
+    ($('setExtZoom') as HTMLInputElement).checked = settings.extendedZoom;
     ($('setEdgePan') as HTMLInputElement).checked = settings.edgePan;
     ($('setAutoPause') as HTMLInputElement).checked = settings.autoPauseOnBlur;
     ($('setTutorials') as HTMLInputElement).checked = settings.tutorials;
@@ -59,6 +61,10 @@ export function installSettingsController(view: View, controls: Controls, onAuto
     $('setPanVal').textContent = `${settings.panSpeed.toFixed(1)}×`;
   };
   ($('setInvZoom') as HTMLInputElement).onchange = e => { settings.invertZoom = (e.target as HTMLInputElement).checked; saveSettings(settings); };
+  ($('setExtZoom') as HTMLInputElement).onchange = e => {
+    settings.extendedZoom = (e.target as HTMLInputElement).checked;
+    view.setExtendedZoom(settings.extendedZoom); saveSettings(settings);
+  };
   ($('setEdgePan') as HTMLInputElement).onchange = e => { settings.edgePan = (e.target as HTMLInputElement).checked; saveSettings(settings); };
   ($('setAutoPause') as HTMLInputElement).onchange = e => { settings.autoPauseOnBlur = (e.target as HTMLInputElement).checked; saveSettings(settings); };
   ($('setTutorials') as HTMLInputElement).onchange = e => { settings.tutorials = (e.target as HTMLInputElement).checked; saveSettings(settings); };

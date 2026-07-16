@@ -300,8 +300,15 @@ export class View {
   pan(v: THREE.Vector3): void { this.camTarget.add(v); this.clampCam(); this.updateCamera(); }
   centerOn(x: number, z: number): void { this.camTarget.set(x, 0, z); this.clampCam(); this.updateCamera(); }
   zoom(factor: number): void {
-    this.viewSize = Math.max(6, Math.min(28, this.viewSize * factor));
+    this.viewSize = Math.max(6, Math.min(this.maxViewSize, this.viewSize * factor));
     this.updateCamera();
+  }
+
+  /** Ceiling on zoom-out; the settings' extended-zoom toggle raises it. */
+  private maxViewSize = 28;
+  setExtendedZoom(on: boolean): void {
+    this.maxViewSize = on ? 46 : 28;
+    if (this.viewSize > this.maxViewSize) { this.viewSize = this.maxViewSize; this.updateCamera(); }
   }
 
   /** Screen point → world tile (or null off-map). */

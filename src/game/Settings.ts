@@ -8,6 +8,7 @@ export interface GameSettings {
   sfxVol: number;                    // 0..1 multiplier on effect loudness
   panSpeed: number;                  // 0.5..2 camera keyboard/drag pan speed
   invertZoom: boolean;               // flip the wheel's zoom direction
+  extendedZoom: boolean;             // unlock a much farther zoom-out ceiling
   edgePan: boolean;                  // pan when the pointer rests at a screen edge
   autoPauseOnBlur: boolean;          // open the pause menu when the tab loses focus
   quality: 'auto' | 'high' | 'low';  // render pixel-ratio strategy
@@ -16,7 +17,7 @@ export interface GameSettings {
 
 export const DEFAULT_SETTINGS: GameSettings = {
   musicVol: 1, sfxVol: 1, panSpeed: 1,
-  invertZoom: false, edgePan: false, autoPauseOnBlur: false,
+  invertZoom: false, extendedZoom: false, edgePan: false, autoPauseOnBlur: false,
   quality: 'auto', tutorials: true,
 };
 
@@ -34,6 +35,7 @@ export function loadSettings(): GameSettings {
       sfxVol: num(s.sfxVol, 1, 0, 1),
       panSpeed: num(s.panSpeed, 1, 0.5, 2),
       invertZoom: !!s.invertZoom,
+      extendedZoom: !!s.extendedZoom,
       edgePan: !!s.edgePan,
       autoPauseOnBlur: !!s.autoPauseOnBlur,
       quality: s.quality === 'high' || s.quality === 'low' ? s.quality : 'auto',
