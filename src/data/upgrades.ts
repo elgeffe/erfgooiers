@@ -1,14 +1,17 @@
 import type { ModifierSpec } from '../game/Modifiers';
 
 export type UpgradePool = 'economy' | 'hero' | 'military';
-export type Rarity = 'common' | 'uncommon' | 'rare';
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'legendary';
+
+/** Lifetime tallies achievements are measured against (a subset of MetaState.stats). */
+export type LifetimeStats = { levelsCleared: number; wins: number; runs: number; bestLevel: number };
 
 /** How many power-up cards a run can hold. The squeeze is the point: once the
  *  slots are full, buying means selling — that's where shop decisions get hard. */
 export const MAX_CARDS = 5;
 
 /** Shop offer weighting per rarity tier. */
-export const RARITY_WEIGHT: Record<Rarity, number> = { common: 6, uncommon: 3, rare: 1 };
+export const RARITY_WEIGHT: Record<Rarity, number> = { common: 6, uncommon: 3, rare: 1, legendary: 0.5 };
 
 export interface UpgradeDef {
   id: string;
@@ -22,8 +25,9 @@ export interface UpgradeDef {
   rarity: Rarity;
   /** One-of-a-kind: never offered again while owned this run. */
   unique?: boolean;
-  /** Achievement gate: hidden from the shop until the lifetime stat is reached. */
-  unlockAt?: { stat: 'levelsCleared' | 'wins'; n: number };
+  /** Achievement gate: hidden from the shop until the lifetime stat is reached
+   *  (the achievements menu lists every gate with its progress). */
+  unlockAt?: { stat: keyof LifetimeStats; n: number };
   basePrice: number;
   /** One or more modifier effects applied while this upgrade is owned. */
   apply: ModifierSpec[];
@@ -160,6 +164,38 @@ export const UPGRADES: UpgradeDef[] = [
     pool: 'economy', rarity: 'rare', unique: true, unlockAt: { stat: 'wins', n: 1 }, basePrice: 40,
     apply: [{ stat: 'preserveTrees', add: 1 }, { stat: 'gatherTime', mult: 1.5, filter: 'tree' }] },
 
+  // ---- achievement-gated rares & legendaries: badges of lifetime progress ----
+  { id: 'granite-heart', name: 'Granite Heart', desc: 'Your castle has 50% more health', icon: '🏰',
+    pool: 'military', rarity: 'rare', unique: true, unlockAt: { stat: 'bestLevel', n: 5 }, basePrice: 42,
+    apply: [{ stat: 'castleHp', mult: 1.5 }] },
+
+  { id: 'beer-ration', name: 'Beer Ration', desc: 'Workers grow hungry 30% slower and walk 8% faster', icon: '🍻',
+    pool: 'economy', rarity: 'rare', unique: true, unlockAt: { stat: 'runs', n: 10 }, basePrice: 36,
+    apply: [{ stat: 'hungerRate', mult: 0.7 }, { stat: 'unitSpeed', mult: 1.08 }] },
+
+  { id: 'siege-school', name: 'Siege School', desc: 'Siege engines deal 25% more damage and reach 10% further', icon: '🏯',
+    pool: 'military', rarity: 'rare', unique: true, unlockAt: { stat: 'levelsCleared', n: 30 }, basePrice: 44,
+    apply: [
+      { stat: 'combat:damage', mult: 1.25, filter: 'ballista' },
+      { stat: 'combat:damage', mult: 1.25, filter: 'onager' },
+      { stat: 'combat:damage', mult: 1.25, filter: 'trebuchet' },
+      { stat: 'combat:range', mult: 1.1, filter: 'ballista' },
+      { stat: 'combat:range', mult: 1.1, filter: 'onager' },
+      { stat: 'combat:range', mult: 1.1, filter: 'trebuchet' },
+    ] },
+
+  { id: 'royal-charter', name: 'Royal Charter', desc: 'Buildings cost 1 less timber & stone and raise 35% faster', icon: '👑',
+    pool: 'economy', rarity: 'legendary', unique: true, unlockAt: { stat: 'wins', n: 2 }, basePrice: 70,
+    apply: [{ stat: 'cost:timber', add: -1 }, { stat: 'cost:stone', add: -1 }, { stat: 'buildTime', mult: 0.65 }] },
+
+  { id: 'golden-age', name: 'The Golden Age', desc: '+50% gold from all sources and taverns pay 1 gold per meal', icon: '🌞',
+    pool: 'economy', rarity: 'legendary', unique: true, unlockAt: { stat: 'wins', n: 3 }, basePrice: 80,
+    apply: [{ stat: 'goldGain', mult: 1.5 }, { stat: 'goldPerMeal', add: 1 }] },
+
+  { id: 'levee-en-masse', name: 'Levée en Masse', desc: 'Every fighter trains 40% faster and costs 15% less', icon: '🎖️',
+    pool: 'military', rarity: 'legendary', unique: true, unlockAt: { stat: 'levelsCleared', n: 50 }, basePrice: 75,
+    apply: [{ stat: 'trainTime', mult: 0.6 }, { stat: 'trainCost', mult: 0.85 }] },
+
   // ---- hero-exclusive cards: only offered while their hero leads the run ----
   { id: 'golden-ledger', name: 'Golden Ledger', desc: "Marcus's books: +1 more gold per tavern meal and +10% gold from all sources", icon: '📒',
     pool: 'hero', hero: 'merchant', rarity: 'rare', unique: true, basePrice: 100,
@@ -210,8 +246,18 @@ export const UPGRADES: UpgradeDef[] = [
 export const UPGRADE_BY_ID: Record<string, UpgradeDef> = Object.fromEntries(UPGRADES.map(u => [u.id, u]));
 
 /** Has the player's lifetime progress opened this card for the shop pool? */
-export function cardUnlocked(def: UpgradeDef, stats: { levelsCleared: number; wins: number }): boolean {
-  return !def.unlockAt || stats[def.unlockAt.stat] >= def.unlockAt.n;
+export function cardUnlocked(def: UpgradeDef, stats: Partial<LifetimeStats>): boolean {
+  return !def.unlockAt || (stats[def.unlockAt.stat] ?? 0) >= def.unlockAt.n;
+}
+
+/** Human phrasing of a card's achievement gate ("Win 2 runs", …). */
+export function unlockLabel(gate: NonNullable<UpgradeDef['unlockAt']>): string {
+  switch (gate.stat) {
+    case 'levelsCleared': return `Clear ${gate.n} levels in total`;
+    case 'wins': return gate.n === 1 ? 'Win a run' : `Win ${gate.n} runs`;
+    case 'runs': return `Set out on ${gate.n} runs`;
+    case 'bestLevel': return `Reach level ${gate.n} in a single run`;
+  }
 }
 
 /** Resolve owned upgrade ids into the flat ModifierSpec list Modifiers consumes. */

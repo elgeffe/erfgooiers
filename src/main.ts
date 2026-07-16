@@ -9,7 +9,7 @@ import { logoSVG } from './ui/logo';
 import { randomSeed, simRng, uiRng } from './engine/rng';
 import { Modifiers } from './game/Modifiers';
 import { Objective, ascendObjective } from './game/Objectives';
-import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID, cardUnlocked, specsFor } from './data/upgrades';
+import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID, cardUnlocked, specsFor, unlockLabel } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
@@ -842,7 +842,7 @@ function onLevelClear(): void {
     const contracts = contractsFor(run.runSeed, next, levelFor(next).objectives.length, levelFor(next).reward, ascensionForcesCurse(run.ascension));
     phase = 'shop';
     shop.open(run, contracts, metaSpecialValue(meta.activeGlobalBuff, 'freeReroll') > 0, tally.rows,
-      { slots: ascensionShopSlots(run.ascension), lifetime: { levelsCleared: meta.stats.levelsCleared, wins: meta.stats.wins } });
+      { slots: ascensionShopSlots(run.ascension), lifetime: { ...meta.stats } });
     showScreen('shop');
     Save.saveRun(run);
   }
@@ -927,10 +927,10 @@ function clearSaveData(): void {
 }
 
 // ---------- screens (DOM overlays) ----------
-type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'heroselect' | 'sandboxselect' | 'coopmenu' | 'cooplobby' | null;
+type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'achievements' | 'heroselect' | 'sandboxselect' | 'coopmenu' | 'cooplobby' | null;
 function showScreen(id: ScreenId): void {
   $('pausemenu').style.display = 'none';
-  for (const s of ['menu', 'shop', 'summary', 'heritage', 'heroselect', 'sandboxselect', 'coopmenu', 'cooplobby']) $(s).style.display = id === s ? 'flex' : 'none';
+  for (const s of ['menu', 'shop', 'summary', 'heritage', 'achievements', 'heroselect', 'sandboxselect', 'coopmenu', 'cooplobby']) $(s).style.display = id === s ? 'flex' : 'none';
   $('hud').style.display = phase === 'playing' ? 'block' : 'none';
   // a screen swallows keyups/pointerups — never leave the camera mid-pan
   controls.resetInput();
@@ -997,6 +997,32 @@ function renderSummary(victory: boolean, reason: 'timeout' | 'castle' = 'timeout
 
 // ---------- heritage shop (main menu) ----------
 function openHeritage(): void { renderHeritage(); showScreen('heritage'); }
+
+// ---------- achievements (main menu) ----------
+function openAchievements(): void { renderAchievements(); showScreen('achievements'); }
+
+/** Every achievement-gated card: unlocked feats show the card in full; locked
+ *  ones show the feat as a hint plus live progress toward it. */
+function renderAchievements(): void {
+  const gated = UPGRADES.filter(u => u.unlockAt);
+  const unlockedCount = gated.filter(u => cardUnlocked(u, meta.stats)).length;
+  $('achMeta').innerHTML = `<b>${unlockedCount}/${gated.length}</b> cards earned · progress lives in your save (export it to keep it safe)`;
+  const grid = $('achGrid'); grid.innerHTML = '';
+  for (const def of gated) {
+    const gate = def.unlockAt!;
+    const unlocked = cardUnlocked(def, meta.stats);
+    const progress = Math.min(meta.stats[gate.stat], gate.n);
+    const tag = `<span class="rtag rtag-${def.rarity}">${def.rarity}</span>`;
+    const el = document.createElement('div');
+    el.className = `scard rar-${def.rarity}` + (unlocked ? '' : ' cant');
+    el.innerHTML = unlocked
+      ? `<div class="sc-icon">${def.icon}</div><div class="sc-body"><div class="sc-name">${def.name}${tag}</div><div class="sc-desc">${def.desc}</div>`
+        + `<div class="sc-price owned">✓ ${unlockLabel(gate)} — earned</div></div>`
+      : `<div class="sc-icon">🔒</div><div class="sc-body"><div class="sc-name">???${tag}</div><div class="sc-desc">Hint: ${unlockLabel(gate).toLowerCase()} to reveal this card.</div>`
+        + `<div class="sc-price">${unlockLabel(gate)} · ${progress}/${gate.n}</div></div>`;
+    grid.appendChild(el);
+  }
+}
 
 function renderHeritage(): void {
   $('heritageMeta').innerHTML = `${heritageCoinIconSVG(15)} <b>${meta.heritage}</b> Heritage to spend · own any number, activate one global blessing`;
@@ -1115,6 +1141,8 @@ $('objective').addEventListener('click', () => {
 ($('btnDebugWin') as HTMLButtonElement).onclick = debugWin;
 ($('btnHeritage') as HTMLButtonElement).onclick = openHeritage;
 ($('btnHeritageBack') as HTMLButtonElement).onclick = goMenu;
+($('btnAchievements') as HTMLButtonElement).onclick = openAchievements;
+($('btnAchBack') as HTMLButtonElement).onclick = goMenu;
 ($('btnToMenu') as HTMLButtonElement).onclick = openPauseMenu;
 ($('btnResume') as HTMLButtonElement).onclick = resumeGame;
 ($('btnRestart') as HTMLButtonElement).onclick = restartLevel;

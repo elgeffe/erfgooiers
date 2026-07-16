@@ -1,5 +1,5 @@
 import { Rng, levelSeed } from '../engine/rng';
-import { MAX_CARDS, RARITY_WEIGHT, UPGRADES, UPGRADE_BY_ID, cardUnlocked, upgradePrice, type UpgradeDef } from '../data/upgrades';
+import { MAX_CARDS, RARITY_WEIGHT, UPGRADES, UPGRADE_BY_ID, cardUnlocked, upgradePrice, type LifetimeStats, type UpgradeDef } from '../data/upgrades';
 import { MUTATOR_BY_ID, type Contract } from '../data/mutators';
 import { HERO_BY_ID } from '../data/heroes';
 import { BIOMES, campaignBiome } from '../data/biomes';
@@ -31,7 +31,7 @@ export class Shop {
   private contracts: Contract[] = [];
   private chosen: Contract | null = null;
   private slotCount = 3;           // wares per roll (ascension 1 trims it)
-  private lifetime = { levelsCleared: 0, wins: 0 }; // gates the drip-fed cards
+  private lifetime: Partial<LifetimeStats> = {}; // gates the drip-fed cards
 
   constructor(private readonly onContinue: (contract: Contract) => void) {
     ($('btnShopContinue') as HTMLButtonElement).onclick = () => { if (this.chosen) this.onContinue(this.chosen); };
@@ -40,7 +40,7 @@ export class Shop {
 
   /** Show the shop for the run's just-cleared level, offering next-level contracts. */
   open(run: RunState, contracts: Contract[], freeReroll = false, tally: { label: string; gold: number }[] = [],
-    opts: { slots?: number; lifetime?: { levelsCleared: number; wins: number } } = {}): void {
+    opts: { slots?: number; lifetime?: Partial<LifetimeStats> } = {}): void {
     this.run = run;
     this.rng = new Rng(levelSeed(run.runSeed, run.levelIndex) ^ 0x5f356495);
     this.rerolls = 0;
