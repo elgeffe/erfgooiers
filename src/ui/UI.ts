@@ -1,7 +1,5 @@
 import { DEFS, MENU_CATEGORIES } from '../data/buildings';
 import { ITEMS, MARKET_VALUES, RES_SHOWN } from '../data/items';
-import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID } from '../data/upgrades';
-import { META_BY_ID } from '../data/metaUpgrades';
 import { UNITS, type UnitKind } from '../data/units';
 import { ROAD_STONE_COST } from '../constants';
 import { installFavicon, logoSVG } from './logo';
@@ -34,6 +32,7 @@ export class UI {
   onMode: (m: Mode) => void = () => {};
   onSandboxCard: (id: string) => boolean = () => false;
   onSandboxRemoveCard: (id: string) => boolean = () => false;
+  onOpenCards: () => void = () => {};
 
   private game: Game | null = null;
   private readonly resEls: Record<string, HTMLElement> = {};
@@ -41,9 +40,6 @@ export class UI {
   private unitsOpen = false;
   private unitTab = 'all';
   private lastTabsHTML = '';
-  private perksOpen = false;
-  private perkUpgrades: string[] = [];
-  private perkUnlocks: string[] = [];
   private tradeOpen = false;
   private pendingRequestId: string | null = null;
   private speedLocked = false;   // co-op runs at a fixed 1× — a local pause would desync
@@ -93,7 +89,6 @@ export class UI {
     this.showCategory('materials');
     this.showInspector(null);
     this.updateWave(null);
-    this.setPerksOpen(false);
     this.setSpeed(1);
     this.refreshResbar();
     this.refreshBuildCosts();
@@ -255,7 +250,6 @@ export class UI {
     ($('objective') as HTMLElement).style.display = on ? 'none' : '';
     ($('timerChip') as HTMLElement).style.display = on ? 'none' : '';
     ($('btnDebugWin') as HTMLElement).style.display = on ? 'none' : '';
-    if (this.perksOpen) this.renderPerks();
   }
 
   /** Toggle the co-op HUD: the Trade tab appears, the speed stays locked at 1×. */
@@ -713,7 +707,7 @@ export class UI {
   // ---------- worker panel ----------
   private wireUnitPanel(): void {
     const toggle = $('unitsToggle'), panel = $('unitpanel');
-    toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; if (this.unitsOpen && this.perksOpen) this.setPerksOpen(false); panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : ''; this.renderUnits(); };
+    toggle.onclick = () => { this.unitsOpen = !this.unitsOpen; panel.style.display = this.unitsOpen ? 'block' : 'none'; toggle.style.display = this.unitsOpen ? 'none' : ''; this.renderUnits(); };
     document.addEventListener('keydown', e => { if (e.key === 'u') toggle.click(); });
     const h3 = $('unitTitle');
     h3.style.cursor = 'pointer'; h3.title = 'Click to collapse';
@@ -809,76 +803,16 @@ export class UI {
     $('unitlist').innerHTML = s || '<div class="urow" style="color:var(--ink-dim);justify-content:center">none of this kind</div>';
   }
 
-  // ---------- heritage / power-up panel ----------
+  // ---------- heritage / power-up cards ----------
+  // The top-bar Cards button opens the full Heritage & power-ups modal; the
+  // modal itself is rendered by installSandboxTools (the single card UI).
   private wirePerkPanel(): void {
-    $('btnPerks').addEventListener('click', () => this.setPerksOpen(!this.perksOpen));
-    $('closePerks').addEventListener('click', () => this.setPerksOpen(false));
+    $('btnPerks').addEventListener('click', () => this.onOpenCards());
   }
 
-  private setPerksOpen(open: boolean): void {
-    this.perksOpen = open;
-    ($('perkpanel') as HTMLElement).style.display = open ? 'block' : 'none';
-    // the perk panel shares the left column with the worker panel — close that one
-    if (open && this.unitsOpen) $('unitTitle').click();
-    if (open) this.renderPerks();
-  }
-
-  /** Hand the panel this run's owned shop power-ups and permanent Heritage unlocks. */
+  /** Refresh the top-bar Cards button count from the run's cards and unlocks. */
   setPerks(upgrades: string[], unlocks: string[]): void {
-    this.perkUpgrades = upgrades;
-    this.perkUnlocks = unlocks;
     $('btnPerks').textContent = `🃏 Cards · ${upgrades.length + unlocks.length}`;
-    if (this.perksOpen) this.renderPerks();
-  }
-
-  private perkRow(icon: string, name: string, desc: string): string {
-    return `<div class="perkrow"><div class="pk-icon">${icon}</div><div class="pk-body"><div class="pk-name">${name}</div><div class="pk-desc">${desc}</div></div></div>`;
-  }
-
-  private renderPerks(): void {
-    let s = '';
-    if (this.perkUnlocks.length) {
-      s += '<div class="sect">Heritage — permanent</div>';
-      for (const id of this.perkUnlocks) { const d = META_BY_ID[id]; if (d) s += this.perkRow(d.icon, d.name, d.desc); }
-    }
-    // shop upgrades stack, so fold duplicates into an ×N count
-    const counts: Record<string, number> = {};
-    for (const id of this.perkUpgrades) counts[id] = (counts[id] || 0) + 1;
-    const ids = Object.keys(counts);
-    s += '<div class="sect">Power-ups this run</div>';
-    if (ids.length) {
-      for (const id of ids) {
-        const d = UPGRADE_BY_ID[id]; if (!d) continue;
-        const name = d.name + (counts[id] > 1 ? ` ×${counts[id]}` : '');
-        // in sandbox each held card is clickable to remove one instance
-        s += this.sandbox
-          ? `<button class="perkrow perksell" data-remove="${id}"><span class="pk-icon">${d.icon}</span><span class="pk-body"><span class="pk-name">${name}</span><span class="pk-desc">${d.desc}</span></span><span class="pk-remove">remove ✕</span></button>`
-          : this.perkRow(d.icon, name, d.desc);
-      }
-    } else {
-      s += `<div class="invrow" style="color:var(--ink-dim)">${this.sandbox ? 'Choose free cards below.' : 'No shop power-ups yet — buy some between levels.'}</div>`;
-    }
-    if (this.sandbox) {
-      const full = this.perkUpgrades.length >= MAX_CARDS;
-      s += `<div class="sect">Free sandbox cards (${this.perkUpgrades.length}/${MAX_CARDS})</div>`;
-      for (const d of UPGRADES) {
-        const disabled = full || !!d.unique && this.perkUpgrades.includes(d.id);
-        s += `<button class="perkrow perkbuy" data-card="${d.id}"${disabled ? ' disabled' : ''}><span class="pk-icon">${d.icon}</span><span class="pk-body"><span class="pk-name">${d.name} · free</span><span class="pk-desc">${d.desc}</span></span></button>`;
-      }
-    }
-    $('perklist').innerHTML = s;
-    if (this.sandbox) {
-      $('perklist').querySelectorAll<HTMLButtonElement>('[data-card]').forEach(button => {
-        button.onclick = () => {
-          if (this.onSandboxCard(button.dataset.card!)) this.renderPerks();
-        };
-      });
-      $('perklist').querySelectorAll<HTMLButtonElement>('[data-remove]').forEach(button => {
-        button.onclick = () => {
-          if (this.onSandboxRemoveCard(button.dataset.remove!)) this.renderPerks();
-        };
-      });
-    }
   }
 
   // ---------- toasts ----------

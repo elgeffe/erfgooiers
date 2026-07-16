@@ -179,10 +179,6 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 #unitsToggle.warn{border-color:var(--bad);color:#f0c0ac;animation:workerpulse 1.6s ease-in-out infinite;}
 @keyframes workerpulse{0%,100%{box-shadow:0 0 0 0 rgba(201,107,74,0);}50%{box-shadow:0 0 0 3px rgba(201,107,74,.4);}}
 .hnote{font-size:9.5px;color:var(--ink-dim);margin-top:6px;font-style:italic;}
-/* ---------- heritage / power-up panel ---------- */
-#perkpanel{left:12px;top:calc(var(--topbar-h, 52px) + 12px);width:244px;max-height:calc(100% - 220px);overflow:hidden auto;display:none;}
-#perkpanel h3{font-size:13px;color:var(--accent);margin-bottom:6px;padding-right:16px;}
-#closePerks{position:absolute;top:6px;right:8px;background:none;border:none;color:var(--ink-dim);cursor:pointer;font-size:14px;}
 /* ---------- co-op trade panel ---------- */
 #tradepanel{right:12px;top:calc(var(--topbar-h, 52px) + 12px);width:290px;max-height:calc(100% - 200px);overflow:hidden auto;display:none;z-index:11;}
 #tradepanel h3{font-size:15px;color:var(--accent);margin-bottom:2px;}
@@ -218,18 +214,10 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 .mp-reclaim .row{display:flex;gap:5px;margin-top:5px;}
 .mp-reclaim button{flex:1;background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:5px;cursor:pointer;}
 #coopConnectionBanner{position:absolute;left:50%;top:46px;transform:translateX(-50%);z-index:24;display:none;background:rgba(43,33,25,.96);border:1px solid var(--bad);border-radius:7px;padding:7px 13px;color:#f0c0ac;font-size:11px;box-shadow:0 5px 20px rgba(0,0,0,.45);}
-.perkrow{display:flex;align-items:flex-start;gap:8px;padding:5px 2px;border-bottom:1px solid rgba(255,255,255,.05);}
-.perkrow .pk-icon{font-size:17px;line-height:1.1;flex:none;width:22px;text-align:center;}
-.perkrow .pk-body{flex:1;min-width:0;}
-.perkrow .pk-name{font-size:11.5px;font-weight:600;color:var(--ink);}
-.perkrow .pk-desc{font-size:10px;color:var(--ink-dim);line-height:1.3;}
-.perkbuy{width:100%;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.05);color:inherit;text-align:left;cursor:pointer;font:inherit;}
-.perkbuy:hover:not(:disabled){background:rgba(217,164,65,.12);}
-.perkbuy:disabled{opacity:.38;cursor:not-allowed;}
-.perksell{display:flex;align-items:center;width:100%;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.05);color:inherit;text-align:left;cursor:pointer;font:inherit;}
-.perksell:hover{background:rgba(210,90,70,.14);}
-.perksell .pk-remove{flex:none;margin-left:auto;padding-left:8px;font-size:10px;font-weight:600;color:var(--bad,#d25a46);opacity:.55;}
-.perksell:hover .pk-remove{opacity:1;}
+/* read-only card in the Heritage & power-ups modal (a real run, or a held Heritage unlock) */
+.scard.readonly{cursor:default;}
+.scard.readonly:hover{transform:none;border-color:rgba(255,255,255,.09);}
+.scard .sc-price:empty{display:none;}
 #runctl #btnPerks{background:rgba(217,164,65,.16);border-color:rgba(217,164,65,.5);}
 /* ---------- minimap ---------- */
 #minimapWrap{position:absolute;right:12px;bottom:12px;background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:10px;padding:6px;}

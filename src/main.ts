@@ -1047,6 +1047,8 @@ installSandboxTools(view, ui, {
   getGame: () => game,
   getRun: () => run,
   rebuildModifiers: rebuildSandboxMods,
+  isSandbox: () => sandbox,
+  getUnlocks: () => (meta.activeGlobalBuff ? [meta.activeGlobalBuff] : []),
 });
 // (the homepage no longer carries a Clear-save button — it lives in Settings)
 
