@@ -20,6 +20,11 @@ interface UnitFactoryPorts {
 
 /** Creates units and deterministic level/sandbox spawn layouts. */
 export class UnitFactory {
+  /** Soft ceiling on live units. Single player lowers it from the settings'
+   *  performance cap; co-op always keeps the shared MAX_UNITS so both peers
+   *  gate spawns identically. */
+  unitCap = MAX_UNITS;
+
   constructor(
     private readonly world: World,
     private readonly view: View,
@@ -108,7 +113,7 @@ export class UnitFactory {
     const queue: UnitKind[] = [];
     for (const group of groups) for (let index = 0; index < group.count; index++) queue.push(group.kind);
     const tryTile = (x: number, y: number): void => {
-      if (!queue.length || this.units.length >= MAX_UNITS) return;
+      if (!queue.length || this.units.length >= this.unitCap) return;
       const tile = this.world.T(x, y);
       if (!tile || tile.type !== 'grass' || tile.b || tile.site || tile.dep || tile.tree || tile.field) return;
       result.push(this.spawnFighter(queue.shift()!, { x, y }, 'player'));
@@ -130,7 +135,7 @@ export class UnitFactory {
     const centerY = Math.max(2, Math.min(this.world.H - 3, Math.floor(worldZ + this.world.H / 2)));
     const result: Unit[] = [];
     const tryTile = (x: number, y: number): void => {
-      if (result.length >= count || this.units.length >= MAX_UNITS) return;
+      if (result.length >= count || this.units.length >= this.unitCap) return;
       const tile = this.world.T(x, y);
       if (!tile || tile.type !== 'grass' || tile.b || tile.site || tile.dep) return;
       // owner must be set at spawn so combat stats bake from the right player's

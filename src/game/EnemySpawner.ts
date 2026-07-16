@@ -287,7 +287,14 @@ export class EnemySpawner {
         const distance = Math.hypot(x - centerX, y - centerY);
         if (distance < clear) continue;
         if (!(anywhere ? this.areaClear(x, y) : open(x, y))) continue;
-        if (distance > bestDistance) { bestDistance = distance; best = { x, y }; }
+        // Farthest-point spread: score by distance from the nearest existing
+        // camp so successive strongholds fan out across the map instead of
+        // all crowding whichever corner lies farthest from the player.
+        const spread = this.camps.length
+          ? Math.min(...this.camps.map(camp => Math.hypot(camp.x - x, camp.y - y)))
+          : distance;
+        const score = spread + distance * 0.25;
+        if (score > bestDistance) { bestDistance = score; best = { x, y }; }
       }
       if (best) return best;
     }

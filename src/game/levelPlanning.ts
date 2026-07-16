@@ -51,7 +51,13 @@ export function planLevel(level: LevelDef, seed: number, biome: BiomeKey, ascens
     const packMult = 1 + 0.4 * ascension;
     enemies = { ...enemies, wild: enemies.wild.map(w => ({ ...w, count: Math.round(w.count * packMult) })) };
   }
-  if (!sandbox && enemies?.waves && ascension > 0 && level.index >= 5 && level.index <= 9) {
+  // Ascended level 5 is the fortify-and-defend level (see ascendObjective):
+  // its scripted army-triggered raids are dropped — Game schedules the real,
+  // ever-stronger waves the moment the player's fortification first stands.
+  if (!sandbox && level.index === 5 && ascension > 0) {
+    enemies = { ...(enemies ?? {}), waves: [] };
+  }
+  if (!sandbox && enemies?.waves?.length && ascension > 0 && level.index >= 5 && level.index <= 9) {
     const a = Math.min(4, ascension);
     const waveMult = 1 + 0.5 * a;
     const scaled = enemies.waves.map(w => ({ ...w, count: Math.max(1, Math.round(w.count * waveMult)) }));
@@ -63,13 +69,21 @@ export function planLevel(level: LevelDef, seed: number, biome: BiomeKey, ascens
     }
   }
 
+  // The redesigned ascended openings (levels 1–4) ask for a far bigger economy
+  // (see ascendObjective), so their clocks stretch with the tier instead of
+  // shrinking — the pressure is the goal itself, not an impossible timer.
+  const openingStretch = !sandbox && ascension >= 1 && level.index <= 4 ? 1 + 0.2 * Math.min(5, ascension)
+    // the fortify level needs ample building time before its waves even begin
+    : !sandbox && ascension >= 1 && level.index === 5 ? 1.5 + 0.15 * Math.min(5, ascension)
+    : 1;
+
   return {
     world,
     enemies,
     prepMult: sandbox ? 1 : ascensionPrepMult(ascension),
     garrisonMult: sandbox ? 1 : 1 + 0.35 * ascension,
     bossHpMult: sandbox ? 1 : 1 + 0.5 * ascension,
-    hardTimer: Math.round(level.hardTimer * ascensionTimerMult(sandbox ? 0 : ascension) * (hellFinale ? 1.8 : 1)),
+    hardTimer: Math.round(level.hardTimer * ascensionTimerMult(sandbox ? 0 : ascension) * (hellFinale ? 1.8 : 1) * openingStretch),
   };
 }
 

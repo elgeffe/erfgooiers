@@ -156,12 +156,20 @@
 
 <div id="selbox"></div>
 <div id="formationbar" aria-label="Squad formation">
-  <span>Formation</span>
-  <button class="on" data-formation="box" title="Box formation — a solid block">▦</button>
-  <button data-formation="line" title="Line formation — a broad wall, 3 ranks deep">━</button>
-  <button data-formation="column" title="Column formation — a marching column, 3 files wide">┃</button>
-  <button data-formation="split" title="Split formation — two flanking groups">╬</button>
-  <span class="fhint" title="Hold the right mouse button and drag to preview the formation and aim its facing before releasing">hold RMB + drag to aim</span>
+  <div class="fbrow">
+    <span>Formation</span>
+    <button class="on" data-formation="box" title="Box formation — a solid block">▦</button>
+    <button data-formation="line" title="Line formation — a broad wall, 3 ranks deep">━</button>
+    <button data-formation="column" title="Column formation — a marching column, 3 files wide">┃</button>
+    <button data-formation="split" title="Split formation — two flanking groups"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><rect x="2" y="9" width="8" height="8" rx="1"/><rect x="14" y="7" width="8" height="8" rx="1"/></svg></button>
+    <span class="fhint" title="Hold the right mouse button and drag to preview the formation and aim its facing before releasing">hold RMB + drag to aim</span>
+  </div>
+  <div class="fbrow">
+    <span>Stance</span>
+    <button data-stance="auto" title="Auto-attack — chase any enemy that comes into view">⚔</button>
+    <button data-stance="defensive" title="Defensive — fight around their post, then return to it">🛡</button>
+    <button data-stance="hold" title="Hold ground — never chase; strike only what comes into reach">⚑</button>
+  </div>
 </div>
 <div id="toasts"></div>
 <div id="perfhud"></div>
@@ -177,12 +185,14 @@
     <h1 class="serif"><span id="menuLogo"></span>Erfgooiers</h1>
     <div class="tag">A browser roguelite economy builder and military strategy game — clear ten short levels, shop between each, lose it all if a level beats you.</div>
     <div id="metaLine" class="metaline"></div>
+    <div id="menuScores"></div>
     <div class="btns">
       <button id="btnContinue">Continue run</button>
       <button id="btnNewRun">New run</button>
       <button id="btnCoop">Co-op Expedition (Beta)</button>
       <button id="btnSkirmish">1v1 Skirmish (Beta)</button>
       <button id="btnHeritage" class="ghost">Heritage Cards — spend Erfgoed</button>
+      <button id="btnAchievements" class="ghost">Achievements — earn new cards</button>
       <button id="btnSandbox" class="ghost">Sandbox — free build</button>
       <button id="btnHelp" class="ghost">How to play</button>
       <button id="btnSettings" class="ghost">Settings</button>
@@ -288,6 +298,7 @@
         <div class="shopsect">Camera &amp; graphics</div>
         <label class="setrow">Camera pan speed<input id="setPan" type="range" min="50" max="200" step="10"><b id="setPanVal"></b></label>
         <label class="setrow chk"><input id="setInvZoom" type="checkbox">Invert scroll zoom</label>
+        <label class="setrow chk"><input id="setExtZoom" type="checkbox">Extended zoom out — see far more of the map at once (heavier on slow machines)</label>
         <label class="setrow chk"><input id="setEdgePan" type="checkbox">Edge panning — the pointer at a screen edge pans the camera</label>
         <label class="setrow chk"><input id="setAutoPause" type="checkbox">Pause when the window loses focus</label>
         <label class="setrow chk"><input id="setTutorials" type="checkbox">Tutorials — story, build checklist &amp; hints on Normal difficulty</label>
@@ -296,6 +307,23 @@
           <option value="high">High — full resolution, always</option>
           <option value="low">Low — saves battery &amp; old GPUs</option>
         </select></label>
+        <label class="setrow" title="Ceiling on live units — lower it if huge battles slow your machine. Applies when the next level starts.">Max units<select id="setUnitCap">
+          <option value="600">Low — 600 units</option>
+          <option value="1500">Medium — 1,500 units</option>
+          <option value="4000">High — 4,000 units</option>
+          <option value="11000">Godlike — 11,000 units</option>
+        </select></label>
+        <label class="setrow" title="How many fallen bodies stay on the battlefield before the oldest are cleared.">Battlefield bodies<select id="setBodyCap">
+          <option value="200">Low — 200 bodies</option>
+          <option value="800">Medium — 800 bodies</option>
+          <option value="2000">High — 2,000 bodies</option>
+          <option value="11000">Godlike — 11,000 bodies</option>
+        </select></label>
+        <label class="setrow" title="How long a fallen body lies before fading away.">Bodies linger<select id="setBodyLife">
+          <option value="60">Short — 1 minute</option>
+          <option value="300">Standard — 5 minutes</option>
+          <option value="900">Long — 15 minutes</option>
+        </select></label>
         <div class="shopsect">Save data</div>
         <div class="btns">
           <button id="btnExportSave" class="ghost" title="Download your run and Heritage progress as a file">Export save to file</button>
@@ -303,6 +331,7 @@
           <input id="importFile" type="file" accept="application/json,.json" style="display:none">
           <button id="btnSettingsClear" class="danger" title="Wipe the saved run and all meta-progress">Clear save data</button>
         </div>
+        <div class="hnote">⚠ Clearing save data (or your browser cache) also destroys the speedrun scoreboard and achievements. Pro tip: export your save to a file first to keep your runs.</div>
       </div>
       <div class="setcol">
         <div class="shopsect">Keybindings</div>
@@ -342,6 +371,11 @@
     <div id="heroGrid" class="shopgrid"></div>
     <div class="shopsect">2 · Choose your difficulty</div>
     <div id="ascensionRow"></div>
+    <div class="shopsect">3 · Sign the scoreboard — victories are timed and remembered</div>
+    <div class="setrow row" id="runNameRow">
+      <input id="runName" type="text" maxlength="20" placeholder="Your name" autocomplete="off">
+      <select id="runTitle"></select>
+    </div>
     <label class="setrow chk" id="newRunTutorialsRow"><input id="newRunTutorials" type="checkbox">Skip tutorials (Normal only)</label>
     <div class="btns row">
       <button id="btnHeroBack" class="ghost">Back to menu</button>
@@ -383,6 +417,18 @@
 </div>
 
 <!-- ---------- heritage shop (main menu) ---------- -->
+<div id="achievements" class="screen">
+  <div class="card shopcard">
+    <h1 class="serif">Achievements</h1>
+    <div id="achMeta" class="metaline"></div>
+    <div class="shopsect">Each feat unlocks a card for every future run's shop — locked feats show a hint and your progress</div>
+    <div id="achGrid" class="shopgrid"></div>
+    <div class="btns row">
+      <button id="btnAchBack">Back to menu</button>
+    </div>
+  </div>
+</div>
+
 <div id="heritage" class="screen">
   <div class="card shopcard">
     <h1 class="serif">Heritage — Erfgoed</h1>

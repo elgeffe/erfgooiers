@@ -28,6 +28,31 @@ export function itemIconSVG(key: ItemKey, size = 14, className = 'resicon'): str
   return `<svg class="${className}" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true" style="color:${ITEMS[key].color};fill:${ITEMS[key].color}">${itemShapes(key)}</svg>`;
 }
 
+/** The run's shop gold: a coin stamped with a crown, so it never reads as the
+ *  mint's plain coin item. */
+export function goldCoinIconSVG(size = 15, className = 'resicon'): string {
+  return `<svg class="${className}" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">`
+    + '<circle cx="12" cy="12" r="10" fill="#f2c94c" stroke="#a97e18" stroke-width="1.6"/>'
+    + '<circle cx="12" cy="12" r="7.6" fill="none" stroke="#c99b25" stroke-width="1"/>'
+    + '<path d="M7.6 15.6h8.8l.9-5.6-3.1 1.9L12 8l-2.2 3.9-3.1-1.9z" fill="#8a5a12"/>'
+    + '<path d="M7.6 16.8h8.8" stroke="#8a5a12" stroke-width="1.4" stroke-linecap="round"/>'
+    + '<circle cx="7.1" cy="9.3" r="1" fill="#8a5a12"/><circle cx="12" cy="7.2" r="1" fill="#8a5a12"/><circle cx="16.9" cy="9.3" r="1" fill="#8a5a12"/>'
+    + '</svg>';
+}
+
+/** Heritage: a patinated bronze coin bearing the Erfgooiers emblem — the Gooi
+ *  farmstead under its great gable, flanked by two wheat sprigs. */
+export function heritageCoinIconSVG(size = 15, className = 'resicon'): string {
+  return `<svg class="${className}" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">`
+    + '<circle cx="12" cy="12" r="10" fill="#9fc4a6" stroke="#3f6d51" stroke-width="1.6"/>'
+    + '<circle cx="12" cy="12" r="7.6" fill="none" stroke="#5b8a68" stroke-width="1"/>'
+    + '<path d="M12 6.6l5.4 4.4v6.2H6.6V11z" fill="#2f4d3a"/>'
+    + '<path d="M10.9 17.2v-3.4c0-1.4 2.2-1.4 2.2 0v3.4z" fill="#9fc4a6"/>'
+    + '<path d="M15.2 7.8V6.4h1.4v2.6" fill="#2f4d3a"/>'
+    + '<path d="M5.4 15.5c.9-.4 1.4-1.2 1.4-2.6M18.6 15.5c-.9-.4-1.4-1.2-1.4-2.6" fill="none" stroke="#3f6d51" stroke-width="1.1" stroke-linecap="round"/>'
+    + '</svg>';
+}
+
 const OUTPUT_ICON: Partial<Record<BuildingKey, ItemKey>> = {
   woodcutter: 'trunk', sawmill: 'timber', quarry: 'stone', farm: 'wheat', mill: 'flour', bakery: 'bread',
   goldmine: 'goldore', coalmine: 'coal', mint: 'coin', vineyard: 'grape', winery: 'wine', pigfarm: 'meat',

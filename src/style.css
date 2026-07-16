@@ -259,7 +259,9 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 #perfhud{position:absolute;left:12px;top:64px;display:none;background:rgba(16,12,9,.88);border:1px solid rgba(217,164,65,.3);border-radius:8px;padding:8px 12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.6;color:var(--ink);z-index:30;pointer-events:none;white-space:pre;}
 /* ---------- selection box + sandbox toolbar ---------- */
 #selbox{position:absolute;display:none;border:1.5px solid rgba(70,194,86,.9);background:rgba(70,194,86,.14);z-index:20;pointer-events:none;}
-#formationbar{position:absolute;right:190px;bottom:12px;display:none;align-items:center;gap:4px;background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:9px;padding:6px 7px;z-index:13;box-shadow:0 4px 16px rgba(0,0,0,.45);}
+#formationbar{position:absolute;right:190px;bottom:12px;display:none;flex-direction:column;align-items:stretch;gap:4px;background:rgba(43,33,25,.94);border:1px solid rgba(217,164,65,.3);border-radius:9px;padding:6px 7px;z-index:13;box-shadow:0 4px 16px rgba(0,0,0,.45);}
+#formationbar .fbrow{display:flex;align-items:center;gap:4px;}
+#formationbar .fbrow>span:first-child{min-width:62px;}
 #formationbar>span{color:var(--ink-dim);font-size:9px;text-transform:uppercase;letter-spacing:.7px;margin:0 3px;}
 #formationbar button{width:29px;height:27px;background:var(--panel2);color:var(--ink-dim);border:1px solid rgba(255,255,255,.1);border-radius:5px;cursor:pointer;font-size:15px;line-height:1;}
 #formationbar button:hover{border-color:var(--accent);color:var(--ink);}
@@ -474,6 +476,15 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 /* ---------- settings ---------- */
 .setcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:8px 28px;}
 .setrow{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ink);margin:7px 0;}
+#runNameRow input[type=text],#runNameRow select{background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:6px 9px;font:inherit;font-size:12.5px;}
+#runNameRow input[type=text]{flex:1;min-width:120px;}
+#menuScores{margin:-6px 0 14px;}
+#menuScores .scorehead{font-size:9.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--ink-dim);margin-bottom:4px;}
+#menuScores .scorerow{display:flex;align-items:baseline;gap:8px;font-size:12px;color:var(--ink);padding:2px 0;border-bottom:1px dotted rgba(255,255,255,.07);}
+#menuScores .scorerow .rank{color:var(--ink-dim);min-width:16px;}
+#menuScores .scorerow .who{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#menuScores .scorerow .tier{color:var(--accent);font-size:10.5px;}
+#menuScores .scorerow .time{font-variant-numeric:tabular-nums;color:#bce8af;}
 .setrow input[type=range]{flex:1;accent-color:var(--accent);min-width:80px;}
 .setrow b{width:44px;text-align:right;color:var(--accent);font-variant-numeric:tabular-nums;}
 .setrow.chk{cursor:pointer;}
@@ -528,6 +539,8 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 .rtag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;vertical-align:2px;background:rgba(255,255,255,.1);color:var(--ink-dim);}
 .rtag-uncommon{background:rgba(95,140,190,.25);color:#a9c8e8;}
 .rtag-rare{background:rgba(170,110,220,.25);color:#d3b0f0;}
+.rtag-legendary{background:rgba(217,164,65,.3);color:#ffd98a;}
+.scard.rar-legendary{border-color:rgba(217,164,65,.75);box-shadow:0 0 12px rgba(217,164,65,.25);}
 /* the five equipped cards spread across one responsive row instead of stacking
    into a second row with a big gap */
 /* a fixed row of five slots: bought cards fill them, the rest sit empty */

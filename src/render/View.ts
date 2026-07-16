@@ -39,6 +39,7 @@ export class View {
   private ghost: THREE.Group = new THREE.Group();
   private ghostKey: string | null = null;
   private readonly roadCursor: THREE.Mesh;
+  private demoTarget!: THREE.Group;
 
   // green markers over building/site entrance tiles, shown while painting roads
   private readonly entranceMarkers: THREE.Mesh[] = [];
@@ -69,9 +70,16 @@ export class View {
   // ---------- gore layer (cosmetic; bodies linger, then fade) ----------
   private readonly goreGroup = new THREE.Group();
   private readonly goreBodies: { obj: THREE.Mesh; age: number; mat: THREE.Material }[] = [];
-  private readonly MAX_BODIES = 11000;
-  private readonly CORPSE_LIFE = 300;   // seconds a body lies before it starts fading (5 min)
+  private MAX_BODIES = 2000;            // settings' performance cap can move both…
+  private CORPSE_LIFE = 300;            // …seconds a body lies before it starts fading
   private readonly CORPSE_FADE = 20;    // seconds to fade out once its time is up
+
+  /** Settings hook: cap battlefield bodies and how long they linger. */
+  setGorePrefs(maxBodies: number, lifeSeconds: number): void {
+    this.MAX_BODIES = maxBodies;
+    this.CORPSE_LIFE = lifeSeconds;
+    while (this.goreBodies.length > this.MAX_BODIES) this.cullBody(this.goreBodies.shift()!);
+  }
 
   // ---------- unit selection rings (pooled, persist across levels) ----------
   private readonly selRings: THREE.Mesh[] = [];
@@ -142,6 +150,22 @@ export class View {
     );
     this.roadCursor.rotation.x = -Math.PI / 2; this.roadCursor.position.y = 0.03; this.roadCursor.visible = false;
     this.scene.add(this.roadCursor);
+    // demolish-target marker: a red frame + tint over a doomed building's 2×2
+    this.demoTarget = new THREE.Group();
+    const demoFill = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.15, 2.15),
+      noOutline(new THREE.MeshBasicMaterial({ color: 0xcc3322, transparent: true, opacity: 0.28, side: THREE.DoubleSide })),
+    );
+    demoFill.rotation.x = -Math.PI / 2;
+    this.demoTarget.add(demoFill);
+    const demoRing = new THREE.Mesh(
+      new THREE.RingGeometry(1.32, 1.52, 4),
+      noOutline(new THREE.MeshBasicMaterial({ color: 0xdd2211, transparent: true, opacity: 0.9, side: THREE.DoubleSide })),
+    );
+    demoRing.rotation.x = -Math.PI / 2; demoRing.rotation.z = Math.PI / 4; demoRing.position.y = 0.012;
+    this.demoTarget.add(demoRing);
+    this.demoTarget.position.y = 0.05; this.demoTarget.visible = false;
+    this.scene.add(this.demoTarget);
     this.scene.add(this.ghost); this.ghost.visible = false;
     this.scene.add(this.goreGroup);
     this.scene.add(this.hpBarGroup);
@@ -283,8 +307,15 @@ export class View {
   pan(v: THREE.Vector3): void { this.camTarget.add(v); this.clampCam(); this.updateCamera(); }
   centerOn(x: number, z: number): void { this.camTarget.set(x, 0, z); this.clampCam(); this.updateCamera(); }
   zoom(factor: number): void {
-    this.viewSize = Math.max(6, Math.min(28, this.viewSize * factor));
+    this.viewSize = Math.max(6, Math.min(this.maxViewSize, this.viewSize * factor));
     this.updateCamera();
+  }
+
+  /** Ceiling on zoom-out; the settings' extended-zoom toggle raises it. */
+  private maxViewSize = 28;
+  setExtendedZoom(on: boolean): void {
+    this.maxViewSize = on ? 46 : 28;
+    if (this.viewSize > this.maxViewSize) { this.viewSize = this.maxViewSize; this.updateCamera(); }
   }
 
   /** Screen point → world tile (or null off-map). */
@@ -554,6 +585,14 @@ export class View {
     }
   }
   hideRoadCursor(): void { this.roadCursor.visible = false; }
+
+  /** Frame a 2×2 building/site footprint in red while demolish hovers it. */
+  showDemolishTarget(tx: number, ty: number): void {
+    this.demoTarget.visible = true;
+    this.demoTarget.position.x = this.world.wx(tx) + 0.5;
+    this.demoTarget.position.z = this.world.wz(ty) + 0.5;
+  }
+  hideDemolishTarget(): void { this.demoTarget.visible = false; }
 
   /** Highlight the given entrance tiles in green (used while painting roads). */
   showEntranceMarkers(coords: Coord[]): void {

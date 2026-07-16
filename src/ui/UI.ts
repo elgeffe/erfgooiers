@@ -8,7 +8,7 @@ import { installFavicon, logoSVG } from './logo';
 import { audio } from '../audio/Audio';
 import { unitLabel } from '../game/util';
 import { MAX_MARKET_ORDERS } from '../game/MarketSystem';
-import { buildingIconSVG, itemIconSVG } from './icons';
+import { buildingIconSVG, goldCoinIconSVG, itemIconSVG } from './icons';
 import { tradeLoadTime, tradePartner, tradeShipmentActive } from '../game/trade';
 import type { Game } from '../game/Game';
 import type { Building, BuildingDef, ItemKey, Mode } from '../types';
@@ -54,7 +54,7 @@ export class UI {
 
   constructor() {
     $('logo').innerHTML = logoSVG(30);
-    ($('goldChip').querySelector('.coin') as HTMLElement).innerHTML = itemIconSVG('coin', 15);
+    ($('goldChip').querySelector('.coin') as HTMLElement).innerHTML = goldCoinIconSVG(15);
     installFavicon();
     this.observeTopbar();
     this.buildResbar();
@@ -513,7 +513,8 @@ export class UI {
       }
       const trainBtn = t && t.closest('[data-train]') as HTMLElement | null;
       if (trainBtn && o && o.def && (o.def.military || o.def.trainer)) {
-        this.game!.submitCommand({ type: 'queueTraining', buildingId: o.id, unit: trainBtn.dataset.train! });
+        const times = e.shiftKey ? 5 : 1;
+        for (let i = 0; i < times; i++) this.game!.submitCommand({ type: 'queueTraining', buildingId: o.id, unit: trainBtn.dataset.train! });
         this.renderInspector();
         return;
       }
@@ -686,7 +687,7 @@ export class UI {
               `<i>${itemIconSVG(k as ItemKey, 13)}<span class="tcname">${ITEMS[k as ItemKey].name}</span> ${n}</i>`).join('')
               || '<i class="tcfree">free</i>';
             const dynamicTime = Math.round(t.time * mods.trainTime(t.kind));
-            body += `<button class="inspbtn train" data-train="${t.kind}" ${t.desc ? `title="${t.desc}"` : ''}>`
+            body += `<button class="inspbtn train" data-train="${t.kind}" title="${t.desc ? `${t.desc} — ` : ''}Shift+click queues 5">`
               + `<span class="trow"><span class="tname">+ ${unitLabel(t.kind)}</span><span class="ttime">${dynamicTime}s</span></span>`
               + `<span class="tcost">${cost}</span></button>`;
             if (t.desc) body += `<div class="tinfo">${t.desc}</div>`;

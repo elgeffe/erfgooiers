@@ -592,6 +592,22 @@ export class Game {
     return this.placementSystem.canPlotAt(tx, ty);
   }
 
+  demolishTargetAt(tx: number, ty: number, owner: PlayerId = this.localPlayerId): Building | Site | null {
+    return this.placementSystem.demolishTargetAt(tx, ty, owner);
+  }
+
+  demolishRefund(target: Building | Site): Record<string, number> {
+    return this.placementSystem.demolishRefund(target);
+  }
+
+  /** Performance ceiling on live units (single player only — co-op peers must
+   *  share one cap, so main leaves the factory's MAX_UNITS default there). */
+  set unitCap(n: number) { this.unitFactory.unitCap = n; }
+
+  /** Fraction of a demolished building's cost refunded (set from the run's ascension). */
+  set demolishRefundRate(rate: number) { this.placementSystem.demolishRefundRate = rate; }
+  get demolishRefundRate(): number { return this.placementSystem.demolishRefundRate; }
+
   demolishableAt(tx: number, ty: number, dragOnly: boolean, owner: PlayerId = this.localPlayerId): boolean {
     return this.placementSystem.demolishableAt(tx, ty, dragOnly, owner);
   }
@@ -773,13 +789,52 @@ export class Game {
     return this.encounters.nextWave();
   }
 
+  /** Standing player fortifications (walls, gates, watch/stone towers) — the
+   *  fortify objective and its build progress read these live counts. */
+  playerFortifications(): { walls: number; gates: number; towers: number } {
+    let walls = 0, gates = 0, towers = 0;
+    for (const b of this.buildings) {
+      if (b.removed || b.faction !== 'player' || !b.active) continue;
+      if (b.key === 'wall') walls++;
+      else if (b.key === 'gate') gates++;
+      else if (b.key === 'watchtower' || b.key === 'stonetower') towers++;
+    }
+    return { walls, gates, towers };
+  }
+
+  /** The fortify-and-defend objective: the raids wait until the fortification
+   *  first stands, then an ever-stronger scripted sequence marches in. */
+  private armFortifyWaves(): void {
+    const objective = this.objective;
+    const def = objective?.def;
+    if (!objective || !def || def.kind !== 'fortifyDefend' || objective.fortified) return;
+    const f = this.playerFortifications();
+    if (f.walls < def.walls || f.gates < def.gates || f.towers < def.towers) return;
+    objective.fortified = true;
+    const script: [UnitKind, number][] = [['bandit', 6], ['orc', 6], ['skeleton', 9], ['zombie', 12], ['troll', 5], ['brute', 2]];
+    for (let i = 0; i < def.waves; i++) {
+      const [kind, base] = script[Math.min(i, script.length - 1)];
+      this.scheduleWave(kind, Math.max(2, Math.round(base * this.garrisonMult)), 60 + i * 120);
+    }
+    this.toast?.('The fortification stands — the enemy has taken notice!', 'err');
+    this.sfx?.('error');
+  }
+
   /** Every tower (any faction) looses arrows at the nearest hostile fighter in range. */
   private towerFire(sdt: number): void {
     for (const b of this.buildings) {
       const tw = b.def.tower;
       if (!tw || b.removed || !b.active) continue;
       b.prog += sdt;
-      if (b.prog < tw.rate) continue;
+      // A castle sheltering bell-summoned workers mans its arrow slits: every
+      // few villagers inside speed up the volleys (up to 3× with a full keep).
+      let rate = tw.rate;
+      if (b.def.store && b.faction === 'player') {
+        let sheltered = 0;
+        for (const u of this.units) if (!u.dead && u.owner === b.owner && u.wstate === 'refuge') sheltered++;
+        if (sheltered > 0) rate = tw.rate / Math.min(3, 1 + sheltered / 4);
+      }
+      if (b.prog < rate) continue;
       const c = this.buildingCenter(b);
       let best: Unit | null = null, bd = tw.range * tw.range;
       this.forUnitsNear(b.x, b.y, Math.ceil(tw.range) + 2, u => {
@@ -985,6 +1040,7 @@ export class Game {
     this.encounters.update(sdt);
     this.interactionSystem.update(sdt);
     this.towerFire(sdt); // towers watch on every level, with or without a director
+    this.armFortifyWaves();
     this.fieldT += sdt;
     if (this.fieldT > 0.5) { this.fieldT = 0; this.workerSystem.recolorFields(); }
   }

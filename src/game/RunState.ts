@@ -43,6 +43,10 @@ export function ascensionTimerMult(a: number): number { return a >= 2 ? 0.85 : 1
 /** Does this tier force at least one curse onto every contract? */
 export function ascensionForcesCurse(a: number): boolean { return a >= 3; }
 
+/** Fraction of a demolished building's cost returned to the castle: the
+ *  beginner tier refunds everything, mid tiers half, the final tiers nothing. */
+export function ascensionDemolishRefund(a: number): number { return [1, 0.5, 0.5, 0.5, 0, 0][Math.min(MAX_ASCENSION, Math.max(0, a))]; }
+
 /** Higher tiers grant a smaller default army… */
 export function ascensionArmyMult(a: number): number { return [1, 0.65, 0.45, 0.3, 0.25, 0.2][Math.min(MAX_ASCENSION, Math.max(0, a))]; }
 /** …but more prep: enemy wave timers & grace delays stretch by this factor. */
@@ -61,6 +65,37 @@ export interface RunState {
   equipment: (string | null)[]; // reserved weapon / boots / trinket slots
   ascension: number;            // difficulty tier this run is played at (Phase 4)
   tutorials: boolean;           // onboarding aids active this run (Normal tier only)
+  playerName: string;           // speedrun scoreboard: who runs (typed at run start)
+  playerTitle: string;          // …and under which epithet ("the Brave", …)
+  timeSeconds: number;          // summed sim time of every cleared level so far
+}
+
+/** One finished victorious run on the speedrun scoreboard. */
+export interface ScoreEntry {
+  name: string;          // typed at run start
+  title: string;         // chosen epithet ("the Brave", …)
+  ascension: number;     // tier the run was won at
+  timeSeconds: number;   // summed sim time of all ten cleared levels
+  hero: string | null;
+  date: number;          // Date.now() at the win
+}
+
+/** Epithets offered at run start — pick your legend. */
+export const PLAYER_TITLES = [
+  'the Brave', 'the Wise', 'the Stout', 'the Drunkard', 'the Gamer',
+  'the Swift', 'the Cunning', 'the Bold', 'the Grim', 'the Golden',
+  'the Restless', 'the Humble',
+];
+
+/** Scoreboard order: highest tier first, fastest time within a tier. */
+export function compareScores(a: ScoreEntry, b: ScoreEntry): number {
+  return b.ascension - a.ascension || a.timeSeconds - b.timeSeconds;
+}
+
+export function formatRunTime(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` : `${m}:${String(r).padStart(2, '0')}`;
 }
 
 /** Meta-progress that persists across all runs forever. */
@@ -71,14 +106,15 @@ export interface MetaState {
   ascension: number;            // highest ascension tier unlocked (0..MAX_ASCENSION)
   tutorialSeen: boolean;        // first-run flag — cleared once the player has begun a run
   stats: { runs: number; levelsCleared: number; bestLevel: number; wins: number };
+  scores: ScoreEntry[];         // speedrun scoreboard (victorious runs, best first)
 }
 
 export function newRun(seed: number, ascension = 0, tutorials = true): RunState {
-  return { runSeed: seed >>> 0, levelIndex: 1, gold: 0, upgrades: [], mutators: [], rewardMult: 1, objectiveIdx: null, hero: null, equipment: [null, null, null], ascension, tutorials };
+  return { runSeed: seed >>> 0, levelIndex: 1, gold: 0, upgrades: [], mutators: [], rewardMult: 1, objectiveIdx: null, hero: null, equipment: [null, null, null], ascension, tutorials, playerName: '', playerTitle: '', timeSeconds: 0 };
 }
 
 export function newMeta(): MetaState {
-  return { heritage: 0, unlocks: [], activeGlobalBuff: null, ascension: 0, tutorialSeen: false, stats: { runs: 0, levelsCleared: 0, bestLevel: 0, wins: 0 } };
+  return { heritage: 0, unlocks: [], activeGlobalBuff: null, ascension: 0, tutorialSeen: false, stats: { runs: 0, levelsCleared: 0, bestLevel: 0, wins: 0 }, scores: [] };
 }
 
 /** The deterministic map seed for the run's current level. */

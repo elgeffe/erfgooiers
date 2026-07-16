@@ -85,22 +85,43 @@ export function applyGameCommand(game: Game, playerId: PlayerId, command: GameCo
       if (!units.length) return fail('no_owned_units');
       const formation = FORMATIONS.includes(command.formation) ? command.formation : 'box';
       const order = command.order;
+      // A defensive unit's post follows its orders: it guards wherever it was
+      // last sent, not the tile it happened to hold its stance on.
+      const rePost = (x: number, y: number): void => {
+        for (const u of units) if (u.stance === 'defensive') u.anchor = { x, y };
+      };
       if (order.type === 'attack') {
         const target = game.entityById(order.targetId);
         if (!target || !('role' in target)) return fail('bad_target');
         const foe = target as Unit;
         if (foe.dead || !game.hostileOwners(playerId, foe.owner)) return fail('bad_target');
         game.orderGroup(units, 'attack', foe.tx, foe.ty, foe, formation, undefined, !!command.queue);
+        rePost(foe.tx, foe.ty);
         return ok;
       }
       if (order.type === 'attackBuilding') {
         const target = game.entityById(order.targetId);
         if (!target || !('def' in target) || target.isSite || target.removed || !game.hostileOwners(playerId, target.owner)) return fail('bad_target');
         game.orderGroupAttackBuilding(units, target as Building, !!command.queue);
+        rePost(target.x, target.y);
         return ok;
       }
       game.orderGroup(units, order.type, order.x, order.y, null, formation, command.facing, !!command.queue);
+      rePost(order.x, order.y);
       return ok;
+    }
+    case 'setStance': {
+      let touched = 0;
+      for (const id of command.unitIds) {
+        const e = game.entityById(id);
+        if (!e || !('role' in e)) continue;
+        const u = e as Unit;
+        if (u.dead || u.owner !== playerId || u.faction !== 'player' || !isCommandableRole(u.role)) continue;
+        u.stance = command.stance;
+        u.anchor = command.stance === 'defensive' ? { x: u.tx, y: u.ty } : null;
+        touched++;
+      }
+      return touched ? ok : fail('no_owned_units');
     }
     case 'collectPickup': {
       game.collectGoldAt(command.x, command.y, playerId);

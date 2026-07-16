@@ -37,6 +37,10 @@ export class PlacementSystem {
   private roadWarnT = 0;
   private plotWarnT = 0;
 
+  /** Fraction of a demolished building's cost returned to the castle.
+   *  Set per level from the run's ascension tier (1 = full, 0 = nothing). */
+  demolishRefundRate = 1;
+
   constructor(
     private readonly world: World,
     private readonly view: View,
@@ -89,6 +93,9 @@ export class PlacementSystem {
     if (building.removed || building.owner !== owner || !building.def.fields) return;
     const tile = this.world.T(tx, ty);
     if (!tile || tile.type !== 'grass' || tile.b || tile.site || tile.road || tile.field || tile.dep || tile.tree?.dense) return;
+    // A plot on a doorway would sit on the tile the building's serfs and
+    // worker walk through — keep every entrance clear of crops.
+    if (this.entranceTileKeys().has(`${tx},${ty}`)) return;
     if (building.fieldsList.length >= (building.def.plots ?? 8)) {
       const now = Date.now();
       if (now - this.plotWarnT > 1500) {
@@ -162,7 +169,48 @@ export class PlacementSystem {
   }
 
   canPaintRoadAt(tx: number, ty: number): boolean { return this.openGround(tx, ty); }
-  canPlotAt(tx: number, ty: number): boolean { return this.openGround(tx, ty); }
+  canPlotAt(tx: number, ty: number): boolean {
+    return this.openGround(tx, ty) && !this.entranceTileKeys().has(`${tx},${ty}`);
+  }
+
+  /** The building or site a demolish click at this tile would remove, if the
+   *  local player may actually demolish it (own, not the castle, not enemy). */
+  demolishTargetAt(tx: number, ty: number, owner: PlayerId): Building | Site | null {
+    const tile = this.world.T(tx, ty);
+    if (!tile) return null;
+    const b = tile.b;
+    if (b && b.faction === 'player' && b.owner === owner && this.ports.playerStore(owner) !== b) return b;
+    if (tile.site && tile.site.owner === owner) return tile.site;
+    return null;
+  }
+
+  /** Goods returned when `target` is demolished: a building refunds its cost
+   *  and a site the materials already delivered, both scaled by the level's
+   *  refund rate and rounded down. Empty means nothing comes back. */
+  demolishRefund(target: Building | Site): Record<string, number> {
+    const source = (target as Site).isSite
+      ? (target as Site).delivered
+      : this.modsFor(target.owner).buildingCost(target.def) as Record<string, number>;
+    const refund: Record<string, number> = {};
+    for (const item in source) {
+      const amount = Math.floor((source[item] || 0) * this.demolishRefundRate);
+      if (amount > 0) refund[item] = amount;
+    }
+    return refund;
+  }
+
+  /** Credit a demolish refund to the owner's castle stock. */
+  private payRefund(target: Building | Site): string {
+    const refund = this.demolishRefund(target);
+    const store = this.ports.playerStore(target.owner as PlayerId);
+    if (!store?.stock) return '';
+    let note = '';
+    for (const item in refund) {
+      store.stock[item] = (store.stock[item] || 0) + refund[item];
+      note += `${note ? ', ' : ''}${refund[item]} ${ITEMS[item as keyof typeof ITEMS]?.name.toLowerCase() ?? item}`;
+    }
+    return note;
+  }
 
   demolishableAt(tx: number, ty: number, dragOnly: boolean, owner: PlayerId): boolean {
     const tile = this.world.T(tx, ty);
@@ -327,9 +375,17 @@ export class PlacementSystem {
       if (this.ports.playerStore(owner) === building) { this.ports.toast('The castle cannot be demolished', 'err', owner); return; }
       if (building.faction !== 'player') { this.ports.toast('Enemy strongholds must be destroyed in battle', 'err', owner); return; }
       if (building.owner !== owner) { this.ports.toast("You cannot demolish your ally's building", 'err', owner); return; }
-      this.ports.sfx('demolish'); this.removeBuilding(building); this.ports.toast(`${building.def.name} demolished`, undefined, owner); return;
+      this.ports.sfx('demolish');
+      const note = this.payRefund(building);
+      this.removeBuilding(building);
+      this.ports.toast(`${building.def.name} demolished${note ? ` — recovered ${note}` : ''}`, undefined, owner);
+      return;
     }
-    if (tile.site && tile.site.owner === owner) { this.ports.sfx('demolish'); this.removeSite(tile.site); }
+    if (tile.site && tile.site.owner === owner) {
+      this.ports.sfx('demolish');
+      this.payRefund(tile.site);
+      this.removeSite(tile.site);
+    }
   }
 
   removeSite(site: Site): void {

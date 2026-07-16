@@ -51,7 +51,11 @@ export class CombatSystem {
     if (def.fire) this.fireVolley(unit, dt);
 
     const leash = unit.faction === 'wild' ? def.leash
-      : (unit.faction === 'enemy' && !unit.raider && unit.anchor ? (def.leash ?? 18) : undefined);
+      : unit.faction === 'enemy' && !unit.raider && unit.anchor ? (def.leash ?? 18)
+      // defensive stance: fight around the post, then walk back (explicit
+      // orders suspend the leash so a march is never yanked home mid-way)
+      : unit.faction === 'player' && unit.stance === 'defensive' && !unit.order ? 8
+      : undefined;
     if (leash && unit.anchor) {
       const anchorDistance = Math.hypot(unit.tx - unit.anchor.x, unit.ty - unit.anchor.y);
       if (unit.wstate === 'leash') {
@@ -77,6 +81,12 @@ export class CombatSystem {
     const canSeek = (!unit.order || unit.order.type !== 'move') && unit.obeyT <= 0;
     const aggro = unit.faction === 'wild' && !unit.raider ? Math.min(def.aggro, 4.5) : def.aggro;
     if (!foe && canSeek && !unit.foeB) foe = this.targeting.acquireUnit(unit, aggro);
+    // Hold-ground fighters never chase: an auto-acquired foe only counts while
+    // it stands within weapon reach (an explicit attack order still overrides).
+    if (foe && unit.faction === 'player' && unit.stance === 'hold' && unit.order?.type !== 'attack') {
+      const reach = unit.range + 0.1 + Math.max(0, (foe.mesh.scale.x || 1) - 1) * 0.4;
+      if (this.unitDistance(unit, foe) > reach) foe = null;
+    }
     unit.foe = foe;
 
     if (foe) {
@@ -117,7 +127,7 @@ export class CombatSystem {
 
     let building = unit.foeB && !unit.foeB.removed ? unit.foeB : orderedBuilding;
     if (building?.removed) building = null;
-    if (!building && canSeek) building = this.targeting.acquireBuilding(unit);
+    if (!building && canSeek && !(unit.faction === 'player' && unit.stance === 'hold')) building = this.targeting.acquireBuilding(unit);
     unit.foeB = building;
     if (building) {
       const center = this.ports.buildingCenter(building);
