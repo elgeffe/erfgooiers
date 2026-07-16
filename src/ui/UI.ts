@@ -8,7 +8,7 @@ import { installFavicon, logoSVG } from './logo';
 import { audio } from '../audio/Audio';
 import { unitLabel } from '../game/util';
 import { MAX_MARKET_ORDERS } from '../game/MarketSystem';
-import { buildingIconSVG, itemIconSVG } from './icons';
+import { buildingIconSVG, goldCoinIconSVG, itemIconSVG } from './icons';
 import { tradeLoadTime, tradePartner, tradeShipmentActive } from '../game/trade';
 import type { Game } from '../game/Game';
 import type { Building, BuildingDef, ItemKey, Mode } from '../types';
@@ -54,7 +54,7 @@ export class UI {
 
   constructor() {
     $('logo').innerHTML = logoSVG(30);
-    ($('goldChip').querySelector('.coin') as HTMLElement).innerHTML = itemIconSVG('coin', 15);
+    ($('goldChip').querySelector('.coin') as HTMLElement).innerHTML = goldCoinIconSVG(15);
     installFavicon();
     this.observeTopbar();
     this.buildResbar();

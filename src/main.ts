@@ -21,6 +21,7 @@ import { campaignBiome } from './data/biomes';
 import type { BiomeKey } from './data/biomes';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionDemolishRefund, ascensionForcesCurse, ascensionShopSlots, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import { planLevel, planStartArmy } from './game/levelPlanning';
+import { goldCoinIconSVG, heritageCoinIconSVG } from './ui/icons';
 import { installSettingsController } from './ui/settingsController';
 import { installSandboxTools } from './ui/sandboxTools';
 import { CoOpController } from './ui/CoOpController';
@@ -302,8 +303,8 @@ function victoryOutputsHTML(ascensionNote: string, cta = ''): string {
     `<div class="vout"><span class="vout-ico">${ico}</span><b>${val}</b><small>${label}</small></div>`;
   let s = '<div class="victory-outputs">';
   s += badge('🏆', `${clearedThisRun}/${RUN_LEVELS}`, 'Levels cleared');
-  s += badge('🪙', `${goldEarnedThisRun}`, 'Gold earned');
-  s += badge('🏛️', `${meta.heritage}`, 'Heritage banked');
+  s += badge(goldCoinIconSVG(20), `${goldEarnedThisRun}`, 'Gold earned');
+  s += badge(heritageCoinIconSVG(20), `${meta.heritage}`, 'Heritage banked');
   s += badge('🗺️', `${meta.stats.levelsCleared}`, 'Lifetime cleared');
   s += '</div>';
   if (ascensionNote) s += `<div class="vout-banner"><span class="vout-ico">⬆</span><div class="vout-banner-tx"><b>New ascension unlocked</b><span>${ascensionNote.replace(/^New ascension unlocked:\s*/, '')}</span></div></div>`;
@@ -602,7 +603,7 @@ function renderAscensionRow(): void {
 }
 
 function renderHeroSelect(): void {
-  $('heroMeta').innerHTML = `<b>${meta.heritage}</b> Heritage — locked heroes are bought here, kept forever`;
+  $('heroMeta').innerHTML = `${heritageCoinIconSVG(15)} <b>${meta.heritage}</b> Heritage — locked heroes are bought here, kept forever`;
   const grid = $('heroGrid'); grid.innerHTML = '';
   for (const h of HEROES) {
     const owned = heroAvailable(h.id, meta.unlocks);
@@ -928,7 +929,7 @@ function renderMenu(): void {
   const cont = $('btnContinue') as HTMLButtonElement;
   cont.style.display = has ? 'block' : 'none';
   $('metaLine').innerHTML =
-    `<b>${meta.heritage}</b> Heritage · runs: ${meta.stats.runs} · wins: ${meta.stats.wins} · levels cleared: ${meta.stats.levelsCleared} · best: level ${meta.stats.bestLevel || 0}` +
+    `${heritageCoinIconSVG(14)} <b>${meta.heritage}</b> Heritage · runs: ${meta.stats.runs} · wins: ${meta.stats.wins} · levels cleared: ${meta.stats.levelsCleared} · best: level ${meta.stats.bestLevel || 0}` +
     (meta.ascension > 0 ? ` · ascension unlocked: ${ASCENSION_NAMES[meta.ascension]}` : '');
 }
 
@@ -949,7 +950,7 @@ function renderSummary(victory: boolean, reason: 'timeout' | 'castle' = 'timeout
 function openHeritage(): void { renderHeritage(); showScreen('heritage'); }
 
 function renderHeritage(): void {
-  $('heritageMeta').innerHTML = `<b>${meta.heritage}</b> Heritage to spend · own any number, activate one global blessing`;
+  $('heritageMeta').innerHTML = `${heritageCoinIconSVG(15)} <b>${meta.heritage}</b> Heritage to spend · own any number, activate one global blessing`;
   const grid = $('heritageGrid'); grid.innerHTML = '';
   for (const def of META_UPGRADES) {
     const owned = meta.unlocks.includes(def.id);
