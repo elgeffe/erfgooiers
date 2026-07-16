@@ -381,22 +381,47 @@ export class Ambience {
     const cloudTop = stdMat({ color: 0xffffff, transparent: true, opacity: 0.72 });
     const cloudLight = stdMat({ color: 0xf5fbff, transparent: true, opacity: 0.5 });
     const cloudShade = stdMat({ color: 0xb8ced9, transparent: true, opacity: 0.42 });
-    const mk = (c: THREE.Group, x: number, z: number, s: number, y = 0): void => {
+    // One puff: a shaded flat underside, a bright rounded crown, and a sunlit
+    // highlight. `sx`/`sz` stretch the puff so silhouettes can trace ears,
+    // tails and trunks instead of approximating everything with circles.
+    const mk = (c: THREE.Group, x: number, z: number, s: number, y = 0, sx = 1, sz = 1): void => {
       const shade = new THREE.Mesh(sphere(1, 14, 9), cloudShade);
-      shade.position.set(x, y - 0.16, z); shade.scale.set(s * 1.08, s * 0.34, s * 0.92); c.add(shade);
+      shade.position.set(x, y - 0.16, z); shade.scale.set(s * 1.08 * sx, s * 0.3, s * 0.92 * sz); c.add(shade);
       const p = new THREE.Mesh(sphere(1, 16, 10), cloudTop);
-      p.position.set(x, y + rnd() * 0.18, z); p.scale.set(s, s * 0.62, s); c.add(p);
+      p.position.set(x, y + rnd() * 0.14, z); p.scale.set(s * sx, s * 0.62, s * sz); c.add(p);
       const light = new THREE.Mesh(sphere(1, 14, 9), cloudLight);
-      light.position.set(x - s * 0.16, y + s * 0.28, z - s * 0.08); light.scale.set(s * 0.62, s * 0.31, s * 0.62); c.add(light);
+      light.position.set(x - s * 0.16, y + s * 0.28, z - s * 0.08); light.scale.set(s * 0.62 * sx, s * 0.31, s * 0.62 * sz); c.add(light);
     };
-    // each builder sketches an animal silhouette in the horizontal plane
+    // each builder sketches an animal silhouette in the horizontal plane (+x = nose)
     const animals: Array<(c: THREE.Group) => void> = [
-      c => { mk(c, -1.2, 0, 0.5); mk(c, 0, 0, 1.3); mk(c, 1.5, 0, 0.95); mk(c, 1.85, -0.5, 0.42); mk(c, 2.15, -0.85, 0.32); mk(c, 1.85, 0.5, 0.42); mk(c, 2.15, 0.85, 0.32); }, // bunny
-      c => { mk(c, 0, 0, 1.25); mk(c, 1.45, 0, 0.85); mk(c, 1.7, -0.42, 0.3); mk(c, 1.7, 0.42, 0.3); mk(c, -1.3, 0.3, 0.4); mk(c, -1.75, 0.65, 0.32); }, // cat
-      c => { mk(c, 0, 0, 1.15); mk(c, 1.25, 0.1, 0.8); mk(c, 1.95, 0.1, 0.32); mk(c, -1.0, 0.2, 0.55, 0.2); }, // duck
-      c => { mk(c, 0.3, 0, 1.25); mk(c, -0.5, 0, 0.9); mk(c, -1.7, -0.5, 0.45); mk(c, -1.7, 0.5, 0.45); }, // fish
-      c => { mk(c, 0, 0, 1.5); mk(c, 1.6, 0, 1.0); mk(c, 2.3, 0.1, 0.5); mk(c, 2.75, 0.42, 0.4); mk(c, 3.05, 0.78, 0.3); mk(c, 1.3, -0.78, 0.5); mk(c, -1.5, 0, 0.55); }, // elephant
-      c => { mk(c, 0, 0, 1.25); mk(c, 1.55, 0, 0.85); mk(c, 2.15, 0, 0.4); mk(c, 1.4, -0.55, 0.4); mk(c, -1.4, 0.2, 0.4, 0.2); }, // dog
+      c => { // bunny: haunch, body, head, two long swept-back ears, bob tail
+        mk(c, -1.15, 0, 0.95); mk(c, 0, 0, 1.25); mk(c, 1.35, 0, 0.8);
+        mk(c, 1.75, -0.15, 0.42, 0.05, 1.1, 0.8);                 // muzzle
+        mk(c, 0.9, -0.62, 0.34, 0.1, 2.4, 0.55); mk(c, 0.9, 0.62, 0.34, 0.1, 2.4, 0.55); // ears laid along the back
+        mk(c, -1.85, 0, 0.4); },                                  // tail
+      c => { // cat: body, chest, head with two pricked ears, S-curved tail
+        mk(c, -0.3, 0, 1.2, 0, 1.35, 1); mk(c, 0.9, 0, 0.9); mk(c, 1.6, 0, 0.66);
+        mk(c, 1.95, -0.38, 0.24, 0.12, 0.8, 1.6); mk(c, 1.95, 0.38, 0.24, 0.12, 0.8, 1.6); // ears
+        mk(c, -1.5, 0.25, 0.32); mk(c, -1.95, 0.62, 0.28); mk(c, -2.2, 1.05, 0.26); }, // tail curl
+      c => { // duck: tail tip, body, neck, head and a flat stretched bill
+        mk(c, -1.3, 0.1, 0.5, 0.15, 1.4, 0.7); mk(c, 0, 0, 1.15, 0, 1.3, 1);
+        mk(c, 1.1, 0.05, 0.55); mk(c, 1.65, 0.1, 0.5);
+        mk(c, 2.25, 0.1, 0.3, 0, 1.8, 0.9); },                    // bill
+      c => { // fish: body, two tail flukes, dorsal and side fins
+        mk(c, 0.3, 0, 1.25, 0, 1.4, 1); mk(c, -0.75, 0, 0.75);
+        mk(c, -1.75, -0.55, 0.42, 0, 1.5, 0.7); mk(c, -1.75, 0.55, 0.42, 0, 1.5, 0.7); // flukes
+        mk(c, 0.35, 0, 0.5, 0.55, 0.7, 0.5);                      // dorsal fin
+        mk(c, 0.3, -0.95, 0.35, -0.05, 1.2, 0.6); mk(c, 0.3, 0.95, 0.35, -0.05, 1.2, 0.6); }, // side fins
+      c => { // elephant: bulky body, head, drooping trunk, two broad ears, tail
+        mk(c, 0, 0, 1.5, 0, 1.25, 1.05); mk(c, 1.55, 0, 0.95);
+        mk(c, 2.25, 0.15, 0.42); mk(c, 2.65, 0.5, 0.34); mk(c, 2.85, 0.95, 0.3); // trunk curling up
+        mk(c, 1.35, -0.85, 0.55, 0.05, 0.8, 1.3); mk(c, 1.35, 0.85, 0.55, 0.05, 0.8, 1.3); // ears
+        mk(c, -1.5, 0, 0.45); mk(c, -2.0, 0.2, 0.22, 0, 1.6, 0.5); }, // rump & tail
+      c => { // dog: body, head, stretched snout, floppy ear, wagging tail
+        mk(c, -0.2, 0, 1.2, 0, 1.4, 0.95); mk(c, 1.25, 0, 0.8);
+        mk(c, 1.9, -0.05, 0.4, 0, 1.6, 0.8);                      // snout
+        mk(c, 1.15, 0.5, 0.35, 0.15, 1.0, 1.5);                   // ear
+        mk(c, -1.55, 0.25, 0.3, 0.2, 1.8, 0.6); mk(c, -2.0, 0.55, 0.25, 0.3); }, // tail up
     ];
     const cloudCount = 2 + (rnd() < 0.35 ? 1 : 0);
     for (let i = 0; i < cloudCount; i++) {
@@ -404,11 +429,28 @@ export class Ambience {
       if (rnd() < 0.18) {
         animals[Math.floor(rnd() * animals.length)](c);
       } else {
-        const n = 4 + Math.floor(rnd() * 3);
+        // Cumulus bank: a row of touching base puffs sharing one flat bottom,
+        // tallest in the middle, with a second row of smaller crowns piled on
+        // top and a couple of stray wisps trailing the ends.
+        const n = 5 + Math.floor(rnd() * 3);
+        const sizes: number[] = [];
         for (let j = 0; j < n; j++) {
-          const s = 1 + rnd() * 1.2;
-          mk(c, (j - (n - 1) / 2) * 1.35 + (rnd() - 0.5) * 0.7, (rnd() - 0.5) * 1.6, s, rnd() * 0.45);
+          const t = 1 - Math.abs(j - (n - 1) / 2) / ((n - 1) / 2 + 0.001); // 0 at ends, 1 centre
+          sizes.push(0.75 + t * 0.9 + rnd() * 0.35);
         }
+        let x = -sizes.reduce((a, b) => a + b, 0) * 0.55;
+        for (let j = 0; j < n; j++) {
+          const s = sizes[j];
+          x += s * 0.62;
+          mk(c, x, (rnd() - 0.5) * 0.9, s, 0, 1.05, 0.85 + rnd() * 0.4);
+          // crowns billow upward from the fatter base puffs
+          if (s > 1.1) mk(c, x + (rnd() - 0.5) * 0.5, (rnd() - 0.5) * 0.6, s * 0.6, s * 0.5);
+          if (s > 1.45) mk(c, x + (rnd() - 0.5) * 0.4, (rnd() - 0.5) * 0.4, s * 0.38, s * 0.85);
+          x += s * 0.62;
+        }
+        // trailing wisps give the bank a wind-torn edge
+        mk(c, x + 0.9, (rnd() - 0.5) * 1.2, 0.42, 0.05, 1.9, 0.55);
+        mk(c, -x - 0.9, (rnd() - 0.5) * 1.2, 0.38, 0, 1.7, 0.5);
       }
       c.scale.setScalar(0.9 + rnd() * 0.5);
       c.rotation.y = (rnd() - 0.5) * 0.55;
