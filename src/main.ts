@@ -9,7 +9,7 @@ import { logoSVG } from './ui/logo';
 import { randomSeed, simRng, uiRng } from './engine/rng';
 import { Modifiers } from './game/Modifiers';
 import { Objective, ascendObjective } from './game/Objectives';
-import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID, cardUnlocked, specsFor, unlockLabel } from './data/upgrades';
+import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID, cardUnlocked, specsFor } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
 import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
@@ -22,6 +22,7 @@ import type { BiomeKey } from './data/biomes';
 import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, PLAYER_TITLES, RUN_LEVELS, ascensionDemolishRefund, ascensionForcesCurse, ascensionShopSlots, compareScores, currentLevelSeed, formatRunTime, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import { planLevel, planStartArmy } from './game/levelPlanning';
 import { goldCoinIconSVG, heritageCoinIconSVG } from './ui/icons';
+import { renderAchievements, renderMenuScores } from './ui/menus';
 import { installSettingsController } from './ui/settingsController';
 import { installSandboxTools } from './ui/sandboxTools';
 import { CoOpController } from './ui/CoOpController';
@@ -961,25 +962,7 @@ function renderMenu(): void {
   $('metaLine').innerHTML =
     `${heritageCoinIconSVG(14)} <b>${meta.heritage}</b> Heritage · runs: ${meta.stats.runs} · wins: ${meta.stats.wins} · levels cleared: ${meta.stats.levelsCleared} · best: level ${meta.stats.bestLevel || 0}` +
     (meta.ascension > 0 ? ` · ascension unlocked: ${ASCENSION_NAMES[meta.ascension]}` : '');
-  renderMenuScores();
-}
-
-/** The main menu's speedrun scoreboard: victorious runs, highest tier first,
- *  fastest within a tier. Hidden until someone has actually won. */
-function renderMenuScores(): void {
-  const box = $('menuScores');
-  const scores = [...meta.scores].sort(compareScores).slice(0, 8);
-  if (!scores.length) { box.innerHTML = ''; return; }
-  box.innerHTML = '<div class="scorehead">Hall of Erfgooiers — fastest victories</div>'
-    + scores.map((s, i) =>
-      `<div class="scorerow"><span class="rank">${i + 1}.</span>`
-      + `<span class="who">${escapeHtml(s.name)} ${escapeHtml(s.title)}</span>`
-      + `<span class="tier">${ASCENSION_NAMES[s.ascension] ?? `tier ${s.ascension}`}</span>`
-      + `<span class="time">${formatRunTime(s.timeSeconds)}</span></div>`).join('');
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!));
+  renderMenuScores($('menuScores'), meta);
 }
 
 function renderSummary(victory: boolean, reason: 'timeout' | 'castle' = 'timeout'): void {
@@ -999,30 +982,7 @@ function renderSummary(victory: boolean, reason: 'timeout' | 'castle' = 'timeout
 function openHeritage(): void { renderHeritage(); showScreen('heritage'); }
 
 // ---------- achievements (main menu) ----------
-function openAchievements(): void { renderAchievements(); showScreen('achievements'); }
-
-/** Every achievement-gated card: unlocked feats show the card in full; locked
- *  ones show the feat as a hint plus live progress toward it. */
-function renderAchievements(): void {
-  const gated = UPGRADES.filter(u => u.unlockAt);
-  const unlockedCount = gated.filter(u => cardUnlocked(u, meta.stats)).length;
-  $('achMeta').innerHTML = `<b>${unlockedCount}/${gated.length}</b> cards earned · progress lives in your save (export it to keep it safe)`;
-  const grid = $('achGrid'); grid.innerHTML = '';
-  for (const def of gated) {
-    const gate = def.unlockAt!;
-    const unlocked = cardUnlocked(def, meta.stats);
-    const progress = Math.min(meta.stats[gate.stat], gate.n);
-    const tag = `<span class="rtag rtag-${def.rarity}">${def.rarity}</span>`;
-    const el = document.createElement('div');
-    el.className = `scard rar-${def.rarity}` + (unlocked ? '' : ' cant');
-    el.innerHTML = unlocked
-      ? `<div class="sc-icon">${def.icon}</div><div class="sc-body"><div class="sc-name">${def.name}${tag}</div><div class="sc-desc">${def.desc}</div>`
-        + `<div class="sc-price owned">✓ ${unlockLabel(gate)} — earned</div></div>`
-      : `<div class="sc-icon">🔒</div><div class="sc-body"><div class="sc-name">???${tag}</div><div class="sc-desc">Hint: ${unlockLabel(gate).toLowerCase()} to reveal this card.</div>`
-        + `<div class="sc-price">${unlockLabel(gate)} · ${progress}/${gate.n}</div></div>`;
-    grid.appendChild(el);
-  }
-}
+function openAchievements(): void { renderAchievements($('achMeta'), $('achGrid'), meta); showScreen('achievements'); }
 
 function renderHeritage(): void {
   $('heritageMeta').innerHTML = `${heritageCoinIconSVG(15)} <b>${meta.heritage}</b> Heritage to spend · own any number, activate one global blessing`;
