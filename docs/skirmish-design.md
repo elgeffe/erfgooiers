@@ -53,6 +53,12 @@ The beta is two seats, but new code was written so more players is data, not sur
 3. **Determinism holds at any seat count** as long as commands stay host-sequenced
    and iteration order stays stable — nothing in the team map affects tick order.
 
+## CPU players / enemy AI
+
+Solo skirmish against CPU opponents (difficulty ladder, stances, learned/adaptive
+and experimental policies) has its own epic and phased plan: see
+[skirmish-ai-design.md](skirmish-ai-design.md).
+
 ## Known beta quirks / improvement backlog
 
 - **Trade with the enemy**: the co-op Trade tab still works in skirmish, so players
