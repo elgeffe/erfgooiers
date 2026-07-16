@@ -92,18 +92,28 @@ describe('ascendObjective', () => {
 
   it('leaves the base game untouched', () => {
     expect(ascendObjective(timber8, 0, 1)).toEqual(timber8);
-    expect(ascendObjective(timber8, 1, 1)).toEqual(timber8);
+    expect(ascendObjective({ kind: 'produce', item: 'bread', n: 8 }, 0, 2)).toEqual({ kind: 'produce', item: 'bread', n: 8 });
   });
 
-  it('turns the opening level into a whole-economy goal from Very Hard', () => {
-    const d = ascendObjective(timber8, 2, 1);
-    expect(d.kind).toBe('produceMulti');
+  it('redesigns every opening level into a multi goal from the first ascension', () => {
+    // level 1: already a two-item goal at Hard, three items with big counts higher up
+    const hard = ascendObjective(timber8, 1, 1);
+    expect(hard.kind).toBe('produceMulti');
     const grim = ascendObjective(timber8, 4, 1);
     expect(grim.kind === 'produceMulti' && grim.reqs.some(r => r.item === 'coin')).toBe(true);
+    expect(grim.kind === 'produceMulti' && grim.reqs.find(r => r.item === 'timber')!.n).toBeGreaterThan(30);
+    // counts keep growing with the tier instead of repeating
+    const t2 = ascendObjective(timber8, 2, 1), t5 = ascendObjective(timber8, 5, 1);
+    expect(t2.kind === 'produceMulti' && t5.kind === 'produceMulti'
+      && t5.reqs[0].n > t2.reqs[0].n).toBe(true);
+    // level 4 keeps its train component but drills a far larger host
+    const drill = ascendObjective({ kind: 'produceTrain', reqs: [{ item: 'bread', n: 8 }], train: 5 }, 5, 4);
+    expect(drill.kind === 'produceTrain' && drill.train).toBe(30);
   });
 
   it('swells economy quantities by half from Absurd, leaving combat alone', () => {
-    expect(ascendObjective(timber8, 3, 2)).toEqual({ kind: 'produce', item: 'timber', n: 12 });
+    // (a non-opening level: the redesigned tables own levels 1-4)
+    expect(ascendObjective(timber8, 3, 6)).toEqual({ kind: 'produce', item: 'timber', n: 12 });
     const slay = { kind: 'slay', unit: 'dragon', n: 1 } as const;
     expect(ascendObjective(slay, 5, 10)).toEqual(slay);
   });

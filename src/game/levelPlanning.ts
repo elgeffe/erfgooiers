@@ -63,13 +63,18 @@ export function planLevel(level: LevelDef, seed: number, biome: BiomeKey, ascens
     }
   }
 
+  // The redesigned ascended openings (levels 1–4) ask for a far bigger economy
+  // (see ascendObjective), so their clocks stretch with the tier instead of
+  // shrinking — the pressure is the goal itself, not an impossible timer.
+  const openingStretch = !sandbox && ascension >= 1 && level.index <= 4 ? 1 + 0.2 * Math.min(5, ascension) : 1;
+
   return {
     world,
     enemies,
     prepMult: sandbox ? 1 : ascensionPrepMult(ascension),
     garrisonMult: sandbox ? 1 : 1 + 0.35 * ascension,
     bossHpMult: sandbox ? 1 : 1 + 0.5 * ascension,
-    hardTimer: Math.round(level.hardTimer * ascensionTimerMult(sandbox ? 0 : ascension) * (hellFinale ? 1.8 : 1)),
+    hardTimer: Math.round(level.hardTimer * ascensionTimerMult(sandbox ? 0 : ascension) * (hellFinale ? 1.8 : 1) * openingStretch),
   };
 }
 

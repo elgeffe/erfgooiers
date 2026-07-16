@@ -33,24 +33,59 @@ export type ObjectiveDef =
 
 /**
  * Adapt a level's objective to the run's ascension tier.
- *  - From Very Hard (a ≥ 2), level 1 opens with a whole-economy multi goal —
- *    tuned production and a fed workforce, not a single hut.
- *  - From Absurd (a ≥ 3), economy quantities swell by half, honest to the name.
+ *  - Every ascension redesigns the opening economy levels (1–4) outright:
+ *    multi-objective goals with much higher counts that grow per tier, so a
+ *    hardened run never replays the Normal-tier single-chain warm-ups.
+ *    (planLevel stretches those levels' hard timers to match — the challenge
+ *    is a bigger economy under pressure, not an impossible clock.)
+ *  - From Absurd (a ≥ 3), remaining economy quantities swell by half.
  *  Combat and collection goals stay untouched: their counts are bounded by
  *  what the map actually spawns.
  */
 /** Combat levels whose goal becomes total annihilation at the top tier. */
 const CLEAR_ALL_LEVELS = new Set([5, 7, 8, 9]);
 
+const req = (item: ItemKey, n: number): StockReq => ({ item, n });
+/** Redesigned opening goals, one row per ascension tier (index 0 = Hard). */
+const ASCENDED_OPENINGS: Record<number, ObjectiveDef[]> = {
+  1: [ // First Timber becomes a whole-economy shakedown
+    { kind: 'produceMulti', reqs: [req('timber', 14), req('stone', 10)] },
+    { kind: 'produceMulti', reqs: [req('timber', 20), req('bread', 8)] },
+    { kind: 'produceMulti', reqs: [req('timber', 26), req('bread', 12), req('coin', 5)] },
+    { kind: 'produceMulti', reqs: [req('timber', 34), req('bread', 16), req('coin', 8)] },
+    { kind: 'produceMulti', reqs: [req('timber', 44), req('bread', 22), req('coin', 12)] },
+  ],
+  2: [ // Daily Bread widens into a full larder
+    { kind: 'produceMulti', reqs: [req('bread', 12), req('fish', 6)] },
+    { kind: 'produceMulti', reqs: [req('bread', 16), req('fish', 8), req('timber', 12)] },
+    { kind: 'produceMulti', reqs: [req('bread', 22), req('fish', 10), req('sausage', 6)] },
+    { kind: 'produceMulti', reqs: [req('bread', 28), req('fish', 14), req('sausage', 10)] },
+    { kind: 'produceMulti', reqs: [req('bread', 36), req('fish', 18), req('sausage', 14)] },
+  ],
+  3: [ // First Coin demands a treasury and the industry behind it
+    { kind: 'produceMulti', reqs: [req('coin', 8), req('timber', 14)] },
+    { kind: 'produceMulti', reqs: [req('coin', 11), req('bread', 12)] },
+    { kind: 'produceMulti', reqs: [req('coin', 15), req('bread', 14), req('weapon', 4)] },
+    { kind: 'produceMulti', reqs: [req('coin', 20), req('bread', 18), req('weapon', 7)] },
+    { kind: 'produceMulti', reqs: [req('coin', 26), req('bread', 24), req('weapon', 10)] },
+  ],
+  4: [ // The Vintner's Gamble drills an ever-larger host
+    { kind: 'produceTrain', reqs: [req('bread', 10), req('wine', 8)], train: 8 },
+    { kind: 'produceTrain', reqs: [req('bread', 12), req('wine', 10), req('sausage', 6)], train: 12 },
+    { kind: 'produceTrain', reqs: [req('bread', 16), req('wine', 12), req('sausage', 8)], train: 16 },
+    { kind: 'produceTrain', reqs: [req('bread', 20), req('wine', 16), req('sausage', 12)], train: 22 },
+    { kind: 'produceTrain', reqs: [req('bread', 26), req('wine', 20), req('sausage', 16)], train: 30 },
+  ],
+};
+
 export function ascendObjective(def: ObjectiveDef, ascension: number, levelIndex: number): ObjectiveDef {
   // From Absurd (a ≥ 3) the Defend and assault levels stop asking for a fixed
   // tally and demand the whole map cleared — every stronghold, unit and raid.
   if (ascension >= 3 && CLEAR_ALL_LEVELS.has(levelIndex)) return { kind: 'clearAll' };
-  if (levelIndex === 1 && ascension >= 2) {
-    def = ascension >= 4
-      ? { kind: 'produceMulti', reqs: [{ item: 'timber', n: 12 }, { item: 'bread', n: 8 }, { item: 'coin', n: 4 }] }
-      : { kind: 'produceMulti', reqs: [{ item: 'timber', n: 10 }, { item: 'bread', n: 6 }] };
-  }
+  // Ascended runs replace the opening levels' goals wholesale; the counts are
+  // hand-tuned per tier, so the generic swell below must not touch them.
+  const openings = ascension >= 1 ? ASCENDED_OPENINGS[levelIndex] : undefined;
+  if (openings) return openings[Math.min(ascension, openings.length) - 1];
   // the hunt hardens with the tier: from Hard the quarry is wolves AND boars,
   // with counts growing every tier (the map spawns matching packs — see main)
   if (def.kind === 'slay' && ascension >= 1 && (def.unit === 'boar' || def.unit === 'wolf')) {
