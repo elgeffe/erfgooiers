@@ -600,6 +600,10 @@ export class Game {
     return this.placementSystem.demolishRefund(target);
   }
 
+  /** Performance ceiling on live units (single player only — co-op peers must
+   *  share one cap, so main leaves the factory's MAX_UNITS default there). */
+  set unitCap(n: number) { this.unitFactory.unitCap = n; }
+
   /** Fraction of a demolished building's cost refunded (set from the run's ascension). */
   set demolishRefundRate(rate: number) { this.placementSystem.demolishRefundRate = rate; }
   get demolishRefundRate(): number { return this.placementSystem.demolishRefundRate; }

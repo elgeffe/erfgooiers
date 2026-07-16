@@ -305,6 +305,23 @@
           <option value="high">High — full resolution, always</option>
           <option value="low">Low — saves battery &amp; old GPUs</option>
         </select></label>
+        <label class="setrow" title="Ceiling on live units — lower it if huge battles slow your machine. Applies when the next level starts.">Max units<select id="setUnitCap">
+          <option value="600">Low — 600 units</option>
+          <option value="1500">Medium — 1,500 units</option>
+          <option value="4000">High — 4,000 units</option>
+          <option value="11000">Godlike — 11,000 units</option>
+        </select></label>
+        <label class="setrow" title="How many fallen bodies stay on the battlefield before the oldest are cleared.">Battlefield bodies<select id="setBodyCap">
+          <option value="200">Low — 200 bodies</option>
+          <option value="800">Medium — 800 bodies</option>
+          <option value="2000">High — 2,000 bodies</option>
+          <option value="11000">Godlike — 11,000 bodies</option>
+        </select></label>
+        <label class="setrow" title="How long a fallen body lies before fading away.">Bodies linger<select id="setBodyLife">
+          <option value="60">Short — 1 minute</option>
+          <option value="300">Standard — 5 minutes</option>
+          <option value="900">Long — 15 minutes</option>
+        </select></label>
         <div class="shopsect">Save data</div>
         <div class="btns">
           <button id="btnExportSave" class="ghost" title="Download your run and Heritage progress as a file">Export save to file</button>

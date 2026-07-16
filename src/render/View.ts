@@ -70,9 +70,16 @@ export class View {
   // ---------- gore layer (cosmetic; bodies linger, then fade) ----------
   private readonly goreGroup = new THREE.Group();
   private readonly goreBodies: { obj: THREE.Mesh; age: number; mat: THREE.Material }[] = [];
-  private readonly MAX_BODIES = 11000;
-  private readonly CORPSE_LIFE = 300;   // seconds a body lies before it starts fading (5 min)
+  private MAX_BODIES = 2000;            // settings' performance cap can move both…
+  private CORPSE_LIFE = 300;            // …seconds a body lies before it starts fading
   private readonly CORPSE_FADE = 20;    // seconds to fade out once its time is up
+
+  /** Settings hook: cap battlefield bodies and how long they linger. */
+  setGorePrefs(maxBodies: number, lifeSeconds: number): void {
+    this.MAX_BODIES = maxBodies;
+    this.CORPSE_LIFE = lifeSeconds;
+    while (this.goreBodies.length > this.MAX_BODIES) this.cullBody(this.goreBodies.shift()!);
+  }
 
   // ---------- unit selection rings (pooled, persist across levels) ----------
   private readonly selRings: THREE.Mesh[] = [];

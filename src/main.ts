@@ -133,6 +133,9 @@ function startLevel(): void {
   const selectedHeroId = sandbox ? (sandboxCfg.hero === 'none' ? null : sandboxCfg.hero) : run.hero;
   const mods = new Modifiers([...heroSpecsFor(selectedHeroId), ...specsFor(run.upgrades), ...metaSpecsFor(meta.activeGlobalBuff), ...mutatorSpecsFor(mutators)]);
   game = new Game(world, view, mods);
+  // the settings' performance cap gates spawns in single player only — co-op
+  // peers must share one cap (the factory's MAX_UNITS default) to stay in sync
+  game.unitCap = settings.unitCap;
   game.toast = (m, c) => ui.toast(m, c);
   game.onSelect = o => ui.showInspector(o);
   game.sfx = name => audio.play(name as any);

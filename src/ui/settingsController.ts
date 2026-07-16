@@ -1,6 +1,6 @@
 import { audio } from '../audio/Audio';
 import type { Controls } from '../input/Controls';
-import { loadSettings, saveSettings, type GameSettings } from '../game/Settings';
+import { DEFAULT_SETTINGS, loadSettings, saveSettings, type GameSettings } from '../game/Settings';
 import type { View } from '../render/View';
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
@@ -13,6 +13,7 @@ export function installSettingsController(view: View, controls: Controls, onAuto
   audio.setSfxVolume(settings.sfxVol);
   view.setQualityMode(settings.quality);
   view.setExtendedZoom(settings.extendedZoom);
+  view.setGorePrefs(settings.corpseCap, settings.corpseLife);
   controls.settings = settings;
 
   let returnTo: 'menu' | 'pause' = 'menu';
@@ -26,6 +27,9 @@ export function installSettingsController(view: View, controls: Controls, onAuto
     ($('setAutoPause') as HTMLInputElement).checked = settings.autoPauseOnBlur;
     ($('setTutorials') as HTMLInputElement).checked = settings.tutorials;
     ($('setQuality') as HTMLSelectElement).value = settings.quality;
+    ($('setUnitCap') as HTMLSelectElement).value = String(settings.unitCap);
+    ($('setBodyCap') as HTMLSelectElement).value = String(settings.corpseCap);
+    ($('setBodyLife') as HTMLSelectElement).value = String(settings.corpseLife);
     $('setMusicVal').textContent = `${Math.round(settings.musicVol * 100)}%`;
     $('setSfxVal').textContent = `${Math.round(settings.sfxVol * 100)}%`;
     $('setPanVal').textContent = `${settings.panSpeed.toFixed(1)}×`;
@@ -61,6 +65,18 @@ export function installSettingsController(view: View, controls: Controls, onAuto
     $('setPanVal').textContent = `${settings.panSpeed.toFixed(1)}×`;
   };
   ($('setInvZoom') as HTMLInputElement).onchange = e => { settings.invertZoom = (e.target as HTMLInputElement).checked; saveSettings(settings); };
+  ($('setUnitCap') as HTMLSelectElement).onchange = e => {
+    settings.unitCap = Number((e.target as HTMLSelectElement).value) || DEFAULT_SETTINGS.unitCap;
+    saveSettings(settings); // picked up when the next level's Game is built
+  };
+  ($('setBodyCap') as HTMLSelectElement).onchange = e => {
+    settings.corpseCap = Number((e.target as HTMLSelectElement).value) || DEFAULT_SETTINGS.corpseCap;
+    view.setGorePrefs(settings.corpseCap, settings.corpseLife); saveSettings(settings);
+  };
+  ($('setBodyLife') as HTMLSelectElement).onchange = e => {
+    settings.corpseLife = Number((e.target as HTMLSelectElement).value) || DEFAULT_SETTINGS.corpseLife;
+    view.setGorePrefs(settings.corpseCap, settings.corpseLife); saveSettings(settings);
+  };
   ($('setExtZoom') as HTMLInputElement).onchange = e => {
     settings.extendedZoom = (e.target as HTMLInputElement).checked;
     view.setExtendedZoom(settings.extendedZoom); saveSettings(settings);
