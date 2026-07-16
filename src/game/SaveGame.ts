@@ -42,6 +42,7 @@ export function loadMeta(): MetaState {
   m.ascension ??= 0;
   m.tutorialSeen ??= false;
   m.stats.wins ??= 0;
+  m.scores ??= [];
   // Pre-single-blessing v2 saves stacked every permanent unlock. Preserve the
   // first owned blessing as active, while hero unlock ids remain unaffected.
   if (!m.activeGlobalBuff || !m.unlocks.includes(m.activeGlobalBuff) || !META_BY_ID[m.activeGlobalBuff]) {
@@ -53,7 +54,7 @@ export function saveMeta(meta: MetaState): void { write(META_KEY, meta); }
 
 export function loadRun(): RunState | null {
   const r = read<RunState>(RUN_KEY);
-  if (r) { r.ascension ??= 0; r.tutorials ??= true; }
+  if (r) { r.ascension ??= 0; r.tutorials ??= true; r.playerName ??= ''; r.playerTitle ??= ''; r.timeSeconds ??= 0; }
   return r;
 }
 export function saveRun(run: RunState): void { write(RUN_KEY, run); }

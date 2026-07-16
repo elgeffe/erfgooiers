@@ -19,7 +19,7 @@ import { VICTORY_IMAGE, VICTORY_STORY, storyFor } from './data/story';
 import type { GameSettings } from './game/Settings';
 import { campaignBiome } from './data/biomes';
 import type { BiomeKey } from './data/biomes';
-import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, RUN_LEVELS, ascensionDemolishRefund, ascensionForcesCurse, ascensionShopSlots, currentLevelSeed, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
+import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, PLAYER_TITLES, RUN_LEVELS, ascensionDemolishRefund, ascensionForcesCurse, ascensionShopSlots, compareScores, currentLevelSeed, formatRunTime, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
 import { planLevel, planStartArmy } from './game/levelPlanning';
 import { goldCoinIconSVG, heritageCoinIconSVG } from './ui/icons';
 import { installSettingsController } from './ui/settingsController';
@@ -103,6 +103,7 @@ let coopAdvanceTimer: number | null = null;
 // per-run tallies for the summary screen (reset when a run starts)
 let clearedThisRun = 0;
 let goldEarnedThisRun = 0;
+let runTimeFinal = 0; // total sim time of the last victorious run (victory badge)
 let levelGoldStart = 0;          // restored when the pause menu restarts a level
 let levelGoldEarnedStart = 0;    // prevents restart-farming pickups in the run tally
 let summaryNote = '';            // extra line on the summary (ascension unlocks)
@@ -307,6 +308,7 @@ function victoryOutputsHTML(ascensionNote: string, cta = ''): string {
   let s = '<div class="victory-outputs">';
   s += badge('🏆', `${clearedThisRun}/${RUN_LEVELS}`, 'Levels cleared');
   s += badge(goldCoinIconSVG(20), `${goldEarnedThisRun}`, 'Gold earned');
+  if (runTimeFinal > 0) s += badge('⏱', formatRunTime(runTimeFinal), 'Run time — signed on the scoreboard');
   s += badge(heritageCoinIconSVG(20), `${meta.heritage}`, 'Heritage banked');
   s += badge('🗺️', `${meta.stats.levelsCleared}`, 'Lifetime cleared');
   s += '</div>';
@@ -632,11 +634,28 @@ function renderHeroSelect(): void {
   box.checked = !pickedTutorials; // the checkbox turns tutorials OFF
 }
 
+const PLAYER_ID_KEY = 'erfgooiers.player.v1';
+
+/** Fill the run-start name box and title picker, remembering the last choice. */
+function initRunIdentity(): void {
+  const select = $('runTitle') as HTMLSelectElement;
+  select.innerHTML = PLAYER_TITLES.map(t => `<option value="${t}">${t}</option>`).join('');
+  try {
+    const saved = JSON.parse(localStorage.getItem(PLAYER_ID_KEY) ?? 'null') as { name?: string; title?: string } | null;
+    if (saved?.name) ($('runName') as HTMLInputElement).value = saved.name;
+    if (saved?.title && PLAYER_TITLES.includes(saved.title)) select.value = saved.title;
+  } catch { /* fresh browser — leave the defaults */ }
+  ($('runName') as HTMLInputElement).addEventListener('keydown', e => e.stopPropagation());
+}
+
 function startRun(): void {
   if (!heroAvailable(pickedHero, meta.unlocks)) pickedHero = 'erfgooier';
   sandbox = false;
   run = newRun(randomSeed(), Math.min(pickedAscension, meta.ascension), pickedTutorials);
   run.hero = pickedHero;
+  run.playerName = ($('runName') as HTMLInputElement).value.trim().slice(0, 20) || 'Erfgooier';
+  run.playerTitle = ($('runTitle') as HTMLSelectElement).value || PLAYER_TITLES[0];
+  try { localStorage.setItem(PLAYER_ID_KEY, JSON.stringify({ name: run.playerName, title: run.playerTitle })); } catch { /* ignore */ }
   run.gold = metaSpecialValue(meta.activeGlobalBuff, 'startGold');
   stampContract(run);
   meta.stats.runs++;
@@ -644,6 +663,7 @@ function startRun(): void {
   Save.saveMeta(meta);
   clearedThisRun = 0;
   goldEarnedThisRun = 0;
+  runTimeFinal = 0;
   startLevel();
 }
 
@@ -774,6 +794,7 @@ function announceCardUnlocks(before: { levelsCleared: number; wins: number }): v
 /** Award gold/Heritage for a cleared level, then advance to shop or victory. */
 function onLevelClear(): void {
   if (phase !== 'playing' || !run || !currentLevel || !game) return;
+  run.timeSeconds += game.elapsed; // the speedrun clock sums every cleared level
   const tally = computeTally();
   const reward = tally.total;
   run.gold += reward;
@@ -790,6 +811,12 @@ function onLevelClear(): void {
   summaryNote = '';
   if (last) {
     meta.stats.wins++;
+    // sign the speedrun scoreboard: this victory, under the name & epithet
+    // chosen at run start (kept sorted, capped so the save can't bloat)
+    runTimeFinal = run.timeSeconds;
+    meta.scores.push({ name: run.playerName || 'Erfgooier', title: run.playerTitle || PLAYER_TITLES[0], ascension: run.ascension, timeSeconds: run.timeSeconds, hero: run.hero, date: Date.now() });
+    meta.scores.sort(compareScores);
+    if (meta.scores.length > 50) meta.scores.length = 50;
     // winning at your highest tier opens the next rung of the ladder
     if (run.ascension >= meta.ascension && meta.ascension < MAX_ASCENSION) {
       meta.ascension = Math.min(MAX_ASCENSION, run.ascension + 1);
@@ -934,6 +961,25 @@ function renderMenu(): void {
   $('metaLine').innerHTML =
     `${heritageCoinIconSVG(14)} <b>${meta.heritage}</b> Heritage · runs: ${meta.stats.runs} · wins: ${meta.stats.wins} · levels cleared: ${meta.stats.levelsCleared} · best: level ${meta.stats.bestLevel || 0}` +
     (meta.ascension > 0 ? ` · ascension unlocked: ${ASCENSION_NAMES[meta.ascension]}` : '');
+  renderMenuScores();
+}
+
+/** The main menu's speedrun scoreboard: victorious runs, highest tier first,
+ *  fastest within a tier. Hidden until someone has actually won. */
+function renderMenuScores(): void {
+  const box = $('menuScores');
+  const scores = [...meta.scores].sort(compareScores).slice(0, 8);
+  if (!scores.length) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="scorehead">Hall of Erfgooiers — fastest victories</div>'
+    + scores.map((s, i) =>
+      `<div class="scorerow"><span class="rank">${i + 1}.</span>`
+      + `<span class="who">${escapeHtml(s.name)} ${escapeHtml(s.title)}</span>`
+      + `<span class="tier">${ASCENSION_NAMES[s.ascension] ?? `tier ${s.ascension}`}</span>`
+      + `<span class="time">${formatRunTime(s.timeSeconds)}</span></div>`).join('');
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!));
 }
 
 function renderSummary(victory: boolean, reason: 'timeout' | 'castle' = 'timeout'): void {
@@ -995,6 +1041,7 @@ $('introLogo').innerHTML = logoSVG(40);
 ($('btnNewRun') as HTMLButtonElement).onclick = openHeroSelect;
 ($('btnHeroBack') as HTMLButtonElement).onclick = goMenu;
 ($('btnStartRun') as HTMLButtonElement).onclick = startRun;
+initRunIdentity();
 // per-run tutorials toggle (checkbox turns them OFF); default follows the setting
 ($('newRunTutorials') as HTMLInputElement).onchange = e => { pickedTutorials = !(e.target as HTMLInputElement).checked; };
 // the hero chip selects the mounted hero and swings the camera to them

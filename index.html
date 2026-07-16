@@ -185,6 +185,7 @@
     <h1 class="serif"><span id="menuLogo"></span>Erfgooiers</h1>
     <div class="tag">A browser roguelite economy builder and military strategy game — clear ten short levels, shop between each, lose it all if a level beats you.</div>
     <div id="metaLine" class="metaline"></div>
+    <div id="menuScores"></div>
     <div class="btns">
       <button id="btnContinue">Continue run</button>
       <button id="btnNewRun">New run</button>
@@ -329,6 +330,7 @@
           <input id="importFile" type="file" accept="application/json,.json" style="display:none">
           <button id="btnSettingsClear" class="danger" title="Wipe the saved run and all meta-progress">Clear save data</button>
         </div>
+        <div class="hnote">⚠ Clearing save data (or your browser cache) also destroys the speedrun scoreboard and achievements. Pro tip: export your save to a file first to keep your runs.</div>
       </div>
       <div class="setcol">
         <div class="shopsect">Keybindings</div>
@@ -368,6 +370,11 @@
     <div id="heroGrid" class="shopgrid"></div>
     <div class="shopsect">2 · Choose your difficulty</div>
     <div id="ascensionRow"></div>
+    <div class="shopsect">3 · Sign the scoreboard — victories are timed and remembered</div>
+    <div class="setrow row" id="runNameRow">
+      <input id="runName" type="text" maxlength="20" placeholder="Your name" autocomplete="off">
+      <select id="runTitle"></select>
+    </div>
     <label class="setrow chk" id="newRunTutorialsRow"><input id="newRunTutorials" type="checkbox">Skip tutorials (Normal only)</label>
     <div class="btns row">
       <button id="btnHeroBack" class="ghost">Back to menu</button>

@@ -476,6 +476,15 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 /* ---------- settings ---------- */
 .setcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:8px 28px;}
 .setrow{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ink);margin:7px 0;}
+#runNameRow input[type=text],#runNameRow select{background:var(--panel2);color:var(--ink);border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:6px 9px;font:inherit;font-size:12.5px;}
+#runNameRow input[type=text]{flex:1;min-width:120px;}
+#menuScores{margin:-6px 0 14px;}
+#menuScores .scorehead{font-size:9.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--ink-dim);margin-bottom:4px;}
+#menuScores .scorerow{display:flex;align-items:baseline;gap:8px;font-size:12px;color:var(--ink);padding:2px 0;border-bottom:1px dotted rgba(255,255,255,.07);}
+#menuScores .scorerow .rank{color:var(--ink-dim);min-width:16px;}
+#menuScores .scorerow .who{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#menuScores .scorerow .tier{color:var(--accent);font-size:10.5px;}
+#menuScores .scorerow .time{font-variant-numeric:tabular-nums;color:#bce8af;}
 .setrow input[type=range]{flex:1;accent-color:var(--accent);min-width:80px;}
 .setrow b{width:44px;text-align:right;color:var(--accent);font-variant-numeric:tabular-nums;}
 .setrow.chk{cursor:pointer;}
