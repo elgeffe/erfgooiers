@@ -12,6 +12,7 @@
   },
   "include": [
     "server/**/*.ts",
+    "tests/server/**/*.ts",
     "src/net/protocol.ts",
     "src/game/ownership.ts",
     "src/types.ts"
