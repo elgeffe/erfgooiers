@@ -97,13 +97,13 @@ export const LEVELS: LevelDef[] = [
       { kind: 'produceTrain', reqs: [{ item: 'wine', n: 8 }, { item: 'bread', n: 6 }], train: 5 },
     ],
     world: { w: 42, h: 42, treeStands: 6, oreVeins: 6, waterScale: 0.8, meadows: 3, goldPiles: 4 },
-    kit: { stock: { timber: 16, stone: 10, bread: 8, coin: 10, weapon: 3 }, serfs: 2, laborers: 2 },
+    kit: { stock: { timber: 16, stone: 10, bread: 8, coin: 10, weapon: 3 }, serfs: 2, laborers: 1 },
     timeTarget: 900, hardTimer: 760, reward: 45 },
 
   { index: 5, name: 'Raiders at the Gate', type: 'Defend',
     objectives: [{ kind: 'survive', waves: 2 }],
     world: { w: 44, h: 44, treeStands: 6, oreVeins: 5, waterScale: 1.0, meadows: 4, goldPiles: 3, ruins: 2 },
-    kit: { stock: { timber: 16, stone: 12, bread: 10, coin: 6, weapon: 2 }, serfs: 6, laborers: 2 },
+    kit: { stock: { timber: 16, stone: 12, bread: 10, coin: 6, weapon: 2 }, serfs: 6, laborers: 1 },
     // a proper garrison out of the gate (higher ascensions thin it out but
     // stretch the prep clock in return — see ascensionArmyMult/PrepMult)
     startArmy: [{ kind: 'soldier', count: 10 }, { kind: 'archer', count: 4 }, { kind: 'knight', count: 1 }],
@@ -125,7 +125,7 @@ export const LEVELS: LevelDef[] = [
       { kind: 'slay', unit: 'wolf', n: 8 },
     ],
     world: { w: 46, h: 46, treeStands: 8, oreVeins: 5, waterScale: 0.9, meadows: 5, goldPiles: 3, mountains: 2 },
-    kit: { stock: { timber: 14, stone: 10, bread: 12, coin: 8, weapon: 2 }, serfs: 2, laborers: 2 },
+    kit: { stock: { timber: 14, stone: 10, bread: 12, coin: 8, weapon: 2 }, serfs: 2, laborers: 1 },
     startArmy: [{ kind: 'soldier', count: 8 }, { kind: 'archer', count: 4 }],
     enemies: { wild: [{ kind: 'boar', count: 10 }, { kind: 'wolf', count: 10 }] },
     timeTarget: 900, hardTimer: 800, reward: 60 },
@@ -136,7 +136,7 @@ export const LEVELS: LevelDef[] = [
   { index: 7, name: 'Bandit Country', type: 'Military',
     objectives: [{ kind: 'destroy', n: 2 }],
     world: { w: 64, h: 64, treeStands: 11, oreVeins: 9, waterScale: 1.0, meadows: 6, goldPiles: 6, mountains: 2, ruins: 2, frontier: true },
-    kit: { stock: { timber: 18, stone: 14, bread: 12, coin: 12, weapon: 3 }, serfs: 3, laborers: 2 },
+    kit: { stock: { timber: 18, stone: 14, bread: 12, coin: 12, weapon: 3 }, serfs: 3, laborers: 1 },
     startArmy: [{ kind: 'soldier', count: 9 }, { kind: 'archer', count: 6 }, { kind: 'knight', count: 2 }],
     enemies: { wild: [{ kind: 'wolf', count: 4 }], camps: [{ count: 2, guards: 8, kinds: ['bandit', 'bandit', 'orc'] }],
       commander: { every: 75, kind: 'bandit', count: 3, from: 'camp' },
@@ -146,7 +146,7 @@ export const LEVELS: LevelDef[] = [
   { index: 8, name: 'The Fortified Village', type: 'Military',
     objectives: [{ kind: 'destroy', n: 4 }],
     world: { w: 68, h: 68, treeStands: 12, oreVeins: 10, waterScale: 1.05, meadows: 6, goldPiles: 6, mountains: 2, ruins: 3, frontier: true },
-    kit: { stock: { timber: 20, stone: 16, bread: 14, coin: 16, weapon: 3, armor: 1 }, serfs: 3, laborers: 3 },
+    kit: { stock: { timber: 20, stone: 16, bread: 14, coin: 16, weapon: 3, armor: 1 }, serfs: 3, laborers: 1 },
     startArmy: [{ kind: 'soldier', count: 11 }, { kind: 'archer', count: 8 }, { kind: 'knight', count: 3 }],
     // the first frontier assault is a cluster of enemy encampments, nothing
     // walled yet: raze the four skeleton camps that hold the village. (Higher
@@ -159,7 +159,7 @@ export const LEVELS: LevelDef[] = [
   { index: 9, name: 'The Enemy Keep', type: 'Military',
     objectives: [{ kind: 'destroy', n: 5 }],
     world: { w: 80, h: 80, treeStands: 14, oreVeins: 12, waterScale: 1.1, meadows: 6, goldPiles: 7, mountains: 3, ruins: 2, frontier: true, frontiers: 2 },
-    kit: { stock: { timber: 22, stone: 18, bread: 16, coin: 20, weapon: 4, armor: 2 }, serfs: 3, laborers: 3 },
+    kit: { stock: { timber: 22, stone: 18, bread: 16, coin: 20, weapon: 4, armor: 2 }, serfs: 3, laborers: 1 },
     startArmy: [{ kind: 'soldier', count: 13 }, { kind: 'archer', count: 10 }, { kind: 'knight', count: 4 }],
     // a proper fortress this time: a real curtain wall with a barred gate and
     // watchtowers standing behind the ramparts. The demon broods over the
@@ -173,7 +173,7 @@ export const LEVELS: LevelDef[] = [
   { index: 10, name: 'Dragon\u2019s Hoard', type: 'Boss',
     objectives: [{ kind: 'slay', unit: 'dragon', n: 1 }],
     world: { w: 86, h: 86, treeStands: 16, oreVeins: 13, waterScale: 1.1, meadows: 7, goldPiles: 9, mountains: 4, frontier: true, lairStages: 4 },
-    kit: { stock: { timber: 24, stone: 18, bread: 20, coin: 28, weapon: 5, armor: 2 }, serfs: 3, laborers: 3 },
+    kit: { stock: { timber: 24, stone: 18, bread: 20, coin: 28, weapon: 5, armor: 2 }, serfs: 3, laborers: 1 },
     startArmy: [{ kind: 'soldier', count: 17 }, { kind: 'archer', count: 12 }, { kind: 'knight', count: 6 }],
     // One connected mountain corridor, sealed by a gated cross-wall at every
     // stage: an outlying camp, a fortress, a walled fortress, and finally the
@@ -235,9 +235,9 @@ const SBX_WATER: Record<SandboxConfig['water'], number> = { dry: 0.3, normal: 1,
 const SBX_DENSITY: Record<SandboxConfig['mapRes'], number> = { sparse: 0.55, normal: 1, rich: 1.7 };
 
 const SBX_KITS: Record<SandboxConfig['startRes'], StartKit> = {
-  modest: { stock: { timber: 20, stone: 16, bread: 10, coin: 8 }, serfs: 4, laborers: 2, villagers: 5 },
-  plentiful: { stock: { timber: 90, stone: 70, bread: 50, coin: 30, iron: 12, weapon: 10, armor: 5 }, serfs: 8, laborers: 3, villagers: 8 },
-  cornucopia: { stock: { timber: 320, stone: 320, bread: 160, coin: 90, iron: 50, weapon: 40, armor: 20 }, serfs: 12, laborers: 4, villagers: 12 },
+  modest: { stock: { timber: 20, stone: 16, bread: 10, coin: 8 }, serfs: 4, laborers: 1, villagers: 5 },
+  plentiful: { stock: { timber: 90, stone: 70, bread: 50, coin: 30, iron: 12, weapon: 10, armor: 5 }, serfs: 8, laborers: 1, villagers: 8 },
+  cornucopia: { stock: { timber: 320, stone: 320, bread: 160, coin: 90, iron: 50, weapon: 40, armor: 20 }, serfs: 12, laborers: 1, villagers: 12 },
 };
 
 /** A no-objective free-build map shaped by the setup screen's choices. */

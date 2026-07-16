@@ -104,6 +104,9 @@ export interface Tree {
   growth: number; reserved: boolean; meshes: THREE.Object3D[]; s: number; kind: number;
   /** Old-growth thicket (Black Forest): impassable, unharvestable, unbuildable. */
   dense?: boolean;
+  /** Trunks left in this tree; rolled 1–2 at the first chop so woods thin out
+   *  at half the old pace instead of vanishing in one pass. */
+  wood?: number;
 }
 export type DepositKind = 'stone' | 'gold' | 'coal' | 'iron';
 export interface Deposit { kind: DepositKind; amt: number; meshes: THREE.Object3D[]; }

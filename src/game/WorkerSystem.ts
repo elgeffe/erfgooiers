@@ -322,7 +322,12 @@ export class WorkerSystem {
     if (gather.node === 'tree') {
       if (tile.tree) {
         if (this.modsFor(building.owner).preserveTrees()) tile.tree.reserved = false;
-        else this.ports.removeTree(node.x, node.y);
+        else {
+          tile.tree.wood ??= 1 + Math.floor(rnd() * 2);
+          tile.tree.wood--;
+          if (tile.tree.wood <= 0) this.ports.removeTree(node.x, node.y);
+          else tile.tree.reserved = false;
+        }
       }
       this.ports.setCarrying(unit, 'trunk');
       this.ports.sfx('chop');

@@ -25,6 +25,9 @@ function headlessView(world: World, caravan?: { created: number; removed: number
     createFireball: () => new THREE.Group(),
     createFlame: () => new THREE.Group(),
     createFlag: () => new THREE.Group(),
+    createPlotMarker: () => new THREE.Group(),
+    addFieldCrop: () => {},
+    scaleFieldCrop: () => {},
     add: () => {},
     remove: (mesh: THREE.Object3D) => { if (mesh.userData.traderCaravan && caravan) caravan.removed++; },
     refreshTile: () => {},
@@ -709,6 +712,23 @@ describe('placement keeps doorways clear', () => {
 
     // A spot clear of every footprint and doorway still builds.
     expect(game.canPlace('bakery', 16, 10, 0)).toBe(true);
+  });
+
+  it('refuses a farm plot on a building entrance', () => {
+    const { game, world } = openBattleGame();
+    const farm = game.placeBuilding('farm', 10, 10, true);
+    const bakery = game.placeBuilding('bakery', 14, 10, true);
+    const door = buildingEntranceTiles(bakery)[0];
+    expect(door).toEqual({ x: 14, y: 12 });
+
+    expect(game.canPlotAt(door.x, door.y)).toBe(false);
+    game.placePlot(door.x, door.y, farm);
+    expect(world.tiles[door.y][door.x].field).toBeNull();
+
+    // The tile right beside the doorway still takes a plot.
+    expect(game.canPlotAt(door.x + 1, door.y)).toBe(true);
+    game.placePlot(door.x + 1, door.y, farm);
+    expect(world.tiles[door.y][door.x + 1].field).not.toBeNull();
   });
 
   it('refuses a building whose own doorway would land on a neighbour’s doorway', () => {

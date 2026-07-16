@@ -89,6 +89,9 @@ export class PlacementSystem {
     if (building.removed || building.owner !== owner || !building.def.fields) return;
     const tile = this.world.T(tx, ty);
     if (!tile || tile.type !== 'grass' || tile.b || tile.site || tile.road || tile.field || tile.dep || tile.tree?.dense) return;
+    // A plot on a doorway would sit on the tile the building's serfs and
+    // worker walk through — keep every entrance clear of crops.
+    if (this.entranceTileKeys().has(`${tx},${ty}`)) return;
     if (building.fieldsList.length >= (building.def.plots ?? 8)) {
       const now = Date.now();
       if (now - this.plotWarnT > 1500) {
@@ -162,7 +165,9 @@ export class PlacementSystem {
   }
 
   canPaintRoadAt(tx: number, ty: number): boolean { return this.openGround(tx, ty); }
-  canPlotAt(tx: number, ty: number): boolean { return this.openGround(tx, ty); }
+  canPlotAt(tx: number, ty: number): boolean {
+    return this.openGround(tx, ty) && !this.entranceTileKeys().has(`${tx},${ty}`);
+  }
 
   demolishableAt(tx: number, ty: number, dragOnly: boolean, owner: PlayerId): boolean {
     const tile = this.world.T(tx, ty);

@@ -459,9 +459,22 @@ export class Ambience {
     for (let i = 0; i < 6; i++) {
       const c = this.lakeTiles[Math.floor(uiRng.next() * this.lakeTiles.length)];
       const x = this.world.wx(c.x) + (uiRng.next() - 0.5) * 0.6, z = this.world.wz(c.y) + (uiRng.next() - 0.5) * 0.6;
-      if (Math.hypot(x - fx, z - fz) < 5) return { x, z };
+      if (Math.hypot(x - fx, z - fz) < 5 && this.allWater(fx, fz, x, z)) return { x, z };
     }
     return { x: fx, z: fz };
+  }
+
+  /** Fish glide in a straight line to their target, so the whole segment must
+   *  stay over water — otherwise they'd cut across spits of land between two
+   *  lobes of the lake. */
+  private allWater(x0: number, z0: number, x1: number, z1: number): boolean {
+    const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) * 3));
+    for (let i = 1; i <= steps; i++) {
+      const x = x0 + (x1 - x0) * i / steps, z = z0 + (z1 - z0) * i / steps;
+      const tx = Math.round(x + this.world.W / 2 - 0.5), tz = Math.round(z + this.world.H / 2 - 0.5);
+      if (this.world.T(tx, tz)?.type !== 'water') return false;
+    }
+    return true;
   }
 
   private updateFish(dt: number): void {

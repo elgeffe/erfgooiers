@@ -779,7 +779,15 @@ export class Game {
       const tw = b.def.tower;
       if (!tw || b.removed || !b.active) continue;
       b.prog += sdt;
-      if (b.prog < tw.rate) continue;
+      // A castle sheltering bell-summoned workers mans its arrow slits: every
+      // few villagers inside speed up the volleys (up to 3× with a full keep).
+      let rate = tw.rate;
+      if (b.def.store && b.faction === 'player') {
+        let sheltered = 0;
+        for (const u of this.units) if (!u.dead && u.owner === b.owner && u.wstate === 'refuge') sheltered++;
+        if (sheltered > 0) rate = tw.rate / Math.min(3, 1 + sheltered / 4);
+      }
+      if (b.prog < rate) continue;
       const c = this.buildingCenter(b);
       let best: Unit | null = null, bd = tw.range * tw.range;
       this.forUnitsNear(b.x, b.y, Math.ceil(tw.range) + 2, u => {

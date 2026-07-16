@@ -7,7 +7,7 @@ describe('Game deterministic regression guardrails', () => {
     const p1 = game.storeFor('p1');
     const p2 = game.storeFor('p2');
 
-    expect(gameplayFingerprintHash(game)).toBe('81e0dddf');
+    expect(gameplayFingerprintHash(game)).toBe('9c5ba485');
 
     game.setEnemies({
       waves: [
@@ -20,13 +20,13 @@ describe('Game deterministic regression guardrails', () => {
     expect(game.trainUnit(game.guild, 'serf')).toBe(true);
     game.setBell('p1', true);
 
-    expect(gameplayFingerprintHash(game)).toBe('0799dfc9');
+    expect(gameplayFingerprintHash(game)).toBe('6f380063');
     tick(game, 2);
-    expect(gameplayFingerprintHash(game)).toBe('68715bd0');
+    expect(gameplayFingerprintHash(game)).toBe('f735e3ae');
 
     game.setBell('p1', false);
     tick(game, 18);
-    expect(gameplayFingerprintHash(game)).toBe('66b35801');
+    expect(gameplayFingerprintHash(game)).toBe('0e9900bc');
   });
 
   it('launches a timed wave on its exact fixed-step boundary', () => {
