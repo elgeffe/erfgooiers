@@ -11,11 +11,11 @@
    ===================================================================== */
 
 type SfxName = 'place' | 'build' | 'coin' | 'chop' | 'harvest' | 'demolish' | 'click' | 'error'
-  | 'sword' | 'clang' | 'maul' | 'bite' | 'claw' | 'arrow' | 'bell';
+  | 'sword' | 'clang' | 'maul' | 'bite' | 'claw' | 'arrow' | 'bell' | 'heal';
 
 // Combat effects fire from every fighter in a battle, so rate-limit them
 // (per name) or a big melee becomes a wall of white noise.
-const SFX_THROTTLE_MS: Partial<Record<SfxName, number>> = { sword: 90, clang: 90, maul: 100, bite: 90, claw: 100, arrow: 80 };
+const SFX_THROTTLE_MS: Partial<Record<SfxName, number>> = { sword: 90, clang: 90, maul: 100, bite: 90, claw: 100, arrow: 80, heal: 220 };
 
 const MUTE_KEY = 'erfgooiers.muted';
 
@@ -557,6 +557,7 @@ export class AudioEngine {
       case 'claw': return this.efClaw(t);
       case 'arrow': return this.efArrow(t);
       case 'bell': return this.efBell(t);
+      case 'heal': return this.efHeal(t);
     }
   }
 
@@ -703,6 +704,13 @@ export class AudioEngine {
       this.tone(1046, t + dt, 0.5, 'sine', 0.1);
       this.tone(1567, t + dt, 0.25, 'sine', 0.05);
     }
+  }
+
+  // heal — a soft rising glockenspiel chime, a warm blessing over the din
+  private efHeal(t: number): void {
+    this.tone(784, t, 0.34, 'sine', 0.14);
+    this.tone(1046, t + 0.06, 0.4, 'sine', 0.12);
+    this.tone(1318, t + 0.12, 0.44, 'sine', 0.08);
   }
 
   // error — a gentle low two-tone, never harsh

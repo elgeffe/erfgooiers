@@ -26,6 +26,7 @@ function headlessView(world: World, caravan?: { created: number; removed: number
     createRock: () => new THREE.Group(),
     createFireball: () => new THREE.Group(),
     createFlame: () => new THREE.Group(),
+    createHealGlow: () => new THREE.Group(),
     createFlag: () => new THREE.Group(),
     createPlotMarker: () => new THREE.Group(),
     addFieldCrop: () => {},

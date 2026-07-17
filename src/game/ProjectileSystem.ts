@@ -19,6 +19,7 @@ export interface ProjectilePort {
   createRock(): THREE.Object3D;
   createFireball(): THREE.Object3D;
   createFlame(): THREE.Object3D;
+  createHealGlow(): THREE.Object3D;
   remove(mesh: THREE.Object3D): void;
   sfx(name: string): void;
   forUnitsNear(x: number, y: number, radius: number, visit: (unit: Unit) => void): void;
@@ -33,8 +34,17 @@ export interface ProjectilePort {
 export class ProjectileSystem {
   private readonly projectiles: Projectile[] = [];
   private readonly flames: { mesh: THREE.Object3D; life: number; max: number }[] = [];
+  private readonly healGlows: { mesh: THREE.Object3D; life: number; max: number; baseY: number }[] = [];
 
   constructor(private readonly port: ProjectilePort) {}
+
+  /** A green healing mote that rises off a mended unit and fades. */
+  healGlow(x: number, z: number): void {
+    const mesh = this.port.createHealGlow();
+    const baseY = 0.9;
+    mesh.position.set(x, baseY, z);
+    this.healGlows.push({ mesh, life: 1, max: 1, baseY });
+  }
 
   fireArrow(shooter: Unit | null, from: OwnerId, x: number, y: number, z: number, target: Unit, damage: number): void {
     const tx = target.mesh.position.x, tz = target.mesh.position.z;
@@ -75,6 +85,29 @@ export class ProjectileSystem {
   update(dt: number): void {
     this.updateProjectiles(dt);
     this.updateFlames(dt);
+    this.updateHealGlows(dt);
+  }
+
+  private updateHealGlows(dt: number): void {
+    for (let i = this.healGlows.length - 1; i >= 0; i--) {
+      const glow = this.healGlows[i];
+      glow.life -= dt;
+      if (glow.life <= 0) {
+        this.port.remove(glow.mesh);
+        this.healGlows.splice(i, 1);
+        continue;
+      }
+      const remaining = glow.life / glow.max;
+      const t = 1 - remaining;
+      glow.mesh.position.y = glow.baseY + t * 0.9;
+      // A quick pop-in, then a gentle grow as it fades.
+      glow.mesh.scale.setScalar(0.6 + Math.min(1, t * 5) * 0.5 + t * 0.35);
+      glow.mesh.traverse((object: any) => {
+        if (object.material && object.material.transparent) {
+          object.material.opacity = (object.userData.baseOpacity ??= object.material.opacity) * remaining;
+        }
+      });
+    }
   }
 
   private updateProjectiles(dt: number): void {

@@ -17,6 +17,7 @@ interface CombatPorts {
   fireArrow: (shooter: Unit, from: OwnerId, x: number, y: number, z: number, target: Unit, damage: number) => void;
   fireRock: (shooter: Unit, from: OwnerId, x: number, y: number, z: number, endX: number, endZ: number, damage: number, radius: number) => void;
   fireFlame: (shooter: Unit, from: OwnerId, x: number, y: number, z: number, endX: number, endZ: number, damage: number) => void;
+  healFx: (x: number, z: number) => void;
   sfx: (name: string) => void;
 }
 
@@ -210,6 +211,8 @@ export class CombatSystem {
         ally.hp = Math.min(ally.maxHp, ally.hp + heal.amount);
         unit.atkTimer = heal.rate;
         unit.status = `Healing ${ally.roleName}`;
+        this.ports.healFx(ally.mesh.position.x, ally.mesh.position.z);
+        this.ports.sfx('heal');
       } else unit.status = 'Tending the company';
     }
     unit.foe = null; unit.foeB = null;
