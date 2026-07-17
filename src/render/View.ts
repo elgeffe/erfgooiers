@@ -4,7 +4,7 @@ import { uiRng } from '../engine/rng';
 import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, BuildingKey, Coord, Faction, Field, Pickup, Tree, Unit } from '../types';
-import { circle, cone, makeArrow, makeBuilding, makeUnitCorpse, makeFireball, makeFlag, makeFlame, makeHero, makeRock, makePlotMarker, makeScaffold, makeTraderCaravan, makeUnit, noOutline, setActiveBiome, stdMat } from './models';
+import { circle, cone, makeArrow, makeBuilding, makeUnitCorpse, makeFireball, makeFlag, makeFlame, makeHealGlow, makeHero, makeRock, makePlotMarker, makeScaffold, makeTraderCaravan, makeUnit, noOutline, setActiveBiome, stdMat } from './models';
 import { Ambience } from './Ambience';
 import { TerrainRenderer } from './TerrainRenderer';
 
@@ -450,6 +450,7 @@ export class View {
   createRock(): THREE.Group { const m = makeRock(); this.worldGroup.add(m); return m; }
   createFireball(): THREE.Group { const m = makeFireball(); this.worldGroup.add(m); return m; }
   createFlame(): THREE.Group { const m = makeFlame(); this.worldGroup.add(m); return m; }
+  createHealGlow(): THREE.Group { const m = makeHealGlow(); this.worldGroup.add(m); return m; }
   createFlag(pennantHex?: number): THREE.Group { const m = makeFlag(pennantHex); this.worldGroup.add(m); return m; }
   createTraderCaravan(): THREE.Group { const m = makeTraderCaravan(); this.worldGroup.add(m); this.freeze(m, false); return m; }
   /** Marker parented onto a building mesh (not the world) so it follows it. */

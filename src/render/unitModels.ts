@@ -750,6 +750,23 @@ export function makeFlame(): THREE.Group {
   return g;
 }
 
+/** A rising heal mote: a soft green glow crowned with a bright cross, spawned
+ *  over a unit as a priest mends it. The sim floats it up and fades it, then
+ *  culls it. Own materials per instance so fading one never dims the others. */
+export function makeHealGlow(): THREE.Group {
+  const g = new THREE.Group();
+  // A wide soft halo behind a bright white-green cross so the mote reads against
+  // grass and pale unit bodies alike.
+  const halo = new THREE.Mesh(sphere(0.42, 10, 8), new THREE.MeshBasicMaterial({ color: 0x63d66a, transparent: true, opacity: 0.32 }));
+  const orb = new THREE.Mesh(sphere(0.26, 10, 8), new THREE.MeshBasicMaterial({ color: 0xa6f58c, transparent: true, opacity: 0.55 }));
+  g.add(halo, orb);
+  const crossMat = new THREE.MeshBasicMaterial({ color: 0xf4fff0, transparent: true, opacity: 1 });
+  const bar = new THREE.Mesh(box(0.46, 0.15, 0.15), crossMat);
+  const post = new THREE.Mesh(box(0.15, 0.46, 0.15), crossMat);
+  g.add(bar, post);
+  return g;
+}
+
 /** Floating "plots wanted" marker hovering over a fields-building: a red
  *  diamond with a long down-arrow stabbing at the roof, so it's unmistakable
  *  which building wants to be clicked for its crop/pasture plots. */

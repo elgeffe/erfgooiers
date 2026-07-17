@@ -252,6 +252,7 @@ export class Game {
       createRock: () => this.view.createRock(),
       createFireball: () => this.view.createFireball(),
       createFlame: () => this.view.createFlame(),
+      createHealGlow: () => this.view.createHealGlow(),
       remove: mesh => this.view.remove(mesh),
       sfx: name => this.sfx(name),
       forUnitsNear: (x, y, radius, visit) => this.forUnitsNear(x, y, radius, visit),
@@ -360,6 +361,7 @@ export class Game {
       fireArrow: (shooter, from, x, y, z, target, damage) => this.projectileSystem.fireArrow(shooter, from, x, y, z, target, damage),
       fireRock: (shooter, from, x, y, z, endX, endZ, damage, radius) => this.projectileSystem.fireRock(shooter, from, x, y, z, endX, endZ, damage, radius),
       fireFlame: (shooter, from, x, y, z, endX, endZ, damage) => this.projectileSystem.fireFlame(shooter, from, x, y, z, endX, endZ, damage),
+      healFx: (x, z) => this.projectileSystem.healGlow(x, z),
       sfx: name => this.sfx(name),
     });
     this.placementSystem = new PlacementSystem(

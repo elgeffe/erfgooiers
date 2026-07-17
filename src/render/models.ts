@@ -15,8 +15,8 @@ export type { CropKind } from './sceneryModels';
 
 export {
   makeArrow, makeCavalry, makeCorpse, makeFireball, makeFlag, makeFlame,
-  makeHero, makePlotMarker, makeRock, makeSiege, makeTraderCaravan, makeUnit,
-  makeUnitCorpse,
+  makeHealGlow, makeHero, makePlotMarker, makeRock, makeSiege, makeTraderCaravan,
+  makeUnit, makeUnitCorpse,
 } from './unitModels';
 
 export { makeBuilding, makeScaffold } from './buildingModels';

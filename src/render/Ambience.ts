@@ -448,9 +448,6 @@ export class Ambience {
           if (s > 1.45) mk(c, x + (rnd() - 0.5) * 0.4, (rnd() - 0.5) * 0.4, s * 0.38, s * 0.85);
           x += s * 0.62;
         }
-        // trailing wisps give the bank a wind-torn edge
-        mk(c, x + 0.9, (rnd() - 0.5) * 1.2, 0.42, 0.05, 1.9, 0.55);
-        mk(c, -x - 0.9, (rnd() - 0.5) * 1.2, 0.38, 0, 1.7, 0.5);
       }
       c.scale.setScalar(0.9 + rnd() * 0.5);
       c.rotation.y = (rnd() - 0.5) * 0.55;

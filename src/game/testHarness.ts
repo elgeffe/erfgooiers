@@ -30,6 +30,7 @@ export function stubView(world: World): View {
     createRock: () => new THREE.Group(),
     createFireball: () => new THREE.Group(),
     createFlame: () => new THREE.Group(),
+    createHealGlow: () => new THREE.Group(),
     createUnit: (_c: number, _r: string, x: number, y: number) => { const u = unit(); at(u.group, x, y); return u; },
     createHero: (_id: string, x: number, y: number) => { const u = unit(); at(u.group, x, y); return u; },
   };
