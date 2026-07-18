@@ -1095,7 +1095,23 @@ const settings: GameSettings = installSettingsController(view, controls, openPau
   goMenu();
   ui.toast('Save imported');
 };
+// Clearing everything is irreversible — demand a second click to confirm.
+// The armed state disarms itself after a few seconds so a stray click can't
+// linger as a loaded gun.
+let clearArmTimer: number | null = null;
 ($('btnSettingsClear') as HTMLButtonElement).onclick = () => {
+  const btn = $('btnSettingsClear') as HTMLButtonElement;
+  if (clearArmTimer === null) {
+    btn.textContent = '⚠ Click again to erase everything';
+    clearArmTimer = window.setTimeout(() => {
+      clearArmTimer = null;
+      btn.textContent = 'Clear save data';
+    }, 5000);
+    return;
+  }
+  clearTimeout(clearArmTimer);
+  clearArmTimer = null;
+  btn.textContent = 'Clear save data';
   $('settings').style.display = 'none';
   clearSaveData();
 };
