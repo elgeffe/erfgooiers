@@ -323,10 +323,12 @@ export class PlacementSystem {
       this.ports.sfx('error'); this.ports.toast("Cannot build here — don't cover or seal off another building's doorway", 'err', owner); return;
     }
     const def = DEFS[key];
-    if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.ports.toast('No stone deposits in range — build near the grey rocks', 'err', owner); return; }
-    if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.ports.toast('No gold deposits in range', 'err', owner); return; }
-    if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.ports.toast('No coal deposits in range', 'err', owner); return; }
-    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.ports.toast('No iron deposits in range — build near the rusty rocks', 'err', owner); return; }
+    // Mines and quarries may stand anywhere — but a site out of reach of its
+    // deposits will idle, so warn (mirroring the woodcutter's tree warning).
+    if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) this.ports.toast('Warning: no stone deposits in range — miners need the grey rocks nearby', 'err', owner);
+    if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) this.ports.toast('Warning: no gold deposits in range', 'err', owner);
+    if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) this.ports.toast('Warning: no coal deposits in range', 'err', owner);
+    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) this.ports.toast('Warning: no iron deposits in range — miners need the rusty rocks nearby', 'err', owner);
     if (def.gather?.node === 'fish' && !this.fishingSpotInRange(tx, ty, def.gather.range)) { this.ports.toast('No open water in range — build on the shore', 'err', owner); return; }
     if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.ports.toast('Warning: few trees nearby', 'err', owner);
     const cost = this.modsFor(owner).buildingCost(def) as Record<string, number>;
