@@ -293,10 +293,11 @@ function makeHumanoid(colorHex: number, role: string, teamHex?: number): { group
   }
 
   dressUnit(g, role, teamHex);
-  // Carried goods ride on top of the head, clear of the tallest worker hat (the
-  // serf's fez tops out around y≈0.88): at 0.82 the crate sank into the hat.
+  // Carried goods are hugged against the chest in front of the figure — the
+  // crate's back face presses on the tunic (and any apron at z≈0.22) so it
+  // reads as held in the arms rather than floating.
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
-  item.position.y = 0.98; item.visible = false;
+  item.position.set(0, 0.27, 0.31); item.visible = false;
   g.add(item);
   return { group: g, itemMesh: item };
 }
