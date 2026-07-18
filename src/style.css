@@ -306,7 +306,7 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 #introCard button:hover{background:#e8b855;}
 /* ---------- first-ascension story briefing (Normal tier only) ---------- */
 #story{position:absolute;inset:0;background:rgba(15,11,8,.8);display:none;align-items:center;justify-content:center;z-index:32;}
-#storyCard{width:480px;max-width:92vw;max-height:90vh;overflow-y:auto;background:var(--panel);border:1px solid rgba(217,164,65,.4);border-radius:14px;padding:26px 30px;box-shadow:0 20px 60px rgba(0,0,0,.65);}
+#storyCard{width:min(660px,94vw);max-height:92vh;overflow-y:auto;background:var(--panel);border:1px solid rgba(217,164,65,.4);border-radius:14px;padding:26px 30px;box-shadow:0 20px 60px rgba(0,0,0,.65);}
 /* the victory banner bleeds to the card edges above the padded content */
 #storyImage{margin:-26px -30px 16px;border-radius:14px 14px 0 0;overflow:hidden;border-bottom:1px solid rgba(217,164,65,.35);}
 #storyImage svg{display:block;width:100%;}
@@ -322,7 +322,7 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 #storyCard h1{font-size:23px;color:var(--ink);margin-bottom:12px;line-height:1.2;}
 #storyCard .story-body{font-size:13.5px;line-height:1.65;color:var(--ink-dim);margin-bottom:18px;}
 /* victory outputs: the run's achievements as individually-marked badges */
-.victory-outputs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
+.victory-outputs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px;}
 .vout{display:flex;flex-direction:column;align-items:center;gap:2px;background:rgba(217,164,65,.1);border:1px solid rgba(217,164,65,.32);border-radius:10px;padding:11px 8px;text-align:center;}
 .vout .vout-ico{font-size:19px;line-height:1;}
 .vout b{font-size:20px;color:var(--accent);font-variant-numeric:tabular-nums;line-height:1.1;}
