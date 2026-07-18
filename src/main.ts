@@ -134,6 +134,10 @@ function startLevel(): void {
   const mutators = sandbox ? [] : run.mutators;
   const selectedHeroId = sandbox ? (sandboxCfg.hero === 'none' ? null : sandboxCfg.hero) : run.hero;
   const mods = new Modifiers([...heroSpecsFor(selectedHeroId), ...specsFor(run.upgrades), ...metaSpecsFor(meta.activeGlobalBuff), ...mutatorSpecsFor(mutators)]);
+  // Cards like First Prize pay a purse at level start. levelGoldStart was
+  // captured above, so a pause-menu restart rolls back before re-granting.
+  const startGoldBonus = sandbox ? 0 : mods.startGold();
+  if (startGoldBonus > 0) run.gold += startGoldBonus;
   game = new Game(world, view, mods);
   // the settings' performance cap gates spawns in single player only — co-op
   // peers must share one cap (the factory's MAX_UNITS default) to stay in sync

@@ -195,6 +195,9 @@ export class Modifiers {
     return s;
   }
 
+  /** Gold paid into the purse at level start (First Prize card). */
+  startGold(): number { return Math.round(this.accAdd('startGold')); }
+
   extraSerfs(): number { return Math.round(this.accAdd('extraSerf')); }
   extraLaborers(): number { return Math.round(this.accAdd('extraLaborer')); }
 }

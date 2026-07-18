@@ -85,7 +85,7 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'stone-stockpile', name: 'Stone Stockpile', desc: 'Start each level with +20 stone', icon: '🪨', pool: 'economy', rarity: 'common', basePrice: 14,
     apply: [{ stat: 'startStone', add: 20 }] },
 
-  { id: 'first-prize', name: 'First Prize', desc: 'Start each level with +10 gold', icon: '🏅', pool: 'economy', rarity: 'common', basePrice: 14,
+  { id: 'first-prize', name: 'First Prize', desc: 'Start the game with +10 coin', icon: '🏅', pool: 'economy', rarity: 'common', basePrice: 14,
     apply: [{ stat: 'startGold', add: 10 }] },
 
   { id: 'stout-stores', name: 'Stout Stores', desc: 'Start with +10 timber & +10 stone', icon: '📦', pool: 'economy', rarity: 'common', basePrice: 18,
