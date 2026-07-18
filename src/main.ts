@@ -184,6 +184,9 @@ function startLevel(): void {
   game.bossHpMult = levelPlan.bossHpMult;
   // demolition pays back less the higher the ascension (sandbox refunds all)
   game.demolishRefundRate = sandbox ? 1 : ascensionDemolishRefund(run.ascension);
+  // On Normal a demolished building's worker walks back out as a villager;
+  // every harder ascension makes demolition cost the person too.
+  game.demolishReturnsWorker = sandbox || run.ascension === 0;
   game.setEnemies(levelPlan.enemies);
   // mutator payloads beyond stat curses: extra wild packs on the map
   for (const id of mutators) {

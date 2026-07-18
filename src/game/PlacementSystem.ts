@@ -30,6 +30,7 @@ interface PlacementPorts {
   selected: () => unknown;
   toast: (message: string, cls?: string, owner?: OwnerId) => void;
   sfx: (name: string) => void;
+  spawnVillager: (tile: Coord, owner: PlayerId) => void;
 }
 
 /** Owns building/site representation and all player placement mutations. */
@@ -40,6 +41,10 @@ export class PlacementSystem {
   /** Fraction of a demolished building's cost returned to the castle.
    *  Set per level from the run's ascension tier (1 = full, 0 = nothing). */
   demolishRefundRate = 1;
+
+  /** Easier runs hand a demolished building's posted worker back as a fresh
+   *  villager; harder ascensions lose them. Set per level like the rate above. */
+  returnWorkerOnDemolish = true;
 
   constructor(
     private readonly world: World,
@@ -387,9 +392,18 @@ export class PlacementSystem {
       if (building.faction !== 'player') { this.ports.toast('Enemy strongholds must be destroyed in battle', 'err', owner); return; }
       if (building.owner !== owner) { this.ports.toast("You cannot demolish your ally's building", 'err', owner); return; }
       this.ports.sfx('demolish');
+      const hadWorker = !!building.worker;
       const note = this.payRefund(building);
       this.removeBuilding(building);
-      this.ports.toast(`${building.def.name} demolished${note ? ` — recovered ${note}` : ''}`, undefined, owner);
+      let workerNote = '';
+      if (hadWorker && this.returnWorkerOnDemolish) {
+        const door = buildingEntranceTiles(building)[0] ?? { x: building.x, y: building.y };
+        this.ports.spawnVillager(door, owner);
+        workerNote = ' · the worker rejoins your villagers';
+      } else if (hadWorker) {
+        workerNote = ' · the worker is lost';
+      }
+      this.ports.toast(`${building.def.name} demolished${note ? ` — recovered ${note}` : ''}${workerNote}`, undefined, owner);
       return;
     }
     if (tile.site && tile.site.owner === owner) {
