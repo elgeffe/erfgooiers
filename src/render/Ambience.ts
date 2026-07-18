@@ -428,28 +428,31 @@ export class Ambience {
       const c = new THREE.Group();
       if (rnd() < 0.18) {
         animals[Math.floor(rnd() * animals.length)](c);
+        c.scale.setScalar(0.9 + rnd() * 0.5);
       } else {
-        // Cumulus bank: a row of touching base puffs sharing one flat bottom,
-        // tallest in the middle, with a second row of smaller crowns piled on
-        // top and a couple of stray wisps trailing the ends.
-        const n = 5 + Math.floor(rnd() * 3);
-        const sizes: number[] = [];
+        // Cumulus heap: puffs scattered across an elliptical footprint —
+        // every cloud rolls its own width and depth, puffs swell toward the
+        // heart, and the fat inner puffs pile crowns upward. The 2-D scatter
+        // plus per-puff stretch is what keeps them from reading as a string
+        // of beads.
+        const spanX = 2.4 + rnd() * 2.8;  // half-width of this cloud's footprint
+        const spanZ = 1.0 + rnd() * 1.5;  // half-depth
+        const n = 7 + Math.floor(rnd() * 5);
         for (let j = 0; j < n; j++) {
-          const t = 1 - Math.abs(j - (n - 1) / 2) / ((n - 1) / 2 + 0.001); // 0 at ends, 1 centre
-          sizes.push(0.75 + t * 0.9 + rnd() * 0.35);
+          const a = rnd() * Math.PI * 2;
+          const r = Math.sqrt(rnd());     // uniform over the ellipse
+          const px = Math.cos(a) * r * spanX;
+          const pz = Math.sin(a) * r * spanZ;
+          const heart = 1 - r;            // 1 at the centre, 0 at the rim
+          const s = 0.55 + heart * 1.0 + rnd() * 0.45;
+          mk(c, px, pz, s, heart * rnd() * 0.3, 0.85 + rnd() * 0.5, 0.8 + rnd() * 0.45);
+          // crowns billow up from the fatter puffs, giving the heap real height
+          if (s > 1.05) mk(c, px + (rnd() - 0.5) * 0.6, pz + (rnd() - 0.5) * 0.5, s * (0.5 + rnd() * 0.2), s * (0.45 + rnd() * 0.25));
+          if (s > 1.4) mk(c, px + (rnd() - 0.5) * 0.5, pz + (rnd() - 0.5) * 0.4, s * 0.35, s * (0.8 + rnd() * 0.3));
         }
-        let x = -sizes.reduce((a, b) => a + b, 0) * 0.55;
-        for (let j = 0; j < n; j++) {
-          const s = sizes[j];
-          x += s * 0.62;
-          mk(c, x, (rnd() - 0.5) * 0.9, s, 0, 1.05, 0.85 + rnd() * 0.4);
-          // crowns billow upward from the fatter base puffs
-          if (s > 1.1) mk(c, x + (rnd() - 0.5) * 0.5, (rnd() - 0.5) * 0.6, s * 0.6, s * 0.5);
-          if (s > 1.45) mk(c, x + (rnd() - 0.5) * 0.4, (rnd() - 0.5) * 0.4, s * 0.38, s * 0.85);
-          x += s * 0.62;
-        }
+        // whole-cloud aspect varies too: some squat and wide, some tall
+        c.scale.set(0.85 + rnd() * 0.55, 0.8 + rnd() * 0.55, 0.85 + rnd() * 0.55);
       }
-      c.scale.setScalar(0.9 + rnd() * 0.5);
       c.rotation.y = (rnd() - 0.5) * 0.55;
       const laneX = -this.cloudBound + (i + 0.5) * (cloudSpan / cloudCount);
       c.position.set(laneX + (rnd() - 0.5) * cloudSpan / cloudCount * 0.45, 15 + rnd() * 4, (rnd() - 0.5) * cloudSpan);
