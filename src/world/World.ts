@@ -331,22 +331,37 @@ export class World {
         const HW = Math.max(6, Math.round(Math.min(W, H) * 0.11));   // corridor half-width
         const flankStart = Math.max(6, alongOf(0) - HW);             // open mouth on the player side
         const flankEnd = Math.min(vl - 1, alongOf(stages - 1) + HW * 0.7);
-        // the two corridor walls, running the whole route
+        // The two corridor walls run the whole route, but they are mountain
+        // ranges, not masonry: each flank wanders with two seeded harmonics
+        // and grows a ragged outer shoulder, so the corridor keeps its layout
+        // while the ridge lines stop reading as ruler-straight rows of rock.
+        const meander = (): { f1: number; f2: number; p1: number; p2: number } =>
+          ({ f1: 0.05 + rnd() * 0.05, f2: 0.13 + rnd() * 0.09, p1: rnd() * Math.PI * 2, p2: rnd() * Math.PI * 2 });
+        const mL = meander(), mR = meander();
+        const drift = (m: ReturnType<typeof meander>, a: number): number =>
+          Math.sin(a * m.f1 + m.p1) * 1.6 + Math.sin(a * m.f2 + m.p2) * 0.8;
         for (let a = flankStart; a <= flankEnd; a += 0.5) {
-          place(a, -HW, false); place(a, -HW - 1, false);
-          place(a, HW, false); place(a, HW + 1, false);
+          const wl = HW + drift(mL, a), wr = HW + drift(mR, a);
+          place(a, -wl, false); place(a, -wl - 1, false);
+          if (rnd() < 0.35) place(a, -wl - 2, false);        // ragged outer foot
+          place(a, wr, false); place(a, wr + 1, false);
+          if (rnd() < 0.35) place(a, wr + 2, false);
         }
         // a back wall behind the deepest lair, joining the two flanks so the
-        // dragon's quarter is sealed except through the corridor
-        for (let s = -HW - 1; s <= HW + 1; s += 0.5) place(flankEnd, s, true);
+        // dragon's quarter is sealed except through the corridor — it bows and
+        // staggers like the flanks instead of standing as a straight bar
+        const mB = meander();
+        for (let s = -HW - 3.5; s <= HW + 3.5; s += 0.5) place(flankEnd + drift(mB, s * 2), s, true);
         for (let z = 0; z < stages; z++) {
           const alongZ = alongOf(z);
           const wallAlong = alongZ - 3;                     // the gate sits just ahead of the garrison
           const gapOff = (z % 2 === 0 ? 1 : -1) * HW * 0.45; // gates alternate sides → the army snakes
           const gapHalf = 3.5;
-          for (let s = -HW; s <= HW; s += 0.5) {
+          const mW = meander();
+          for (let s = -HW - 3.5; s <= HW + 3.5; s += 0.5) {
             if (Math.abs(s - gapOff) < gapHalf) continue;   // leave the gate open
-            place(wallAlong, s, true);
+            place(wallAlong + drift(mW, s * 2) * 0.8, s, true);
+            if (rnd() < 0.25) place(wallAlong + drift(mW, s * 2) * 0.8 + (rnd() < 0.5 ? 1 : -1), s, false);
           }
           // the garrison stands right behind its own gate, blocking the way on
           const zx = Math.round(startCentre.x + nx * alongZ + pxv * gapOff);
