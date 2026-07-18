@@ -68,6 +68,7 @@ export interface RunState {
   playerName: string;           // speedrun scoreboard: who runs (typed at run start)
   playerTitle: string;          // …and under which epithet ("the Brave", …)
   timeSeconds: number;          // summed sim time of every cleared level so far
+  levelTimes: number[];         // sim seconds per cleared level, in order (speedrun splits)
 }
 
 /** One finished victorious run on the speedrun scoreboard. */
@@ -78,6 +79,7 @@ export interface ScoreEntry {
   timeSeconds: number;   // summed sim time of all ten cleared levels
   hero: string | null;
   date: number;          // Date.now() at the win
+  levelTimes?: number[]; // per-level splits; absent on runs recorded before split tracking
 }
 
 /** Epithets offered at run start — pick your legend. */
@@ -90,6 +92,21 @@ export const PLAYER_TITLES = [
 /** Scoreboard order: highest tier first, fastest time within a tier. */
 export function compareScores(a: ScoreEntry, b: ScoreEntry): number {
   return b.ascension - a.ascension || a.timeSeconds - b.timeSeconds;
+}
+
+/** Personal-best split per level across every run that recorded splits:
+ *  `[i]` is the fastest time anyone on this save cleared level `i+1` in,
+ *  or null when no recorded run has a split for that level. */
+export function bestLevelTimes(scores: ScoreEntry[]): (number | null)[] {
+  const best: (number | null)[] = Array.from({ length: RUN_LEVELS }, () => null);
+  for (const s of scores) {
+    if (!s.levelTimes) continue;
+    for (let i = 0; i < Math.min(s.levelTimes.length, RUN_LEVELS); i++) {
+      const t = s.levelTimes[i];
+      if (best[i] === null || t < best[i]!) best[i] = t;
+    }
+  }
+  return best;
 }
 
 export function formatRunTime(seconds: number): string {
@@ -110,7 +127,7 @@ export interface MetaState {
 }
 
 export function newRun(seed: number, ascension = 0, tutorials = true): RunState {
-  return { runSeed: seed >>> 0, levelIndex: 1, gold: 0, upgrades: [], mutators: [], rewardMult: 1, objectiveIdx: null, hero: null, equipment: [null, null, null], ascension, tutorials, playerName: '', playerTitle: '', timeSeconds: 0 };
+  return { runSeed: seed >>> 0, levelIndex: 1, gold: 0, upgrades: [], mutators: [], rewardMult: 1, objectiveIdx: null, hero: null, equipment: [null, null, null], ascension, tutorials, playerName: '', playerTitle: '', timeSeconds: 0, levelTimes: [] };
 }
 
 export function newMeta(): MetaState {

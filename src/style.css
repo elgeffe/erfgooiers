@@ -475,6 +475,27 @@ body.sandbox #buildmenu{max-width:min(96vw, calc(100vw - 400px));}
 #menuScores .scorerow .who{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 #menuScores .scorerow .tier{color:var(--accent);font-size:10.5px;}
 #menuScores .scorerow .time{font-variant-numeric:tabular-nums;color:#bce8af;}
+
+/* ---------- scoreboard screen (Hall of Erfgooiers) ---------- */
+#sbBody{margin-top:6px;}
+#sbBody .sb-row{display:flex;align-items:baseline;gap:10px;font-size:12.5px;color:var(--ink);padding:5px 6px;border-bottom:1px dotted rgba(255,255,255,.09);}
+#sbBody .sb-head{font-size:9.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--ink-dim);border-bottom:1px solid rgba(255,255,255,.14);}
+#sbBody .sb-click{cursor:pointer;border-radius:6px;}
+#sbBody .sb-click:hover{background:rgba(217,164,65,.1);}
+#sbBody .rank{color:var(--ink-dim);min-width:20px;}
+#sbBody .who{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#sbBody .hero{width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-dim);}
+#sbBody .tier{width:140px;color:var(--accent);font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#sbBody .date{width:78px;color:var(--ink-dim);font-size:11px;}
+#sbBody .delta{width:110px;text-align:right;font-variant-numeric:tabular-nums;}
+#sbBody .time{width:70px;text-align:right;font-variant-numeric:tabular-nums;color:#bce8af;}
+#sbBody .sb-delta{color:var(--ink-dim);font-size:11.5px;}
+#sbBody .sb-best{color:var(--accent);font-size:11.5px;}
+#sbBody .sb-sum{border-bottom:none;border-top:1px solid rgba(255,255,255,.14);color:var(--accent);font-weight:700;}
+#sbBody .sb-empty{font-size:12.5px;line-height:1.55;color:var(--ink-dim);padding:10px 2px;}
+.sb-tiles{grid-template-columns:repeat(4,1fr);margin-top:10px;}
+.sb-tiles .vout b{font-size:14px;line-height:1.25;}
+@media(max-width:650px){.sb-tiles{grid-template-columns:1fr 1fr;}#sbBody .hero,#sbBody .date{display:none;}}
 .setrow input[type=range]{flex:1;accent-color:var(--accent);min-width:80px;}
 .setrow b{width:44px;text-align:right;color:var(--accent);font-variant-numeric:tabular-nums;}
 .setrow.chk{cursor:pointer;}

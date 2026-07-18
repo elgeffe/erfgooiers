@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareScores, formatRunTime, newMeta, newRun, type ScoreEntry } from '../../src/game/RunState';
+import { RUN_LEVELS, bestLevelTimes, compareScores, formatRunTime, newMeta, newRun, type ScoreEntry } from '../../src/game/RunState';
 
 describe('speedrun scoreboard', () => {
   const entry = (ascension: number, timeSeconds: number): ScoreEntry =>
@@ -21,6 +21,22 @@ describe('speedrun scoreboard', () => {
     const run = newRun(1);
     expect(run.playerName).toBe('');
     expect(run.timeSeconds).toBe(0);
+    expect(run.levelTimes).toEqual([]);
     expect(newMeta().scores).toEqual([]);
+  });
+
+  it('finds the personal-best split per level across runs with splits', () => {
+    const withSplits = (levelTimes: number[]): ScoreEntry => ({ ...entry(0, 0), levelTimes });
+    const best = bestLevelTimes([
+      withSplits([120, 90, 300]),
+      withSplits([100, 95]),
+      entry(0, 500), // pre-split-tracking entry: ignored
+    ]);
+    expect(best).toHaveLength(RUN_LEVELS);
+    expect(best.slice(0, 4)).toEqual([100, 90, 300, null]);
+  });
+
+  it('has no best splits when no run recorded any', () => {
+    expect(bestLevelTimes([entry(0, 500)])).toEqual(Array.from({ length: RUN_LEVELS }, () => null));
   });
 });
