@@ -594,6 +594,10 @@ export class Game {
     return this.placementSystem.canPlotAt(tx, ty);
   }
 
+  canPlotFor(building: Building, tx: number, ty: number): boolean {
+    return this.placementSystem.canPlotFor(building, tx, ty);
+  }
+
   demolishTargetAt(tx: number, ty: number, owner: PlayerId = this.localPlayerId): Building | Site | null {
     return this.placementSystem.demolishTargetAt(tx, ty, owner);
   }

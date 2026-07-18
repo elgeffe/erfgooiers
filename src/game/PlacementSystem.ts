@@ -173,6 +173,15 @@ export class PlacementSystem {
     return this.openGround(tx, ty) && !this.entranceTileKeys().has(`${tx},${ty}`);
   }
 
+  /** The full per-farm plot test the paint cursor turns red on: open ground
+   *  and entrance rules plus this farm's plot cap and reach. */
+  canPlotFor(building: Building, tx: number, ty: number): boolean {
+    return !building.removed
+      && building.fieldsList.length < (building.def.plots ?? 8)
+      && Math.hypot(tx - (building.x + 0.5), ty - (building.y + 0.5)) <= PLOT_RANGE
+      && this.canPlotAt(tx, ty);
+  }
+
   /** The building or site a demolish click at this tile would remove, if the
    *  local player may actually demolish it (own, not the castle, not enemy). */
   demolishTargetAt(tx: number, ty: number, owner: PlayerId): Building | Site | null {

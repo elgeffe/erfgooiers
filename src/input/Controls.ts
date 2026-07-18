@@ -247,7 +247,13 @@ export class Controls {
     if (this.game && this.roadPainting) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.bufferPaint(t); }
     if (this.game && this.plotPainting && m && m.type === 'plot') { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.bufferPaint(t); }
     if (this.game && this.demoDragging) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.submitDemolish(t, true); }
-    if (m && (m.type === 'road' || m.type === 'demolish' || m.type === 'plot')) { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.view.showRoadCursor(t.x, t.y, m.type); else this.view.hideRoadCursor(); }
+    if (m && (m.type === 'road' || m.type === 'demolish' || m.type === 'plot')) {
+      const t = this.view.tileAt(e.clientX, e.clientY);
+      // plot mode knows the full rules (entrances, range, cap) — paint the
+      // cursor red wherever this farm can't actually take a plot
+      if (t) this.view.showRoadCursor(t.x, t.y, m.type, m.type === 'plot' && this.game ? this.game.canPlotFor(m.building, t.x, t.y) : undefined);
+      else this.view.hideRoadCursor();
+    }
     if (m && m.type === 'demolish') this.updateDemolishHover(this.view.tileAt(e.clientX, e.clientY));
     if (m && m.type === 'build') { const t = this.view.tileAt(e.clientX, e.clientY); if (t) this.refreshGhost(t.x, t.y); }
   }
@@ -269,7 +275,7 @@ export class Controls {
   private bufferPaint(t: Coord): void {
     if (!this.game || !this.mode) return;
     const paintable = this.mode.type === 'road' ? this.game.canPaintRoadAt(t.x, t.y)
-      : this.mode.type === 'plot' ? this.game.canPlotAt(t.x, t.y)
+      : this.mode.type === 'plot' ? this.game.canPlotFor(this.mode.building, t.x, t.y)
       : false;
     if (!paintable) return;
     if (this.paintCells.some(c => c.x === t.x && c.y === t.y)) return;
@@ -285,7 +291,11 @@ export class Controls {
     this.paintFlushT = 0;
     const m = this.mode;
     if (m && m.type === 'road') this.game.submitCommand({ type: 'paintRoad', cells });
-    else if (m && m.type === 'plot') this.game.submitCommand({ type: 'placePlots', buildingId: m.building.id, cells });
+    else if (m && m.type === 'plot') {
+      this.game.submitCommand({ type: 'placePlots', buildingId: m.building.id, cells });
+      // the farm is full — leave plot mode so a later click can't keep painting
+      if (m.building.fieldsList.length >= (m.building.def.plots ?? 8)) this.setMode(null);
+    }
   }
 
   /** Submit a demolish at a tile, deduplicated while dragging. */
