@@ -19,10 +19,10 @@ import { VICTORY_IMAGE, VICTORY_STORY, storyFor } from './data/story';
 import type { GameSettings } from './game/Settings';
 import { campaignBiome } from './data/biomes';
 import type { BiomeKey } from './data/biomes';
-import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, PLAYER_TITLES, RUN_LEVELS, ascensionDemolishRefund, ascensionForcesCurse, ascensionShopSlots, compareScores, currentLevelSeed, formatRunTime, newRun, type MetaState, type Phase, type RunState } from './game/RunState';
+import { ASCENSION_DESCS, ASCENSION_NAMES, MAX_ASCENSION, PLAYER_TITLES, RUN_LEVELS, ascensionDemolishRefund, ascensionForcesCurse, ascensionShopSlots, compareScores, currentLevelSeed, formatRunTime, newRun, type MetaState, type Phase, type RunState, type ScoreEntry } from './game/RunState';
 import { planLevel, planStartArmy } from './game/levelPlanning';
 import { goldCoinIconSVG, heritageCoinIconSVG } from './ui/icons';
-import { renderAchievements, renderMenuScores } from './ui/menus';
+import { renderAchievements, renderMenuScores, renderRunDetail, renderScoreboard } from './ui/menus';
 import { installSettingsController } from './ui/settingsController';
 import { installSandboxTools } from './ui/sandboxTools';
 import { CoOpController } from './ui/CoOpController';
@@ -796,6 +796,7 @@ function announceCardUnlocks(before: { levelsCleared: number; wins: number }): v
 function onLevelClear(): void {
   if (phase !== 'playing' || !run || !currentLevel || !game) return;
   run.timeSeconds += game.elapsed; // the speedrun clock sums every cleared level
+  run.levelTimes.push(game.elapsed); // …and keeps the per-level split for the scoreboard
   const tally = computeTally();
   const reward = tally.total;
   run.gold += reward;
@@ -815,7 +816,7 @@ function onLevelClear(): void {
     // sign the speedrun scoreboard: this victory, under the name & epithet
     // chosen at run start (kept sorted, capped so the save can't bloat)
     runTimeFinal = run.timeSeconds;
-    meta.scores.push({ name: run.playerName || 'Erfgooier', title: run.playerTitle || PLAYER_TITLES[0], ascension: run.ascension, timeSeconds: run.timeSeconds, hero: run.hero, date: Date.now() });
+    meta.scores.push({ name: run.playerName || 'Erfgooier', title: run.playerTitle || PLAYER_TITLES[0], ascension: run.ascension, timeSeconds: run.timeSeconds, hero: run.hero, date: Date.now(), levelTimes: [...run.levelTimes] });
     meta.scores.sort(compareScores);
     if (meta.scores.length > 50) meta.scores.length = 50;
     // winning at your highest tier opens the next rung of the ladder
@@ -928,10 +929,10 @@ function clearSaveData(): void {
 }
 
 // ---------- screens (DOM overlays) ----------
-type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'achievements' | 'heroselect' | 'sandboxselect' | 'coopmenu' | 'cooplobby' | null;
+type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'achievements' | 'scoreboard' | 'heroselect' | 'sandboxselect' | 'coopmenu' | 'cooplobby' | null;
 function showScreen(id: ScreenId): void {
   $('pausemenu').style.display = 'none';
-  for (const s of ['menu', 'shop', 'summary', 'heritage', 'achievements', 'heroselect', 'sandboxselect', 'coopmenu', 'cooplobby']) $(s).style.display = id === s ? 'flex' : 'none';
+  for (const s of ['menu', 'shop', 'summary', 'heritage', 'achievements', 'scoreboard', 'heroselect', 'sandboxselect', 'coopmenu', 'cooplobby']) $(s).style.display = id === s ? 'flex' : 'none';
   $('hud').style.display = phase === 'playing' ? 'block' : 'none';
   // a screen swallows keyups/pointerups — never leave the camera mid-pan
   controls.resetInput();
@@ -983,6 +984,20 @@ function openHeritage(): void { renderHeritage(); showScreen('heritage'); }
 
 // ---------- achievements (main menu) ----------
 function openAchievements(): void { renderAchievements($('achMeta'), $('achGrid'), meta); showScreen('achievements'); }
+
+// ---------- speedrun scoreboard (main menu) ----------
+// The Back button walks the same way it came: run detail → run list → menu.
+let scoreDetailOpen = false;
+function openScoreboard(): void {
+  scoreDetailOpen = false;
+  renderScoreboard($('sbMeta'), $('sbBody'), meta, openScoreDetail);
+  showScreen('scoreboard');
+}
+function openScoreDetail(entry: ScoreEntry): void {
+  scoreDetailOpen = true;
+  renderRunDetail($('sbMeta'), $('sbBody'), entry, meta);
+  audio.play('click');
+}
 
 function renderHeritage(): void {
   $('heritageMeta').innerHTML = `${heritageCoinIconSVG(15)} <b>${meta.heritage}</b> Heritage to spend · own any number, activate one global blessing`;
@@ -1105,6 +1120,8 @@ $('objective').addEventListener('click', () => {
 ($('btnHeritageBack') as HTMLButtonElement).onclick = goMenu;
 ($('btnAchievements') as HTMLButtonElement).onclick = openAchievements;
 ($('btnAchBack') as HTMLButtonElement).onclick = goMenu;
+($('btnScoreboard') as HTMLButtonElement).onclick = openScoreboard;
+($('btnScoreBack') as HTMLButtonElement).onclick = () => { if (scoreDetailOpen) openScoreboard(); else goMenu(); };
 ($('btnToMenu') as HTMLButtonElement).onclick = openPauseMenu;
 ($('btnResume') as HTMLButtonElement).onclick = resumeGame;
 ($('btnRestart') as HTMLButtonElement).onclick = restartLevel;

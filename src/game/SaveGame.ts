@@ -54,7 +54,7 @@ export function saveMeta(meta: MetaState): void { write(META_KEY, meta); }
 
 export function loadRun(): RunState | null {
   const r = read<RunState>(RUN_KEY);
-  if (r) { r.ascension ??= 0; r.tutorials ??= true; r.playerName ??= ''; r.playerTitle ??= ''; r.timeSeconds ??= 0; }
+  if (r) { r.ascension ??= 0; r.tutorials ??= true; r.playerName ??= ''; r.playerTitle ??= ''; r.timeSeconds ??= 0; r.levelTimes ??= []; }
   return r;
 }
 export function saveRun(run: RunState): void { write(RUN_KEY, run); }
