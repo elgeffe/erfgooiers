@@ -119,9 +119,9 @@ export function makeCavalry(kind: string, colorHex: number, faction: Faction = '
     const quiver = new THREE.Mesh(cyl(0.035, 0.03, 0.16, 6), umat(0x6b4a2f));
     quiver.position.set(-0.16, 0.55, -0.1); quiver.rotation.x = 0.5; g.add(quiver);
     // Robin Hood hat matching the foot archer: tall green point + red feather
-    const hat = new THREE.Mesh(cone(0.105, 0.24, 8), umat(0x3f6d3a)); hat.position.y = 1.0; g.add(hat);
+    const hat = new THREE.Mesh(cone(0.14, 0.26, 8), umat(0x3f6d3a)); hat.position.y = 1.0; g.add(hat);
     const feather = new THREE.Mesh(cone(0.014, 0.09, 4), umat(0xb5352f));
-    feather.position.set(0.09, 0.98, 0); feather.rotation.z = -0.85; g.add(feather);
+    feather.position.set(0.12, 0.97, 0); feather.rotation.z = -0.85; g.add(feather);
   } else { // horseknight
     const helm = new THREE.Mesh(sphere(0.1, 8, 6), umat(style.helmet)); helm.scale.y = 0.8; helm.position.y = 0.9; g.add(helm);
     const plume = new THREE.Mesh(cone(0.028, 0.13, 5), umat(style.trim)); plume.position.y = 1.02; g.add(plume);
@@ -297,7 +297,7 @@ function makeHumanoid(colorHex: number, role: string, teamHex?: number): { group
   // crate's back face presses on the tunic (and any apron at z≈0.22) so it
   // reads as held in the arms rather than floating.
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
-  item.position.set(0, 0.27, 0.31); item.visible = false;
+  item.position.set(0, 0.25, 0.28); item.visible = false;
   g.add(item);
   return { group: g, itemMesh: item };
 }

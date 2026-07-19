@@ -13,7 +13,7 @@
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { makeBuilding } from '../render/models';
+import { makeBuilding, makeUnit } from '../render/models';
 import { setActiveBiome, withSeededScatter } from '../render/modelCore';
 import { DEFS, MENU_CATEGORIES } from '../data/buildings';
 import { BIOMES, type BiomeKey } from '../data/biomes';
@@ -25,6 +25,11 @@ const params = new URLSearchParams(location.search);
 // ---- state (seeded from the URL so screenshots are reproducible) ----
 const mParam = params.get('model');
 let currentKey: BuildingKey = (mParam && mParam in DEFS ? mParam : 'barracks') as BuildingKey;
+// unit=<role> renders a unit model instead of a building (internally the key
+// becomes "unit:<role>"); carry=1 shows the hauled crate on top.
+const uParam = params.get('unit');
+if (uParam) currentKey = ('unit:' + uParam) as BuildingKey;
+const showCarry = params.get('carry') === '1';
 const bParam = params.get('biome');
 let biomeKey: BiomeKey = (bParam && bParam in BIOMES ? bParam : 'gooi') as BiomeKey;
 let ghost = params.get('ghost') === '1';
@@ -153,7 +158,7 @@ function inspect(g: THREE.Group, key: BuildingKey): ModelReport {
 }
 
 function renderReport(r: ModelReport): void {
-  const def = DEFS[r.key as BuildingKey];
+  const def = DEFS[r.key as BuildingKey] as (typeof DEFS)[BuildingKey] | undefined;
   const over = r.footprintOverflow;
   const sink = r.minY < -0.02 ? `\n<span class="warn">⚠ dips ${(-r.minY).toFixed(2)} below ground</span>` : '';
   const overLine = over.length
@@ -161,7 +166,7 @@ function renderReport(r: ModelReport): void {
       over.slice(0, 6).map(o => `  • ${o.part} @(${o.x}, ${o.z}) reaches ${o.reach}`).join('\n')
     : '<span class="ok">✓ all parts within the 2×2 footprint</span>';
   $('readout').innerHTML =
-    `<b>${def.name}</b>  (${r.key})\n` +
+    `<b>${def?.name ?? r.key}</b>  (${r.key})\n` +
     `size  ${r.size.x} × ${r.size.y} × ${r.size.z}   ·   ${r.meshes} meshes${sink}\n` +
     overLine;
 }
@@ -183,7 +188,15 @@ function build(key: BuildingKey): void {
   currentKey = key;
   setActiveBiome(BIOMES[biomeKey]);
   // seed the cosmetic scatter so a given seed always yields the same props
-  const g = withSeededScatter(seed, () => makeBuilding(key, DEFS[key], ghost, playerColor));
+  const g = withSeededScatter(seed, () => {
+    if (!key.startsWith('unit:')) return makeBuilding(key, DEFS[key], ghost, playerColor);
+    const { group, itemMesh } = makeUnit(playerColor ?? 0x2d5a2d, key.slice(5));
+    if (showCarry) {
+      itemMesh.visible = true;
+      ((itemMesh.material as THREE.MeshLambertMaterial).color as THREE.Color).setHex(0xb08a5c);
+    }
+    return group;
+  });
   g.traverse(o => {
     const m = o as THREE.Mesh;
     if (m.isMesh) { m.castShadow = !ghost; m.receiveShadow = false; }
@@ -191,6 +204,12 @@ function build(key: BuildingKey): void {
   applyWire(g);
   holder.add(g);
   current = g;
+  // units are a fraction of a building's size — frame them tightly
+  const unitScale = key.startsWith('unit:');
+  viewSize = unitScale ? 1.0 : 2.8;
+  controls.target.y = unitScale ? 0.5 : 0.85;
+  footprint.visible = !unitScale;
+  resize();
   spinTarget = (g.userData.spin as THREE.Object3D) ?? null; // windmill sails, etc.
   lastReport = inspect(g, key);
   renderReport(lastReport);
@@ -207,7 +226,8 @@ function setGhost(v: boolean): void {
 
 function syncUrl(): void {
   const p = new URLSearchParams();
-  p.set('model', currentKey);
+  if (currentKey.startsWith('unit:')) p.set('unit', currentKey.slice(5));
+  else p.set('model', currentKey);
   if (ghost) p.set('ghost', '1');
   if (spin) p.set('spin', '1');
   if (seed !== 1) p.set('seed', String(seed));
@@ -292,7 +312,7 @@ interface ViewerApi {
   setSeed(n: number): void;
 }
 (window as unknown as { __viewer: ViewerApi }).__viewer = {
-  show: k => { if (!(k in DEFS)) return null; build(k as BuildingKey); return lastReport; },
+  show: k => { if (!(k in DEFS) && !k.startsWith('unit:')) return null; build(k as BuildingKey); return lastReport; },
   keys: Object.keys(DEFS),
   report: () => lastReport,
   setGhost,
