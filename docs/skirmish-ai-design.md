@@ -6,10 +6,14 @@ the `idle`/`random` seam-provers, `src/data/aiProfiles.ts`, replay
 record/re-simulate (`src/game/replay.ts`), the browser **Skirmish vs CPU** menu
 mode, and the `npm run selfplay` headless tournament runner all exist; the
 vitest suite covers replay determinism, fairness (zero rejected commands), CPU
-budget, and stance separation. Phases 3+ (learned/adaptive AI, research track,
-online seats) remain unimplemented. Known intentional gap: AI wall-building is
+budget, and stance separation. The browser now also spectates CPU-vs-CPU
+matches, and co-op/skirmish/vs-CPU share one multiplayer session model in
+`main.ts` (seats × mode × transport). Phases 3+ (learned/adaptive AI, research
+track, online seats) remain unimplemented. Known gaps: AI wall-building is
 plumbed but disabled (`walls: 0` in every profile) pending a fortification
-planner that cannot wall in the bot's own serfs.
+planner that cannot wall in the bot's own serfs, and the Godlike-vs-Hard
+separation (~50% measured) awaits the Phase 2 balance campaign — Hard vs Easy
+already separates at ~83%.
 Companion documents: [skirmish-design.md](skirmish-design.md) (the PvP mode this AI
 plays), [tensor-networks-for-logistics.md](tensor-networks-for-logistics.md) (the
 prior reality check whose fail-fast discipline the research track inherits).
