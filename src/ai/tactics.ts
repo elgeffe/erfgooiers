@@ -141,8 +141,11 @@ export class Tactics {
     }
 
     // Harassment raids between waves (higher difficulties): a small party
-    // rides at the rival base to bleed workers, scout, and force reactions.
+    // rides at the rival base to bleed workers, scout, and force reactions —
+    // but never into a garrison that outnumbers it (a beaten raid invites the
+    // counter-chase that razes half the home base).
     if (profile.raidSize > 0 && view.enemyStore && !this.raiders.size
+      && view.enemyArmySize < profile.raidSize
       && view.elapsed - this.lastRaidAt >= profile.raidInterval
       && view.armySize - guard >= profile.raidSize + 4) {
       const party = view.army.filter(unit => !this.squad.has(unit.id)).slice(0, profile.raidSize);

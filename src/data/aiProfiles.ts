@@ -78,7 +78,7 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
     homeGuard: 0, raidSize: 0, raidInterval: 1e9,
   },
   hard: {
-    macroPeriod: 2.5, tacticsPeriod: 1, reactionDelay: 2, apm: 30, errorRate: 0.03,
+    macroPeriod: 2.5, tacticsPeriod: 1, reactionDelay: 2, apm: 36, errorRate: 0.03,
     econScale: 1, maxPendingSites: 3, workerReserveCoin: 3, towers: 1, walls: 1,
     armyCap: 24, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 1 },
     attackArmy: 16, minAttackInterval: 100, retreatRatio: 0.5, useBell: true,

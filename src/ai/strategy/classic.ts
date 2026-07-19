@@ -39,12 +39,18 @@ function goals(towers: number, scale: number): BuildGoal[] {
   // the food chain through the tavern, then the barracks (archers train on
   // timber alone), then iron + a second coalmine into the weapons chain.
   const list: BuildGoal[] = [
+    // normally start-granted, so the deficit is zero — but a razed guild hall
+    // must be rebuilt at once or the settlement can never hire anyone again
+    { key: 'guildhall', target: 1, priority: 98, category: 'economy' },
     { key: 'woodcutter', target: 1, priority: 100, category: 'economy' },
     { key: 'sawmill', target: 1, priority: 96, category: 'economy', requires: ['woodcutter'] },
     { key: 'quarry', target: 1, priority: 92, category: 'economy' },
     { key: 'goldmine', target: 1, priority: 88, category: 'coin' },
     { key: 'coalmine', target: 1, priority: 86, category: 'coin' },
     { key: 'mint', target: 1, priority: 84, category: 'coin', requires: ['goldmine', 'coalmine'] },
+    // the forester joins the opening: a lone woodcutter strips its stand in
+    // minutes and a dead wood economy starves archers (1 timber) forever
+    { key: 'forester', target: 1, priority: 81, category: 'economy', requires: ['woodcutter'] },
     { key: 'farm', target: 1, priority: 80, category: 'food' },
     { key: 'mill', target: 1, priority: 78, category: 'food', requires: ['farm'] },
     { key: 'bakery', target: 1, priority: 76, category: 'food', requires: ['mill'] },
@@ -55,7 +61,6 @@ function goals(towers: number, scale: number): BuildGoal[] {
     { key: 'smithy', target: 1, priority: 64, category: 'war', requires: ['ironmine', 'coalmine'] },
     // higher difficulties boost coin with market exports of surplus goods
     { key: 'market', target: 1, priority: 62, category: 'coin', minScale: 1 },
-    { key: 'forester', target: 1, priority: 58, category: 'economy', requires: ['woodcutter'] },
     { key: 'woodcutter', target: 2, priority: 56, category: 'economy', minScale: 1 },
     { key: 'watchtower', target: towers, priority: 54, category: 'fort' },
     // veins run dry: spare goldmines keep the coin (= army) income alive
@@ -78,6 +83,8 @@ export class ClassicMacro implements MacroPolicy {
   /** Keys whose placement search recently failed — retried after a cooldown
    *  instead of burning the search budget every pass. */
   private readonly blockedUntil = new Map<BuildingKey, number>();
+  /** When the bot started saving toward each unaffordable top goal. */
+  private readonly savingSince = new Map<BuildingKey, number>();
   /** Per-site progress watermarks, to spot construction that will never finish. */
   private readonly siteWatch = new Map<number, { since: number; watermark: number }>();
   private lastThreatAt = -Infinity;
@@ -117,7 +124,9 @@ export class ClassicMacro implements MacroPolicy {
   private planFortification(ctx: PolicyContext): GameCommand | null {
     const { game, world, view, profile } = ctx;
     if (profile.walls <= 0 || !view.store) return null;
-    if ((view.built.barracks ?? 0) < 1) return null;          // army before masonry
+    // army before masonry, strictly: every stone laid before a fighting force
+    // stands is measured tempo handed to a rushing rival
+    if ((view.built.barracks ?? 0) < 1 || view.armySize < profile.attackArmy * 0.5) return null;
     if (view.sites.length >= profile.maxPendingSites) return null;
     const center = { x: view.store.x, y: view.store.y };
     const enemySide: FortSide = view.enemyStore ? sideToward(center, view.enemyStore) : 'e';
@@ -150,14 +159,17 @@ export class ClassicMacro implements MacroPolicy {
       if (!building.marketOrders?.length) {
         const orders: { item: 'goldore' | 'stone' | 'bread' | 'timber'; amount: number }[] = [];
         if (view.built.goldmine) orders.push({ item: 'goldore', amount: 5 });
-        orders.push({ item: 'stone', amount: 8 });
+        orders.push({ item: 'stone', amount: 5 });
         if (view.built.bakery) orders.push({ item: 'bread', amount: 4 });
         if (orders.length < 3) orders.push({ item: 'timber', amount: 3 });
         return { type: 'configureMarket', buildingId: building.id, orders: orders.slice(0, 3) };
       }
-      // exports outrank routine hauling: with no gold veins in reach the
-      // market is the settlement's whole coin income
-      if (!building.priority) return { type: 'setPriority', siteId: building.id, priority: true };
+      // Exports outrank routine hauling ONLY when no gold vein backs the
+      // economy — on gold-rich maps a priority market vacuums the stone and
+      // timber that walls, towers and the barracks need.
+      if (!building.priority && !view.built.goldmine) {
+        return { type: 'setPriority', siteId: building.id, priority: true };
+      }
     }
     return null;
   }
@@ -211,7 +223,6 @@ export class ClassicMacro implements MacroPolicy {
       .filter(goal => have(view, goal.key) < goal.target)
       .filter(goal => (goal.requires ?? []).every(key => (view.built[key] ?? 0) > 0))
       .filter(goal => (this.blockedUntil.get(goal.key) ?? 0) <= view.elapsed)
-      .filter(goal => this.affordable(ctx, goal.key))
       .map(goal => {
         let value = goal.priority * weights[goal.category];
         if (goal.category === 'food' && hungry) value *= 1.6;
@@ -223,6 +234,20 @@ export class ClassicMacro implements MacroPolicy {
       .sort((a, b) => b.value - a.value);
 
     for (const { goal } of candidates.slice(0, 3)) {
+      // SAVE for the best goal instead of buying cheaper, lesser ones — an
+      // affordability filter here silently starved the barracks forever while
+      // low-priority buildings kept spending the timber the moment it landed.
+      // But saving has a patience window: income for a good can DIE (all
+      // nearby trees felled), and waiting on a dead stream deadlocks the base.
+      if (!this.affordable(ctx, goal.key)) {
+        const since = this.savingSince.get(goal.key);
+        if (since === undefined) { this.savingSince.set(goal.key, view.elapsed); return null; }
+        if (view.elapsed - since < 90) return null;
+        this.savingSince.delete(goal.key);
+        this.blockedUntil.set(goal.key, view.elapsed + 60);
+        continue;
+      }
+      this.savingSince.delete(goal.key);
       const spot = findBuildingSpot(game, world, view, goal.key, rng, ctx.approach);
       if (spot) return { type: 'placeBuilding', key: goal.key, x: spot.x, y: spot.y, rot: spot.rot };
       this.blockedUntil.set(goal.key, view.elapsed + 45);
