@@ -10,7 +10,7 @@ import type { BuildingDef, Faction, ItemKey, Unit } from '../types';
  *   unitSpeed   (filter: unit role)     buildTime
  *   gatherTime  (filter: node kind)     recipeTime  (filter: output item)
  *   carryCap    outCap                  fieldGrowth
- *   goldGain    cost:<item> (add only)  startBread / startTimber / startStone
+ *   goldGain    cost:<item> (add only)  startBread / startTimber / startStone / startCoin
  *   extraSerf   extraLaborer  (add only)
  *
  * Rule-bending stats (the shop's rare cards):
@@ -192,6 +192,7 @@ export class Modifiers {
     const bread = this.accAdd('startBread'); if (bread) s.bread = bread;
     const timber = this.accAdd('startTimber'); if (timber) s.timber = timber;
     const stone = this.accAdd('startStone'); if (stone) s.stone = stone;
+    const coin = this.accAdd('startCoin'); if (coin) s.coin = coin;
     return s;
   }
 

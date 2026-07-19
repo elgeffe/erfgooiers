@@ -328,12 +328,12 @@ export class PlacementSystem {
       this.ports.sfx('error'); this.ports.toast("Cannot build here — don't cover or seal off another building's doorway", 'err', owner); return;
     }
     const def = DEFS[key];
-    // Mines and quarries may stand anywhere — but a site out of reach of its
-    // deposits will idle, so warn (mirroring the woodcutter's tree warning).
-    if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) this.ports.toast('Warning: no stone deposits in range — miners need the grey rocks nearby', 'err', owner);
-    if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) this.ports.toast('Warning: no gold deposits in range', 'err', owner);
-    if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) this.ports.toast('Warning: no coal deposits in range', 'err', owner);
-    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) this.ports.toast('Warning: no iron deposits in range — miners need the rusty rocks nearby', 'err', owner);
+    // Mines and quarries must stand within reach of live deposits — their
+    // miners gather from those tiles, so a site out of range could never work.
+    if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.ports.toast('No stone deposits in range — build near the grey rocks', 'err', owner); return; }
+    if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.ports.toast('No gold deposits in range', 'err', owner); return; }
+    if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.ports.toast('No coal deposits in range', 'err', owner); return; }
+    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.ports.toast('No iron deposits in range — build near the rusty rocks', 'err', owner); return; }
     if (def.gather?.node === 'fish' && !this.fishingSpotInRange(tx, ty, def.gather.range)) { this.ports.toast('No open water in range — build on the shore', 'err', owner); return; }
     if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.ports.toast('Warning: few trees nearby', 'err', owner);
     const cost = this.modsFor(owner).buildingCost(def) as Record<string, number>;
@@ -451,11 +451,16 @@ export class PlacementSystem {
     return !!tile && tile.type === 'grass' && !tile.b && !tile.site && !tile.road && !tile.field && !tile.dep && !tile.tree?.dense;
   }
 
+  /** A live deposit of `kind` within the miner's working box that can actually
+   *  be worked: the miner stands on an orthogonal side tile to dig, so a rock
+   *  walled in on all four sides must not satisfy placement. */
   private depositInRange(kind: string, tx: number, ty: number, range: number): boolean {
     for (let y = Math.max(0, ty - range); y <= Math.min(this.world.H - 1, ty + 1 + range); y++)
       for (let x = Math.max(0, tx - range); x <= Math.min(this.world.W - 1, tx + 1 + range); x++) {
         const deposit = this.world.tiles[y][x].dep;
-        if (deposit?.kind === kind && deposit.amt > 0) return true;
+        if (!deposit || deposit.kind !== kind || deposit.amt <= 0) continue;
+        for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]])
+          if (this.world.passable(x + ox, y + oy)) return true;
       }
     return false;
   }
