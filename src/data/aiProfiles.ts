@@ -86,9 +86,11 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
   },
   godlike: {
     macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 60, errorRate: 0,
-    econScale: 1.3, maxPendingSites: 4, workerReserveCoin: 4, towers: 2, walls: 0,
+    // deeper than Hard but not greedy: econScale 1.3 starved the army exactly
+    // when Hard's first wave landed (measured: 8-minute deaths in self-play)
+    econScale: 1.15, maxPendingSites: 4, workerReserveCoin: 3, towers: 2, walls: 0,
     armyCap: 32, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 2 },
-    attackArmy: 22, minAttackInterval: 80, retreatRatio: 0.55, useBell: true,
+    attackArmy: 18, minAttackInterval: 80, retreatRatio: 0.55, useBell: true,
     homeGuard: 0.25, raidSize: 5, raidInterval: 150,
   },
 };
