@@ -43,6 +43,15 @@ export class Tactics {
     for (const id of this.squad) if (!alive.has(id)) this.squad.delete(id);
     for (const id of this.raiders) if (!alive.has(id)) this.raiders.delete(id);
 
+    // Every fighter stands defensive: fight around the post, then WALK BACK.
+    // Auto-stance pursuit is the classic suicide — chase a beaten rush across
+    // the map, die under the rival castle's arrows. The stance re-posts on
+    // every ordered march, so attacks and raids are unaffected.
+    const undisciplined = view.army.filter(unit => unit.stance !== 'defensive');
+    if (undisciplined.length) {
+      commands.push({ type: 'setStance', unitIds: undisciplined.map(unit => unit.id), stance: 'defensive' });
+    }
+
     // ---- reaction-delayed threat tracking ----
     if (view.threats.length) {
       this.threatSince ??= view.elapsed;
@@ -106,8 +115,10 @@ export class Tactics {
     // so demand a real numbers advantage — but never wait on a rival with no
     // army left: an empty base is razed with whatever stands. Higher
     // difficulties keep a standing garrison at home while the wave marches.
-    const guard = Math.ceil(view.armySize * profile.homeGuard);
     const needed = Math.max(4, Math.min(profile.attackArmy, Math.ceil(view.enemyArmySize * 1.5) + 4));
+    // the garrison is best-effort surplus, never a reason to delay the launch:
+    // demanding wave + full guard before marching left Godlike massing forever
+    const guard = Math.min(Math.ceil(view.armySize * profile.homeGuard), Math.max(0, view.armySize - needed));
     if (view.armySize - guard >= needed
       && view.elapsed - this.lastAttackAt >= profile.minAttackInterval
       && view.enemyStore) {
