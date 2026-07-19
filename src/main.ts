@@ -134,6 +134,10 @@ function startLevel(): void {
   const mutators = sandbox ? [] : run.mutators;
   const selectedHeroId = sandbox ? (sandboxCfg.hero === 'none' ? null : sandboxCfg.hero) : run.hero;
   const mods = new Modifiers([...heroSpecsFor(selectedHeroId), ...specsFor(run.upgrades), ...metaSpecsFor(meta.activeGlobalBuff), ...mutatorSpecsFor(mutators)]);
+  // Cards like First Prize pay a purse at level start. levelGoldStart was
+  // captured above, so a pause-menu restart rolls back before re-granting.
+  const startGoldBonus = sandbox ? 0 : mods.startGold();
+  if (startGoldBonus > 0) run.gold += startGoldBonus;
   game = new Game(world, view, mods);
   // the settings' performance cap gates spawns in single player only — co-op
   // peers must share one cap (the factory's MAX_UNITS default) to stay in sync
@@ -180,6 +184,9 @@ function startLevel(): void {
   game.bossHpMult = levelPlan.bossHpMult;
   // demolition pays back less the higher the ascension (sandbox refunds all)
   game.demolishRefundRate = sandbox ? 1 : ascensionDemolishRefund(run.ascension);
+  // On Normal a demolished building's worker walks back out as a villager;
+  // every harder ascension makes demolition cost the person too.
+  game.demolishReturnsWorker = sandbox || run.ascension === 0;
   game.setEnemies(levelPlan.enemies);
   // mutator payloads beyond stat curses: extra wild packs on the map
   for (const id of mutators) {
@@ -1095,7 +1102,23 @@ const settings: GameSettings = installSettingsController(view, controls, openPau
   goMenu();
   ui.toast('Save imported');
 };
+// Clearing everything is irreversible — demand a second click to confirm.
+// The armed state disarms itself after a few seconds so a stray click can't
+// linger as a loaded gun.
+let clearArmTimer: number | null = null;
 ($('btnSettingsClear') as HTMLButtonElement).onclick = () => {
+  const btn = $('btnSettingsClear') as HTMLButtonElement;
+  if (clearArmTimer === null) {
+    btn.textContent = '⚠ Click again to erase everything';
+    clearArmTimer = window.setTimeout(() => {
+      clearArmTimer = null;
+      btn.textContent = 'Clear save data';
+    }, 5000);
+    return;
+  }
+  clearTimeout(clearArmTimer);
+  clearArmTimer = null;
+  btn.textContent = 'Clear save data';
   $('settings').style.display = 'none';
   clearSaveData();
 };

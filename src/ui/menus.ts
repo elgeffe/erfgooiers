@@ -10,9 +10,10 @@ function escapeHtml(text: string): string {
 /** The main menu's speedrun scoreboard: victorious runs, highest tier first,
  *  fastest within a tier. Hidden until someone has actually won. */
 export function renderMenuScores(box: HTMLElement, meta: MetaState): void {
-  const scores = [...meta.scores].sort(compareScores).slice(0, 8);
+  // The menu shows only the podium — the Scoreboard screen holds the full Hall.
+  const scores = [...meta.scores].sort(compareScores).slice(0, 3);
   if (!scores.length) { box.innerHTML = ''; return; }
-  box.innerHTML = '<div class="scorehead">Hall of Erfgooiers — fastest victories</div>'
+  box.innerHTML = '<div class="scorehead">Fastest victories</div>'
     + scores.map((s, i) =>
       `<div class="scorerow"><span class="rank">${i + 1}.</span>`
       + `<span class="who">${escapeHtml(s.name)} ${escapeHtml(s.title)}</span>`

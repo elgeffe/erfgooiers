@@ -175,17 +175,21 @@
   <div class="card">
     <h1 class="serif"><span id="menuLogo"></span>Erfgooiers</h1>
     <div class="tag">A browser roguelite economy builder and military strategy game — clear ten short levels, shop between each, lose it all if a level beats you.</div>
-    <div id="metaLine" class="metaline"></div>
-    <div id="menuScores"></div>
+    <div class="metaline profile">
+      <div id="metaLine"></div>
+      <div id="menuScores"></div>
+    </div>
     <div class="btns">
       <button id="btnContinue">Continue run</button>
       <button id="btnNewRun">New run</button>
       <button id="btnCoop">Co-op Expedition (Beta)</button>
       <button id="btnSkirmish">1v1 Skirmish (Beta)</button>
-      <button id="btnScoreboard" class="ghost">Scoreboard — the Hall of Erfgooiers</button>
-      <button id="btnHeritage" class="ghost">Heritage Cards — spend Erfgoed</button>
-      <button id="btnAchievements" class="ghost">Achievements — earn new cards</button>
-      <button id="btnSandbox" class="ghost">Sandbox — free build</button>
+      <div class="menu-chips">
+        <button id="btnScoreboard" class="ghost" title="The Hall of Erfgooiers — every victorious run and its time">🏆 Scoreboard</button>
+        <button id="btnHeritage" class="ghost" title="Spend banked Erfgoed on heroes and one global blessing">🎴 Heritage Cards</button>
+        <button id="btnAchievements" class="ghost" title="Lifetime feats that earn new cards for the shop">🏅 Achievements</button>
+        <button id="btnSandbox" class="ghost" title="Free build — pick a map, no run at stake">🏗️ Sandbox</button>
+      </div>
       <button id="btnHelp" class="ghost">How to play</button>
       <button id="btnSettings" class="ghost">Settings</button>
     </div>

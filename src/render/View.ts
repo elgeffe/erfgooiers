@@ -574,14 +574,16 @@ export class View {
   }
   hideGhost(): void { this.ghost.visible = false; }
 
-  showRoadCursor(tx: number, ty: number, kind: 'road' | 'demolish' | 'plot'): void {
+  /** `ok` (when given) overrides the local ground test — the caller knows the
+   *  full placement rules (entrances, plot range/cap) the view can't see. */
+  showRoadCursor(tx: number, ty: number, kind: 'road' | 'demolish' | 'plot', ok?: boolean): void {
     this.roadCursor.visible = true;
     this.roadCursor.position.x = this.world.wx(tx); this.roadCursor.position.z = this.world.wz(ty);
     const t = this.world.T(tx, ty);
     const m = this.roadCursor.material as THREE.MeshBasicMaterial;
     if (kind === 'demolish') m.color.setHex((t && (t.road || t.b || t.site || t.field)) ? 0xcc3322 : 0x777777);
     else {
-      const free = !!(t && t.type === 'grass' && !t.b && !t.site && !t.road && !t.field && !t.dep);
+      const free = ok ?? !!(t && t.type === 'grass' && !t.b && !t.site && !t.road && !t.field && !t.dep);
       m.color.setHex(free ? (kind === 'plot' ? 0x46c256 : 0xd9a441) : 0xcc3322);
     }
   }

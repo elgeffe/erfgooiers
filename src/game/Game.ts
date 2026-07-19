@@ -379,6 +379,7 @@ export class Game {
         selected: () => this.selected,
         toast: (message, cls, owner) => this.emitToast(message, cls, owner),
         sfx: name => this.sfx(name),
+        spawnVillager: (tile, owner) => { this.trainingSystem.spawnCivilian('villager', tile, owner); },
       },
     );
     this.orderSystem = new OrderSystem(this.world, this.view, {
@@ -594,6 +595,10 @@ export class Game {
     return this.placementSystem.canPlotAt(tx, ty);
   }
 
+  canPlotFor(building: Building, tx: number, ty: number): boolean {
+    return this.placementSystem.canPlotFor(building, tx, ty);
+  }
+
   demolishTargetAt(tx: number, ty: number, owner: PlayerId = this.localPlayerId): Building | Site | null {
     return this.placementSystem.demolishTargetAt(tx, ty, owner);
   }
@@ -609,6 +614,10 @@ export class Game {
   /** Fraction of a demolished building's cost refunded (set from the run's ascension). */
   set demolishRefundRate(rate: number) { this.placementSystem.demolishRefundRate = rate; }
   get demolishRefundRate(): number { return this.placementSystem.demolishRefundRate; }
+
+  /** Whether demolishing returns the posted worker as a villager (easy tiers only). */
+  set demolishReturnsWorker(v: boolean) { this.placementSystem.returnWorkerOnDemolish = v; }
+  get demolishReturnsWorker(): boolean { return this.placementSystem.returnWorkerOnDemolish; }
 
   demolishableAt(tx: number, ty: number, dragOnly: boolean, owner: PlayerId = this.localPlayerId): boolean {
     return this.placementSystem.demolishableAt(tx, ty, dragOnly, owner);

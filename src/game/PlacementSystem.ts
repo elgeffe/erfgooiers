@@ -30,6 +30,7 @@ interface PlacementPorts {
   selected: () => unknown;
   toast: (message: string, cls?: string, owner?: OwnerId) => void;
   sfx: (name: string) => void;
+  spawnVillager: (tile: Coord, owner: PlayerId) => void;
 }
 
 /** Owns building/site representation and all player placement mutations. */
@@ -40,6 +41,10 @@ export class PlacementSystem {
   /** Fraction of a demolished building's cost returned to the castle.
    *  Set per level from the run's ascension tier (1 = full, 0 = nothing). */
   demolishRefundRate = 1;
+
+  /** Easier runs hand a demolished building's posted worker back as a fresh
+   *  villager; harder ascensions lose them. Set per level like the rate above. */
+  returnWorkerOnDemolish = true;
 
   constructor(
     private readonly world: World,
@@ -171,6 +176,15 @@ export class PlacementSystem {
   canPaintRoadAt(tx: number, ty: number): boolean { return this.openGround(tx, ty); }
   canPlotAt(tx: number, ty: number): boolean {
     return this.openGround(tx, ty) && !this.entranceTileKeys().has(`${tx},${ty}`);
+  }
+
+  /** The full per-farm plot test the paint cursor turns red on: open ground
+   *  and entrance rules plus this farm's plot cap and reach. */
+  canPlotFor(building: Building, tx: number, ty: number): boolean {
+    return !building.removed
+      && building.fieldsList.length < (building.def.plots ?? 8)
+      && Math.hypot(tx - (building.x + 0.5), ty - (building.y + 0.5)) <= PLOT_RANGE
+      && this.canPlotAt(tx, ty);
   }
 
   /** The building or site a demolish click at this tile would remove, if the
@@ -314,6 +328,8 @@ export class PlacementSystem {
       this.ports.sfx('error'); this.ports.toast("Cannot build here — don't cover or seal off another building's doorway", 'err', owner); return;
     }
     const def = DEFS[key];
+    // Mines and quarries must stand within reach of live deposits — their
+    // miners gather from those tiles, so a site out of range could never work.
     if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.ports.toast('No stone deposits in range — build near the grey rocks', 'err', owner); return; }
     if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.ports.toast('No gold deposits in range', 'err', owner); return; }
     if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.ports.toast('No coal deposits in range', 'err', owner); return; }
@@ -376,9 +392,18 @@ export class PlacementSystem {
       if (building.faction !== 'player') { this.ports.toast('Enemy strongholds must be destroyed in battle', 'err', owner); return; }
       if (building.owner !== owner) { this.ports.toast("You cannot demolish your ally's building", 'err', owner); return; }
       this.ports.sfx('demolish');
+      const hadWorker = !!building.worker;
       const note = this.payRefund(building);
       this.removeBuilding(building);
-      this.ports.toast(`${building.def.name} demolished${note ? ` — recovered ${note}` : ''}`, undefined, owner);
+      let workerNote = '';
+      if (hadWorker && this.returnWorkerOnDemolish) {
+        const door = buildingEntranceTiles(building)[0] ?? { x: building.x, y: building.y };
+        this.ports.spawnVillager(door, owner);
+        workerNote = ' · the worker rejoins your villagers';
+      } else if (hadWorker) {
+        workerNote = ' · the worker is lost';
+      }
+      this.ports.toast(`${building.def.name} demolished${note ? ` — recovered ${note}` : ''}${workerNote}`, undefined, owner);
       return;
     }
     if (tile.site && tile.site.owner === owner) {
@@ -426,11 +451,16 @@ export class PlacementSystem {
     return !!tile && tile.type === 'grass' && !tile.b && !tile.site && !tile.road && !tile.field && !tile.dep && !tile.tree?.dense;
   }
 
+  /** A live deposit of `kind` within the miner's working box that can actually
+   *  be worked: the miner stands on an orthogonal side tile to dig, so a rock
+   *  walled in on all four sides must not satisfy placement. */
   private depositInRange(kind: string, tx: number, ty: number, range: number): boolean {
     for (let y = Math.max(0, ty - range); y <= Math.min(this.world.H - 1, ty + 1 + range); y++)
       for (let x = Math.max(0, tx - range); x <= Math.min(this.world.W - 1, tx + 1 + range); x++) {
         const deposit = this.world.tiles[y][x].dep;
-        if (deposit?.kind === kind && deposit.amt > 0) return true;
+        if (!deposit || deposit.kind !== kind || deposit.amt <= 0) continue;
+        for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]])
+          if (this.world.passable(x + ox, y + oy)) return true;
       }
     return false;
   }

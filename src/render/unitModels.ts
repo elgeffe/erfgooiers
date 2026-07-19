@@ -118,7 +118,10 @@ export function makeCavalry(kind: string, colorHex: number, faction: Faction = '
     bow.position.set(0.18, 0.66, 0.1); bow.rotation.y = Math.PI / 2; g.add(bow);
     const quiver = new THREE.Mesh(cyl(0.035, 0.03, 0.16, 6), umat(0x6b4a2f));
     quiver.position.set(-0.16, 0.55, -0.1); quiver.rotation.x = 0.5; g.add(quiver);
-    const hood = new THREE.Mesh(cone(0.1, 0.13, 7), coatM); hood.position.y = 0.95; g.add(hood);
+    // Robin Hood hat matching the foot archer: tall green point + red feather
+    const hat = new THREE.Mesh(cone(0.14, 0.26, 8), umat(0x3f6d3a)); hat.position.y = 1.0; g.add(hat);
+    const feather = new THREE.Mesh(cone(0.014, 0.09, 4), umat(0xb5352f));
+    feather.position.set(0.12, 0.97, 0); feather.rotation.z = -0.85; g.add(feather);
   } else { // horseknight
     const helm = new THREE.Mesh(sphere(0.1, 8, 6), umat(style.helmet)); helm.scale.y = 0.8; helm.position.y = 0.9; g.add(helm);
     const plume = new THREE.Mesh(cone(0.028, 0.13, 5), umat(style.trim)); plume.position.y = 1.02; g.add(plume);
@@ -290,10 +293,11 @@ function makeHumanoid(colorHex: number, role: string, teamHex?: number): { group
   }
 
   dressUnit(g, role, teamHex);
-  // Carried goods ride on top of the head, clear of the tallest worker hat (the
-  // serf's fez tops out around y≈0.88): at 0.82 the crate sank into the hat.
+  // Carried goods are hugged against the chest in front of the figure — the
+  // crate's back face presses on the tunic (and any apron at z≈0.22) so it
+  // reads as held in the arms rather than floating.
   const item = new THREE.Mesh(geoItem, stdMat({ color: 0xffffff }));
-  item.position.y = 0.98; item.visible = false;
+  item.position.set(0, 0.25, 0.28); item.visible = false;
   g.add(item);
   return { group: g, itemMesh: item };
 }
@@ -423,8 +427,10 @@ function dressUnit(g: THREE.Group, role: string, teamHex?: number): void {
       add(sword());
       break;
     }
-    case 'archer': { // leather cap, green tunic accent, bow & quiver
-      add(dome(0x5c6b3a, 0.16, 0.66));
+    case 'archer': { // Robin Hood hat — tall green point with a red feather
+      const hat = hatCone(0x3f6d3a, 0.165, 0.34, 8); hat.position.y = 0.78; add(hat);
+      const feather = new THREE.Mesh(cone(0.02, 0.12, 4), mat(0xb5352f));
+      feather.position.set(0.13, 0.76, 0); feather.rotation.z = -0.85; feather.userData.marker = true; add(feather, false);
       add(plate(tc(0x6b7a44)));
       add(bow());
       add(quiver());
