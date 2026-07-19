@@ -535,7 +535,8 @@ export class UI {
         if (!(amount > 0)) { amount = 10; amt.value = '10'; }
         orders.push({ item: sel.value as ItemKey, amount });
       });
-      this.game!.configureMarket(b, orders);
+      // through the command seam: co-op peers must agree on export orders
+      this.game!.submitCommand({ type: 'configureMarket', buildingId: b.id, orders });
       audio.play('click');
       this.renderInspector();
     });

@@ -184,6 +184,7 @@
       <button id="btnNewRun">New run</button>
       <button id="btnCoop">Co-op Expedition (Beta)</button>
       <button id="btnSkirmish">1v1 Skirmish (Beta)</button>
+      <button id="btnSkirmishAI">Skirmish vs CPU (Beta)</button>
       <div class="menu-chips">
         <button id="btnScoreboard" class="ghost" title="The Hall of Erfgooiers — every victorious run and its time">🏆 Scoreboard</button>
         <button id="btnHeritage" class="ghost" title="Spend banked Erfgoed on heroes and one global blessing">🎴 Heritage Cards</button>
@@ -393,6 +394,19 @@
   </div>
 </div>
 
+<!-- ---------- skirmish vs CPU setup ---------- -->
+<div id="skirmishaiselect" class="screen">
+  <div class="card shopcard">
+    <h1 class="serif">Skirmish vs CPU</h1>
+    <div class="tag">Border Clash against a computer rival — same rules, same map, no lobby needed. The CPU plays through the same command checks you do: no cheats, only skill settings.</div>
+    <div id="skaiOptions"></div>
+    <div class="btns row">
+      <button id="btnSkaiBack" class="ghost">Back to menu</button>
+      <button id="btnSkaiStart">Start skirmish →</button>
+    </div>
+  </div>
+</div>
+
 <!-- ---------- shop (between levels) ---------- -->
 <div id="shop" class="screen">
   <div class="card shopcard">
@@ -455,7 +469,10 @@
     <h1 class="serif" id="sumTitle">Run over</h1>
     <div class="tag" id="sumSub"></div>
     <div id="sumBody" class="metaline"></div>
-    <div class="btns"><button id="btnSumMenu">Back to menu</button></div>
+    <div class="btns">
+      <button id="btnSumReplay" class="ghost" style="display:none" title="Save the deterministic match record (seed + every command) as a JSON file">💾 Download replay</button>
+      <button id="btnSumMenu">Back to menu</button>
+    </div>
   </div>
 </div>
 

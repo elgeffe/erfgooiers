@@ -124,10 +124,14 @@ export class LogisticsSystem {
       }
     }
     for (const building of this.ports.buildings()) {
-      if (!building.active || building.key !== 'market' || building.faction !== 'player') continue;
+      // own markets only: a serf stocking another owner's stalls would gift
+      // that owner the sale — an exploit in skirmish, a leak in co-op
+      if (building.owner !== owner || !building.active || building.key !== 'market' || building.faction !== 'player') continue;
       for (const order of building.marketOrders ?? []) {
         const missing = order.amount - (building.inp[order.item] || 0) - (building.incoming[order.item] || 0);
-        for (let i = 0; i < missing; i++) demands.push({ pri: 1.5, to: building, item: order.item });
+        // a priority-flagged market outranks routine industry feeding: exports
+        // may be the settlement's only coin income (no gold veins in reach)
+        for (let i = 0; i < missing; i++) demands.push({ pri: building.priority ? 0.6 : 1.5, to: building, item: order.item });
       }
     }
     for (const building of this.ports.buildings()) {

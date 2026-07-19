@@ -29,10 +29,13 @@ import { CoOpController } from './ui/CoOpController';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
 import { PeerCoOpClient, type ConnectionSnapshot } from './net/PeerCoOpClient';
-import type { AcceptedCommand, ExpeditionDifficulty, GameCommand } from './net/protocol';
+import { PLAYER_COLOR_PRESETS, type AcceptedCommand, type ExpeditionDifficulty, type GameCommand } from './net/protocol';
 import { applyGameCommand } from './game/commands';
 import { EXPEDITION_DIFFICULTY, EXPEDITION_LEVEL_COUNT, expeditionLevelFor } from './data/coOpLevels';
 import { SKIRMISH_LEVEL } from './data/skirmishLevels';
+import { AIController } from './ai/AIController';
+import { AI_PROFILES, aiProfile, type AIDifficulty, type AIStance } from './data/aiProfiles';
+import { ReplayRecorder, serializeReplay, skirmishWinner, type Replay } from './game/replay';
 
 /* =====================================================================
    Erfgooiers — roguelite economy builder set in Het Gooi.
@@ -93,6 +96,13 @@ let game: Game | null = null;
 let phase: Phase = 'menu';
 let currentLevel: LevelDef | null = null;
 let sandbox = false;             // free-build mode: no objective, no timer, no save
+
+// ---------- local skirmish-vs-CPU state ----------
+// The CPU seat runs in this browser: its controller is ticked from the fixed
+// -step loop and submits commands through the same applyGameCommand seam as
+// the local player. The whole match records into a downloadable replay.
+let skirmishAI: { controller: AIController; recorder: ReplayRecorder; profileId: string; seat: { tick: number } } | null = null;
+let lastSkirmishReplay: Replay | null = null;
 
 // ---------- co-op expedition state ----------
 let coopRun: { level: number; difficulty: ExpeditionDifficulty; skirmish: boolean } | null = null;
@@ -512,6 +522,173 @@ function onCoopLevelClear(): void {
   }
 }
 
+// ---------- skirmish vs CPU (local, no lobby) ----------
+let skaiCfg: { difficulty: AIDifficulty; stance: AIStance; policy: string } = {
+  difficulty: 'easy', stance: 'balanced', policy: 'classic',
+};
+
+function skaiProfileId(): string {
+  return skaiCfg.policy === 'classic' ? `classic-${skaiCfg.difficulty}-${skaiCfg.stance}` : skaiCfg.policy;
+}
+
+function openSkirmishAISetup(): void {
+  renderSkirmishAISetup();
+  showScreen('skirmishaiselect');
+}
+
+function renderSkirmishAISetup(): void {
+  const el = $('skaiOptions');
+  const classic = skaiCfg.policy === 'classic';
+  const groups: { key: keyof typeof skaiCfg; label: string; opts: [string, string][]; hidden?: boolean }[] = [
+    { key: 'policy', label: 'Opponent brain — Classic is the real opponent; Idle & Random are training dummies', opts: [['classic', '⚔️ Classic'], ['random', '🎲 Random'], ['idle', '💤 Idle']] },
+    { key: 'difficulty', label: 'Difficulty — a better player, never a cheating one', hidden: !classic, opts: [['easy', '🌱 Easy'], ['hard', '⚔️ Hard'], ['godlike', '🔥 Godlike']] },
+    { key: 'stance', label: 'Stance', hidden: !classic, opts: [['defensive', '🛡️ Defensive'], ['balanced', '⚖️ Balanced'], ['offensive', '🗡️ Offensive']] },
+  ];
+  let s = '';
+  for (const grp of groups) {
+    if (grp.hidden) continue;
+    s += `<div class="optgroup"><div class="optlabel">${grp.label}</div><div class="optrow">`;
+    for (const [val, label] of grp.opts) {
+      s += `<button class="opt${skaiCfg[grp.key] === val ? ' on' : ''}" data-key="${grp.key}" data-val="${val}">${label}</button>`;
+    }
+    s += '</div></div>';
+  }
+  const profile = AI_PROFILES[skaiProfileId()];
+  s += `<div class="metaline">${profile.name} — ${profile.desc}</div>`;
+  el.innerHTML = s;
+  el.querySelectorAll<HTMLElement>('.opt[data-key]').forEach(b => {
+    b.onclick = () => {
+      (skaiCfg as any)[b.dataset.key!] = b.dataset.val;
+      audio.play('click');
+      renderSkirmishAISetup();
+    };
+  });
+}
+
+/** Build the skirmish level locally with the CPU in the second seat: the
+ *  co-op skirmish sim setup without any lobby or networking. */
+function startSkirmishAI(): void {
+  if (game) disposeLevel();
+  sandbox = false;
+  coopRun = null;
+  const seed = randomSeed();
+  run = newRun(seed);           // local gold container — nothing is banked
+  clearedThisRun = 0;
+  goldEarnedThisRun = 0;
+  const level = SKIRMISH_LEVEL;
+  currentLevel = level;
+  simRng.reseed(seed ^ 0x5bd1e995);
+  uiRng.reseed(seed ^ 0x27d4eb2f);
+  const world = new World({ seed, ...level.world, biome: 'gooi' });
+  view.loadWorld(world);
+  game = new Game(world, view, new Modifiers(), 'p1');
+  // the lobby's default colours, so ownership reads at a glance
+  game.playerColors.set('p1', parseInt(PLAYER_COLOR_PRESETS[0].slice(1), 16));
+  game.playerColors.set('p2', parseInt(PLAYER_COLOR_PRESETS[1].slice(1), 16));
+  game.toast = (m, c) => ui.toast(m, c);
+  game.onSelect = o => ui.showInspector(o);
+  game.sfx = name => audio.play(name as any);
+  audio.setBiome('gooi');
+  audio.setLevel(level.index);
+  game.onGold = amt => { if (run) { run.gold = Math.max(0, run.gold + amt); if (amt > 0) goldEarnedThisRun += amt; ui.setGold(run.gold); } };
+  game.onHurt = (x, z) => view.spawnHurt(x, z);
+  game.onDeath = (x, z, _fac, color, role, scale) => view.spawnCorpse(x, z, color, role, scale);
+  game.objective = new Objective(level.objectives[0]);
+  game.setTeams({ p1: 0, p2: 1, enemy: 2, wild: 2 });
+  game.initCoOp(level.kit, level.kit);
+  game.setEnemies(level.enemies ?? null);
+  // identical granted warbands on both seats; no heroes on either (fairness)
+  for (const pid of ['p1', 'p2'] as const) {
+    const st = game.storeFor(pid);
+    const sx = world.wx(st.x) + 0.5, sz = world.wz(st.y) + 0.5;
+    for (const a of level.startArmy ?? []) game.spawnSquad(a.kind, a.count, sx, sz, 'player', pid);
+  }
+  const profileId = skaiProfileId();
+  const recorder = new ReplayRecorder(seed, level.name, [
+    { id: 'p1', kind: 'human' },
+    { id: 'p2', kind: 'ai', profile: profileId },
+  ]);
+  const seat = { tick: 0 };
+  // the local player's commands flow through the recorder, then apply directly
+  game.submitCommand = command => {
+    recorder.record(seat.tick, 'p1', command);
+    applyGameCommand(game!, 'p1', command);
+  };
+  const controller = new AIController({
+    game, world, playerId: 'p2',
+    profile: aiProfile(profileId),
+    seed: (seed ^ 2 * 0x9e3779b9) >>> 0,   // same seat derivation as self-play
+    submit: command => {
+      recorder.record(seat.tick, 'p2', command);
+      return applyGameCommand(game!, 'p2', command);
+    },
+  });
+  skirmishAI = { controller, recorder, profileId, seat };
+  lastSkirmishReplay = null;
+  ui.setGame(game);
+  ui.setPerks([], []);
+  controls.setGame(game);
+  ui.setMutators([]);
+  ($('heroChip') as HTMLElement).style.display = 'none';
+  ui.setGold(run.gold);
+  ui.setSandbox(false);
+  ui.setCoOp(false);
+  $('objective').classList.add('clickable');
+  $('objective').title = 'Click for the full objective checklist';
+  ($('btnDebugWin') as HTMLElement).style.display = 'none';
+  ($('sandboxbar') as HTMLElement).style.display = 'none';
+  document.body.classList.remove('sandbox');
+  levelHardTimer = level.hardTimer;
+  ui.setLevel(level.index, level.name);
+  ui.setObjective(game.objective.brief());
+  ui.updateObjective(game.objective.nextStepLabel(game), 0, levelHardTimer);
+  const home = game.storeFor('p1');
+  view.centerOn(world.wx(home.x) + 0.5, world.wz(home.y) + 2);
+  view.drawMinimap(game.units);
+  simAcc = 0;
+  phase = 'playing';
+  if ((import.meta as any).env?.DEV) (window as any).game = game;
+  showScreen(null);
+  ui.toast(`Skirmish vs ${AI_PROFILES[profileId].name} — ${level.name}`);
+}
+
+/** The local match resolved: winner off the same eliminated-set rule as
+ *  networked skirmish, plus a downloadable replay of the whole match. */
+function onSkirmishAIEnd(): void {
+  if (phase !== 'playing' || !skirmishAI || !game) return;
+  const localLost = game.eliminated.has('p1');
+  const anyLost = game.eliminated.size > 0;
+  const victory = anyLost && !localLost;
+  const profileName = AI_PROFILES[skirmishAI.profileId]?.name ?? skirmishAI.profileId;
+  lastSkirmishReplay = skirmishAI.recorder.finish({
+    winner: skirmishWinner(game),
+    ticks: skirmishAI.seat.tick,
+    reason: anyLost ? 'storehouse' : 'timeout',
+  });
+  audio.play(victory ? 'coin' : 'error');
+  disposeLevel();
+  skirmishAI = null;
+  phase = 'summary';
+  $('sumTitle').textContent = victory ? 'Skirmish won!' : anyLost ? 'Skirmish lost' : 'Skirmish drawn';
+  $('sumSub').textContent = victory
+    ? `The ${profileName} opponent's storehouse lies in ruins — the border is yours.`
+    : anyLost
+      ? `Your storehouse has fallen to the ${profileName} opponent.`
+      : 'The clock ran out with both storehouses standing — a stalemate.';
+  $('sumBody').innerHTML = `Gold earned <b>${goldEarnedThisRun}</b><br>Skirmish vs CPU is a beta mode — no Heritage or rewards are banked yet.`;
+  ($('btnSumReplay') as HTMLElement).style.display = '';
+  showScreen('summary');
+  run = null;
+}
+
+/** Tear down a live vs-CPU match (pause menu abandon). */
+function endSkirmishAISession(): void {
+  if (phase === 'playing') disposeLevel();
+  skirmishAI = null;
+  run = null;
+  goMenu();
+}
+
 /** A storehouse fell (or the clock ran out): both peers resolve the same
  *  winner from the deterministic sim, each showing their own side of it. */
 function onSkirmishEnd(): void {
@@ -877,7 +1054,7 @@ function onDefeat(reason: 'timeout' | 'castle' = 'timeout'): void {
 }
 
 function debugWin(): void {
-  if (phase === 'playing') onLevelClear();
+  if (phase === 'playing' && !skirmishAI && !coopRun) onLevelClear();
 }
 
 function shopContinue(contract: Contract): void {
@@ -890,6 +1067,7 @@ function shopContinue(contract: Contract): void {
 }
 
 function abandonRun(): void {
+  if (skirmishAI) { endSkirmishAISession(); return; }
   if (coopRun) { leaveCoop(); return; }
   if (phase === 'playing') disposeLevel();
   if (!sandbox) Save.clearRun();
@@ -903,7 +1081,7 @@ function openPauseMenu(): void {
   if (phase !== 'playing') return;
   if (!coopRun) ui.setSpeed(0);
   controls.resetInput();
-  $('btnRestart').style.display = coopRun ? 'none' : '';
+  $('btnRestart').style.display = coopRun || skirmishAI ? 'none' : '';
   $('pausemenu').style.display = 'flex';
 }
 
@@ -917,7 +1095,7 @@ function resumeGame(): void {
  *  Run-wide cards, contract, hero and seed remain intact. Co-op deliberately
  *  has no local restart: both peers would need a synchronized checkpoint command. */
 function restartLevel(): void {
-  if (phase !== 'playing' || !run || coopRun) return;
+  if (phase !== 'playing' || !run || coopRun || skirmishAI) return;
   run.gold = levelGoldStart;
   goldEarnedThisRun = levelGoldEarnedStart;
   $('pausemenu').style.display = 'none';
@@ -936,10 +1114,12 @@ function clearSaveData(): void {
 }
 
 // ---------- screens (DOM overlays) ----------
-type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'achievements' | 'scoreboard' | 'heroselect' | 'sandboxselect' | 'coopmenu' | 'cooplobby' | null;
+type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'achievements' | 'scoreboard' | 'heroselect' | 'sandboxselect' | 'skirmishaiselect' | 'coopmenu' | 'cooplobby' | null;
 function showScreen(id: ScreenId): void {
   $('pausemenu').style.display = 'none';
-  for (const s of ['menu', 'shop', 'summary', 'heritage', 'achievements', 'scoreboard', 'heroselect', 'sandboxselect', 'coopmenu', 'cooplobby']) $(s).style.display = id === s ? 'flex' : 'none';
+  for (const s of ['menu', 'shop', 'summary', 'heritage', 'achievements', 'scoreboard', 'heroselect', 'sandboxselect', 'skirmishaiselect', 'coopmenu', 'cooplobby']) $(s).style.display = id === s ? 'flex' : 'none';
+  // the replay button only belongs to a just-finished vs-CPU skirmish
+  if (id !== 'summary') ($('btnSumReplay') as HTMLElement).style.display = 'none';
   $('hud').style.display = phase === 'playing' ? 'block' : 'none';
   // a screen swallows keyups/pointerups — never leave the camera mid-pan
   controls.resetInput();
@@ -1063,6 +1243,19 @@ $('heroChip').onclick = () => {
 ($('btnSandbox') as HTMLButtonElement).onclick = openSandboxSetup;
 ($('btnSbxBack') as HTMLButtonElement).onclick = goMenu;
 ($('btnSbxStart') as HTMLButtonElement).onclick = startSandbox;
+($('btnSkirmishAI') as HTMLButtonElement).onclick = openSkirmishAISetup;
+($('btnSkaiBack') as HTMLButtonElement).onclick = goMenu;
+($('btnSkaiStart') as HTMLButtonElement).onclick = startSkirmishAI;
+($('btnSumReplay') as HTMLButtonElement).onclick = () => {
+  if (!lastSkirmishReplay) return;
+  const blob = new Blob([serializeReplay(lastSkirmishReplay)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `erfgooiers-skirmish-${lastSkirmishReplay.seed}.replay.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  ui.toast('Replay saved — it re-simulates the whole match from its command log');
+};
 coopUi.install();
 
 installSandboxTools(view, ui, {
@@ -1238,7 +1431,13 @@ function frame(now: number): void {
     simAcc += simDt * game.simSpeed;
     let steps = 0;
     const t0 = performance.now();
-    while (simAcc >= TICK && steps < MAX_STEPS) { game.update(TICK); simAcc -= TICK; steps++; }
+    while (simAcc >= TICK && steps < MAX_STEPS) {
+      // the CPU seat thinks before each step, exactly like headless self-play
+      if (skirmishAI) skirmishAI.controller.tick(TICK);
+      game.update(TICK);
+      if (skirmishAI) skirmishAI.seat.tick++;
+      simAcc -= TICK; steps++;
+    }
     simMs += (performance.now() - t0 - simMs) * 0.05;
     if (simAcc > TICK) simAcc = 0;            // drop the backlog rather than fast-forward
 
@@ -1248,9 +1447,9 @@ function frame(now: number): void {
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
 
     // resolve the level last: win, castle lost, or timeout tears the level down
-    if (st.done) { if (coopRun?.skirmish) onSkirmishEnd(); else if (coopRun) onCoopLevelClear(); else onLevelClear(); }
+    if (st.done) { if (skirmishAI) onSkirmishAIEnd(); else if (coopRun?.skirmish) onSkirmishEnd(); else if (coopRun) onCoopLevelClear(); else onLevelClear(); }
     else if (game.defeat) onDefeat('castle');
-    else if (remaining <= 0) { if (coopRun?.skirmish) onSkirmishEnd(); else onDefeat('timeout'); }
+    else if (remaining <= 0) { if (skirmishAI) onSkirmishAIEnd(); else if (coopRun?.skirmish) onSkirmishEnd(); else onDefeat('timeout'); }
   } else if (phase === 'playing' && game && currentLevel) {
     // sandbox: tick the sim with no objective/timer to resolve against
     simAcc += dt * game.simSpeed;

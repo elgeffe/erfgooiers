@@ -1,6 +1,15 @@
 # Skirmish AI — solo vs CPU, difficulty ladder, and experimental agents
 
-Status: **design / epic proposal** (July 2026). Nothing here is implemented yet.
+Status: **Phases 0–2 first slice implemented** (July 2026). The `src/ai/` layer
+(perception → classic strategy → tactics → actuation behind `AIController`),
+the `idle`/`random` seam-provers, `src/data/aiProfiles.ts`, replay
+record/re-simulate (`src/game/replay.ts`), the browser **Skirmish vs CPU** menu
+mode, and the `npm run selfplay` headless tournament runner all exist; the
+vitest suite covers replay determinism, fairness (zero rejected commands), CPU
+budget, and stance separation. Phases 3+ (learned/adaptive AI, research track,
+online seats) remain unimplemented. Known intentional gap: AI wall-building is
+plumbed but disabled (`walls: 0` in every profile) pending a fortification
+planner that cannot wall in the bot's own serfs.
 Companion documents: [skirmish-design.md](skirmish-design.md) (the PvP mode this AI
 plays), [tensor-networks-for-logistics.md](tensor-networks-for-logistics.md) (the
 prior reality check whose fail-fast discipline the research track inherits).
