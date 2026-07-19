@@ -40,10 +40,10 @@ export interface AIProfile {
   workerReserveCoin: number;
   /** Watchtowers wanted on the home approach. */
   towers: number;
-  /** Wall blocks fortifying the home approach. Currently 0 on every profile:
-   *  walls physically reshape pathing, and naive block placement can wall the
-   *  bot's own serfs out (and trips pathfinding storms engine-wide). Needs a
-   *  dedicated fortification planner before any profile turns it back on. */
+  /** Fortification RINGS around the castle (0–2): layered square curtains
+   *  with gates toward the enemy and the rear, planned by the shared
+   *  fortification planner. Gates keep the owner's serfs and armies flowing,
+   *  so the baileys between rings stay working ground. */
   walls: number;
 
   // ---- army shape ----
@@ -79,7 +79,7 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
   },
   hard: {
     macroPeriod: 2.5, tacticsPeriod: 1, reactionDelay: 2, apm: 30, errorRate: 0.03,
-    econScale: 1, maxPendingSites: 3, workerReserveCoin: 3, towers: 1, walls: 0,
+    econScale: 1, maxPendingSites: 3, workerReserveCoin: 3, towers: 1, walls: 1,
     armyCap: 24, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 1 },
     attackArmy: 16, minAttackInterval: 100, retreatRatio: 0.5, useBell: true,
     homeGuard: 0.2, raidSize: 3, raidInterval: 200,
@@ -88,8 +88,8 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
     macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 60, errorRate: 0,
     // deeper than Hard but not greedy: econScale 1.3 starved the army exactly
     // when Hard's first wave landed (measured: 8-minute deaths in self-play)
-    econScale: 1.15, maxPendingSites: 4, workerReserveCoin: 3, towers: 2, walls: 0,
-    armyCap: 32, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 2 },
+    econScale: 1.15, maxPendingSites: 4, workerReserveCoin: 3, towers: 2, walls: 2,
+    armyCap: 32, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 2, trebuchet: 1, onager: 1 },
     attackArmy: 18, minAttackInterval: 80, retreatRatio: 0.55, useBell: true,
     homeGuard: 0.25, raidSize: 5, raidInterval: 150,
   },
@@ -101,7 +101,7 @@ function applyStance(base: Omit<AIProfile, 'id' | 'name' | 'desc' | 'policy' | '
     return {
       ...base,
       towers: Math.max(0, base.towers - 1),
-      walls: Math.max(0, base.walls - 2),
+      walls: Math.max(0, base.walls - 1),
       attackArmy: Math.max(5, Math.round(base.attackArmy * 0.7)),
       minAttackInterval: Math.round(base.minAttackInterval * 0.75),
       retreatRatio: Math.max(0.1, base.retreatRatio - 0.1),
@@ -114,6 +114,7 @@ function applyStance(base: Omit<AIProfile, 'id' | 'name' | 'desc' | 'policy' | '
     return {
       ...base,
       towers: base.towers + 2,
+      walls: Math.min(2, base.walls + 1),
       attackArmy: Math.round(base.attackArmy * 1.5),
       minAttackInterval: Math.round(base.minAttackInterval * 1.25),
       retreatRatio: Math.min(0.7, base.retreatRatio + 0.15),

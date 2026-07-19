@@ -1,4 +1,6 @@
-import type { Coord } from '../types';
+import { findPath } from '../engine/pathfinding';
+import { doorTile } from '../game/util';
+import type { Building, Coord, Unit } from '../types';
 import type { GameCommand } from '../net/protocol';
 import type { PolicyContext } from './strategy/types';
 
@@ -217,6 +219,19 @@ export class Tactics {
       }];
     }
     if (view.elapsed - this.lastOrderAt < REORDER_INTERVAL) return [];
+    // A walled rival is breached, not wandered around: when no ground route
+    // to the castle door exists, the wave focuses the nearest curtain piece —
+    // gates first (weakest, and a fallen gate IS the road in).
+    if (!this.sieging && view.enemyBulwarks.length) {
+      const breach = this.breachTarget(ctx, squadUnits, store);
+      if (breach) {
+        this.lastOrderAt = view.elapsed;
+        return [{
+          type: 'orderUnits', unitIds: squadUnits.map(unit => unit.id),
+          order: { type: 'attackBuilding', targetId: breach.id }, formation: 'box',
+        }];
+      }
+    }
     // close enough: focus the castle itself instead of drifting through the base
     let near = 0;
     for (const unit of squadUnits) {
@@ -230,6 +245,30 @@ export class Tactics {
         order: { type: 'attackBuilding', targetId: store.id }, formation: 'box',
       }];
     }
+    return this.pressStragglers(ctx, squadUnits, store);
+  }
+
+  /** The wall/gate the wave should batter, or null when a ground route to the
+   *  rival castle door already exists (marched through a fallen gate). */
+  private breachTarget(ctx: PolicyContext, squadUnits: Unit[], store: Building): Building | null {
+    const { world, view } = ctx;
+    let cx = 0, cy = 0;
+    for (const unit of squadUnits) { cx += unit.tx; cy += unit.ty; }
+    cx = Math.round(cx / squadUnits.length); cy = Math.round(cy / squadUnits.length);
+    const door = doorTile(store);
+    if (findPath(world, cx, cy, door.x, door.y, view.owner)) return null;
+    let best: Building | null = null, bestScore = Infinity;
+    for (const bulwark of view.enemyBulwarks) {
+      const distance = Math.max(Math.abs(bulwark.x - cx), Math.abs(bulwark.y - cy));
+      if (distance > 16) continue;
+      const score = distance - (bulwark.def.gate ? 6 : 0); // gates open the road
+      if (score < bestScore) { bestScore = score; best = bulwark; }
+    }
+    return best;
+  }
+
+  private pressStragglers(ctx: PolicyContext, squadUnits: Unit[], store: Building): GameCommand[] {
+    const { view } = ctx;
     // keep stragglers marching on the same committed target
     const idle = squadUnits.filter(unit => !unit.order && !unit.foe && !unit.foeB);
     if (idle.length) {

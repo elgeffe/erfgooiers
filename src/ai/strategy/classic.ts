@@ -1,4 +1,5 @@
 import { DEFS } from '../../data/buildings';
+import { planFortificationRing, sideToward, type FortSide } from '../../game/fortification';
 import type { BuildingKey, Building } from '../../types';
 import type { GameCommand } from '../../net/protocol';
 import { findBuildingSpot, planPlots } from '../actuation';
@@ -31,7 +32,7 @@ const STANCE_WEIGHT: Record<string, Record<Category, number>> = {
   offensive: { economy: 1, food: 0.95, coin: 1, war: 1.3, fort: 0.6 },
 };
 
-function goals(towers: number, walls: number, scale: number): BuildGoal[] {
+function goals(towers: number, scale: number): BuildGoal[] {
   // The owner-blessed opening: wood → timber → quarry → gold → coal → mint
   // (villagers cost coin, the mint makes coin — the free starting villagers
   // must staff that loop first or the economy deadlocks at zero coin), then
@@ -60,13 +61,15 @@ function goals(towers: number, walls: number, scale: number): BuildGoal[] {
     // veins run dry: spare goldmines keep the coin (= army) income alive
     { key: 'goldmine', target: 2, priority: 52, category: 'coin', minScale: 0.8 },
     { key: 'sawmill', target: 2, priority: 50, category: 'economy', minScale: 1 },
+    // (curtain walls & gates are planned by planFortification, not listed here)
     { key: 'quarry', target: 2, priority: 46, category: 'economy', minScale: 1 },
-    { key: 'wall', target: walls, priority: 45, category: 'fort' },
     { key: 'goldmine', target: 3, priority: 44, category: 'coin', minScale: 1.25 },
     { key: 'farm', target: 2, priority: 43, category: 'food', minScale: 1.2 },
-    { key: 'smithy', target: 2, priority: 40, category: 'war', minScale: 1.2 },
+    { key: 'smithy', target: 2, priority: 40, category: 'war', minScale: 1.1 },
     { key: 'armory', target: 1, priority: 38, category: 'war', requires: ['smithy'], minScale: 1 },
-    { key: 'barracks', target: 2, priority: 36, category: 'war', minScale: 1.2 },
+    // the wall-breakers: an engineer's workshop arms the top tier's sieges
+    { key: 'engineer', target: 1, priority: 37, category: 'war', requires: ['smithy'], minScale: 1.1 },
+    { key: 'barracks', target: 2, priority: 36, category: 'war', minScale: 1.1 },
   ];
   return list.filter(goal => (goal.minScale ?? 0) <= scale && goal.target > 0);
 }
@@ -90,10 +93,49 @@ export class ClassicMacro implements MacroPolicy {
     if (plots) commands.push(plots);
     const market = this.planMarket(ctx);
     if (market) commands.push(market);
+    // defensive stances wall first and expand second; everyone else fortifies
+    // with whatever build capacity the economy goals leave over
+    const fortFirst = ctx.profile.stance === 'defensive';
+    const fort = fortFirst ? this.planFortification(ctx) : null;
+    if (fort) commands.push(fort);
     const build = this.planBuild(ctx);
     if (build) commands.push(build);
+    else if (!fortFirst) {
+      const spare = this.planFortification(ctx);
+      if (spare) commands.push(spare);
+    }
     commands.push(...this.planTraining(ctx));
     return commands;
+  }
+
+  // ---- curtain walls ----
+  /** Raise the profile's fortification rings around the castle: layered
+   *  square curtains with a gate toward the enemy and one at the rear, so
+   *  the baileys between rings stay working ground for the owner's serfs
+   *  while every hostile must batter a way in. One piece per pass; slots the
+   *  ground refuses stay honest gaps. */
+  private planFortification(ctx: PolicyContext): GameCommand | null {
+    const { game, world, view, profile } = ctx;
+    if (profile.walls <= 0 || !view.store) return null;
+    if ((view.built.barracks ?? 0) < 1) return null;          // army before masonry
+    if (view.sites.length >= profile.maxPendingSites) return null;
+    const center = { x: view.store.x, y: view.store.y };
+    const enemySide: FortSide = view.enemyStore ? sideToward(center, view.enemyStore) : 'e';
+    const opposite: Record<FortSide, FortSide> = { n: 's', s: 'n', e: 'w', w: 'e' };
+    const gateSides: FortSide[] = [enemySide, opposite[enemySide]];
+    for (let ring = 0; ring < profile.walls; ring++) {
+      const radius = 6 + ring * 4;
+      for (const piece of planFortificationRing(center, radius, gateSides)) {
+        const tile = world.T(piece.x, piece.y);
+        if (!tile || tile.b || tile.site) continue;           // held or hopeless slot
+        const key: BuildingKey = piece.kind === 'gate' ? 'gate' : 'wall';
+        if (!this.affordable(ctx, key)) return null;          // wait for the stone
+        if (!game.canPlace(key, piece.x, piece.y, piece.rot)) continue;
+        return { type: 'placeBuilding', key, x: piece.x, y: piece.y, rot: piece.rot };
+      }
+      // this ring is as finished as the ground allows — start the next layer
+    }
+    return null;
   }
 
   // ---- market exports ----
@@ -165,7 +207,7 @@ export class ClassicMacro implements MacroPolicy {
     const broke = storeStock(game, view.owner, 'coin') < profile.workerReserveCoin + 2;
     const threatened = view.elapsed - this.lastThreatAt < 60;
 
-    const candidates = goals(profile.towers, profile.walls, profile.econScale)
+    const candidates = goals(profile.towers, profile.econScale)
       .filter(goal => have(view, goal.key) < goal.target)
       .filter(goal => (goal.requires ?? []).every(key => (view.built[key] ?? 0) > 0))
       .filter(goal => (this.blockedUntil.get(goal.key) ?? 0) <= view.elapsed)

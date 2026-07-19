@@ -577,7 +577,15 @@ export class World {
         const sx = this.playerStart.x + 1, sy = this.playerStart.y + 1;
         if (t && t.type === 'grass' && !t.dep && !t.tree && !t.deco && !t.pickup
           && !oreReserved[y * W + x] && reachable[y * W + x] && Math.hypot(x - sx, y - sy) > 8) {
-          t.dep = { kind, amt: 10 + Math.floor(rnd() * 11), meshes: [] }; placed++;
+          // Gold runs the army's payroll and coal feeds two chains (mint and
+          // smithy) — both were measured to run dry mid-skirmish, so their
+          // deposits run deeper than stone/iron. One rnd() call either way
+          // keeps the worldgen stream identical across kinds.
+          const roll = rnd();
+          const amt = kind === 'gold' ? 20 + Math.floor(roll * 16)
+            : kind === 'coal' ? 16 + Math.floor(roll * 13)
+            : 10 + Math.floor(roll * 11);
+          t.dep = { kind, amt, meshes: [] }; placed++;
         }
       }
       return placed;
@@ -594,7 +602,7 @@ export class World {
     // guarantee a workable minimum of every ore kind: a wetter/late map (or too few
     // veins) can otherwise drop a vein into the lake and leave a whole resource
     // (e.g. gold, breaking the mint chain) absent from the map.
-    const MIN_ORE: Record<DepositKind, number> = { stone: 6, gold: 6, coal: 12, iron: 6 };
+    const MIN_ORE: Record<DepositKind, number> = { stone: 6, gold: 10, coal: 16, iron: 6 };
     for (const kind of ['stone', 'gold', 'coal', 'iron'] as const) {
       let guard = 0;
       while (oreCount[kind] < MIN_ORE[kind] && guard++ < 120) {

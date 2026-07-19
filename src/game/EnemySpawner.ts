@@ -1,5 +1,6 @@
 import { UNITS, type UnitKind } from '../data/units';
 import { simRng } from '../engine/rng';
+import { planFortificationRing, ringTowerSpots, sideToward } from './fortification';
 import { PLAYER_IDS, type Building, type BuildingKey, type Faction, type PlayerId, type Unit } from '../types';
 import type { World } from '../world/World';
 
@@ -117,29 +118,22 @@ export class EnemySpawner {
    *  rather than scattering them outside like `spawnTowerNear`. */
   fortifyStronghold(building: Building, innerTowers = 0): void {
     const store = this.port.primaryStore();
-    const centerX = store?.x ?? this.world.playerStart.x, centerY = store?.y ?? this.world.playerStart.y;
-    const directionX = centerX - building.x, directionY = centerY - building.y;
-    const side = Math.abs(directionX) > Math.abs(directionY) ? (directionX > 0 ? 'e' : 'w') : (directionY > 0 ? 's' : 'n');
+    const center = { x: building.x, y: building.y };
+    const toward = { x: store?.x ?? this.world.playerStart.x, y: store?.y ?? this.world.playerStart.y };
     // a proper fortress gets a wider curtain so there is room for towers behind it
     const radius = innerTowers > 0 ? 6 : 4;
-    for (let dy = -radius; dy <= radius; dy += 2) for (let dx = -radius; dx <= radius; dx += 2) {
-      if (Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue;
-      const gate = (side === 'e' && dx === radius && dy === 0) || (side === 'w' && dx === -radius && dy === 0)
-        || (side === 's' && dy === radius && dx === 0) || (side === 'n' && dy === -radius && dx === 0);
-      const x = building.x + dx, y = building.y + dy;
-      if (!this.areaClear(x, y)) continue;
-      const rotation = gate && (side === 'e' || side === 'w') ? 1 : 0;
-      const wall = this.port.placeBuilding(gate ? 'enemygate' : 'enemywall', x, y, rotation);
+    // the shared fortification planner draws the curtain; terrain that refuses
+    // a segment simply leaves a rough gap, as it always did
+    for (const piece of planFortificationRing(center, radius, [sideToward(center, toward)])) {
+      if (!this.areaClear(piece.x, piece.y)) continue;
+      const wall = this.port.placeBuilding(piece.kind === 'gate' ? 'enemygate' : 'enemywall', piece.x, piece.y, piece.rot);
       wall.active = true;
     }
     // towers stand at the inner corners, just behind the curtain wall
-    const inset = radius - 2;
-    const corners = [[-inset, -inset], [inset, -inset], [-inset, inset], [inset, inset]];
+    const corners = ringTowerSpots(center, radius);
     for (let i = 0; i < Math.min(innerTowers, corners.length); i++) {
-      const [dx, dy] = corners[i];
-      const x = building.x + dx, y = building.y + dy;
-      if (!this.areaClear(x, y)) continue;
-      const tower = this.port.placeBuilding('enemywatchtower', x, y, 0);
+      if (!this.areaClear(corners[i].x, corners[i].y)) continue;
+      const tower = this.port.placeBuilding('enemywatchtower', corners[i].x, corners[i].y, 0);
       tower.active = true;
     }
   }

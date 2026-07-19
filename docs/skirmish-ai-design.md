@@ -9,11 +9,13 @@ vitest suite covers replay determinism, fairness (zero rejected commands), CPU
 budget, and stance separation. The browser now also spectates CPU-vs-CPU
 matches, and co-op/skirmish/vs-CPU share one multiplayer session model in
 `main.ts` (seats × mode × transport). Phases 3+ (learned/adaptive AI, research
-track, online seats) remain unimplemented. Known gaps: AI wall-building is
-plumbed but disabled (`walls: 0` in every profile) pending a fortification
-planner that cannot wall in the bot's own serfs, and the Godlike-vs-Hard
-separation (~50% measured) awaits the Phase 2 balance campaign — Hard vs Easy
-already separates at ~83%.
+track, online seats) remain unimplemented. `src/game/fortification.ts` is the
+shared fortification planner: layered square curtains with gates (baileys stay
+working ground for the owner's serfs), used by the AI's ring-building, by the
+enemy stronghold generator, and available to future sandbox tools; sieges
+breach the nearest gate when the road to the castle is walled. Walls cost 2
+stone so both humans and CPUs can afford layers. The Godlike-vs-Hard
+separation still awaits the Phase 2 balance campaign across 100+ seeds.
 Companion documents: [skirmish-design.md](skirmish-design.md) (the PvP mode this AI
 plays), [tensor-networks-for-logistics.md](tensor-networks-for-logistics.md) (the
 prior reality check whose fail-fast discipline the research track inherits).
