@@ -90,7 +90,9 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
     // attempt to make Godlike GREEDIER (deeper economy, siege engines) was
     // measured losing to Hard's tempo. Faster passes, double the APM, near
     // -instant reactions and flawless execution are the whole difficulty.
-    econScale: 1, maxPendingSites: 4, workerReserveCoin: 3, towers: 2, walls: 0,
+    // Pending sites match Hard's: with one early builder, wider construction
+    // parallelism measurably DELAYS every finished building.
+    econScale: 1, maxPendingSites: 3, workerReserveCoin: 3, towers: 2, walls: 0,
     armyCap: 32, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 2 },
     attackArmy: 16, minAttackInterval: 80, retreatRatio: 0.55, useBell: true,
     homeGuard: 0.2, raidSize: 5, raidInterval: 150,
