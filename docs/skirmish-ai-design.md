@@ -14,8 +14,16 @@ shared fortification planner: layered square curtains with gates (baileys stay
 working ground for the owner's serfs), used by the AI's ring-building, by the
 enemy stronghold generator, and available to future sandbox tools; sieges
 breach the nearest gate when the road to the castle is walled. Walls cost 2
-stone so both humans and CPUs can afford layers. The Godlike-vs-Hard
-separation still awaits the Phase 2 balance campaign across 100+ seeds.
+stone so both humans and CPUs can afford layers; the Classic bot only rings
+its castle on defensive stances (measured: masonry before an army loses).
+Current 6-seed ladder measurements: Classic-Hard beats Idle 5-6/6 and Random
+5/6 with zero rejected commands; Hard-vs-Easy and Godlike-vs-Hard sit near
+parity — the ≥80% tier separation is open and belongs to the Phase 2 balance
+campaign (100+ seeded matches per pair via `npm run selfplay`), not to more
+single-knob changes. Tuning lessons the tournaments established: tempo beats
+greed at every tier, construction parallelism beyond the builder count delays
+everything, raids into stronger garrisons invite base-razing counter-chases,
+and the defensive stance sweep is what stops pursuit suicide.
 Companion documents: [skirmish-design.md](skirmish-design.md) (the PvP mode this AI
 plays), [tensor-networks-for-logistics.md](tensor-networks-for-logistics.md) (the
 prior reality check whose fail-fast discipline the research track inherits).
