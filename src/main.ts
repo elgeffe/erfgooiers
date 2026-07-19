@@ -101,7 +101,14 @@ let sandbox = false;             // free-build mode: no objective, no timer, no 
 // The CPU seat runs in this browser: its controller is ticked from the fixed
 // -step loop and submits commands through the same applyGameCommand seam as
 // the local player. The whole match records into a downloadable replay.
-let skirmishAI: { controller: AIController; recorder: ReplayRecorder; profileId: string; seat: { tick: number } } | null = null;
+let skirmishAI: {
+  controllers: AIController[];
+  recorder: ReplayRecorder;
+  /** AI profile per seat; null marks the human seat. */
+  profiles: { p1: string | null; p2: string | null };
+  spectate: boolean;
+  seat: { tick: number };
+} | null = null;
 let lastSkirmishReplay: Replay | null = null;
 
 // ---------- co-op expedition state ----------
@@ -523,12 +530,15 @@ function onCoopLevelClear(): void {
 }
 
 // ---------- skirmish vs CPU (local, no lobby) ----------
-let skaiCfg: { difficulty: AIDifficulty; stance: AIStance; policy: string } = {
-  difficulty: 'easy', stance: 'balanced', policy: 'classic',
+interface SkaiSeatCfg { difficulty: AIDifficulty; stance: AIStance; policy: string }
+let skaiCfg: { seat: 'play' | 'spectate'; east: SkaiSeatCfg; west: SkaiSeatCfg } = {
+  seat: 'play',
+  east: { difficulty: 'easy', stance: 'balanced', policy: 'classic' },   // the rival (p2)
+  west: { difficulty: 'hard', stance: 'balanced', policy: 'classic' },   // your seat when spectating (p1)
 };
 
-function skaiProfileId(): string {
-  return skaiCfg.policy === 'classic' ? `classic-${skaiCfg.difficulty}-${skaiCfg.stance}` : skaiCfg.policy;
+function skaiProfileId(seat: SkaiSeatCfg): string {
+  return seat.policy === 'classic' ? `classic-${seat.difficulty}-${seat.stance}` : seat.policy;
 }
 
 function openSkirmishAISetup(): void {
@@ -538,27 +548,40 @@ function openSkirmishAISetup(): void {
 
 function renderSkirmishAISetup(): void {
   const el = $('skaiOptions');
-  const classic = skaiCfg.policy === 'classic';
-  const groups: { key: keyof typeof skaiCfg; label: string; opts: [string, string][]; hidden?: boolean }[] = [
-    { key: 'policy', label: 'Opponent brain — Classic is the real opponent; Idle & Random are training dummies', opts: [['classic', '⚔️ Classic'], ['random', '🎲 Random'], ['idle', '💤 Idle']] },
-    { key: 'difficulty', label: 'Difficulty — a better player, never a cheating one', hidden: !classic, opts: [['easy', '🌱 Easy'], ['hard', '⚔️ Hard'], ['godlike', '🔥 Godlike']] },
-    { key: 'stance', label: 'Stance', hidden: !classic, opts: [['defensive', '🛡️ Defensive'], ['balanced', '⚖️ Balanced'], ['offensive', '🗡️ Offensive']] },
-  ];
-  let s = '';
-  for (const grp of groups) {
-    if (grp.hidden) continue;
-    s += `<div class="optgroup"><div class="optlabel">${grp.label}</div><div class="optrow">`;
-    for (const [val, label] of grp.opts) {
-      s += `<button class="opt${skaiCfg[grp.key] === val ? ' on' : ''}" data-key="${grp.key}" data-val="${val}">${label}</button>`;
+  const spectate = skaiCfg.seat === 'spectate';
+  const seatGroups = (side: 'east' | 'west', title: string): string => {
+    const cfg = skaiCfg[side];
+    const classic = cfg.policy === 'classic';
+    const groups: { key: keyof SkaiSeatCfg; label: string; opts: [string, string][]; hidden?: boolean }[] = [
+      { key: 'policy', label: `${title} — Classic is the real opponent; Idle & Random are training dummies`, opts: [['classic', '⚔️ Classic'], ['random', '🎲 Random'], ['idle', '💤 Idle']] },
+      { key: 'difficulty', label: 'Difficulty — a better player, never a cheating one', hidden: !classic, opts: [['easy', '🌱 Easy'], ['hard', '⚔️ Hard'], ['godlike', '🔥 Godlike']] },
+      { key: 'stance', label: 'Stance', hidden: !classic, opts: [['defensive', '🛡️ Defensive'], ['balanced', '⚖️ Balanced'], ['offensive', '🗡️ Offensive']] },
+    ];
+    let block = '';
+    for (const grp of groups) {
+      if (grp.hidden) continue;
+      block += `<div class="optgroup"><div class="optlabel">${grp.label}</div><div class="optrow">`;
+      for (const [val, label] of grp.opts) {
+        block += `<button class="opt${cfg[grp.key] === val ? ' on' : ''}" data-side="${side}" data-key="${grp.key}" data-val="${val}">${label}</button>`;
+      }
+      block += '</div></div>';
     }
-    s += '</div></div>';
-  }
-  const profile = AI_PROFILES[skaiProfileId()];
-  s += `<div class="metaline">${profile.name} — ${profile.desc}</div>`;
+    block += `<div class="metaline">${AI_PROFILES[skaiProfileId(cfg)].name} — ${AI_PROFILES[skaiProfileId(cfg)].desc}</div>`;
+    return block;
+  };
+  let s = '<div class="optgroup"><div class="optlabel">Your seat</div><div class="optrow">'
+    + `<button class="opt${!spectate ? ' on' : ''}" data-seat="play">🧑‍🌾 Play the west seat</button>`
+    + `<button class="opt${spectate ? ' on' : ''}" data-seat="spectate">👁️ Spectate — CPUs in both seats</button>`
+    + '</div></div>';
+  if (spectate) s += seatGroups('west', 'West CPU (your colours)');
+  s += seatGroups('east', spectate ? 'East CPU' : 'Opponent brain');
   el.innerHTML = s;
+  el.querySelectorAll<HTMLElement>('.opt[data-seat]').forEach(b => {
+    b.onclick = () => { skaiCfg.seat = b.dataset.seat as 'play' | 'spectate'; audio.play('click'); renderSkirmishAISetup(); };
+  });
   el.querySelectorAll<HTMLElement>('.opt[data-key]').forEach(b => {
     b.onclick = () => {
-      (skaiCfg as any)[b.dataset.key!] = b.dataset.val;
+      (skaiCfg[b.dataset.side as 'east' | 'west'] as any)[b.dataset.key!] = b.dataset.val;
       audio.play('click');
       renderSkirmishAISetup();
     };
@@ -603,27 +626,35 @@ function startSkirmishAI(): void {
     const sx = world.wx(st.x) + 0.5, sz = world.wz(st.y) + 0.5;
     for (const a of level.startArmy ?? []) game.spawnSquad(a.kind, a.count, sx, sz, 'player', pid);
   }
-  const profileId = skaiProfileId();
-  const recorder = new ReplayRecorder(seed, level.name, [
-    { id: 'p1', kind: 'human' },
-    { id: 'p2', kind: 'ai', profile: profileId },
-  ]);
-  const seat = { tick: 0 };
-  // the local player's commands flow through the recorder, then apply directly
-  game.submitCommand = command => {
-    recorder.record(seat.tick, 'p1', command);
-    applyGameCommand(game!, 'p1', command);
+  const spectate = skaiCfg.seat === 'spectate';
+  const profiles = {
+    p1: spectate ? skaiProfileId(skaiCfg.west) : null,
+    p2: skaiProfileId(skaiCfg.east),
   };
-  const controller = new AIController({
-    game, world, playerId: 'p2',
-    profile: aiProfile(profileId),
-    seed: (seed ^ 2 * 0x9e3779b9) >>> 0,   // same seat derivation as self-play
-    submit: command => {
-      recorder.record(seat.tick, 'p2', command);
-      return applyGameCommand(game!, 'p2', command);
-    },
-  });
-  skirmishAI = { controller, recorder, profileId, seat };
+  const recorder = new ReplayRecorder(seed, level.name, (['p1', 'p2'] as const).map(id =>
+    profiles[id] ? { id, kind: 'ai' as const, profile: profiles[id]! } : { id, kind: 'human' as const }));
+  const seat = { tick: 0 };
+  // the local player's commands flow through the recorder, then apply directly;
+  // a spectator's clicks are dropped — the ants run their own farm
+  game.submitCommand = spectate
+    ? () => { ui.toast('Spectating — both seats are CPU-driven', 'err'); }
+    : command => {
+      recorder.record(seat.tick, 'p1', command);
+      applyGameCommand(game!, 'p1', command);
+    };
+  const controllers = (['p1', 'p2'] as const)
+    .filter(id => profiles[id])
+    .map(id => new AIController({
+      game: game!, world, playerId: id,
+      profile: aiProfile(profiles[id]!),
+      // seat-index derivation as in headless self-play (p1 → 1, p2 → 2)
+      seed: (seed ^ (id === 'p1' ? 1 : 2) * 0x9e3779b9) >>> 0,
+      submit: command => {
+        recorder.record(seat.tick, id, command);
+        return applyGameCommand(game!, id, command);
+      },
+    }));
+  skirmishAI = { controllers, recorder, profiles, spectate, seat };
   lastSkirmishReplay = null;
   ui.setGame(game);
   ui.setPerks([], []);
@@ -649,32 +680,43 @@ function startSkirmishAI(): void {
   phase = 'playing';
   if ((import.meta as any).env?.DEV) (window as any).game = game;
   showScreen(null);
-  ui.toast(`Skirmish vs ${AI_PROFILES[profileId].name} — ${level.name}`);
+  ui.toast(spectate
+    ? `Spectating ${AI_PROFILES[profiles.p1!].name} vs ${AI_PROFILES[profiles.p2!].name} — ${level.name}`
+    : `Skirmish vs ${AI_PROFILES[profiles.p2!].name} — ${level.name}`);
 }
 
 /** The local match resolved: winner off the same eliminated-set rule as
  *  networked skirmish, plus a downloadable replay of the whole match. */
 function onSkirmishAIEnd(): void {
   if (phase !== 'playing' || !skirmishAI || !game) return;
-  const localLost = game.eliminated.has('p1');
+  const { spectate, profiles } = skirmishAI;
+  const winner = skirmishWinner(game);
   const anyLost = game.eliminated.size > 0;
-  const victory = anyLost && !localLost;
-  const profileName = AI_PROFILES[skirmishAI.profileId]?.name ?? skirmishAI.profileId;
+  const seatName = (id: 'p1' | 'p2'): string =>
+    profiles[id] ? `${AI_PROFILES[profiles[id]!]?.name ?? profiles[id]} CPU` : 'You';
   lastSkirmishReplay = skirmishAI.recorder.finish({
-    winner: skirmishWinner(game),
+    winner,
     ticks: skirmishAI.seat.tick,
     reason: anyLost ? 'storehouse' : 'timeout',
   });
-  audio.play(victory ? 'coin' : 'error');
+  const victory = winner === 'p1';
+  audio.play(spectate || victory ? 'coin' : 'error');
   disposeLevel();
   skirmishAI = null;
   phase = 'summary';
-  $('sumTitle').textContent = victory ? 'Skirmish won!' : anyLost ? 'Skirmish lost' : 'Skirmish drawn';
-  $('sumSub').textContent = victory
-    ? `The ${profileName} opponent's storehouse lies in ruins — the border is yours.`
-    : anyLost
-      ? `Your storehouse has fallen to the ${profileName} opponent.`
+  if (spectate) {
+    $('sumTitle').textContent = winner ? `Skirmish over — ${seatName(winner)} wins!` : 'Skirmish drawn';
+    $('sumSub').textContent = winner
+      ? `${seatName(winner)} razed the rival storehouse. The ants have spoken.`
       : 'The clock ran out with both storehouses standing — a stalemate.';
+  } else {
+    $('sumTitle').textContent = victory ? 'Skirmish won!' : anyLost ? 'Skirmish lost' : 'Skirmish drawn';
+    $('sumSub').textContent = victory
+      ? `The ${seatName('p2')}'s storehouse lies in ruins — the border is yours.`
+      : anyLost
+        ? `Your storehouse has fallen to the ${seatName('p2')}.`
+        : 'The clock ran out with both storehouses standing — a stalemate.';
+  }
   $('sumBody').innerHTML = `Gold earned <b>${goldEarnedThisRun}</b><br>Skirmish vs CPU is a beta mode — no Heritage or rewards are banked yet.`;
   ($('btnSumReplay') as HTMLElement).style.display = '';
   showScreen('summary');
@@ -1432,8 +1474,8 @@ function frame(now: number): void {
     let steps = 0;
     const t0 = performance.now();
     while (simAcc >= TICK && steps < MAX_STEPS) {
-      // the CPU seat thinks before each step, exactly like headless self-play
-      if (skirmishAI) skirmishAI.controller.tick(TICK);
+      // CPU seats think before each step, exactly like headless self-play
+      if (skirmishAI) for (const controller of skirmishAI.controllers) controller.tick(TICK);
       game.update(TICK);
       if (skirmishAI) skirmishAI.seat.tick++;
       simAcc -= TICK; steps++;
