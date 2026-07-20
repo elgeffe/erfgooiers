@@ -1,10 +1,64 @@
 import { DEFS } from '../../data/buildings';
+import { UNITS, type UnitKind } from '../../data/units';
+import { findPath } from '../../engine/pathfinding';
+import { doorTile } from '../../game/util';
 import { planFortificationRing, sideToward, type FortSide } from '../../game/fortification';
-import type { BuildingKey, Building } from '../../types';
+import type { BuildingKey, Building, Coord } from '../../types';
 import type { GameCommand } from '../../net/protocol';
 import { findBuildingSpot, planPlots } from '../actuation';
 import { economyStock, have, storeStock } from '../perception';
 import type { MacroPolicy, PolicyContext } from './types';
+
+/** Expand a waypoint path (findPath returns smoothed corners) into the full
+ *  tile-by-tile line, so the road can be painted along the whole route. */
+function tilesAlong(path: Coord[]): Coord[] {
+  const tiles: Coord[] = [];
+  for (let i = 0; i + 1 < path.length; i++) {
+    let x = path[i].x, y = path[i].y;
+    const to = path[i + 1];
+    while (x !== to.x || y !== to.y) {
+      tiles.push({ x, y });
+      x += Math.sign(to.x - x);
+      y += Math.sign(to.y - y);
+    }
+  }
+  if (path.length) tiles.push(path[path.length - 1]);
+  return tiles;
+}
+
+// ---- reactive counter-composition (graded by profile.counter) ----
+type ArmyCategory = 'mounted' | 'ranged' | 'melee';
+
+function unitCategory(kind: string): ArmyCategory {
+  const def = (UNITS as Record<string, (typeof UNITS)[UnitKind] | undefined>)[kind];
+  if (!def) return 'melee';
+  if (def.tags?.includes('mounted')) return 'mounted';
+  if (def.arrows || def.range > 1.6) return 'ranged';
+  return 'melee';
+}
+
+/** The rival army's dominant category and how lopsided it is (null = too small
+ *  a force to bother countering). */
+export function dominantEnemyCategory(byKind: Partial<Record<UnitKind, number>>): { cat: ArmyCategory; frac: number } | null {
+  const cats: Record<ArmyCategory, number> = { mounted: 0, ranged: 0, melee: 0 };
+  let total = 0;
+  for (const kind in byKind) { const n = byKind[kind as UnitKind] ?? 0; total += n; cats[unitCategory(kind)] += n; }
+  if (total < 3) return null;
+  let best: ArmyCategory = 'melee', bestN = -1;
+  for (const c of ['mounted', 'ranged', 'melee'] as ArmyCategory[]) if (cats[c] > bestN) { bestN = cats[c]; best = c; }
+  return { cat: best, frac: bestN / total };
+}
+
+/** How much to reweight training `myKind` given the enemy's dominant category:
+ *  pikemen shred cavalry (data-backed 2.5× bonus), durable melee closes on and
+ *  soaks archers, archers kite melee. Scaled by reactivity × how lopsided the
+ *  enemy is, so a mixed enemy barely shifts the shopping list. */
+export function counterMultiplier(myKind: string, enemyDom: ArmyCategory, gain: number): number {
+  const mine = unitCategory(myKind);
+  if (enemyDom === 'mounted') return myKind === 'pikeman' ? 1 + 2.5 * gain : mine === 'melee' ? 1 + 0.3 * gain : 1 - 0.3 * gain;
+  if (enemyDom === 'ranged') return mine === 'melee' ? 1 + 1.5 * gain : mine === 'ranged' ? 1 - 0.4 * gain : 1;
+  return mine === 'ranged' ? 1 + 1.5 * gain : 1; // enemy melee-heavy → archers
+}
 
 /**
  * The Classic baseline (Phase 1): a handwritten, layered, fair macro policy.
@@ -65,9 +119,13 @@ function goals(towers: number, scale: number): BuildGoal[] {
     { key: 'watchtower', target: towers, priority: 54, category: 'fort' },
     // veins run dry: spare goldmines keep the coin (= army) income alive
     { key: 'goldmine', target: 2, priority: 52, category: 'coin', minScale: 0.8 },
+    // a second quarry doubles stone income to fund the stone sinks — roads and
+    // curtain walls — the way a real player bankrolls infrastructure rather
+    // than starving construction for it (comes right after the core military)
+    { key: 'quarry', target: 2, priority: 55, category: 'economy', minScale: 0.8 },
     { key: 'sawmill', target: 2, priority: 50, category: 'economy', minScale: 1 },
     // (curtain walls & gates are planned by planFortification, not listed here)
-    { key: 'quarry', target: 2, priority: 46, category: 'economy', minScale: 1 },
+    { key: 'quarry', target: 3, priority: 34, category: 'economy', minScale: 1.1 },
     { key: 'goldmine', target: 3, priority: 44, category: 'coin', minScale: 1.25 },
     { key: 'farm', target: 2, priority: 43, category: 'food', minScale: 1.2 },
     { key: 'smithy', target: 2, priority: 40, category: 'war', minScale: 1.1 },
@@ -87,7 +145,10 @@ export class ClassicMacro implements MacroPolicy {
   private readonly savingSince = new Map<BuildingKey, number>();
   /** Per-site progress watermarks, to spot construction that will never finish. */
   private readonly siteWatch = new Map<number, { since: number; watermark: number }>();
+  /** Buildings already linked to the castle by a road — never repaved. */
+  private readonly roadedBuildings = new Set<number>();
   private lastThreatAt = -Infinity;
+  private lastRoadAt = -Infinity;
 
   plan(ctx: PolicyContext): GameCommand[] {
     const { view } = ctx;
@@ -112,7 +173,65 @@ export class ClassicMacro implements MacroPolicy {
       if (spare) commands.push(spare);
     }
     commands.push(...this.planTraining(ctx));
+    const road = this.planRoad(ctx);
+    if (road) commands.push(road);
     return commands;
+  }
+
+  // ---- roads ----
+  /** Pave a stone road from the castle to a standing production building the
+   *  serfs haul to, so the settlement's supply lines run on the 1-cost road
+   *  lattice instead of open ground. Only ever starts once a QUARRY stands (a
+   *  road costs stone, so a stone income must exist first), and keeps a stone
+   *  buffer so paving never starves construction — roads are a surplus-stone
+   *  efficiency play, not a priority over buildings or army. */
+  private planRoad(ctx: PolicyContext): GameCommand | null {
+    const { game, world, view, profile } = ctx;
+    const store = view.store;
+    if (!store || profile.econScale <= 0) return null;
+    // the user-requested gate: a quarry (= stone income) must exist first
+    if ((view.built.quarry ?? 0) < 1) return null;
+    // never pave under attack — stone then belongs to walls and defence
+    if (view.threats.length || view.elapsed - this.lastThreatAt < 45) return null;
+    // one link every so often, so roads trickle out instead of eating the quarry
+    if (view.elapsed - this.lastRoadAt < 20) return null;
+    // construction has first claim on stone: reserve what every pending site
+    // still needs (plus a small buffer for the next building), and pave only
+    // the SURPLUS beyond it. A second quarry's extra income is what turns that
+    // surplus from rare to steady — the pro road/wall bankroll.
+    const roadCost = game.modsFor(view.owner).roadCost();
+    const stone = storeStock(game, view.owner, 'stone');
+    const siteStoneNeed = view.sites.reduce((sum, s) => sum + Math.max(0, (s.needs.stone ?? 0) - (s.delivered.stone ?? 0) - (s.incoming.stone ?? 0)), 0);
+    const spare = stone - siteStoneNeed - 3;
+    if (spare < roadCost) return null;
+
+    // nearest not-yet-linked production building the serfs actually service
+    const from = doorTile(store);
+    let target: Building | null = null;
+    let bestDistance = 1e9;
+    for (const building of view.buildings) {
+      if (building.id === store.id || this.roadedBuildings.has(building.id)) continue;
+      if (!building.active || !(building.def.gather || building.def.recipe || building.def.tavern || building.def.store)) continue;
+      const distance = Math.abs(building.x - store.x) + Math.abs(building.y - store.y);
+      if (distance > 4 && distance < bestDistance) { bestDistance = distance; target = building; }
+    }
+    if (!target) return null;
+    this.roadedBuildings.add(target.id);
+    const door = doorTile(target);
+    const path = findPath(world, from.x, from.y, door.x, door.y, view.owner);
+    if (!path) return null;
+    // pave the route the haulers walk, but only as far as the surplus stone
+    // allows — a long link finishes over several passes as more stone frees up
+    const budget = Math.min(12, Math.floor(spare / Math.max(1, roadCost)));
+    const cells: Coord[] = [];
+    for (const tile of tilesAlong(path)) {
+      if (cells.length >= budget) break;
+      if (game.canPaintRoadAt(tile.x, tile.y)) cells.push(tile);
+    }
+    // a link too long to even start now waits; don't burn the cooldown on nothing
+    if (!cells.length) { this.roadedBuildings.delete(target.id); return null; }
+    this.lastRoadAt = view.elapsed;
+    return { type: 'paintRoad', cells };
   }
 
   // ---- curtain walls ----
@@ -324,12 +443,19 @@ export class ClassicMacro implements MacroPolicy {
     const coinEngineRunning = view.buildings.some(b => b.key === 'mint' && b.worker);
     const coinReserve = coinEngineRunning ? 0 : profile.workerReserveCoin;
 
+    // A better player scouts the rival army and trains counters: the base mix
+    // is reweighted toward what beats the enemy's dominant category (graded by
+    // profile.counter, and by how lopsided the enemy is). Full visibility, so
+    // it's the same read a human gets — no cheat.
+    const enemyDom = profile.counter > 0 ? dominantEnemyCategory(view.enemyArmyByKind) : null;
+
     // weighted pick among the mix entries some standing trainer offers & the store affords
     const options: { building: Building; kind: string; weight: number }[] = [];
     for (const building of trainers) {
       for (const training of building.def.military!.units) {
-        const weight = profile.unitMix[training.kind as keyof typeof profile.unitMix] ?? 0;
+        let weight = profile.unitMix[training.kind as keyof typeof profile.unitMix] ?? 0;
         if (weight <= 0) continue;
+        if (enemyDom) weight *= counterMultiplier(training.kind, enemyDom.cat, profile.counter * enemyDom.frac);
         const cost = game.modsFor(view.owner).unitCost(training.kind, training.cost) as Record<string, number>;
         let ok = true;
         for (const item in cost) {

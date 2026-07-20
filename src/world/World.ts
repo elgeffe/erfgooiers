@@ -1,7 +1,7 @@
 import { W as DEFAULT_W, H as DEFAULT_H } from '../constants';
 import { worldRng } from '../engine/rng';
 import { BIOMES, pickTreeKind, type BiomeDef, type BiomeKey } from '../data/biomes';
-import type { DecoKind, DepositKind, OwnerId, Tile } from '../types';
+import type { Coord, DecoKind, DepositKind, OwnerId, Tile } from '../types';
 import { factionForOwner } from '../game/ownership';
 
 // Worldgen pulls exclusively from this stream (reseeded per level) so a level's
@@ -32,6 +32,23 @@ export interface WorldParams {
   lairStages?: number;
   /** The landscape this map is cut from (palette, flora, fauna, gen character). */
   biome?: BiomeKey;
+  /** Skirmish arena: guarantee each opposite-corner spawn a local cluster of
+   *  every ore kind, so both corners are viable and roughly symmetric (a
+   *  corner starved of stone or iron is an unfair, unplayable start). */
+  arena?: boolean;
+}
+
+/** The two opposite-corner spawn tiles a skirmish arena uses, as a pure
+ *  function of map size. Shared by worldgen (which provisions resources near
+ *  them) and Game.initCoOp's 'diagonal' layout (which drops the settlements
+ *  there) so the two always agree. */
+export function diagonalSpawns(W: number, H: number): [Coord, Coord] {
+  const cx = (x: number): number => Math.max(3, Math.min(W - 6, x));
+  const cy = (y: number): number => Math.max(2, Math.min(H - 6, y));
+  return [
+    { x: cx(Math.round(W * 0.16)), y: cy(Math.round(H * 0.18)) },
+    { x: cx(Math.round(W * 0.84)), y: cy(Math.round(H * 0.82)) },
+  ];
 }
 
 /**
@@ -81,6 +98,7 @@ export class World {
       frontiers: params.frontiers ?? (params.frontier ? 1 : 0),
       lairStages: params.lairStages ?? 0,
       biome: params.biome ?? 'gooi',
+      arena: params.arena ?? false,
     };
     this.biome = BIOMES[this.p.biome];
     // the biome shapes the terrain: extra ridge chains, denser or thinner woods
@@ -608,6 +626,39 @@ export class World {
       while (oreCount[kind] < MIN_ORE[kind] && guard++ < 120) {
         const cx = 4 + Math.floor(rnd() * (W - 8)), cy = 4 + Math.floor(rnd() * (H - 8));
         oreCount[kind] += deposits(cx, cy, 3, kind, MIN_ORE[kind] - oreCount[kind]);
+      }
+    }
+
+    // Skirmish arena: each opposite corner must hold every ore kind within a
+    // short haul, or one player opens starved of stone/iron. Random veins land
+    // unevenly, so guarantee a local cluster of any kind a corner is missing —
+    // placed in a ring outside the settlement apron but inside a mine's reach.
+    if (this.p.arena) {
+      const nearestOre = (cx: number, cy: number, kind: DepositKind, radius: number): boolean => {
+        for (let y = Math.max(0, cy - radius); y <= Math.min(H - 1, cy + radius); y++)
+          for (let x = Math.max(0, cx - radius); x <= Math.min(W - 1, cx + radius); x++) {
+            const dep = this.tiles[y][x].dep;
+            if (dep && dep.kind === kind && dep.amt > 0 && Math.hypot(x - cx, y - cy) <= radius) return true;
+          }
+        return false;
+      };
+      const provision = (cx: number, cy: number, kind: DepositKind, n: number): void => {
+        let placed = 0, guard = 0;
+        while (placed < n && guard++ < 300) {
+          const angle = rnd() * Math.PI * 2, radius = 7 + rnd() * 5; // ring 7–12 tiles out
+          const x = Math.round(cx + Math.cos(angle) * radius), y = Math.round(cy + Math.sin(angle) * radius);
+          const t = this.T(x, y);
+          if (t && t.type === 'grass' && !t.dep && !t.tree && !t.deco && !t.pickup && reachable[y * W + x]) {
+            const roll = rnd();
+            t.dep = { kind, amt: kind === 'gold' ? 20 + Math.floor(roll * 16) : kind === 'coal' ? 16 + Math.floor(roll * 13) : 10 + Math.floor(roll * 11), meshes: [] };
+            placed++;
+          }
+        }
+      };
+      for (const corner of diagonalSpawns(W, H)) {
+        for (const kind of ['stone', 'gold', 'coal', 'iron'] as const) {
+          if (!nearestOre(corner.x, corner.y, kind, 14)) provision(corner.x, corner.y, kind, 4);
+        }
       }
     }
 

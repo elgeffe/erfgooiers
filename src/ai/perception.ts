@@ -1,4 +1,4 @@
-import { UNITS } from '../data/units';
+import { UNITS, type UnitKind } from '../data/units';
 import { PLAYER_IDS, type Building, type BuildingKey, type Coord, type Site, type Unit } from '../types';
 import type { PlayerId } from '../types';
 import type { Game } from '../game/Game';
@@ -48,6 +48,9 @@ export interface AIView {
 
   enemyStore: Building | null;
   enemyArmySize: number;
+  /** The rival army's composition by kind — reads for counter-building (a
+   *  better player scouts what to counter). Full-visibility, so symmetric. */
+  enemyArmyByKind: Partial<Record<UnitKind, number>>;
   /** The rival's standing curtain (walls + gates) — what a siege must breach. */
   enemyBulwarks: Building[];
 
@@ -106,6 +109,7 @@ export function perceive(game: Game, world: World, owner: PlayerId): AIView {
   let workerHunger = 0, workerCount = 0;
   const army: Unit[] = [];
   let enemyArmySize = 0;
+  const enemyArmyByKind: Partial<Record<UnitKind, number>> = {};
   const hostiles: Unit[] = [];
   for (const unit of game.units) {
     if (unit.dead) continue;
@@ -119,7 +123,11 @@ export function perceive(game: Game, world: World, owner: PlayerId): AIView {
     }
     if (!game.hostileOwners(owner, unit.owner) || unit.dmg <= 0) continue;
     hostiles.push(unit);
-    if (enemySeats.includes(unit.owner as PlayerId) && unit.role in UNITS) enemyArmySize++;
+    if (enemySeats.includes(unit.owner as PlayerId) && unit.role in UNITS) {
+      enemyArmySize++;
+      const kind = unit.role as UnitKind;
+      enemyArmyByKind[kind] = (enemyArmyByKind[kind] ?? 0) + 1;
+    }
   }
   for (const building of buildings) if (building.def.worker && !building.worker) unstaffed++;
 
@@ -147,7 +155,7 @@ export function perceive(game: Game, world: World, owner: PlayerId): AIView {
     workers: { serfs, laborers, villagers, freeVillagers, unstaffed },
     averageWorkerHunger: workerCount ? workerHunger / workerCount : 100,
     army, armySize: army.length,
-    enemyStore, enemyArmySize, enemyBulwarks,
+    enemyStore, enemyArmySize, enemyArmyByKind, enemyBulwarks,
     threats, threatCentroid,
     resources: scanResources(world),
   };

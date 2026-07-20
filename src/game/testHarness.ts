@@ -77,7 +77,7 @@ export function makeSkirmishGame(seed: number, level: LevelDef = SKIRMISH_LEVEL)
   const game = new Game(world, stubView(world), new Modifiers(), 'p1');
   game.objective = new Objective(level.objectives[0]);
   game.setTeams({ p1: 0, p2: 1, enemy: 2, wild: 2 });
-  game.initCoOp(level.kit, level.kit);
+  game.initCoOp(level.kit, level.kit, 'diagonal'); // skirmish rivals spawn in opposite corners
   game.setEnemies(level.enemies ?? null);
   for (const playerId of PLAYER_IDS) {
     const store = game.storeFor(playerId);

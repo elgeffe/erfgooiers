@@ -473,7 +473,8 @@ function buildMultiplayerLevel(setup: MultiplayerLevelSetup): { world: World; ga
   // systems treat the rival settlement as hostile. PvE owners keep a team of
   // their own even though the skirmish level spawns none.
   if (mode === 'skirmish') g.setTeams({ p1: 0, p2: 1, enemy: 2, wild: 2 });
-  g.initCoOp(level.kit, level.kit);
+  // skirmish rivals spawn in opposite corners; co-op allies share a mid-map axis
+  g.initCoOp(level.kit, level.kit, mode === 'skirmish' ? 'diagonal' : 'axis');
   ui.setGame(g);
   ui.setPerks([], []);
   controls.setGame(g);
