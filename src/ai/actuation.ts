@@ -113,12 +113,32 @@ function workable(view: AIView, world: World, key: BuildingKey, at: Coord): bool
   return true;
 }
 
+/** A crowding penalty that keeps the base from packing wall-to-wall: 2×2
+ *  footprints sitting flush (gap 0) read as a cramped blob and choke the roads
+ *  and serf lanes between them. This rewards a tile or two of breathing room —
+ *  a more natural settlement — while still allowing a tight fit when the
+ *  ground demands it (the penalty is soft, not a hard rule). Farms want extra
+ *  clearance for their plots; mines tolerate closer since they cluster on ore. */
+function crowding(view: AIView, key: BuildingKey, at: Coord): number {
+  const wantGap = DEFS[key].fields ? 3 : MINE_NODE[key] ? 1 : 2;
+  let penalty = 0;
+  const near = (b: Coord): void => {
+    // gap between two 2×2 footprints: Chebyshev of top-lefts, minus the 2-tile span
+    const gap = chebyshev(at, b) - 2;
+    if (gap < wantGap) penalty += (wantGap - gap);
+  };
+  for (const b of view.buildings) near(b);
+  for (const s of view.sites) near(s);
+  return penalty;
+}
+
 function score(view: AIView, world: World, key: BuildingKey, at: Coord, anchor: Coord, home: Coord): number {
   let value = -chebyshev(at, anchor) - 0.35 * chebyshev(at, home);
   const node = MINE_NODE[key];
   if (node) value += 2 * Math.min(4, nodesNear(view.resources[node], at, GATHER_RANGE));
   if (key === 'woodcutter' || key === 'forester') value += Math.min(6, nodesNear(view.resources.trees, at, GATHER_RANGE));
   if (DEFS[key].fields) value += 0.4 * Math.min(20, openPlotGround(world, at));
+  value -= 2.5 * crowding(view, key, at); // spread out for roads & serf lanes
   return value;
 }
 
@@ -161,8 +181,9 @@ export function findBuildingSpot(
       candidates.push({ x: at.x, y: at.y, rot, value: score(view, world, key, at, anchor, home) });
       if (candidates.length >= MAX_CANDIDATES) break;
     }
-    // once something legal exists, one extra ring is enough look-ahead
-    if (candidates.length && radius >= MIN_RADIUS + 4) break;
+    // keep collecting a few rings past the first legal spot so the crowding
+    // score has room to spread the base out rather than pack the first ring
+    if (candidates.length && radius >= MIN_RADIUS + 6) break;
   }
   // A legal tile is not always a REACHABLE tile — a spot behind water or rock
   // starves its site forever and (worse) strands every serf sent to feed it.

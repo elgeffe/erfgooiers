@@ -4,7 +4,7 @@ import { UNITS, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { findPath } from '../engine/pathfinding';
 import type { FlowField } from '../engine/flowfield';
-import type { World } from '../world/World';
+import { diagonalSpawns, type World } from '../world/World';
 import type { View } from '../render/View';
 import { type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit, PLAYER_IDS } from '../types';
 import { doorTile } from './util';
@@ -451,13 +451,26 @@ export class Game {
     this.guild = this.playerGuilds.get(this.localPlayerId)!;
   }
 
-  /** Two deterministic allied starts with fully separate ownership and stock. */
-  initCoOp(p1Kit: StartKit = DEFAULT_KIT, p2Kit: StartKit = DEFAULT_KIT): void {
+  /**
+   * Two deterministic starts with fully separate ownership and stock. `layout`
+   * chooses the geometry: 'axis' keeps the two settlements on a shared
+   * east–west line near mid-map (co-op allies, so short haul/trade routes);
+   * 'diagonal' drops them in opposite corners (skirmish rivals, so a real
+   * march separates the two economies and an early rush is a commitment).
+   */
+  initCoOp(p1Kit: StartKit = DEFAULT_KIT, p2Kit: StartKit = DEFAULT_KIT, layout: 'axis' | 'diagonal' = 'axis'): void {
     this.indexPickups();
     const { W, H } = this.world;
-    const cy = Math.floor(H / 2) - 1;
-    this.initSettlement('p1', p1Kit, Math.max(3, Math.floor(W * 0.28) - 1), cy);
-    this.initSettlement('p2', p2Kit, Math.min(W - 6, Math.floor(W * 0.72) - 1), cy);
+    if (layout === 'diagonal') {
+      // the same corners worldgen provisioned resources around (arena maps)
+      const [a, b] = diagonalSpawns(W, H);
+      this.initSettlement('p1', p1Kit, a.x, a.y);
+      this.initSettlement('p2', p2Kit, b.x, b.y);
+    } else {
+      const cy = Math.floor(H / 2) - 1;
+      this.initSettlement('p1', p1Kit, Math.max(3, Math.floor(W * 0.28) - 1), cy);
+      this.initSettlement('p2', p2Kit, Math.min(W - 6, Math.floor(W * 0.72) - 1), cy);
+    }
     this.store = this.playerStores.get('p1')!;
     this.guild = this.playerGuilds.get('p1')!;
   }
