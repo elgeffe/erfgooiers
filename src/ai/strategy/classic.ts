@@ -125,8 +125,9 @@ function goals(towers: number, scale: number, expansion: number): BuildGoal[] {
     { key: 'ironmine', target: 1, priority: 68, category: 'war' },
     { key: 'coalmine', target: 2, priority: 66, category: 'war', minScale: 1 },
     { key: 'smithy', target: 1, priority: 64, category: 'war', requires: ['ironmine', 'coalmine'] },
-    // higher difficulties boost coin with market exports of surplus goods
-    { key: 'market', target: 1, priority: 62, category: 'coin', minScale: 1 },
+    // NOTE: the market is intentionally OFF the build order for now — its export
+    // orders vacuum the very gold ore, stone, timber and bread the base needs to
+    // build and feed itself, doing more harm than the coin it earned.
     { key: 'watchtower', target: towers, priority: 54, category: 'fort' },
   ];
 
@@ -160,7 +161,7 @@ function goals(towers: number, scale: number, expansion: number): BuildGoal[] {
       ['goldmine', 2 + E, 'coin'],
       ['coalmine', 3 + 2 * E, 'coin'],         // feeds the mint AND smithies AND armories
       ['mint', E >= 2 ? 1 : 0, 'coin', req('goldmine', 'coalmine')],
-      ['market', E, 'coin'],
+      // market intentionally omitted — see note in the opening build order
       ['ironmine', 2 + E, 'war'],
       ['smithy', 1 + E, 'war', req('ironmine', 'coalmine')],
       ['armory', E >= 2 ? 1 + E : 0, 'war', req('smithy')],   // armour for knights & horse knights
@@ -199,8 +200,6 @@ export class ClassicMacro implements MacroPolicy {
     if (rescue) commands.push(rescue);
     const plots = this.planFieldPlots(ctx);
     if (plots) commands.push(plots);
-    const market = this.planMarket(ctx);
-    if (market) commands.push(market);
     // defensive stances wall first and expand second; everyone else fortifies
     // with whatever build capacity the economy goals leave over
     const fortFirst = ctx.profile.stance === 'defensive';
@@ -302,33 +301,6 @@ export class ClassicMacro implements MacroPolicy {
         return { type: 'placeBuilding', key, x: piece.x, y: piece.y, rot: piece.rot };
       }
       // this ring is as finished as the ground allows — start the next layer
-    }
-    return null;
-  }
-
-  // ---- market exports ----
-  /** Sell the surplus the economy actually makes: raw gold ore is worth five
-   *  coin a piece at the stalls (far more than minting it), stone piles up
-   *  from every quarry, bread from a running bakery. One configuration per
-   *  market — re-issued only if the orders were somehow cleared. */
-  private planMarket(ctx: PolicyContext): GameCommand | null {
-    const { view } = ctx;
-    for (const building of view.buildings) {
-      if (building.key !== 'market' || !building.active) continue;
-      if (!building.marketOrders?.length) {
-        const orders: { item: 'goldore' | 'stone' | 'bread' | 'timber'; amount: number }[] = [];
-        if (view.built.goldmine) orders.push({ item: 'goldore', amount: 5 });
-        orders.push({ item: 'stone', amount: 5 });
-        if (view.built.bakery) orders.push({ item: 'bread', amount: 4 });
-        if (orders.length < 3) orders.push({ item: 'timber', amount: 3 });
-        return { type: 'configureMarket', buildingId: building.id, orders: orders.slice(0, 3) };
-      }
-      // Exports outrank routine hauling ONLY when no gold vein backs the
-      // economy — on gold-rich maps a priority market vacuums the stone and
-      // timber that walls, towers and the barracks need.
-      if (!building.priority && !view.built.goldmine) {
-        return { type: 'setPriority', siteId: building.id, priority: true };
-      }
     }
     return null;
   }
@@ -446,8 +418,8 @@ export class ClassicMacro implements MacroPolicy {
       case 'coalmine': return feed(b('coalmine'), b('mint') + b('smithy') + b('armory'), 1.8);
       case 'ironmine': return feed(b('ironmine'), b('smithy') + b('armory'), 1.5);
       case 'goldmine': {
-        // gold ore feeds the mint (coin) and market exports; keep coin flowing
-        const need = feed(b('goldmine'), b('mint') + b('market'));
+        // gold ore feeds the mint (coin); keep coin flowing
+        const need = feed(b('goldmine'), b('mint'));
         return Math.max(need, coin < 10 ? 55 : 0);
       }
       // ---- raw for the timber chain: woodcutters feed sawmills ----
@@ -481,7 +453,6 @@ export class ClassicMacro implements MacroPolicy {
       if (!armyRoom || coin < 10) return 0;
       return 28 + Math.min(40, coin);                 // richer → keener to add production
     }
-    if (goal.key === 'market') return first ? 40 : 0;
     if (goal.key === 'tavern') return view.averageWorkerHunger < 70 ? 45 : 0;
     return first ? 35 : 0;
   }
