@@ -85,9 +85,67 @@ method wins by enough to repay its complexity"* — the bar was fixed in advance
 
 ## Result
 
-<!-- RESULTS -->
-_Populated by the committed training run; see the meta block in
-`src/ai/tensor/model.ts` and the reproduce commands above._
+**The bar was not cleared.** Measured on 24 held-out seeds (disjoint from every
+training seed) at the 25-minute decisive horizon, vs `classic-godlike-balanced`:
+
+| Model | Win rate vs Godlike | |
+|---|--:|---|
+| Imitation prior (committed) | **~25%** (6/24) | the sensible human opening, sampled |
+| Self-play refined (12 gen × 16) | **12.5%** (3/24) | reward-weighted CEM on top of the prior |
+
+Two honest, useful findings:
+
+1. **The tensor machinery works end-to-end.** A real MPS Born machine samples
+   correlated plans, trains by a finite-difference-verified gradient, and *plays*
+   full games through the fair seam — zero rejected commands, bit-identical
+   replays. The sampled opening is coherent
+   (`woodcutter → sawmill → forester → quarry → goldmine → coalmine → mint →
+   farm → mill → bakery → barracks → archer …`), i.e. it reproduces the human
+   build order and spreads around it. The Pareto-front-of-plans behaviour is real.
+2. **Naive self-play refinement made it WORSE, and the run says exactly why.**
+   The per-generation "lead" and margin never trended up, and the refined model
+   *halved* the win rate. Root cause: the training reward — the economic/army
+   **margin at 5 minutes** — is a *misaligned proxy*. It rewards being ahead
+   early (economy), which against an aggressive, fully-tuned Godlike is not the
+   same as winning at 25 minutes (you need army timing, defence, and follow-up).
+   Optimising the proxy drifted the policy away from good play.
+
+There is also a structural ceiling independent of the reward: the tensor policy
+only shapes the **opening** (build order + army-mix votes) and then hands off to a
+generic mid-game (the `expand` fallback + shared tactics). Opening quality alone
+cannot beat a bot that is tuned end-to-end, so ~25% is roughly where a good-but-
+open-loop opening lands against Godlike.
+
+This is the outcome the reality-check doc predicted ("that outcome is unlikely,
+but the experiment could still be educational") and the discipline it demanded:
+a pre-registered bar, an honest miss, and a precise diagnosis rather than a
+runtime integration. The trainer now also **guards against silent regression** —
+`npm run tensor:train` evaluates the refined model against its starting point on
+held-out seeds and keeps the better of the two, so a misaligned proxy can never
+again commit a worse model than the prior.
+
+### What would give the method a fair shot (deferred)
+
+The diagnosis points at concrete, non-cosmetic changes — each a real project, not
+a knob:
+
+1. **A win-aligned reward.** Train on games long enough to reach real
+   eliminations (or a value model that predicts the eventual winner), not a
+   5-minute economic snapshot. This is the single change most likely to make
+   refinement help instead of hurt — but decisive games are ~10× slower to
+   sample, so it needs the parallel budget scaled up.
+2. **State-conditioned cores.** Let the plan react to perception (a few features
+   → a bias on the next-slot distribution), turning the open-loop opening into a
+   policy that answers Godlike's aggression. This is the natural bridge to the
+   Phase 3 learned track and lifts the opening-only ceiling.
+3. **More capacity + more generations.** Grow the bond dimension `χ` and the
+   vocabulary and measure the win-rate/`χ` curve — the honest low-rank question:
+   does more correlation capacity buy strength, or saturate?
+
+Verdict for now: **keep as a research spike, not on the product ladder** — exactly
+the reality-check doc's standing recommendation. The machinery is committed and
+reusable; the win, at this budget and with an open-loop opening-only policy
+trained on a misaligned proxy, did not materialise.
 
 ## What this does and does not show
 

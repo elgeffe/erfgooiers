@@ -32,7 +32,7 @@ import { aiProfile } from '../../src/data/aiProfiles';
 import { applyGameCommand } from '../../src/game/commands';
 import { skirmishWinner, TICK_SECONDS } from '../../src/game/replay';
 import { PLAYER_IDS, type PlayerId } from '../../src/types';
-import { fitStep, serializeMPS, deserializeMPS, type MPS, type SerializedMPS } from '../../src/ai/tensor/mps';
+import { fitStep, serializeMPS, deserializeMPS, cloneMPS, type MPS, type SerializedMPS } from '../../src/ai/tensor/mps';
 import { expertPlans, ACTIONS } from '../../src/ai/tensor/plan';
 import { pretrain, loadModelMPS, writeModel, MODEL_PATH } from './tensorModel';
 
@@ -119,9 +119,10 @@ async function evaluate(mps: MPS, seeds: number[], maxSeconds: number, workers: 
   return { winRate: wins / seeds.length, wins };
 }
 
-/** The generator-enhanced self-play refinement. */
-async function train(generations: number, gamesPerGen: number, workers: number): Promise<{ mps: MPS; curve: number[] }> {
-  const mps = existsSync(MODEL_PATH) ? loadModelMPS() : pretrain();
+/** The generator-enhanced self-play refinement, starting from `start` (cloned so
+ *  the caller keeps the untouched baseline to compare against). */
+async function train(start: MPS, generations: number, gamesPerGen: number, workers: number): Promise<{ mps: MPS; curve: number[] }> {
+  const mps = cloneMPS(start);
   const curve: number[] = [];
   const rng = new Rng(0xC0FFEE);
   const experts = expertPlans();
@@ -166,15 +167,29 @@ async function main(): Promise<void> {
     const gamesPerGen = Number(process.argv[4] ?? 20);
     process.stdout.write(`TN-GEO refinement: ${generations} generations × ${gamesPerGen} games vs ${OPPONENT} · ${workers} workers\n`);
     const t0 = Date.now();
-    const { mps, curve } = await train(generations, gamesPerGen, workers);
     const evalN = 24;
-    const seeds = Array.from({ length: evalN }, (_, i) => 9000 + i); // held out from training seeds
+    const seeds = Array.from({ length: evalN }, (_, i) => 9000 + i); // held out from all training seeds
+    const start = existsSync(MODEL_PATH) ? loadModelMPS() : pretrain();
+    // baseline: the starting model's held-out win rate, so refinement is judged
+    // against it and can never SILENTLY commit a worse model (a self-play reward
+    // is a proxy, and a misaligned proxy can drift the policy the wrong way).
+    const base = await evaluate(start, seeds, EVAL_SECONDS, workers);
+    process.stdout.write(`baseline (starting model) win rate: ${(base.winRate * 100).toFixed(1)}%  (${base.wins}/${evalN})\n`);
+    const { mps, curve } = await train(start, generations, gamesPerGen, workers);
     // honest metric: decisive games (25-min horizon), disjoint from training seeds
-    const { winRate, wins } = await evaluate(mps, seeds, EVAL_SECONDS, workers);
+    const ref = await evaluate(mps, seeds, EVAL_SECONDS, workers);
+    const keptRefined = ref.winRate >= base.winRate;
+    const best = keptRefined ? mps : start;
     const secs = ((Date.now() - t0) / 1000).toFixed(0);
-    process.stdout.write(`\nheld-out win rate vs Godlike (${evalN} seeds, ${EVAL_SECONDS / 60}min): ${(winRate * 100).toFixed(1)}%  (${wins}/${evalN})  [${secs}s]\n`);
-    writeModel(mps, { generatedAt: new Date().toISOString(), method: 'selfplay-generator-enhanced', winRateVsGodlike: winRate, generations, gamesPerGen, curve });
-    const example = playMatch(mps, 9999, TRAIN_SECONDS).seq.map(actionName);
+    process.stdout.write(`\nrefined held-out win rate vs Godlike (${evalN} seeds, ${EVAL_SECONDS / 60}min): ${(ref.winRate * 100).toFixed(1)}%  (${ref.wins}/${evalN})  [${secs}s]\n`);
+    process.stdout.write(keptRefined ? 'refinement improved on the baseline → keeping the refined model.\n' : 'refinement did NOT beat the baseline → keeping the starting model (guard).\n');
+    writeModel(best, {
+      generatedAt: new Date().toISOString(),
+      method: keptRefined ? 'selfplay-generator-enhanced' : 'baseline-kept (refinement rejected)',
+      winRateVsGodlike: Math.max(base.winRate, ref.winRate),
+      baselineWinRate: base.winRate, refinedWinRate: ref.winRate, generations, gamesPerGen, curve,
+    });
+    const example = playMatch(best, 9999, TRAIN_SECONDS).seq.map(actionName);
     process.stdout.write(`example sampled opening: ${example.slice(0, 12).join(' → ')} …\n`);
   } else if (cmd === 'eval') {
     const n = Number(process.argv[3] ?? 24);
