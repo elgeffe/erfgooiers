@@ -1,10 +1,45 @@
 import { DEFS } from '../../data/buildings';
+import { UNITS, type UnitKind } from '../../data/units';
 import { planFortificationRing, sideToward, type FortSide } from '../../game/fortification';
 import type { BuildingKey, Building } from '../../types';
 import type { GameCommand } from '../../net/protocol';
 import { findBuildingSpot, planPlots } from '../actuation';
 import { economyStock, have, storeStock } from '../perception';
 import type { MacroPolicy, PolicyContext } from './types';
+
+// ---- reactive counter-composition (graded by profile.counter) ----
+type ArmyCategory = 'mounted' | 'ranged' | 'melee';
+
+function unitCategory(kind: string): ArmyCategory {
+  const def = (UNITS as Record<string, (typeof UNITS)[UnitKind] | undefined>)[kind];
+  if (!def) return 'melee';
+  if (def.tags?.includes('mounted')) return 'mounted';
+  if (def.arrows || def.range > 1.6) return 'ranged';
+  return 'melee';
+}
+
+/** The rival army's dominant category and how lopsided it is (null = too small
+ *  a force to bother countering). */
+export function dominantEnemyCategory(byKind: Partial<Record<UnitKind, number>>): { cat: ArmyCategory; frac: number } | null {
+  const cats: Record<ArmyCategory, number> = { mounted: 0, ranged: 0, melee: 0 };
+  let total = 0;
+  for (const kind in byKind) { const n = byKind[kind as UnitKind] ?? 0; total += n; cats[unitCategory(kind)] += n; }
+  if (total < 3) return null;
+  let best: ArmyCategory = 'melee', bestN = -1;
+  for (const c of ['mounted', 'ranged', 'melee'] as ArmyCategory[]) if (cats[c] > bestN) { bestN = cats[c]; best = c; }
+  return { cat: best, frac: bestN / total };
+}
+
+/** How much to reweight training `myKind` given the enemy's dominant category:
+ *  pikemen shred cavalry (data-backed 2.5× bonus), durable melee closes on and
+ *  soaks archers, archers kite melee. Scaled by reactivity × how lopsided the
+ *  enemy is, so a mixed enemy barely shifts the shopping list. */
+export function counterMultiplier(myKind: string, enemyDom: ArmyCategory, gain: number): number {
+  const mine = unitCategory(myKind);
+  if (enemyDom === 'mounted') return myKind === 'pikeman' ? 1 + 2.5 * gain : mine === 'melee' ? 1 + 0.3 * gain : 1 - 0.3 * gain;
+  if (enemyDom === 'ranged') return mine === 'melee' ? 1 + 1.5 * gain : mine === 'ranged' ? 1 - 0.4 * gain : 1;
+  return mine === 'ranged' ? 1 + 1.5 * gain : 1; // enemy melee-heavy → archers
+}
 
 /**
  * The Classic baseline (Phase 1): a handwritten, layered, fair macro policy.
@@ -324,12 +359,19 @@ export class ClassicMacro implements MacroPolicy {
     const coinEngineRunning = view.buildings.some(b => b.key === 'mint' && b.worker);
     const coinReserve = coinEngineRunning ? 0 : profile.workerReserveCoin;
 
+    // A better player scouts the rival army and trains counters: the base mix
+    // is reweighted toward what beats the enemy's dominant category (graded by
+    // profile.counter, and by how lopsided the enemy is). Full visibility, so
+    // it's the same read a human gets — no cheat.
+    const enemyDom = profile.counter > 0 ? dominantEnemyCategory(view.enemyArmyByKind) : null;
+
     // weighted pick among the mix entries some standing trainer offers & the store affords
     const options: { building: Building; kind: string; weight: number }[] = [];
     for (const building of trainers) {
       for (const training of building.def.military!.units) {
-        const weight = profile.unitMix[training.kind as keyof typeof profile.unitMix] ?? 0;
+        let weight = profile.unitMix[training.kind as keyof typeof profile.unitMix] ?? 0;
         if (weight <= 0) continue;
+        if (enemyDom) weight *= counterMultiplier(training.kind, enemyDom.cat, profile.counter * enemyDom.frac);
         const cost = game.modsFor(view.owner).unitCost(training.kind, training.cost) as Record<string, number>;
         let ok = true;
         for (const item in cost) {

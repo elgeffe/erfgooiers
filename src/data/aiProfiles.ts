@@ -61,6 +61,10 @@ export interface AIProfile {
   retreatRatio: number;
   /** Ring the town bell (workers shelter, castle fires faster) under siege. */
   useBell: boolean;
+  /** Reactivity to the rival's army composition (0..1): a better player scouts
+   *  what the enemy fields and trains counters (pikemen vs cavalry, durable
+   *  melee vs archers, archers vs melee). 0 = a fixed shopping list. */
+  counter: number;
   /** Fraction of the army held home as a standing garrison during attacks. */
   homeGuard: number;
   /** Fighters per harassment raid between attacks (0 = never raids). */
@@ -75,14 +79,14 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
     econScale: 0.8, maxPendingSites: 2, workerReserveCoin: 2, towers: 0, walls: 0,
     armyCap: 14, unitMix: { soldier: 2, archer: 2 },
     attackArmy: 7, minAttackInterval: 150, retreatRatio: 0.15, useBell: false,
-    homeGuard: 0, raidSize: 0, raidInterval: 1e9,
+    counter: 0, homeGuard: 0, raidSize: 0, raidInterval: 1e9,
   },
   hard: {
     macroPeriod: 2.5, tacticsPeriod: 1, reactionDelay: 2, apm: 36, errorRate: 0.03,
     econScale: 1, maxPendingSites: 3, workerReserveCoin: 3, towers: 1, walls: 0,
     armyCap: 24, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 1 },
     attackArmy: 16, minAttackInterval: 100, retreatRatio: 0.5, useBell: true,
-    homeGuard: 0.2, raidSize: 3, raidInterval: 200,
+    counter: 0.6, homeGuard: 0.2, raidSize: 3, raidInterval: 200,
   },
   godlike: {
     macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 60, errorRate: 0,
@@ -95,7 +99,7 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
     econScale: 1, maxPendingSites: 3, workerReserveCoin: 3, towers: 2, walls: 0,
     armyCap: 32, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 2 },
     attackArmy: 16, minAttackInterval: 80, retreatRatio: 0.55, useBell: true,
-    homeGuard: 0.2, raidSize: 5, raidInterval: 150,
+    counter: 1, homeGuard: 0.2, raidSize: 5, raidInterval: 150,
   },
 };
 
@@ -151,7 +155,7 @@ const IDLE: AIProfile = {
   econScale: 0, maxPendingSites: 0, workerReserveCoin: 0, towers: 0, walls: 0,
   armyCap: 0, unitMix: {},
   attackArmy: 1e9, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
-  homeGuard: 0, raidSize: 0, raidInterval: 1e9,
+  counter: 0, homeGuard: 0, raidSize: 0, raidInterval: 1e9,
 };
 
 const RANDOM: AIProfile = {
@@ -161,7 +165,7 @@ const RANDOM: AIProfile = {
   econScale: 1, maxPendingSites: 3, workerReserveCoin: 0, towers: 0, walls: 0,
   armyCap: 12, unitMix: { soldier: 1, archer: 1 },
   attackArmy: 1e9, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
-  homeGuard: 0, raidSize: 0, raidInterval: 1e9,
+  counter: 0, homeGuard: 0, raidSize: 0, raidInterval: 1e9,
 };
 
 export const AI_PROFILES: Record<string, AIProfile> = Object.fromEntries([
