@@ -629,23 +629,31 @@ export class World {
       }
     }
 
-    // Skirmish arena: each opposite corner must hold every ore kind within a
-    // short haul, or one player opens starved of stone/iron. Random veins land
-    // unevenly, so guarantee a local cluster of any kind a corner is missing —
-    // placed in a ring outside the settlement apron but inside a mine's reach.
+    // Skirmish arena: each opposite corner must hold enough of every ore kind
+    // within a short haul that a full economy can run there — a corner starved
+    // of coal in particular can never field weapon/armour units. Random veins
+    // land unevenly, so top each corner up to a MINIMUM deposit COUNT per kind
+    // (deepest for coal, which feeds the mint AND every smithy AND armory),
+    // counting what's already nearby. Placed in a ring outside the settlement
+    // apron but inside a mine's reach.
     if (this.p.arena) {
-      const nearestOre = (cx: number, cy: number, kind: DepositKind, radius: number): boolean => {
+      // Each corner must sustain a full military economy, so provision it
+      // generously — coal deepest (it feeds the mint AND every smithy AND
+      // armory), then iron/gold for the weapon/armour/coin chains, then stone.
+      const ARENA_MIN: Record<DepositKind, number> = { coal: 16, gold: 12, iron: 12, stone: 10 };
+      const countOre = (cx: number, cy: number, kind: DepositKind, radius: number): number => {
+        let n = 0;
         for (let y = Math.max(0, cy - radius); y <= Math.min(H - 1, cy + radius); y++)
           for (let x = Math.max(0, cx - radius); x <= Math.min(W - 1, cx + radius); x++) {
             const dep = this.tiles[y][x].dep;
-            if (dep && dep.kind === kind && dep.amt > 0 && Math.hypot(x - cx, y - cy) <= radius) return true;
+            if (dep && dep.kind === kind && dep.amt > 0 && Math.hypot(x - cx, y - cy) <= radius) n++;
           }
-        return false;
+        return n;
       };
       const provision = (cx: number, cy: number, kind: DepositKind, n: number): void => {
         let placed = 0, guard = 0;
-        while (placed < n && guard++ < 300) {
-          const angle = rnd() * Math.PI * 2, radius = 7 + rnd() * 5; // ring 7–12 tiles out
+        while (placed < n && guard++ < 400) {
+          const angle = rnd() * Math.PI * 2, radius = 6 + rnd() * 8; // ring 6–14 tiles out
           const x = Math.round(cx + Math.cos(angle) * radius), y = Math.round(cy + Math.sin(angle) * radius);
           const t = this.T(x, y);
           if (t && t.type === 'grass' && !t.dep && !t.tree && !t.deco && !t.pickup && reachable[y * W + x]) {
@@ -657,7 +665,24 @@ export class World {
       };
       for (const corner of diagonalSpawns(W, H)) {
         for (const kind of ['stone', 'gold', 'coal', 'iron'] as const) {
-          if (!nearestOre(corner.x, corner.y, kind, 14)) provision(corner.x, corner.y, kind, 4);
+          const short = ARENA_MIN[kind] - countOre(corner.x, corner.y, kind, 15);
+          if (short > 0) provision(corner.x, corner.y, kind, short);
+        }
+      }
+      // A rich contested prize in no-man's-land between the corners: a dense
+      // gold-and-ore cluster plus scattered gold pickups that neither player
+      // starts near, so grabbing the centre is a real strategic choice worth
+      // fighting over — the map rewards taking ground, not just turtling.
+      const midX = Math.round(W / 2), midY = Math.round(H / 2);
+      provision(midX, midY, 'gold', 8);
+      provision(midX, midY, 'coal', 6);
+      provision(midX, midY, 'iron', 6);
+      for (let i = 0, guard = 0; i < this.p.goldPiles && guard < 200; guard++) {
+        const angle = rnd() * Math.PI * 2, radius = rnd() * 10;
+        const x = Math.round(midX + Math.cos(angle) * radius), y = Math.round(midY + Math.sin(angle) * radius);
+        const t = this.T(x, y);
+        if (t && t.type === 'grass' && !t.dep && !t.tree && !t.deco && !t.pickup && reachable[y * W + x]) {
+          t.pickup = { gold: 4 + Math.floor(rnd() * 5), reserved: false, meshes: [] }; i++;
         }
       }
     }
