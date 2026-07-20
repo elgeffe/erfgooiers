@@ -9,7 +9,7 @@ import type { UnitKind } from './units';
  */
 export type AIDifficulty = 'easy' | 'hard' | 'godlike';
 export type AIStance = 'defensive' | 'balanced' | 'offensive';
-export type AIPolicyKind = 'idle' | 'random' | 'classic';
+export type AIPolicyKind = 'idle' | 'random' | 'classic' | 'tensor';
 
 export interface AIProfile {
   id: string;
@@ -172,8 +172,25 @@ const RANDOM: AIProfile = {
   counter: 0, homeGuard: 0, raidSize: 0, raidInterval: 1e9,
 };
 
+/**
+ * The experimental tensor-network seat (Phase 3 research spike). Its MACRO comes
+ * from a sampled MPS plan (src/ai/tensor/), so the econ/expansion knobs here only
+ * feed the shared serf-scaling and tactics; cadence, APM, reactions and counter
+ * match Godlike so the ONLY variable under test is the generated strategy.
+ * See docs/tensor-strategy-poc.md.
+ */
+const TENSOR: AIProfile = {
+  id: 'tensor', name: 'Tensor (MPS)', desc: 'Strategy sampled from a matrix-product-state generator — research spike.',
+  policy: 'tensor', difficulty: 'godlike', stance: 'balanced',
+  macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 60, errorRate: 0,
+  econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 1, walls: 0,
+  armyCap: 55, unitMix: {}, // the mix comes from the sampled plan, not this table
+  attackArmy: 16, minAttackInterval: 80, retreatRatio: 0.55, useBell: true,
+  counter: 1, homeGuard: 0.2, raidSize: 5, raidInterval: 150,
+};
+
 export const AI_PROFILES: Record<string, AIProfile> = Object.fromEntries([
-  IDLE, RANDOM,
+  IDLE, RANDOM, TENSOR,
   ...(['easy', 'hard', 'godlike'] as const).flatMap(difficulty =>
     (['defensive', 'balanced', 'offensive'] as const).map(stance => classic(difficulty, stance))),
 ].map(profile => [profile.id, profile]));

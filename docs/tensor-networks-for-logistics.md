@@ -160,6 +160,20 @@ runtime integration should happen unless the tensor method wins on representativ
 game instances by enough to repay its complexity. Based on present evidence,
 that outcome is unlikely, but the experiment could still be educational.
 
+## Follow-up: a spike in the RIGHT domain (strategy, not logistics)
+
+The combinatorial hardness this document keeps pointing at (§2: "optimizing many
+coupled decisions over a long horizon") is **not** logistics — it is *strategy*:
+the build-order/army-composition plan. A later Phase 3 spike took the tensor
+method there instead, exactly under the discipline set above (a strong classical
+baseline first, offline, a pre-registered win bar, no runtime integration unless
+it earns it). A Matrix Product State Born machine represents the distribution
+over whole plans and is trained by generator-enhanced self-play against the
+Godlike baseline. See **[tensor-strategy-poc.md](tensor-strategy-poc.md)** for
+the design, the pre-registered bar, and the honest result. That spike is the
+sanctioned application of this family in Erfgooiers; the logistics rejection
+above still stands.
+
 ## Sources
 
 - Sakai and Liu, [Tensor Network Generator-Enhanced Optimization for Traveling

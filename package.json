@@ -14,6 +14,9 @@
     "selfplay": "tsx tools/selfplay/cli.ts",
     "campaign": "tsx tools/selfplay/campaign.ts",
     "extract": "tsx tools/selfplay/extract.ts",
+    "tensor:pretrain": "tsx tools/selfplay/tensor.ts pretrain",
+    "tensor:train": "tsx tools/selfplay/tensor.ts train",
+    "tensor:eval": "tsx tools/selfplay/tensor.ts eval",
     "test": "vitest run"
   },
   "dependencies": {
