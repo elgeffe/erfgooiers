@@ -10,8 +10,13 @@ fans a fixed adjacency ladder across all cores and writes a reproducible
 win-rate matrix + report; `npm run extract` (`src/ai/dataset.ts`) re-simulates
 replays into labelled JSONL (perception features → next macro action), the
 Phase 3 dataset format. Co-op/skirmish/vs-CPU share one multiplayer session
-model in `main.ts` (seats × mode × transport). Phases 3+ (learned/adaptive AI,
-research track, online seats) remain unimplemented.
+model in `main.ts` (seats × mode × transport). The **research track has its first
+spike**: a tensor-network (Matrix Product State) strategy generator that samples
+whole build-order/army plans and is trained by generator-enhanced self-play
+against the Godlike baseline — the `tensor` policy/profile, `src/ai/tensor/`,
+`npm run tensor:train`/`tensor:eval`, documented with a pre-registered win bar in
+[tensor-strategy-poc.md](tensor-strategy-poc.md). The rest of Phases 3+
+(state-conditioned learned/adaptive AI, online seats) remain unimplemented.
 
 The **1v1 arena** is a 100×88 map with the two players in opposite corners
 (`initCoOp`'s `diagonal` layout), each corner worldgen-provisioned with a full

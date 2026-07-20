@@ -208,6 +208,14 @@ hard placement pressure.
   and `npm run extract` (`src/ai/dataset.ts`) re-simulates replays into labelled JSONL
   (features → next macro action, the Phase 3 dataset). `docs/skirmish-ai-design.md` tracks
   the phased plan, status, and the open production-line-balance problem.
+- A Phase 3 **research spike** adds a tensor-network macro: `src/ai/tensor/` holds a Matrix
+  Product State (Born-machine) generative model over whole build-order/army plans, the
+  `tensor` policy/profile samples ONE plan per game and executes it through the same seam,
+  and `npm run tensor:train`/`tensor:eval` (`tools/selfplay/tensor.ts`) refine it by
+  generator-enhanced self-play vs Godlike. The committed cores live in
+  `src/ai/tensor/model.ts` (auto-generated). It is a bounded experiment with a
+  pre-registered win bar — see `docs/tensor-strategy-poc.md`; the tensor family is
+  deliberately NOT used for logistics (`docs/tensor-networks-for-logistics.md`).
 - The physical hero unit and functional equipment slots are not implemented yet.
 - Combat units include soldiers, archers, knights, and several enemy/wild archetypes.
 - Army controls include box/double-click selection, minimap highlighting, groups,

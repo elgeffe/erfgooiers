@@ -12,6 +12,8 @@ import { Tactics } from './tactics';
 import { ClassicMacro } from './strategy/classic';
 import { IdleMacro } from './strategy/idle';
 import { RandomMacro } from './strategy/random';
+import { TensorMacro } from './strategy/tensor';
+import { TENSOR_MODEL } from './tensor/model';
 import type { MacroPolicy, PolicyContext } from './strategy/types';
 
 /**
@@ -58,6 +60,9 @@ export interface AIControllerOptions {
   /** Command sink; defaults to applying directly (local play & self-play). */
   submit?: (command: GameCommand) => CommandResult;
   onEvent?: (event: AIEvent) => void;
+  /** Override the profile's macro policy — used by the tensor trainer to run a
+   *  seat on an in-training model instead of the committed one. */
+  macro?: MacroPolicy;
 }
 
 export class AIController {
@@ -91,8 +96,14 @@ export class AIController {
     this.submit = options.submit ?? (command => applyGameCommand(this.game, this.playerId, command));
     this.onEvent = options.onEvent;
     const policy = this.profile.policy;
-    this.macro = policy === 'classic' ? new ClassicMacro() : policy === 'random' ? new RandomMacro() : policy === 'idle' ? new IdleMacro() : null;
-    this.tactics = policy === 'classic' ? new Tactics() : null;
+    this.macro = options.macro
+      ?? (policy === 'classic' ? new ClassicMacro()
+        : policy === 'tensor' ? new TensorMacro(TENSOR_MODEL)
+        : policy === 'random' ? new RandomMacro()
+        : policy === 'idle' ? new IdleMacro() : null);
+    // the tensor seat fights with the same tactics layer as Classic — only the
+    // macro (build/train strategy) is under test, not the micro
+    this.tactics = policy === 'classic' || policy === 'tensor' ? new Tactics() : null;
     // start out of phase so two seats never think on the same tick, and the
     // opening varies between seeds — deterministically per seed
     this.macroT = -this.rng.range(0, this.profile.macroPeriod);
