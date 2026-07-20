@@ -3,7 +3,7 @@ import { UNITS, type UnitKind } from '../../data/units';
 import { findPath } from '../../engine/pathfinding';
 import { doorTile } from '../../game/util';
 import { planFortificationRing, sideToward, type FortSide } from '../../game/fortification';
-import type { BuildingKey, Building, Coord } from '../../types';
+import type { BuildingKey, Building, Coord, ItemKey } from '../../types';
 import type { GameCommand } from '../../net/protocol';
 import { findBuildingSpot, planPlots } from '../actuation';
 import { economyStock, have, storeStock } from '../perception';
@@ -78,7 +78,19 @@ interface BuildGoal {
   requires?: BuildingKey[];
   /** Deep-base tail entries only Godlike-scale economies reach for. */
   minScale?: number;
+  /** Endless-expansion goal (vs a fixed opening): its priority is decided by
+   *  current scarcity of its output, not a fixed opening order. */
+  expand?: boolean;
 }
+
+/** What a producer building outputs — drives scarcity-boosted expansion (build
+ *  more of what the economy is short of). Raw gatherers and intermediates only;
+ *  military/fort buildings expand on coin surplus, not an output. */
+const OUTPUT: Partial<Record<BuildingKey, ItemKey>> = {
+  woodcutter: 'trunk', sawmill: 'timber', quarry: 'stone', farm: 'wheat',
+  mill: 'flour', bakery: 'bread', goldmine: 'goldore', coalmine: 'coal',
+  ironmine: 'iron', mint: 'coin', smithy: 'weapon', armory: 'armor',
+};
 
 const STANCE_WEIGHT: Record<string, Record<Category, number>> = {
   defensive: { economy: 1, food: 1, coin: 1, war: 0.9, fort: 1.6 },
@@ -86,7 +98,7 @@ const STANCE_WEIGHT: Record<string, Record<Category, number>> = {
   offensive: { economy: 1, food: 0.95, coin: 1, war: 1.3, fort: 0.6 },
 };
 
-function goals(towers: number, scale: number): BuildGoal[] {
+function goals(towers: number, scale: number, expansion: number): BuildGoal[] {
   // The owner-blessed opening: wood → timber → quarry → gold → coal → mint
   // (villagers cost coin, the mint makes coin — the free starting villagers
   // must staff that loop first or the economy deadlocks at zero coin), then
@@ -115,25 +127,53 @@ function goals(towers: number, scale: number): BuildGoal[] {
     { key: 'smithy', target: 1, priority: 64, category: 'war', requires: ['ironmine', 'coalmine'] },
     // higher difficulties boost coin with market exports of surplus goods
     { key: 'market', target: 1, priority: 62, category: 'coin', minScale: 1 },
-    { key: 'woodcutter', target: 2, priority: 56, category: 'economy', minScale: 1 },
     { key: 'watchtower', target: towers, priority: 54, category: 'fort' },
-    // veins run dry: spare goldmines keep the coin (= army) income alive
-    { key: 'goldmine', target: 2, priority: 52, category: 'coin', minScale: 0.8 },
-    // a second quarry doubles stone income to fund the stone sinks — roads and
-    // curtain walls — the way a real player bankrolls infrastructure rather
-    // than starving construction for it (comes right after the core military)
-    { key: 'quarry', target: 2, priority: 55, category: 'economy', minScale: 0.8 },
-    { key: 'sawmill', target: 2, priority: 50, category: 'economy', minScale: 1 },
-    // (curtain walls & gates are planned by planFortification, not listed here)
-    { key: 'quarry', target: 3, priority: 34, category: 'economy', minScale: 1.1 },
-    { key: 'goldmine', target: 3, priority: 44, category: 'coin', minScale: 1.25 },
-    { key: 'farm', target: 2, priority: 43, category: 'food', minScale: 1.2 },
-    { key: 'smithy', target: 2, priority: 40, category: 'war', minScale: 1.1 },
-    { key: 'armory', target: 1, priority: 38, category: 'war', requires: ['smithy'], minScale: 1 },
-    // the wall-breakers: an engineer's workshop arms the top tier's sieges
-    { key: 'engineer', target: 1, priority: 37, category: 'war', requires: ['smithy'], minScale: 1.1 },
-    { key: 'barracks', target: 2, priority: 36, category: 'war', minScale: 1.1 },
   ];
+
+  // ---- endless, tier-scaled expansion ----
+  // Fixed caps make a strong economy plateau (measured: Godlike froze at 25
+  // buildings with 280 coin idle and an all-archer army it couldn't diversify).
+  // Instead the higher tiers keep compounding producers and open the full
+  // military spread, so surplus coin becomes a bigger, more varied army. The
+  // scorer (planBuild) decides WHICH to build from current scarcity; these just
+  // set how deep each tier may go. Easy (expansion 0) never reaches this — it
+  // stays a small, beatable settlement.
+  const E = expansion;
+  if (E > 0) {
+    const cap = (n: number): number => Math.max(0, Math.round(n));
+    const req = (...keys: BuildingKey[]): BuildingKey[] => keys;
+    // Caps are generous CEILINGS, not targets — scarcity scoring (planBuild)
+    // stops building a producer the moment its output is plentiful, so extra
+    // headroom just lets the bot chase a real bottleneck instead of stalling.
+    // Coal is the sharpest one: it feeds the mint AND every smithy AND every
+    // armory, so weapons and armour (and thus soldiers/knights/cavalry) all
+    // starve behind it — hence the deepest coal ceiling.
+    const grow: [BuildingKey, number, Category, BuildingKey[]?][] = [
+      ['woodcutter', 3 + 2 * E, 'economy'],
+      ['sawmill', 2 + E, 'economy', req('woodcutter')],
+      ['forester', E, 'economy', req('woodcutter')],
+      ['quarry', 3 + 2 * E, 'economy'],
+      ['farm', 1 + E, 'food'],
+      ['mill', E, 'food', req('farm')],
+      ['bakery', E, 'food', req('mill')],
+      ['tavern', E >= 2 ? 1 : 0, 'food', req('bakery')],
+      ['goldmine', 2 + E, 'coin'],
+      ['coalmine', 3 + 2 * E, 'coin'],         // feeds the mint AND smithies AND armories
+      ['mint', E >= 2 ? 1 : 0, 'coin', req('goldmine', 'coalmine')],
+      ['market', E, 'coin'],
+      ['ironmine', 2 + E, 'war'],
+      ['smithy', 1 + E, 'war', req('ironmine', 'coalmine')],
+      ['armory', E >= 2 ? 1 + E : 0, 'war', req('smithy')],   // armour for knights & horse knights
+      ['barracks', 1 + E, 'war'],
+      ['stable', E >= 2 ? 1 : 0, 'war'],       // cavalry: lancers, horse knights/archers
+      ['engineer', E >= 2 ? 1 : 0, 'war'],     // siege: onagers, trebuchets
+      ['monastery', E >= 2 ? 1 : 0, 'war'],    // priests to heal the line
+    ];
+    for (const [key, base, category, requires] of grow) {
+      const target = cap(base);
+      if (target > 0) list.push({ key, target, priority: 30, category, requires, expand: true });
+    }
+  }
   return list.filter(goal => (goal.minScale ?? 0) <= scale && goal.target > 0);
 }
 
@@ -338,7 +378,9 @@ export class ClassicMacro implements MacroPolicy {
     const broke = storeStock(game, view.owner, 'coin') < profile.workerReserveCoin + 2;
     const threatened = view.elapsed - this.lastThreatAt < 60;
 
-    const candidates = goals(profile.towers, profile.econScale)
+    const coin = storeStock(game, view.owner, 'coin');
+    const armyRoom = view.armySize < profile.armyCap;
+    const candidates = goals(profile.towers, profile.econScale, profile.expansion)
       .filter(goal => have(view, goal.key) < goal.target)
       .filter(goal => (goal.requires ?? []).every(key => (view.built[key] ?? 0) > 0))
       .filter(goal => (this.blockedUntil.get(goal.key) ?? 0) <= view.elapsed)
@@ -348,8 +390,10 @@ export class ClassicMacro implements MacroPolicy {
         if (goal.category === 'war' && (outgunned || threatened)) value *= 1.5;
         if (goal.category === 'coin' && broke) value *= 1.7;
         if (goal.category === 'fort' && threatened) value *= 1.6;
+        if (goal.expand) value = this.expansionValue(ctx, goal, coin, armyRoom);
         return { goal, value };
       })
+      .filter(candidate => candidate.value > 0)
       .sort((a, b) => b.value - a.value);
 
     for (const { goal } of candidates.slice(0, 3)) {
@@ -372,6 +416,74 @@ export class ClassicMacro implements MacroPolicy {
       this.blockedUntil.set(goal.key, view.elapsed + 45);
     }
     return null;
+  }
+
+  /** Score an endless-expansion goal by what the economy actually needs now.
+   *  Multi-stage chains defeat a stock snapshot: an intermediate like iron or
+   *  coal reads ~0 whether it flows healthily or starves three smithies, so a
+   *  RAW producer is instead valued by producer/consumer BALANCE — build one
+   *  more while it is outnumbered by the buildings that burn its output. Final
+   *  goods (timber, stone, weapons, bread) keep the stock-scarcity signal;
+   *  military buildings spend surplus coin and open new unit types. */
+  private expansionValue(ctx: PolicyContext, goal: BuildGoal, coin: number, armyRoom: boolean): number {
+    const { game, view } = ctx;
+    const b = (key: BuildingKey): number => view.built[key] ?? 0;
+    const stock = (item: string): number => economyStock(game, view.owner, item);
+    // one more producer while consumers outnumber it (× a headroom factor): the
+    // chain-balance signal. Headroom > 1 OVER-provisions a shared input so a
+    // greedy consumer can't starve the others — the mint, left 1:1, drinks all
+    // the coal and leaves every smithy dry (measured: 140 coin, 0 weapons).
+    const feed = (producers: number, consumers: number, headroom = 1): number => {
+      const want = Math.ceil(consumers * headroom);
+      return want > 0 && producers < want ? 40 + (want - producers) * 14 : 0;
+    };
+
+    switch (goal.key) {
+      // ---- raw miners: balance to the buildings that burn their ore ----
+      // coal feeds the mint AND every smithy AND armory; iron feeds smith+armor.
+      // Both are over-provisioned so the coin mint can't starve the weapon/armour
+      // chain of its shared coal, nor the smithies each other of iron.
+      case 'coalmine': return feed(b('coalmine'), b('mint') + b('smithy') + b('armory'), 1.8);
+      case 'ironmine': return feed(b('ironmine'), b('smithy') + b('armory'), 1.5);
+      case 'goldmine': {
+        // gold ore feeds the mint (coin) and market exports; keep coin flowing
+        const need = feed(b('goldmine'), b('mint') + b('market'));
+        return Math.max(need, coin < 10 ? 55 : 0);
+      }
+      // ---- raw for the timber chain: woodcutters feed sawmills ----
+      case 'woodcutter': return Math.max(feed(b('woodcutter'), b('sawmill')), stock('trunk') < 3 ? 45 : 0);
+      case 'forester': return b('forester') < 1 ? 40 : 0;   // one keeps the woods alive
+      case 'farm': return feed(b('farm'), b('mill')) || (stock('wheat') < 3 ? 35 : 0);
+      // ---- crafters & final goods: stock scarcity (what's actually short) ----
+      case 'sawmill': return stock('timber') < 8 ? 24 + (8 - stock('timber')) * 6 : 0;
+      case 'quarry': return stock('stone') < 8 ? 22 + (8 - stock('stone')) * 6 : 0;
+      case 'mill': return b('mill') < b('farm') ? 30 : 0;
+      case 'bakery': return stock('bread') < 6 ? 30 : 0;
+      case 'mint': return b('mint') === 0 ? 60 : (coin < 8 ? 40 : 0);
+      // weapons & armour gate the whole DIVERSE army — short of them the bot can
+      // only field timber-only archers (the measured all-archer plateau), so
+      // these crafters outbid a cheaper producer whenever they run dry
+      case 'smithy': return b('smithy') === 0 ? 60 : (feed(b('smithy'), b('barracks') + b('stable')) || (stock('weapon') < 6 ? 40 : 0));
+      // the first armory unlocks armour → knights & horse knights (a big slice
+      // of the diverse mix); further ones only while armour is short
+      case 'armory': return b('armory') === 0 ? 56 : (stock('armor') < 6 ? 34 : 0);
+    }
+
+    // ---- military / production-enabling buildings ----
+    // Opening the FIRST of a kind unlocks a whole unit type (stable → cavalry,
+    // engineer → siege, monastery → priests, extra barracks → throughput), and
+    // it must happen EARLY — before the army fills with soldiers/archers and
+    // leaves no room for the fancy units — so first-of-kind outbids another
+    // producer. Further copies just spend surplus coin.
+    const first = b(goal.key) === 0;
+    if (goal.category === 'war') {
+      if (first) return 72;
+      if (!armyRoom || coin < 10) return 0;
+      return 28 + Math.min(40, coin);                 // richer → keener to add production
+    }
+    if (goal.key === 'market') return first ? 40 : 0;
+    if (goal.key === 'tavern') return view.averageWorkerHunger < 70 ? 45 : 0;
+    return first ? 35 : 0;
   }
 
   private affordable(ctx: PolicyContext, key: BuildingKey): boolean {
@@ -417,9 +529,13 @@ export class ClassicMacro implements MacroPolicy {
     if (view.workers.laborers + queuedOf('laborer') < laborerTarget) {
       return { type: 'queueTraining', buildingId: guild.id, unit: 'laborer' };
     }
-    // a lean haulage corps: every coin spent here is a fighter not trained
+    // Haulers scale with the economy: a sprawling base with mines scattered to
+    // their ore veins needs FAR more serfs than a compact opening, or the ore
+    // piles at the mines and the weapon chain starves downstream (measured: 7
+    // coalmines yet 0 coal reaching the smithies). A capped 10 throttled the
+    // whole logistics economy of the expanding tiers.
     const production = view.buildings.filter(b => b.def.recipe || b.def.gather || b.def.tavern).length;
-    const serfTarget = Math.min(Math.round(10 * profile.econScale), 3 + Math.ceil(production * 0.6));
+    const serfTarget = Math.min(6 + Math.ceil(production * (0.7 + profile.expansion * 0.35)), 44);
     if (view.workers.serfs + queuedOf('serf') < serfTarget) {
       return { type: 'queueTraining', buildingId: guild.id, unit: 'serf' };
     }

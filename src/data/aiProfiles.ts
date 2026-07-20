@@ -34,6 +34,11 @@ export interface AIProfile {
   // ---- macro appetite ----
   /** Multiplier on economy building targets (Godlike builds the deeper base). */
   econScale: number;
+  /** Endless-expansion depth (0 = openings only, higher = more copies of every
+   *  producer and the full military spread). This is what stops a strong
+   *  economy from plateauing: Godlike keeps compounding producers and fielding
+   *  a diverse army long after the opening build order is done. Easy = 0. */
+  expansion: number;
   /** Unfinished construction sites allowed at once (overreach guard). */
   maxPendingSites: number;
   /** Never spend the last coins on workers: keep this buffer for the army. */
@@ -76,28 +81,27 @@ export interface AIProfile {
 const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'desc' | 'policy' | 'stance' | 'difficulty'>> = {
   easy: {
     macroPeriod: 6, tacticsPeriod: 2, reactionDelay: 5, apm: 10, errorRate: 0.2,
-    econScale: 0.8, maxPendingSites: 2, workerReserveCoin: 2, towers: 0, walls: 0,
+    econScale: 0.8, expansion: 0, maxPendingSites: 2, workerReserveCoin: 2, towers: 0, walls: 0,
     armyCap: 14, unitMix: { soldier: 2, archer: 2 },
     attackArmy: 7, minAttackInterval: 150, retreatRatio: 0.15, useBell: false,
     counter: 0, homeGuard: 0, raidSize: 0, raidInterval: 1e9,
   },
   hard: {
     macroPeriod: 2.5, tacticsPeriod: 1, reactionDelay: 2, apm: 36, errorRate: 0.03,
-    econScale: 1, maxPendingSites: 3, workerReserveCoin: 3, towers: 1, walls: 0,
-    armyCap: 24, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 1 },
+    econScale: 1, expansion: 1, maxPendingSites: 4, workerReserveCoin: 3, towers: 1, walls: 0,
+    armyCap: 34, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 2, lancer: 1 },
     attackArmy: 16, minAttackInterval: 100, retreatRatio: 0.5, useBell: true,
     counter: 0.6, homeGuard: 0.2, raidSize: 3, raidInterval: 200,
   },
   godlike: {
     macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 60, errorRate: 0,
-    // Hard's proven strategy at strictly better cadence — every earlier
-    // attempt to make Godlike GREEDIER (deeper economy, siege engines) was
-    // measured losing to Hard's tempo. Faster passes, double the APM, near
-    // -instant reactions and flawless execution are the whole difficulty.
-    // Pending sites match Hard's: with one early builder, wider construction
-    // parallelism measurably DELAYS every finished building.
-    econScale: 1, maxPendingSites: 3, workerReserveCoin: 3, towers: 2, walls: 0,
-    armyCap: 32, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 2 },
+    // The relentless expander: on the large arena a strong economy never
+    // plateaus — Godlike keeps compounding producers (expansion 2), opens the
+    // full military spread (stable/engineer/monastery → cavalry, siege,
+    // priests) and turns its surplus coin into a big, DIVERSE army, all at
+    // strictly better cadence, APM, reactions and counter-play than Hard.
+    econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 2, walls: 0,
+    armyCap: 55, unitMix: { soldier: 3, archer: 3, pikeman: 2, knight: 3, lancer: 2, horseknight: 2, horsearcher: 1, onager: 1, trebuchet: 1, priest: 1 },
     attackArmy: 16, minAttackInterval: 80, retreatRatio: 0.55, useBell: true,
     counter: 1, homeGuard: 0.2, raidSize: 5, raidInterval: 150,
   },
@@ -152,7 +156,7 @@ const IDLE: AIProfile = {
   id: 'idle', name: 'Idle', desc: 'Does nothing — proves the seat plumbing.',
   policy: 'idle', difficulty: 'easy', stance: 'balanced',
   macroPeriod: 3600, tacticsPeriod: 3600, reactionDelay: 3600, apm: 0, errorRate: 0,
-  econScale: 0, maxPendingSites: 0, workerReserveCoin: 0, towers: 0, walls: 0,
+  econScale: 0, expansion: 0, maxPendingSites: 0, workerReserveCoin: 0, towers: 0, walls: 0,
   armyCap: 0, unitMix: {},
   attackArmy: 1e9, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
   counter: 0, homeGuard: 0, raidSize: 0, raidInterval: 1e9,
@@ -162,7 +166,7 @@ const RANDOM: AIProfile = {
   id: 'random', name: 'Random', desc: 'Legal random commands on a slow cadence.',
   policy: 'random', difficulty: 'easy', stance: 'balanced',
   macroPeriod: 5, tacticsPeriod: 5, reactionDelay: 5, apm: 12, errorRate: 0,
-  econScale: 1, maxPendingSites: 3, workerReserveCoin: 0, towers: 0, walls: 0,
+  econScale: 1, expansion: 0, maxPendingSites: 3, workerReserveCoin: 0, towers: 0, walls: 0,
   armyCap: 12, unitMix: { soldier: 1, archer: 1 },
   attackArmy: 1e9, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
   counter: 0, homeGuard: 0, raidSize: 0, raidInterval: 1e9,
