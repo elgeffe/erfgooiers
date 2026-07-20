@@ -121,8 +121,10 @@ function goals(towers: number, scale: number): BuildGoal[] {
     { key: 'goldmine', target: 2, priority: 52, category: 'coin', minScale: 0.8 },
     // a second quarry doubles stone income to fund the stone sinks — roads and
     // curtain walls — the way a real player bankrolls infrastructure rather
-    // than starving construction for it (comes right after the core military)
-    { key: 'quarry', target: 2, priority: 55, category: 'economy', minScale: 0.8 },
+    // than starving construction for it. A COMPETENT-tier play (Easy stays on
+    // one quarry): reading the map and doubling a key income is exactly the
+    // skill the ladder is meant to separate.
+    { key: 'quarry', target: 2, priority: 55, category: 'economy', minScale: 1 },
     { key: 'sawmill', target: 2, priority: 50, category: 'economy', minScale: 1 },
     // (curtain walls & gates are planned by planFortification, not listed here)
     { key: 'quarry', target: 3, priority: 34, category: 'economy', minScale: 1.1 },
