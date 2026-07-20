@@ -12,6 +12,8 @@
     "typecheck:tools": "tsc -p tsconfig.tools.json --noEmit",
     "preview": "vite preview",
     "selfplay": "tsx tools/selfplay/cli.ts",
+    "campaign": "tsx tools/selfplay/campaign.ts",
+    "extract": "tsx tools/selfplay/extract.ts",
     "test": "vitest run"
   },
   "dependencies": {
