@@ -46,6 +46,7 @@ objects once, and rebuilds level-scoped `World` and `Game` instances.
 | HUD/shop | `src/ui/UI.ts`, `Shop.ts`, `icons.ts` | DOM HUD, inspectors, shop, shared SVG icons |
 | Audio | `src/audio/Audio.ts` | Procedural SFX and music/mood |
 | Content | `src/data/` | Items, buildings, levels, units, heroes, cards, mutators, meta |
+| Skirmish AI | `src/ai/` | Headless CPU players: perception, policies, tactics, placement, controller |
 | Shared types | `src/types.ts` | Cross-layer data contracts and key unions |
 
 ### Layer boundaries
@@ -186,6 +187,19 @@ hard placement pressure.
   lives in `src/data/skirmishLevels.ts` with no PvE, and the first storehouse to fall ends
   the match via `Game.eliminated` (the shared `defeat` flag stays co-op/solo only). See
   `docs/skirmish-design.md` for the N-player plan and the beta backlog.
+- Co-op Expedition, PvP Skirmish, and Skirmish vs CPU are all modes of ONE multiplayer
+  system in `main.ts`: a `MultiplayerSession` is a set of seats (local human / remote
+  human / CPU) playing a mode (`expedition` | `skirmish`) over a transport (`network`
+  relay | `local` browser), and `buildMultiplayerLevel` is the single shared sim
+  construction path. New modes/seat kinds extend that session, not a new subsystem.
+- A beta **Skirmish vs CPU** mode plays the same skirmish level against a local AI seat
+  (or hands both seats to CPUs and spectates):
+  `src/ai/` holds the headless agent (perception → strategy → tactics → actuation behind
+  `AIController`; only `Game` reads + `GameCommand` writes, so the CPU cannot cheat),
+  `src/data/aiProfiles.ts` the difficulty × stance knob table, and `src/game/replay.ts`
+  records every match as seed + command log with deterministic re-simulation. The
+  `npm run selfplay` runner (`tools/selfplay/`) races AI profiles headlessly across seeds
+  and reports win rates; `docs/skirmish-ai-design.md` tracks the phased plan and status.
 - The physical hero unit and functional equipment slots are not implemented yet.
 - Combat units include soldiers, archers, knights, and several enemy/wild archetypes.
 - Army controls include box/double-click selection, minimap highlighting, groups,

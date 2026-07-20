@@ -156,7 +156,11 @@ export class WorkerSystem {
           building.working = false;
           const output = def.recipe.out;
           if (def.recipe.globalOutput) {
-            const stock = this.ports.primaryStore().stock!;
+            // the OWNER'S castle, not the primary store: in co-op and skirmish
+            // the two seats run separate economies, and a p2 mint paying into
+            // p1's castle would hand its coin to an ally — or a rival
+            const owner = building.owner === 'p2' ? 'p2' : 'p1';
+            const stock = this.ports.storeFor(owner).stock!;
             stock[output] = (stock[output] || 0) + 1;
           } else {
             building.out[output] = (building.out[output] || 0) + 1;

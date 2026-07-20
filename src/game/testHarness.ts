@@ -3,8 +3,11 @@ import { World } from '../world/World';
 import { simRng, uiRng } from '../engine/rng';
 import { Modifiers } from './Modifiers';
 import { Game } from './Game';
+import { Objective } from './Objectives';
+import { SKIRMISH_LEVEL } from '../data/skirmishLevels';
+import type { LevelDef } from '../data/levels';
 import type { View } from '../render/View';
-import type { Building, PlayerId, Unit, UnitOrder } from '../types';
+import { PLAYER_IDS, type Building, type PlayerId, type Unit, type UnitOrder } from '../types';
 
 /**
  * Headless test double for the View: the simulation only ever asks it to
@@ -23,6 +26,7 @@ export function stubView(world: World): View {
     addRoad() {}, removeRoad() {},
     addFieldCrop() {}, scaleFieldCrop() {}, treeMatured() {}, addTree() {},
     createBuildingMesh: () => new THREE.Group(),
+    createTraderCaravan: () => new THREE.Group(),
     createScaffold: () => ({ group: new THREE.Group(), frame: new THREE.Group() }),
     createPlotMarker: () => new THREE.Group(),
     createFlag: () => new THREE.Group(),
@@ -57,6 +61,30 @@ export function makeTestGame(options: TestGameOptions = {}): { game: Game; world
   const game = new Game(world, stubView(world), new Modifiers(), options.localPlayerId ?? 'p1');
   if (options.coop ?? true) game.initCoOp(); else game.init();
   return { game, world };
+}
+
+/**
+ * A full renderer-free 1v1 skirmish, mirroring main.ts's browser setup exactly
+ * (same rng seeding, teams, kits, spawn order — no heroes on either seat), so
+ * a headless match, a browser match, and a replay re-simulation of either all
+ * walk the same deterministic path. Shared by tests, replay.ts and the
+ * tools/selfplay tournament runner.
+ */
+export function makeSkirmishGame(seed: number, level: LevelDef = SKIRMISH_LEVEL): { game: Game; world: World; level: LevelDef } {
+  simRng.reseed(seed ^ 0x5bd1e995);
+  uiRng.reseed(seed ^ 0x27d4eb2f);
+  const world = new World({ seed, ...level.world, biome: 'gooi' });
+  const game = new Game(world, stubView(world), new Modifiers(), 'p1');
+  game.objective = new Objective(level.objectives[0]);
+  game.setTeams({ p1: 0, p2: 1, enemy: 2, wild: 2 });
+  game.initCoOp(level.kit, level.kit);
+  game.setEnemies(level.enemies ?? null);
+  for (const playerId of PLAYER_IDS) {
+    const store = game.storeFor(playerId);
+    const sx = world.wx(store.x) + 0.5, sz = world.wz(store.y) + 0.5;
+    for (const group of level.startArmy ?? []) game.spawnSquad(group.kind, group.count, sx, sz, 'player', playerId);
+  }
+  return { game, world, level };
 }
 
 /** Deterministic empty grass map for combat timing tests. */

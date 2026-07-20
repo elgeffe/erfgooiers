@@ -48,7 +48,8 @@ export function applyGameCommand(game: Game, playerId: PlayerId, command: GameCo
     case 'setPriority': {
       const entity = game.entityById(command.siteId);
       if (!entity || !('def' in entity) || entity.removed || entity.owner !== playerId) return fail('not_your_building');
-      const prioritizable = entity.isSite || !!(entity.def.recipe || entity.def.gather);
+      // markets are prioritizable too: exports can be an economy's only coin
+      const prioritizable = entity.isSite || !!(entity.def.recipe || entity.def.gather) || entity.key === 'market';
       if (!prioritizable) return fail('not_prioritizable');
       if (!!entity.priority !== command.priority) game.togglePriority(entity as Site | Building);
       return ok;
@@ -129,6 +130,12 @@ export function applyGameCommand(game: Game, playerId: PlayerId, command: GameCo
     }
     case 'setBell': {
       game.setBell(playerId, command.active);
+      return ok;
+    }
+    case 'configureMarket': {
+      const b = buildingOwnedBy(game, command.buildingId, playerId);
+      if (!b || b.key !== 'market') return fail('not_your_market');
+      game.configureMarket(b, command.orders);
       return ok;
     }
     case 'requestTrade':

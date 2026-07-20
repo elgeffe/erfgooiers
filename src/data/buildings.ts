@@ -153,7 +153,9 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     tower: { range: 8, dmg: 11, rate: 1.5 } },
 
   wall: { name: 'Stone Wall', desc: 'A solid stretch of rampart — raiders must batter it down to pass', model: 'mine',
-    cost: { stone: 4 }, roof: 0x8a9095, wall: 0x9aa0a3, accent: 0x6a7076, hp: 600, bulwark: true, entrance: 'none' },
+    // cheap enough to layer: proper defence wants concentric curtains, and at
+    // four stone a segment nobody (human or CPU) could afford a second ring
+    cost: { stone: 2 }, roof: 0x8a9095, wall: 0x9aa0a3, accent: 0x6a7076, hp: 600, bulwark: true, entrance: 'none' },
 
   gate: { name: 'Gate', desc: 'A fortified archway: your own units pass freely, enemies must break it down', model: 'mine',
     cost: { timber: 2, stone: 3 }, roof: 0x77593a, wall: 0x9aa0a3, accent: 0x6b4a2f, hp: 450, bulwark: true, gate: true, entrance: 'through' },

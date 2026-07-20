@@ -26,7 +26,9 @@ describe('Game deterministic regression guardrails', () => {
 
     game.setBell('p1', false);
     tick(game, 18);
-    expect(gameplayFingerprintHash(game)).toBe('0e9900bc');
+    // golden regenerated 2026-07: deeper gold/coal deposits + raised MIN_ORE
+    // floors intentionally reshaped worldgen's rnd draw on this seed
+    expect(gameplayFingerprintHash(game)).toBe('bb034b1b');
   });
 
   it('launches a timed wave on its exact fixed-step boundary', () => {

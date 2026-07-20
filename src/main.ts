@@ -7,7 +7,7 @@ import { Controls } from './input/Controls';
 import { Shop } from './ui/Shop';
 import { logoSVG } from './ui/logo';
 import { randomSeed, simRng, uiRng } from './engine/rng';
-import { Modifiers } from './game/Modifiers';
+import { Modifiers, type ModifierSpec } from './game/Modifiers';
 import { Objective, ascendObjective } from './game/Objectives';
 import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID, cardUnlocked, specsFor } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
@@ -29,10 +29,14 @@ import { CoOpController } from './ui/CoOpController';
 import * as Save from './game/SaveGame';
 import { audio } from './audio/Audio';
 import { PeerCoOpClient, type ConnectionSnapshot } from './net/PeerCoOpClient';
-import type { AcceptedCommand, ExpeditionDifficulty, GameCommand } from './net/protocol';
+import { PLAYER_COLOR_PRESETS, type AcceptedCommand, type ExpeditionDifficulty, type GameCommand } from './net/protocol';
 import { applyGameCommand } from './game/commands';
 import { EXPEDITION_DIFFICULTY, EXPEDITION_LEVEL_COUNT, expeditionLevelFor } from './data/coOpLevels';
 import { SKIRMISH_LEVEL } from './data/skirmishLevels';
+import { AIController } from './ai/AIController';
+import { AI_PROFILES, aiProfile, type AIDifficulty, type AIStance } from './data/aiProfiles';
+import { ReplayRecorder, serializeReplay, skirmishWinner, type Replay } from './game/replay';
+import type { PlayerId } from './types';
 
 /* =====================================================================
    Erfgooiers — roguelite economy builder set in Het Gooi.
@@ -94,8 +98,48 @@ let phase: Phase = 'menu';
 let currentLevel: LevelDef | null = null;
 let sandbox = false;             // free-build mode: no objective, no timer, no save
 
-// ---------- co-op expedition state ----------
-let coopRun: { level: number; difficulty: ExpeditionDifficulty; skirmish: boolean } | null = null;
+/* =====================================================================
+   Multiplayer — one system, several modes.
+   A multiplayer session is a set of SEATS (local human, remote human, CPU)
+   playing one MODE (co-op Expedition, or PvP Skirmish) over one TRANSPORT
+   (the host-ordered network relay, or this browser alone). Skirmish vs CPU
+   and CPU-vs-CPU spectating are the same system as networked play — only
+   the seat kinds and the command transport differ. CPU seats tick from the
+   fixed-step loop and submit through the same applyGameCommand seam as any
+   human, and local matches record into a downloadable replay.
+   ===================================================================== */
+type MultiplayerMode = 'expedition' | 'skirmish';
+
+interface MultiplayerSeat {
+  id: PlayerId;
+  kind: 'local' | 'remote' | 'cpu';
+  /** Human seats may bring a hero (network lobbies); CPU seats never do. */
+  hero?: string | null;
+  /** Preset building paint for the seat. */
+  colorHex?: number;
+  /** CPU seats: the AIProfile id driving the seat. */
+  profile?: string;
+}
+
+interface MultiplayerSession {
+  mode: MultiplayerMode;
+  transport: 'network' | 'local';
+  seats: MultiplayerSeat[];
+  /** Expedition ladder position (1 for skirmish). */
+  level: number;
+  difficulty: ExpeditionDifficulty;
+  /** Local transport only: CPU seat drivers + the match record. */
+  controllers: AIController[];
+  recorder: ReplayRecorder | null;
+  /** True when every seat is a CPU and the local player only watches. */
+  spectate: boolean;
+  clock: { tick: number };
+}
+
+let multiplayer: MultiplayerSession | null = null;
+const networkSession = (): MultiplayerSession | null => multiplayer?.transport === 'network' ? multiplayer : null;
+const localSession = (): MultiplayerSession | null => multiplayer?.transport === 'local' ? multiplayer : null;
+let lastSkirmishReplay: Replay | null = null;
 let expeditionStartSent = false; // host guard: fire one start per both-ready lobby
 let coopCmdSeq = 0;
 let coopConnected = false;       // frame loop freezes the co-op sim while offline
@@ -376,11 +420,110 @@ function applyAcceptedCommand(accepted: AcceptedCommand): void {
     if (coop.snapshot().room) startCoopLevel(command.seed, command.level);
     return;
   }
-  if (!game || !coopRun) return;
+  if (!game || !networkSession()) return;
   applyGameCommand(game, accepted.playerId, command);
 }
 
-/** Build one Expedition level for both peers from the shared seed. */
+/** What buildMultiplayerLevel needs to raise one level for any mode/transport. */
+interface MultiplayerLevelSetup {
+  seed: number;
+  mode: MultiplayerMode;
+  level: LevelDef;
+  localSeat: PlayerId;
+  seats: MultiplayerSeat[];
+  /** Shared rule base applied to every seat (expedition difficulty specs). */
+  difficultySpecs: ModifierSpec[];
+  timerMult: number;
+}
+
+/**
+ * The one construction path every multiplayer mode shares: the deterministic
+ * sim (both settlements, diplomacy, garrisons, per-seat rule sets and heroes)
+ * plus the common HUD chrome. Identical on every peer given the same setup,
+ * which is what keeps networked matches in lockstep and local matches
+ * replayable. The caller wires the command transport afterwards.
+ */
+function buildMultiplayerLevel(setup: MultiplayerLevelSetup): { world: World; game: Game } {
+  const { level, mode } = setup;
+  currentLevel = level;
+  simRng.reseed(setup.seed ^ 0x5bd1e995);
+  uiRng.reseed(setup.seed ^ 0x27d4eb2f);
+  const world = new World({ seed: setup.seed, ...level.world, biome: 'gooi' });
+  view.loadWorld(world);
+  const g = new Game(world, view, new Modifiers([...setup.difficultySpecs]), setup.localSeat);
+  game = g;
+  // Each seat's colour paints its buildings, and its hero's rule specs layer
+  // onto the shared difficulty base to form that seat's own Modifiers — one
+  // seat's hero never buffs another. Set both before initCoOp so the starting
+  // settlement already reflects them (colour, hero perks like extra serfs).
+  for (const seat of setup.seats) {
+    if (seat.colorHex !== undefined) g.playerColors.set(seat.id, seat.colorHex);
+    g.setPlayerMods(seat.id, [...setup.difficultySpecs, ...heroSpecsFor(seat.hero ?? null)]);
+  }
+  g.toast = (m, c) => ui.toast(m, c);
+  g.onSelect = o => ui.showInspector(o);
+  g.sfx = name => audio.play(name as any);
+  audio.setBiome('gooi');
+  audio.setLevel(level.index);
+  g.onGold = amt => { if (run) { run.gold = Math.max(0, run.gold + amt); if (amt > 0) goldEarnedThisRun += amt; ui.setGold(run.gold); } };
+  g.onHurt = (x, z) => view.spawnHurt(x, z);
+  g.onDeath = (x, z, _fac, color, role, scale) => view.spawnCorpse(x, z, color, role, scale);
+  g.objective = new Objective(level.objectives[0]);
+  // Skirmish diplomacy: each seat on its own team, so the shared combat
+  // systems treat the rival settlement as hostile. PvE owners keep a team of
+  // their own even though the skirmish level spawns none.
+  if (mode === 'skirmish') g.setTeams({ p1: 0, p2: 1, enemy: 2, wild: 2 });
+  g.initCoOp(level.kit, level.kit);
+  ui.setGame(g);
+  ui.setPerks([], []);
+  controls.setGame(g);
+  g.setEnemies(level.enemies ?? null);
+  ui.setMutators([]);
+  // Each settlement gets the shared level garrison plus its seat's hero and
+  // warband — spawned in fixed seat order so every peer builds the same sim.
+  for (const seat of setup.seats) {
+    const st = g.storeFor(seat.id);
+    const sx = world.wx(st.x) + 0.5, sz = world.wz(st.y) + 0.5;
+    const heroDef = seat.hero ? HERO_BY_ID[seat.hero] : null;
+    for (const a of [...(level.startArmy ?? []), ...(heroDef?.startArmy ?? [])]) {
+      // the owner is passed so each fighter's combat stats bake from that
+      // seat's own rule set — identically on every peer
+      g.spawnSquad(a.kind, a.count, sx, sz, 'player', seat.id);
+    }
+    if (heroDef) g.spawnHero(heroDef.id, heroDef.name, seat.id);
+  }
+  // Mount the local seat's hero on the HUD chip, if it brought one.
+  const localHero = setup.seats.find(seat => seat.id === setup.localSeat)?.hero;
+  const localHeroDef = localHero ? HERO_BY_ID[localHero] : null;
+  const heroChip = $('heroChip') as HTMLElement;
+  if (localHeroDef) {
+    $('heroIcon').textContent = localHeroDef.icon;
+    $('heroName').textContent = localHeroDef.name;
+    heroChip.style.display = 'flex';
+  } else heroChip.style.display = 'none';
+  ui.setGold(run?.gold ?? 0);
+  ui.setSandbox(false);
+  // the objective card opens the full checklist (multiplayer has no briefings)
+  $('objective').classList.add('clickable');
+  $('objective').title = 'Click for the full objective checklist';
+  ($('btnDebugWin') as HTMLElement).style.display = 'none'; // a local-only win would desync
+  ($('sandboxbar') as HTMLElement).style.display = 'none';
+  document.body.classList.remove('sandbox');
+  levelHardTimer = Math.round(level.hardTimer * setup.timerMult);
+  ui.setLevel(level.index, level.name);
+  ui.setObjective(g.objective.brief());
+  ui.updateObjective(g.objective.nextStepLabel(g), 0, levelHardTimer);
+  const home = g.storeFor(setup.localSeat);
+  view.centerOn(world.wx(home.x) + 0.5, world.wz(home.y) + 2);
+  view.drawMinimap(g.units);
+  simAcc = 0;
+  phase = 'playing';
+  if ((import.meta as any).env?.DEV) (window as any).game = g;
+  showScreen(null);
+  return { world, game: g };
+}
+
+/** Build one networked level for both peers from the shared seed. */
 function startCoopLevel(seed: number, levelIndex: number): void {
   const snapshot = coop.snapshot();
   const playerId = snapshot.playerId;
@@ -389,107 +532,48 @@ function startCoopLevel(seed: number, levelIndex: number): void {
   if (game) disposeLevel();
   sandbox = false;
   const difficulty = snapshot.room?.settings.difficulty ?? 'erfgooiers';
-  const skirmish = snapshot.room?.settings.mode === 'skirmish';
+  const mode: MultiplayerMode = snapshot.room?.settings.mode === 'skirmish' ? 'skirmish' : 'expedition';
   const diff = EXPEDITION_DIFFICULTY[difficulty];
-  if (!coopRun || levelIndex === 1) {
-    coopRun = { level: levelIndex, difficulty, skirmish };
+  const seats: MultiplayerSeat[] = (['p1', 'p2'] as const).map(id => {
+    const roomPlayer = snapshot.room?.players.find(p => p.id === id);
+    return {
+      id,
+      kind: id === playerId ? 'local' as const : 'remote' as const,
+      hero: roomPlayer?.hero ?? null,
+      colorHex: roomPlayer?.color?.startsWith('#') ? parseInt(roomPlayer.color.slice(1), 16) : undefined,
+    };
+  });
+  if (!networkSession() || levelIndex === 1) {
+    multiplayer = {
+      mode, transport: 'network', seats, level: levelIndex, difficulty,
+      controllers: [], recorder: null, spectate: false, clock: { tick: 0 },
+    };
     run = newRun(seed);          // local gold container — never saved, never shopped (yet)
     clearedThisRun = 0;
     goldEarnedThisRun = 0;
   } else {
-    coopRun.level = levelIndex;
+    multiplayer!.level = levelIndex;
     run!.levelIndex = levelIndex;
   }
-  const level = skirmish ? SKIRMISH_LEVEL : expeditionLevelFor(levelIndex);
-  currentLevel = level;
-  simRng.reseed(seed ^ 0x5bd1e995);
-  uiRng.reseed(seed ^ 0x27d4eb2f);
-  const world = new World({ seed, ...level.world, biome: 'gooi' });
-  view.loadWorld(world);
-  game = new Game(world, view, new Modifiers([...diff.specs]), playerId);
-  // Each player's chosen preset colour paints their buildings, and their hero's
-  // rule specs layer onto the shared difficulty base to form that player's own
-  // Modifiers — so one player's hero never buffs the other. Set both before
-  // initCoOp so the starting settlement already reflects them (colour, and
-  // hero perks like the transporter's extra serfs). Single player populates
-  // neither map, so every owner resolves to the one shared rule set.
-  for (const roomPlayer of snapshot.room?.players ?? []) {
-    if (roomPlayer.color?.startsWith('#')) game.playerColors.set(roomPlayer.id, parseInt(roomPlayer.color.slice(1), 16));
-    game.setPlayerMods(roomPlayer.id, [...diff.specs, ...heroSpecsFor(roomPlayer.hero)]);
-  }
-  game.toast = (m, c) => ui.toast(m, c);
-  game.onSelect = o => ui.showInspector(o);
-  game.sfx = name => audio.play(name as any);
-  audio.setBiome('gooi');
-  audio.setLevel(level.index);
-  game.onGold = amt => { if (run) { run.gold = Math.max(0, run.gold + amt); if (amt > 0) goldEarnedThisRun += amt; ui.setGold(run.gold); } };
-  game.onHurt = (x, z) => view.spawnHurt(x, z);
-  game.onDeath = (x, z, _fac, color, role, scale) => view.spawnCorpse(x, z, color, role, scale);
-  game.objective = new Objective(level.objectives[0]);
-  // Skirmish: each player fights for their own team, so the shared combat
-  // systems treat the rival settlement as hostile. PvE owners keep a team of
-  // their own even though a skirmish level spawns none.
-  if (skirmish) game.setTeams({ p1: 0, p2: 1, enemy: 2, wild: 2 });
-  game.initCoOp(level.kit, level.kit);
-  // in co-op every gameplay intent goes through the host command sequencer;
-  // the accepted broadcast (applyAcceptedCommand) mutates the sim on both peers
-  game.submitCommand = command => { sendCoopCommand(command); };
-  ui.setGame(game);
-  ui.setPerks([], []);
-  controls.setGame(game);
-  game.setEnemies(level.enemies ?? null);
-  ui.setMutators([]);
-  // Each settlement gets the shared level garrison plus its player's chosen
-  // hero and that hero's warband — spawned identically on both peers from the
-  // shared room state so the two sims stay in lockstep.
-  const roomById = new Map((snapshot.room?.players ?? []).map(p => [p.id, p]));
-  for (const pid of ['p1', 'p2'] as const) {
-    const st = game.storeFor(pid);
-    const sx = world.wx(st.x) + 0.5, sz = world.wz(st.y) + 0.5;
-    const heroDef = roomById.get(pid)?.hero ? HERO_BY_ID[roomById.get(pid)!.hero!] : null;
-    for (const a of [...(level.startArmy ?? []), ...(heroDef?.startArmy ?? [])]) {
-      // Pass the owner so each fighter's combat stats bake from that player's
-      // hero rule set — identically on both peers.
-      game.spawnSquad(a.kind, a.count, sx, sz, 'player', pid);
-    }
-    if (heroDef) game.spawnHero(heroDef.id, heroDef.name, pid);
-  }
-  // Mount the local player's hero on the HUD chip (co-op runs no shared hero).
-  const localHeroDef = roomById.get(playerId)?.hero ? HERO_BY_ID[roomById.get(playerId)!.hero!] : null;
-  const coopHeroChip = $('heroChip') as HTMLElement;
-  if (localHeroDef) {
-    $('heroIcon').textContent = localHeroDef.icon;
-    $('heroName').textContent = localHeroDef.name;
-    coopHeroChip.style.display = 'flex';
-  } else coopHeroChip.style.display = 'none';
-  ui.setGold(run!.gold);
-  ui.setSandbox(false);
+  const level = mode === 'skirmish' ? SKIRMISH_LEVEL : expeditionLevelFor(levelIndex);
+  buildMultiplayerLevel({
+    seed, mode, level, localSeat: playerId, seats,
+    difficultySpecs: [...diff.specs], timerMult: diff.timerMult,
+  });
+  // over the network every gameplay intent goes through the host command
+  // sequencer; the accepted broadcast (applyAcceptedCommand) mutates the sim
+  // on both peers
+  game!.submitCommand = command => { sendCoopCommand(command); };
   ui.setCoOp(true);
-  // no story briefings in co-op, but the objective card still opens its checklist
-  $('objective').classList.add('clickable');
-  $('objective').title = 'Click for the full objective checklist';
-  ($('btnDebugWin') as HTMLElement).style.display = 'none'; // a local-only win would desync
-  ($('sandboxbar') as HTMLElement).style.display = 'none';
-  levelHardTimer = Math.round(level.hardTimer * diff.timerMult);
-  ui.setLevel(level.index, level.name);
-  ui.setObjective(game.objective.brief());
-  ui.updateObjective(game.objective.nextStepLabel(game), 0, levelHardTimer);
-  const home = game.storeFor(playerId);
-  view.centerOn(world.wx(home.x) + 0.5, world.wz(home.y) + 2);
-  view.drawMinimap(game.units);
-  simAcc = 0;
-  phase = 'playing';
-  if ((import.meta as any).env?.DEV) (window as any).game = game;
-  showScreen(null);
-  ui.toast(skirmish ? `Skirmish — ${level.name}` : `Expedition level ${level.index} — ${level.name}`);
+  ui.toast(mode === 'skirmish' ? `Skirmish — ${level.name}` : `Expedition level ${level.index} — ${level.name}`);
 }
 
 /** Team objective met: interlude, then the host launches the next level. */
 function onCoopLevelClear(): void {
-  if (phase !== 'playing' || !coopRun || !currentLevel) return;
+  if (phase !== 'playing' || !networkSession() || !currentLevel) return;
   clearedThisRun++;
   audio.play('coin');
-  const cleared = coopRun.level;
+  const cleared = networkSession()!.level;
   const last = cleared >= EXPEDITION_LEVEL_COUNT;
   disposeLevel();
   if (last) {
@@ -512,10 +596,176 @@ function onCoopLevelClear(): void {
   }
 }
 
+// ---------- skirmish vs CPU (local, no lobby) ----------
+interface SkaiSeatCfg { difficulty: AIDifficulty; stance: AIStance; policy: string }
+let skaiCfg: { seat: 'play' | 'spectate'; east: SkaiSeatCfg; west: SkaiSeatCfg } = {
+  seat: 'play',
+  east: { difficulty: 'easy', stance: 'balanced', policy: 'classic' },   // the rival (p2)
+  west: { difficulty: 'hard', stance: 'balanced', policy: 'classic' },   // your seat when spectating (p1)
+};
+
+function skaiProfileId(seat: SkaiSeatCfg): string {
+  return seat.policy === 'classic' ? `classic-${seat.difficulty}-${seat.stance}` : seat.policy;
+}
+
+function openSkirmishAISetup(): void {
+  renderSkirmishAISetup();
+  showScreen('skirmishaiselect');
+}
+
+function renderSkirmishAISetup(): void {
+  const el = $('skaiOptions');
+  const spectate = skaiCfg.seat === 'spectate';
+  const seatGroups = (side: 'east' | 'west', title: string): string => {
+    const cfg = skaiCfg[side];
+    const classic = cfg.policy === 'classic';
+    const groups: { key: keyof SkaiSeatCfg; label: string; opts: [string, string][]; hidden?: boolean }[] = [
+      { key: 'policy', label: `${title} — Classic is the real opponent; Idle & Random are training dummies`, opts: [['classic', '⚔️ Classic'], ['random', '🎲 Random'], ['idle', '💤 Idle']] },
+      { key: 'difficulty', label: 'Difficulty — a better player, never a cheating one', hidden: !classic, opts: [['easy', '🌱 Easy'], ['hard', '⚔️ Hard'], ['godlike', '🔥 Godlike']] },
+      { key: 'stance', label: 'Stance', hidden: !classic, opts: [['defensive', '🛡️ Defensive'], ['balanced', '⚖️ Balanced'], ['offensive', '🗡️ Offensive']] },
+    ];
+    let block = '';
+    for (const grp of groups) {
+      if (grp.hidden) continue;
+      block += `<div class="optgroup"><div class="optlabel">${grp.label}</div><div class="optrow">`;
+      for (const [val, label] of grp.opts) {
+        block += `<button class="opt${cfg[grp.key] === val ? ' on' : ''}" data-side="${side}" data-key="${grp.key}" data-val="${val}">${label}</button>`;
+      }
+      block += '</div></div>';
+    }
+    block += `<div class="metaline">${AI_PROFILES[skaiProfileId(cfg)].name} — ${AI_PROFILES[skaiProfileId(cfg)].desc}</div>`;
+    return block;
+  };
+  let s = '<div class="optgroup"><div class="optlabel">Your seat</div><div class="optrow">'
+    + `<button class="opt${!spectate ? ' on' : ''}" data-seat="play">🧑‍🌾 Play the west seat</button>`
+    + `<button class="opt${spectate ? ' on' : ''}" data-seat="spectate">👁️ Spectate — CPUs in both seats</button>`
+    + '</div></div>';
+  if (spectate) s += seatGroups('west', 'West CPU (your colours)');
+  s += seatGroups('east', spectate ? 'East CPU' : 'Opponent brain');
+  el.innerHTML = s;
+  el.querySelectorAll<HTMLElement>('.opt[data-seat]').forEach(b => {
+    b.onclick = () => { skaiCfg.seat = b.dataset.seat as 'play' | 'spectate'; audio.play('click'); renderSkirmishAISetup(); };
+  });
+  el.querySelectorAll<HTMLElement>('.opt[data-key]').forEach(b => {
+    b.onclick = () => {
+      (skaiCfg[b.dataset.side as 'east' | 'west'] as any)[b.dataset.key!] = b.dataset.val;
+      audio.play('click');
+      renderSkirmishAISetup();
+    };
+  });
+}
+
+/** Start a skirmish over the LOCAL transport: CPU seats instead of a lobby.
+ *  Same builder, same level, same rules as the networked mode — only the
+ *  seat kinds and the command path differ. */
+function startSkirmishAI(): void {
+  if (game) disposeLevel();
+  sandbox = false;
+  const seed = randomSeed();
+  run = newRun(seed);           // local gold container — nothing is banked
+  clearedThisRun = 0;
+  goldEarnedThisRun = 0;
+  const level = SKIRMISH_LEVEL;
+  const spectate = skaiCfg.seat === 'spectate';
+  const seats: MultiplayerSeat[] = [
+    spectate
+      ? { id: 'p1', kind: 'cpu', profile: skaiProfileId(skaiCfg.west), colorHex: parseInt(PLAYER_COLOR_PRESETS[0].slice(1), 16) }
+      : { id: 'p1', kind: 'local', colorHex: parseInt(PLAYER_COLOR_PRESETS[0].slice(1), 16) },
+    { id: 'p2', kind: 'cpu', profile: skaiProfileId(skaiCfg.east), colorHex: parseInt(PLAYER_COLOR_PRESETS[1].slice(1), 16) },
+  ];
+  multiplayer = {
+    mode: 'skirmish', transport: 'local', seats, level: 1, difficulty: 'erfgooiers',
+    controllers: [], recorder: null, spectate, clock: { tick: 0 },
+  };
+  const session = multiplayer;
+  const { world } = buildMultiplayerLevel({
+    seed, mode: 'skirmish', level, localSeat: 'p1', seats,
+    difficultySpecs: [], timerMult: 1,
+  });
+  const recorder = new ReplayRecorder(seed, level.name, seats.map(seat =>
+    seat.kind === 'cpu' ? { id: seat.id, kind: 'ai' as const, profile: seat.profile! } : { id: seat.id, kind: 'human' as const }));
+  session.recorder = recorder;
+  // the local seat's commands flow through the recorder, then apply directly;
+  // a spectator's clicks are dropped — the ants run their own farm
+  game!.submitCommand = spectate
+    ? () => { ui.toast('Spectating — both seats are CPU-driven', 'err'); }
+    : command => {
+      recorder.record(session.clock.tick, 'p1', command);
+      applyGameCommand(game!, 'p1', command);
+    };
+  session.controllers = seats
+    .filter(seat => seat.kind === 'cpu')
+    .map(seat => new AIController({
+      game: game!, world, playerId: seat.id,
+      profile: aiProfile(seat.profile!),
+      // seat-index derivation as in headless self-play (p1 → 1, p2 → 2)
+      seed: (seed ^ (seat.id === 'p1' ? 1 : 2) * 0x9e3779b9) >>> 0,
+      submit: command => {
+        recorder.record(session.clock.tick, seat.id, command);
+        return applyGameCommand(game!, seat.id, command);
+      },
+    }));
+  lastSkirmishReplay = null;
+  ui.setCoOp(false);
+  const cpuName = (id: PlayerId): string => AI_PROFILES[seats.find(s => s.id === id)!.profile!].name;
+  ui.toast(spectate
+    ? `Spectating ${cpuName('p1')} vs ${cpuName('p2')} — ${level.name}`
+    : `Skirmish vs ${cpuName('p2')} — ${level.name}`);
+}
+
+/** The local-transport match resolved: winner off the same eliminated-set
+ *  rule as networked skirmish, plus a downloadable replay of the match. */
+function onSkirmishAIEnd(): void {
+  const session = localSession();
+  if (phase !== 'playing' || !session || !game) return;
+  const { spectate } = session;
+  const winner = skirmishWinner(game);
+  const anyLost = game.eliminated.size > 0;
+  const seatName = (id: PlayerId): string => {
+    const seat = session.seats.find(s => s.id === id);
+    return seat?.kind === 'cpu' ? `${AI_PROFILES[seat.profile!]?.name ?? seat.profile} CPU` : 'You';
+  };
+  lastSkirmishReplay = session.recorder?.finish({
+    winner,
+    ticks: session.clock.tick,
+    reason: anyLost ? 'storehouse' : 'timeout',
+  }) ?? null;
+  const victory = winner === 'p1';
+  audio.play(spectate || victory ? 'coin' : 'error');
+  disposeLevel();
+  multiplayer = null;
+  phase = 'summary';
+  if (spectate) {
+    $('sumTitle').textContent = winner ? `Skirmish over — ${seatName(winner)} wins!` : 'Skirmish drawn';
+    $('sumSub').textContent = winner
+      ? `${seatName(winner)} razed the rival storehouse. The ants have spoken.`
+      : 'The clock ran out with both storehouses standing — a stalemate.';
+  } else {
+    $('sumTitle').textContent = victory ? 'Skirmish won!' : anyLost ? 'Skirmish lost' : 'Skirmish drawn';
+    $('sumSub').textContent = victory
+      ? `The ${seatName('p2')}'s storehouse lies in ruins — the border is yours.`
+      : anyLost
+        ? `Your storehouse has fallen to the ${seatName('p2')}.`
+        : 'The clock ran out with both storehouses standing — a stalemate.';
+  }
+  $('sumBody').innerHTML = `Gold earned <b>${goldEarnedThisRun}</b><br>Skirmish vs CPU is a beta mode — no Heritage or rewards are banked yet.`;
+  ($('btnSumReplay') as HTMLElement).style.display = '';
+  showScreen('summary');
+  run = null;
+}
+
+/** Tear down a live local-transport match (pause menu abandon). */
+function endSkirmishAISession(): void {
+  if (phase === 'playing') disposeLevel();
+  multiplayer = null;
+  run = null;
+  goMenu();
+}
+
 /** A storehouse fell (or the clock ran out): both peers resolve the same
  *  winner from the deterministic sim, each showing their own side of it. */
 function onSkirmishEnd(): void {
-  if (phase !== 'playing' || !coopRun || !game) return;
+  if (phase !== 'playing' || !networkSession() || !game) return;
   const localId = coop.snapshot().playerId ?? 'p1';
   const localLost = game.eliminated.has(localId);
   const anyLost = game.eliminated.size > 0;
@@ -549,7 +799,7 @@ function renderCoopSummary(victory: boolean, reason: 'timeout' | 'castle' = 'tim
 /** Tear down the co-op session state and release the seat. */
 function endCoopSession(): void {
   if (coopAdvanceTimer !== null) { clearTimeout(coopAdvanceTimer); coopAdvanceTimer = null; }
-  coopRun = null;
+  multiplayer = null;
   run = null;
   expeditionStartSent = false;
   ui.setCoOp(false);
@@ -865,7 +1115,7 @@ function onDefeat(reason: 'timeout' | 'castle' = 'timeout'): void {
   summaryNote = '';
   disposeLevel();
   phase = 'summary';
-  if (coopRun) {
+  if (networkSession()) {
     renderCoopSummary(false, reason);
     showScreen('summary');
     endCoopSession();
@@ -877,7 +1127,7 @@ function onDefeat(reason: 'timeout' | 'castle' = 'timeout'): void {
 }
 
 function debugWin(): void {
-  if (phase === 'playing') onLevelClear();
+  if (phase === 'playing' && !multiplayer) onLevelClear();
 }
 
 function shopContinue(contract: Contract): void {
@@ -890,7 +1140,8 @@ function shopContinue(contract: Contract): void {
 }
 
 function abandonRun(): void {
-  if (coopRun) { leaveCoop(); return; }
+  if (localSession()) { endSkirmishAISession(); return; }
+  if (networkSession()) { leaveCoop(); return; }
   if (phase === 'playing') disposeLevel();
   if (!sandbox) Save.clearRun();
   sandbox = false;
@@ -901,9 +1152,9 @@ function abandonRun(): void {
 /** Open the in-game pause menu; in co-op the shared sim keeps running. */
 function openPauseMenu(): void {
   if (phase !== 'playing') return;
-  if (!coopRun) ui.setSpeed(0);
+  if (!networkSession()) ui.setSpeed(0);
   controls.resetInput();
-  $('btnRestart').style.display = coopRun ? 'none' : '';
+  $('btnRestart').style.display = multiplayer ? 'none' : '';
   $('pausemenu').style.display = 'flex';
 }
 
@@ -917,7 +1168,7 @@ function resumeGame(): void {
  *  Run-wide cards, contract, hero and seed remain intact. Co-op deliberately
  *  has no local restart: both peers would need a synchronized checkpoint command. */
 function restartLevel(): void {
-  if (phase !== 'playing' || !run || coopRun) return;
+  if (phase !== 'playing' || !run || multiplayer) return;
   run.gold = levelGoldStart;
   goldEarnedThisRun = levelGoldEarnedStart;
   $('pausemenu').style.display = 'none';
@@ -936,10 +1187,12 @@ function clearSaveData(): void {
 }
 
 // ---------- screens (DOM overlays) ----------
-type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'achievements' | 'scoreboard' | 'heroselect' | 'sandboxselect' | 'coopmenu' | 'cooplobby' | null;
+type ScreenId = 'menu' | 'shop' | 'summary' | 'heritage' | 'achievements' | 'scoreboard' | 'heroselect' | 'sandboxselect' | 'skirmishaiselect' | 'coopmenu' | 'cooplobby' | null;
 function showScreen(id: ScreenId): void {
   $('pausemenu').style.display = 'none';
-  for (const s of ['menu', 'shop', 'summary', 'heritage', 'achievements', 'scoreboard', 'heroselect', 'sandboxselect', 'coopmenu', 'cooplobby']) $(s).style.display = id === s ? 'flex' : 'none';
+  for (const s of ['menu', 'shop', 'summary', 'heritage', 'achievements', 'scoreboard', 'heroselect', 'sandboxselect', 'skirmishaiselect', 'coopmenu', 'cooplobby']) $(s).style.display = id === s ? 'flex' : 'none';
+  // the replay button only belongs to a just-finished vs-CPU skirmish
+  if (id !== 'summary') ($('btnSumReplay') as HTMLElement).style.display = 'none';
   $('hud').style.display = phase === 'playing' ? 'block' : 'none';
   // a screen swallows keyups/pointerups — never leave the camera mid-pan
   controls.resetInput();
@@ -951,13 +1204,13 @@ const coopUi = new CoOpController(coop, ui, {
   onConnection: snapshot => { coopConnected = snapshot.status === 'connected'; maybeStartExpedition(snapshot); },
   onAccepted: applyAcceptedCommand,
   onLeave: leaveCoop,
-  isInterlude: () => !!coopRun && phase === 'shop',
+  isInterlude: () => !!networkSession() && phase === 'shop',
 });
 // ---------- direct co-op handshake, lobby, and in-game connection panel ----------
 function openCoopMenu(): void { coopUi.open(); }
 function renderCoopLobby(): void { coopUi.renderLobby(); }
 function leaveCoop(): void {
-  if (coopRun && phase === 'playing') disposeLevel();
+  if (networkSession() && phase === 'playing') disposeLevel();
   endCoopSession();
   goMenu();
 }
@@ -1063,6 +1316,19 @@ $('heroChip').onclick = () => {
 ($('btnSandbox') as HTMLButtonElement).onclick = openSandboxSetup;
 ($('btnSbxBack') as HTMLButtonElement).onclick = goMenu;
 ($('btnSbxStart') as HTMLButtonElement).onclick = startSandbox;
+($('btnSkirmishAI') as HTMLButtonElement).onclick = openSkirmishAISetup;
+($('btnSkaiBack') as HTMLButtonElement).onclick = goMenu;
+($('btnSkaiStart') as HTMLButtonElement).onclick = startSkirmishAI;
+($('btnSumReplay') as HTMLButtonElement).onclick = () => {
+  if (!lastSkirmishReplay) return;
+  const blob = new Blob([serializeReplay(lastSkirmishReplay)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `erfgooiers-skirmish-${lastSkirmishReplay.seed}.replay.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  ui.toast('Replay saved — it re-simulates the whole match from its command log');
+};
 coopUi.install();
 
 installSandboxTools(view, ui, {
@@ -1131,7 +1397,7 @@ let clearArmTimer: number | null = null;
 $('objective').addEventListener('click', () => {
   if (phase !== 'playing' || !game || !game.objective || sandbox) return;
   audio.play('click');
-  if (run && !coopRun && run.ascension === 0 && run.tutorials && currentLevel && storyFor(currentLevel.index)) {
+  if (run && !multiplayer && run.ascension === 0 && run.tutorials && currentLevel && storyFor(currentLevel.index)) {
     showStoryModal(currentLevel.index, true);
   } else {
     showObjectiveModal();
@@ -1234,11 +1500,18 @@ function frame(now: number): void {
 
   if (phase === 'playing' && game && currentLevel && game.objective) {
     // a disconnected co-op peer freezes rather than drifting from its ally
-    const simDt = coopRun && !coopConnected ? 0 : dt;
+    const simDt = networkSession() && !coopConnected ? 0 : dt;
     simAcc += simDt * game.simSpeed;
     let steps = 0;
     const t0 = performance.now();
-    while (simAcc >= TICK && steps < MAX_STEPS) { game.update(TICK); simAcc -= TICK; steps++; }
+    while (simAcc >= TICK && steps < MAX_STEPS) {
+      // CPU seats think before each step, exactly like headless self-play
+      const local = localSession();
+      if (local) for (const controller of local.controllers) controller.tick(TICK);
+      game.update(TICK);
+      if (local) local.clock.tick++;
+      simAcc -= TICK; steps++;
+    }
     simMs += (performance.now() - t0 - simMs) * 0.05;
     if (simAcc > TICK) simAcc = 0;            // drop the backlog rather than fast-forward
 
@@ -1248,9 +1521,16 @@ function frame(now: number): void {
     mmT += dt; if (mmT > 0.5) { mmT = 0; view.drawMinimap(game.units); }
 
     // resolve the level last: win, castle lost, or timeout tears the level down
-    if (st.done) { if (coopRun?.skirmish) onSkirmishEnd(); else if (coopRun) onCoopLevelClear(); else onLevelClear(); }
+    if (st.done) {
+      if (multiplayer?.mode === 'skirmish') { if (multiplayer.transport === 'local') onSkirmishAIEnd(); else onSkirmishEnd(); }
+      else if (networkSession()) onCoopLevelClear();
+      else onLevelClear();
+    }
     else if (game.defeat) onDefeat('castle');
-    else if (remaining <= 0) { if (coopRun?.skirmish) onSkirmishEnd(); else onDefeat('timeout'); }
+    else if (remaining <= 0) {
+      if (multiplayer?.mode === 'skirmish') { if (multiplayer.transport === 'local') onSkirmishAIEnd(); else onSkirmishEnd(); }
+      else onDefeat('timeout');
+    }
   } else if (phase === 'playing' && game && currentLevel) {
     // sandbox: tick the sim with no objective/timer to resolve against
     simAcc += dt * game.simSpeed;

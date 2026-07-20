@@ -1,6 +1,29 @@
 # Skirmish AI — solo vs CPU, difficulty ladder, and experimental agents
 
-Status: **design / epic proposal** (July 2026). Nothing here is implemented yet.
+Status: **Phases 0–2 first slice implemented** (July 2026). The `src/ai/` layer
+(perception → classic strategy → tactics → actuation behind `AIController`),
+the `idle`/`random` seam-provers, `src/data/aiProfiles.ts`, replay
+record/re-simulate (`src/game/replay.ts`), the browser **Skirmish vs CPU** menu
+mode, and the `npm run selfplay` headless tournament runner all exist; the
+vitest suite covers replay determinism, fairness (zero rejected commands), CPU
+budget, and stance separation. The browser now also spectates CPU-vs-CPU
+matches, and co-op/skirmish/vs-CPU share one multiplayer session model in
+`main.ts` (seats × mode × transport). Phases 3+ (learned/adaptive AI, research
+track, online seats) remain unimplemented. `src/game/fortification.ts` is the
+shared fortification planner: layered square curtains with gates (baileys stay
+working ground for the owner's serfs), used by the AI's ring-building, by the
+enemy stronghold generator, and available to future sandbox tools; sieges
+breach the nearest gate when the road to the castle is walled. Walls cost 2
+stone so both humans and CPUs can afford layers; the Classic bot only rings
+its castle on defensive stances (measured: masonry before an army loses).
+Current 6-seed ladder measurements: Classic-Hard beats Idle 5-6/6 and Random
+5/6 with zero rejected commands; Hard-vs-Easy and Godlike-vs-Hard sit near
+parity — the ≥80% tier separation is open and belongs to the Phase 2 balance
+campaign (100+ seeded matches per pair via `npm run selfplay`), not to more
+single-knob changes. Tuning lessons the tournaments established: tempo beats
+greed at every tier, construction parallelism beyond the builder count delays
+everything, raids into stronger garrisons invite base-razing counter-chases,
+and the defensive stance sweep is what stops pursuit suicide.
 Companion documents: [skirmish-design.md](skirmish-design.md) (the PvP mode this AI
 plays), [tensor-networks-for-logistics.md](tensor-networks-for-logistics.md) (the
 prior reality check whose fail-fast discipline the research track inherits).
