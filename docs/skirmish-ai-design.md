@@ -1,32 +1,85 @@
 # Skirmish AI — solo vs CPU, difficulty ladder, and experimental agents
 
-Status: **Phases 0–2 first slice implemented** (July 2026). The `src/ai/` layer
-(perception → classic strategy → tactics → actuation behind `AIController`),
-the `idle`/`random` seam-provers, `src/data/aiProfiles.ts`, replay
-record/re-simulate (`src/game/replay.ts`), the browser **Skirmish vs CPU** menu
-mode, and the `npm run selfplay` headless tournament runner all exist; the
-vitest suite covers replay determinism, fairness (zero rejected commands), CPU
-budget, and stance separation. The browser now also spectates CPU-vs-CPU
-matches, and co-op/skirmish/vs-CPU share one multiplayer session model in
-`main.ts` (seats × mode × transport). Phases 3+ (learned/adaptive AI, research
-track, online seats) remain unimplemented. `src/game/fortification.ts` is the
-shared fortification planner: layered square curtains with gates (baileys stay
-working ground for the owner's serfs), used by the AI's ring-building, by the
-enemy stronghold generator, and available to future sandbox tools; sieges
-breach the nearest gate when the road to the castle is walled. Walls cost 2
-stone so both humans and CPUs can afford layers; the Classic bot only rings
-its castle on defensive stances (measured: masonry before an army loses).
-Current 6-seed ladder measurements: Classic-Hard beats Idle 5-6/6 and Random
-5/6 with zero rejected commands; Hard-vs-Easy and Godlike-vs-Hard sit near
-parity — the ≥80% tier separation is open and belongs to the Phase 2 balance
-campaign (100+ seeded matches per pair via `npm run selfplay`), not to more
-single-knob changes. Tuning lessons the tournaments established: tempo beats
-greed at every tier, construction parallelism beyond the builder count delays
-everything, raids into stronger garrisons invite base-razing counter-chases,
-and the defensive stance sweep is what stops pursuit suicide.
+Status: **Phases 0–2 implemented; the balance pass is the open work** (July 2026).
+The `src/ai/` layer (perception → classic strategy → tactics → actuation behind
+`AIController`), the `idle`/`random` seam-provers, `src/data/aiProfiles.ts`,
+replay record/re-simulate (`src/game/replay.ts`), the browser **Skirmish vs CPU**
+menu mode (play, or spectate CPU-vs-CPU), and the `npm run selfplay` tournament
+runner all exist. Phase 2's evaluation instruments are built: `npm run campaign`
+fans a fixed adjacency ladder across all cores and writes a reproducible
+win-rate matrix + report; `npm run extract` (`src/ai/dataset.ts`) re-simulates
+replays into labelled JSONL (perception features → next macro action), the
+Phase 3 dataset format. Co-op/skirmish/vs-CPU share one multiplayer session
+model in `main.ts` (seats × mode × transport). Phases 3+ (learned/adaptive AI,
+research track, online seats) remain unimplemented.
+
+The **1v1 arena** is a 100×88 map with the two players in opposite corners
+(`initCoOp`'s `diagonal` layout), each corner worldgen-provisioned with a full
+ore spread (coal deepest — it feeds the mint AND every smithy AND armory) plus
+a contested gold-and-ore cluster at map centre. `src/game/fortification.ts` is
+the shared curtain-wall planner (gates keep baileys working; sieges breach the
+nearest gate); walls cost 2 stone so layers are affordable, and the Classic bot
+rings its castle only on defensive stances. The Classic macro no longer
+plateaus: a tier-scaled `expansion` knob (Easy 0 / Hard 1 / Godlike 2) keeps
+compounding producers, chosen by a **producer/consumer balance** model (build
+more of a raw miner while the buildings burning its output outnumber it — a
+stock snapshot can't tell a healthy ~0 intermediate from a starved one), and
+serfs scale with the economy so a sprawling base actually hauls its ore. The
+bot also paves roads (after a quarry, funded by a second) and reactively
+counters the rival's army composition (graded by tier).
+
+**Known limitation → next session's work.** Godlike now expands endlessly, hauls
+its ore, fields a big army (to its cap) with cavalry, and beats Hard — but the
+*full* unit roster (knights, siege, priests) stays out of reach, and the ≥80%
+tier separation is not met (6-seed and 100-seed campaigns put Hard-vs-Easy
+~64–71% and Godlike-vs-Hard ~49–59%). Both trace to the same unsolved problem:
+**production-line balance and its backward chain to unit composition.** See
+[Backward planning: the open balance problem](#backward-planning-the-open-balance-problem).
+Tuning lessons the tournaments established and that the next pass should respect:
+tempo beats greed at every tier; construction parallelism beyond the builder
+count delays everything; raids into stronger garrisons invite base-razing
+counter-chases; the defensive stance sweep stops pursuit suicide; a hidden serf
+cap silently starves a big economy's whole weapon chain.
+
 Companion documents: [skirmish-design.md](skirmish-design.md) (the PvP mode this AI
 plays), [tensor-networks-for-logistics.md](tensor-networks-for-logistics.md) (the
 prior reality check whose fail-fast discipline the research track inherits).
+
+## Backward planning: the open balance problem
+
+The unit-diversity and ladder-separation work left for the next session is one
+problem, and it is best attacked **backwards, from the goal**, not forwards from
+the economy. The forward approach — "build producers, then see what army falls
+out" — is what this pass did, and it kept hitting a moving bottleneck (caps →
+coal → iron → hauling → armour), because each fix exposed the next starved
+stage. The insight to carry in: **it is a two-way street. The army composition
+we want dictates the production lines that must run, which dictate the resources
+that must flow and how, which dictates what the map and the economy must
+provide.** So plan the chain in reverse:
+
+1. **Target army** — the diverse force each tier should field (e.g. Godlike:
+   soldiers + pikemen + archers + knights + cavalry + a little siege + a priest).
+2. **→ Production lines** — derive the throughput each unit demands: knights and
+   horse-knights need a steady **armour** stream (armory ← iron + coal), which
+   competes with weapons (smithy ← iron + coal) and coin (mint ← goldore + coal)
+   for the same **coal** and **iron**. The armour chain is the current wall: coal
+   and iron are shared inputs the mint and smithies drink first.
+3. **→ Resources & logistics** — size the mines, the haulers, and the map
+   provisioning to that throughput. A second guild hall (civilian throughput),
+   armour-chain over-provisioning, and hauler counts are the levers. The map
+   already over-provisions coal per corner; the economy does not yet *convert*
+   it fast enough.
+4. **→ Levers to shape it** — `aiProfiles` knobs, the `expansionValue`
+   producer/consumer model (`src/ai/strategy/classic.ts`), the arena worldgen
+   (`src/world/World.ts`), and unit costs/recipes (`src/data/*`). All four
+   layers exist to serve the target army; tune them together, backwards from it.
+
+Concrete next steps: (a) a target-composition-driven training/build planner that
+reserves armour throughput for knights before the army fills with soldiers;
+(b) a second guild hall for the expanding tiers so civilian training keeps pace;
+(c) re-run `npm run campaign` at 100+ seeds after each change and commit the
+matrix to `docs/ai-experiments/`; (d) only then judge whether the ≥80% ladder
+separation is reachable by hand-tuning or needs the Phase 3 learned policy.
 
 ## The epic
 

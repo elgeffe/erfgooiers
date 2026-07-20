@@ -197,9 +197,17 @@ hard placement pressure.
   `src/ai/` holds the headless agent (perception → strategy → tactics → actuation behind
   `AIController`; only `Game` reads + `GameCommand` writes, so the CPU cannot cheat),
   `src/data/aiProfiles.ts` the difficulty × stance knob table, and `src/game/replay.ts`
-  records every match as seed + command log with deterministic re-simulation. The
-  `npm run selfplay` runner (`tools/selfplay/`) races AI profiles headlessly across seeds
-  and reports win rates; `docs/skirmish-ai-design.md` tracks the phased plan and status.
+  records every match as seed + command log with deterministic re-simulation. Matches run
+  on the 1v1 **arena** (`skirmishLevels.ts`): players in opposite corners (`initCoOp`'s
+  `diagonal` layout), each corner ore-provisioned with a contested cluster at map centre.
+  The Classic macro expands endlessly via a producer/consumer balance model (build more of
+  a miner while the buildings burning its output outnumber it) with serfs scaled to the
+  economy, paves roads after a quarry, and counters the rival's army mix. Tooling under
+  `tools/selfplay/`: `npm run selfplay` races profiles across seeds for win rates,
+  `npm run campaign` fans a fixed ladder across cores into a reproducible win-rate matrix,
+  and `npm run extract` (`src/ai/dataset.ts`) re-simulates replays into labelled JSONL
+  (features → next macro action, the Phase 3 dataset). `docs/skirmish-ai-design.md` tracks
+  the phased plan, status, and the open production-line-balance problem.
 - The physical hero unit and functional equipment slots are not implemented yet.
 - Combat units include soldiers, archers, knights, and several enemy/wild archetypes.
 - Army controls include box/double-click selection, minimap highlighting, groups,
