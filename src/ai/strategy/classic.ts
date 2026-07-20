@@ -429,15 +429,22 @@ export class ClassicMacro implements MacroPolicy {
     const { game, view } = ctx;
     const b = (key: BuildingKey): number => view.built[key] ?? 0;
     const stock = (item: string): number => economyStock(game, view.owner, item);
-    // one more producer while consumers outnumber it: the chain-balance signal
-    const feed = (producers: number, consumers: number): number =>
-      consumers > 0 && producers < consumers ? 40 + (consumers - producers) * 14 : 0;
+    // one more producer while consumers outnumber it (× a headroom factor): the
+    // chain-balance signal. Headroom > 1 OVER-provisions a shared input so a
+    // greedy consumer can't starve the others — the mint, left 1:1, drinks all
+    // the coal and leaves every smithy dry (measured: 140 coin, 0 weapons).
+    const feed = (producers: number, consumers: number, headroom = 1): number => {
+      const want = Math.ceil(consumers * headroom);
+      return want > 0 && producers < want ? 40 + (want - producers) * 14 : 0;
+    };
 
     switch (goal.key) {
       // ---- raw miners: balance to the buildings that burn their ore ----
-      // coal feeds the mint AND every smithy AND armory; iron feeds smith+armor
-      case 'coalmine': return feed(b('coalmine'), b('mint') + b('smithy') + b('armory'));
-      case 'ironmine': return feed(b('ironmine'), b('smithy') + b('armory'));
+      // coal feeds the mint AND every smithy AND armory; iron feeds smith+armor.
+      // Both are over-provisioned so the coin mint can't starve the weapon/armour
+      // chain of its shared coal, nor the smithies each other of iron.
+      case 'coalmine': return feed(b('coalmine'), b('mint') + b('smithy') + b('armory'), 1.8);
+      case 'ironmine': return feed(b('ironmine'), b('smithy') + b('armory'), 1.5);
       case 'goldmine': {
         // gold ore feeds the mint (coin) and market exports; keep coin flowing
         const need = feed(b('goldmine'), b('mint') + b('market'));
@@ -463,11 +470,14 @@ export class ClassicMacro implements MacroPolicy {
     }
 
     // ---- military / production-enabling buildings ----
-    // opening the FIRST of a kind unlocks new unit types (stable→cavalry,
-    // engineer→siege, monastery→priests); further copies spend surplus coin
+    // Opening the FIRST of a kind unlocks a whole unit type (stable → cavalry,
+    // engineer → siege, monastery → priests, extra barracks → throughput), and
+    // it must happen EARLY — before the army fills with soldiers/archers and
+    // leaves no room for the fancy units — so first-of-kind outbids another
+    // producer. Further copies just spend surplus coin.
     const first = b(goal.key) === 0;
     if (goal.category === 'war') {
-      if (first) return 55;
+      if (first) return 72;
       if (!armyRoom || coin < 10) return 0;
       return 28 + Math.min(40, coin);                 // richer → keener to add production
     }
@@ -519,9 +529,13 @@ export class ClassicMacro implements MacroPolicy {
     if (view.workers.laborers + queuedOf('laborer') < laborerTarget) {
       return { type: 'queueTraining', buildingId: guild.id, unit: 'laborer' };
     }
-    // a lean haulage corps: every coin spent here is a fighter not trained
+    // Haulers scale with the economy: a sprawling base with mines scattered to
+    // their ore veins needs FAR more serfs than a compact opening, or the ore
+    // piles at the mines and the weapon chain starves downstream (measured: 7
+    // coalmines yet 0 coal reaching the smithies). A capped 10 throttled the
+    // whole logistics economy of the expanding tiers.
     const production = view.buildings.filter(b => b.def.recipe || b.def.gather || b.def.tavern).length;
-    const serfTarget = Math.min(Math.round(10 * profile.econScale), 3 + Math.ceil(production * 0.6));
+    const serfTarget = Math.min(6 + Math.ceil(production * (0.7 + profile.expansion * 0.35)), 44);
     if (view.workers.serfs + queuedOf('serf') < serfTarget) {
       return { type: 'queueTraining', buildingId: guild.id, unit: 'serf' };
     }
