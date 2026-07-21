@@ -34,6 +34,7 @@ export class Tactics {
   private threatSince: number | null = null;
   private bellOn = false;
   private sieging = false;
+  private lastRepairAt = -Infinity;
   /** First launched attack (sim seconds) — the stance-separation metric. */
   firstAttackAt: number | null = null;
 
@@ -70,6 +71,10 @@ export class Tactics {
       commands.push({ type: 'setBell', active: besieged });
     }
 
+    // ---- keep the roof on: order repairs, the castle above all ----
+    const repair = this.planRepair(ctx);
+    if (repair) commands.push(repair);
+
     if (reacting && view.threatCentroid) {
       commands.push(...this.defend(ctx));
       return commands;
@@ -82,6 +87,31 @@ export class Tactics {
 
     commands.push(...this.muster(ctx));
     return commands;
+  }
+
+  // ---- repairs: a battered base is mended, not abandoned ----
+  /** Open a repair order on the most battered own building. The CASTLE
+   *  outranks everything and is ordered at the first real dent — losing it IS
+   *  losing the match — while lesser buildings only earn a crew once half
+   *  their health is gone. One order per pass on a slow clock, so a burning
+   *  base doesn't drown the APM budget in repair clicks. The order itself is
+   *  physical (serfs haul materials, a builder works), so this stays fair. */
+  private planRepair(ctx: PolicyContext): GameCommand | null {
+    const { game, view } = ctx;
+    if (view.elapsed - this.lastRepairAt < 5) return null;
+    let target: Building | null = null;
+    let bestScore = 0;
+    for (const building of view.buildings) {
+      if (!game.canRepair(building)) continue;
+      const ratio = building.hp / building.maxHp;
+      const isCastle = !!building.def.store;
+      if (isCastle ? ratio > 0.8 : ratio > 0.5) continue;
+      const score = (1 - ratio) + (isCastle ? 10 : 0);
+      if (score > bestScore) { bestScore = score; target = building; }
+    }
+    if (!target) return null;
+    this.lastRepairAt = view.elapsed;
+    return { type: 'repair', buildingId: target.id };
   }
 
   // ---- defense: throw the home army at the intruders ----
