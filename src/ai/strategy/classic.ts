@@ -600,6 +600,17 @@ export class ClassicMacro implements MacroPolicy {
     // it's the same read a human gets — no cheat.
     const enemyDom = profile.counter > 0 ? dominantEnemyCategory(view.enemyArmyByKind) : null;
 
+    // A mature economy fields the DEMOLITION army the pro wins with — siege to
+    // out-range towers and break the storehouse, heavy cavalry and knights to
+    // shatter the line, priests to keep it alive — not an endless soldier/archer
+    // spam. The weighted pick only ever sees AFFORDABLE kinds, so cheap units
+    // dominate by default; once coin is plentiful, bias hard toward the premium
+    // kinds so the surplus actually buys them. This is what ends the stalemate
+    // of two armies that can't crack each other's castle.
+    const richArmy = storeStock(game, view.owner, 'coin') > profile.workerReserveCoin + 20;
+    const PREMIUM: Record<string, number> = {
+      trebuchet: 6, onager: 5, horseknight: 4, knight: 3, lancer: 2.5, horsearcher: 2.5, priest: 3,
+    };
     // weighted pick among the mix entries some standing trainer offers & the store affords
     const options: { building: Building; kind: string; weight: number }[] = [];
     for (const building of trainers) {
@@ -607,6 +618,7 @@ export class ClassicMacro implements MacroPolicy {
         let weight = profile.unitMix[training.kind as keyof typeof profile.unitMix] ?? 0;
         if (weight <= 0) continue;
         if (enemyDom) weight *= counterMultiplier(training.kind, enemyDom.cat, profile.counter * enemyDom.frac);
+        if (richArmy) weight *= PREMIUM[training.kind] ?? 1; // spend the surplus on the decisive units
         const cost = game.modsFor(view.owner).unitCost(training.kind, training.cost) as Record<string, number>;
         let ok = true;
         for (const item in cost) {
