@@ -14,7 +14,7 @@ import { resimulateReplay } from '../../src/game/replay';
 
 describe('headless self-play', () => {
   it('replay of a classic-vs-random match re-simulates to the identical outcome', () => {
-    const result = runSelfPlayMatch({ seed: 7, p1: 'classic-hard-balanced', p2: 'random', maxSeconds: 300 });
+    const result = runSelfPlayMatch({ seed: 7, p1: 'classic-hard', p2: 'random', maxSeconds: 300 });
     expect(result.replay.commands.length).toBeGreaterThan(10);
     const check = resimulateReplay(result.replay);
     expect(check.outcome).toEqual(result.outcome);
@@ -22,7 +22,7 @@ describe('headless self-play', () => {
   }, 120_000);
 
   it('classic plays entire matches without one rejected command, inside budget', () => {
-    const result = runSelfPlayMatch({ seed: 1000, p1: 'classic-hard-balanced', p2: 'idle', maxSeconds: 600 });
+    const result = runSelfPlayMatch({ seed: 1000, p1: 'classic-hard', p2: 'idle', maxSeconds: 600 });
     for (const seat of ['p1', 'p2'] as const) {
       expect(result.stats[seat].rejected).toBe(0);
     }
@@ -44,21 +44,22 @@ describe('headless self-play', () => {
   }, 60_000);
 
   it('same seed, same profiles → bit-identical match; different seed diverges', () => {
-    const a = runSelfPlayMatch({ seed: 11, p1: 'classic-easy-balanced', p2: 'random', maxSeconds: 120 });
-    const b = runSelfPlayMatch({ seed: 11, p1: 'classic-easy-balanced', p2: 'random', maxSeconds: 120 });
+    const a = runSelfPlayMatch({ seed: 11, p1: 'classic-easy', p2: 'random', maxSeconds: 120 });
+    const b = runSelfPlayMatch({ seed: 11, p1: 'classic-easy', p2: 'random', maxSeconds: 120 });
     expect(b.fingerprint).toBe(a.fingerprint);
     expect(b.replay.commands).toEqual(a.replay.commands);
-    const c = runSelfPlayMatch({ seed: 12, p1: 'classic-easy-balanced', p2: 'random', maxSeconds: 120 });
+    const c = runSelfPlayMatch({ seed: 12, p1: 'classic-easy', p2: 'random', maxSeconds: 120 });
     expect(c.fingerprint).not.toBe(a.fingerprint);
   }, 120_000);
 
-  it('offensive stance launches its first attack before defensive on one seed', () => {
-    const offensive = runSelfPlayMatch({ seed: 1000, p1: 'classic-hard-offensive', p2: 'idle', maxSeconds: 900 });
-    const defensive = runSelfPlayMatch({ seed: 1000, p1: 'classic-hard-defensive', p2: 'idle', maxSeconds: 900 });
-    const firstOffensive = offensive.stats.p1.firstAttackAt;
-    expect(firstOffensive).not.toBeNull();
-    // the defensive profile either hasn't attacked yet, or attacked later
-    const firstDefensive = defensive.stats.p1.firstAttackAt;
-    if (firstDefensive !== null) expect(firstOffensive!).toBeLessThan(firstDefensive);
+  it('godlike opens with early raids while hard sits on its slow fuse', () => {
+    const godlike = runSelfPlayMatch({ seed: 1000, p1: 'classic-godlike', p2: 'idle', maxSeconds: 900 });
+    const hard = runSelfPlayMatch({ seed: 1000, p1: 'classic-hard', p2: 'idle', maxSeconds: 900 });
+    // the pro persona's raids ARE its first aggression, and they come early
+    const firstGodlike = godlike.stats.p1.firstAttackAt;
+    expect(firstGodlike).not.toBeNull();
+    // the fortress persona either hasn't marched yet, or marched later
+    const firstHard = hard.stats.p1.firstAttackAt;
+    if (firstHard !== null) expect(firstGodlike!).toBeLessThan(firstHard);
   }, 240_000);
 });

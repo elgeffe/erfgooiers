@@ -208,6 +208,8 @@ export interface SandboxConfig {
   /** Independent trouble toggles: roaming wild beasts and/or bandit camps. */
   wildBeasts: boolean;
   banditCamps: boolean;
+  /** Fog of war: hostile units and structures are hidden outside your sight. */
+  fog: boolean;
   /** Fortified enemy castles dotted across the map's corners (0–6). */
   strongholds: number;
   hero: string; // 'none' or a HeroDef id; sandbox exposes every hero for testing
@@ -216,7 +218,7 @@ export interface SandboxConfig {
 export const MAX_SANDBOX_STRONGHOLDS = 6;
 
 export const DEFAULT_SANDBOX: SandboxConfig = {
-  size: 'large', biome: 'gooi', water: 'normal', mapRes: 'rich', startRes: 'cornucopia', wildBeasts: false, banditCamps: false, strongholds: 0, hero: 'none',
+  size: 'large', biome: 'gooi', water: 'normal', mapRes: 'rich', startRes: 'cornucopia', wildBeasts: false, banditCamps: false, fog: true, strongholds: 0, hero: 'none',
 };
 
 /** The water level is a property of the biome, not a separate knob: waterlogged

@@ -12,6 +12,7 @@ import { Modifiers, type ModifierSpec } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, factionForOwner, ownerForFaction } from './ownership';
 import { TradeSystem } from './TradeSystem';
+import { VisionSystem } from './VisionSystem';
 import { EncounterDirector } from './EncounterDirector';
 import { ProjectileSystem } from './ProjectileSystem';
 import { MarketSystem } from './MarketSystem';
@@ -104,6 +105,24 @@ export class Game {
    *  this instead of the shared `defeat` flag — identical on both peers. */
   readonly eliminated = new Set<PlayerId>();
 
+  /**
+   * Fog of war: when on, hostile units/buildings/sites are only shown (and
+   * only perceived by AI seats) where the observer's own assets grant sight.
+   * Information-layer only — the deterministic sim itself never reads it, so
+   * replays and fingerprints are identical with fog on or off. Set by main at
+   * level setup (skirmish/sandbox toggle, solo runs by difficulty tier).
+   */
+  fogOfWar = false;
+  /** Spectator display: keep fog for AI perception (the seats still play
+   *  blind) but render everything — an observer is not a player. */
+  fogRevealAll = false;
+  private readonly vision: VisionSystem;
+
+  /** Whether `owner` currently sees tile (tx, ty). Always true with fog off. */
+  visibleTo(owner: PlayerId, tx: number, ty: number): boolean {
+    return !this.fogOfWar || this.vision.visible(owner, tx, ty);
+  }
+
   setTeams(teams: Record<OwnerId, number>): void {
     this.teams = { ...teams };
     this.pvp = PLAYER_IDS.some(a => PLAYER_IDS.some(b => a !== b && this.hostileOwners(a, b)));
@@ -193,6 +212,12 @@ export class Game {
     // a skirmish rival may share your faction but never your gates.
     world.gatePass = (mover, gateOwner) =>
       factionForOwner(mover) === factionForOwner(gateOwner) && !this.hostileOwners(mover, gateOwner);
+    this.vision = new VisionSystem(world, {
+      now: () => this.elapsed,
+      buildings: () => this.buildings,
+      sites: () => this.sites,
+      units: () => this.units,
+    });
     this.trade = new TradeSystem({
       localPlayerId,
       now: () => this.elapsed,
@@ -661,16 +686,16 @@ export class Game {
     this.placementSystem.demolishAt(tx, ty, dragOnly, owner);
   }
 
-  /** True when `building` is a player structure that has taken damage. Drives
-   *  whether the inspector offers a repair button. */
+  /** True when `building` is a player structure that has taken damage and no
+   *  repair order is already open on it. Drives the inspector's repair button. */
   canRepair(building: Building): boolean {
-    return (building.owner === 'p1' || building.owner === 'p2') && !building.removed
+    return (building.owner === 'p1' || building.owner === 'p2') && !building.removed && !building.repair
       && building.hp < building.maxHp && Object.keys(building.def.cost).length > 0;
   }
 
-  /** The materials to repair `building` in one payment: half its original build
-   *  cost (after the owner's discounts), floored, but never below 1 per material,
-   *  regardless of how battered it is. */
+  /** The materials a repair order wants hauled in: half the original build
+   *  cost (after the owner's discounts), floored, but never below 1 per
+   *  material, regardless of how battered it is. */
   repairCost(building: Building): Record<string, number> {
     const build = this.modsFor(building.owner).buildingCost(building.def) as Record<string, number>;
     const cost: Record<string, number> = {};
@@ -678,23 +703,15 @@ export class Game {
     return cost;
   }
 
-  /** Pay a building's build cost once from the owner's castle stock to restore it
-   *  to full health. No scaling with damage — one payment mends the whole thing. */
-  repairBuilding(building: Building): boolean {
+  /** Open a repair order: serfs haul the materials in like a construction
+   *  site's, then a builder claims the job and mends the damage over time —
+   *  there is no instant fix. */
+  startRepair(building: Building): boolean {
     if (!this.canRepair(building)) return false;
     const owner = building.owner as PlayerId;
-    const cost = this.repairCost(building);
-    for (const item in cost) {
-      if (this.storeTotal(item, owner) < cost[item]) {
-        this.emitToast(`Not enough ${ITEMS[item as keyof typeof ITEMS].name} in the castle to repair the ${building.def.name}`, 'err', owner);
-        this.sfx('error');
-        return false;
-      }
-    }
-    for (const item in cost) this.takeStock(item, cost[item], owner);
-    building.hp = building.maxHp;
+    building.repair = { needs: this.repairCost(building), delivered: {}, incoming: {}, ready: false, builder: null };
     this.sfx('place');
-    this.emitToast(`${building.def.name} repaired`, undefined, owner);
+    this.emitToast(`Repair ordered — serfs will haul materials to the ${building.def.name}`, undefined, owner);
     return true;
   }
 
@@ -1104,6 +1121,28 @@ export class Game {
     this.armFortifyWaves();
     this.fieldT += sdt;
     if (this.fieldT > 0.5) { this.fieldT = 0; this.workerSystem.recolorFields(); }
+    if (this.fogOfWar && !this.fogRevealAll) this.applyFogToView();
+  }
+
+  /** Hide hostile meshes the local seat has no sight of (and re-show them the
+   *  moment sight returns). Presentation only — runs after all sim systems so
+   *  it never fights their own mesh bookkeeping. */
+  private applyFogToView(): void {
+    const seat = this.localPlayerId;
+    for (const u of this.units) {
+      if (u.dead || !this.hostileOwners(seat, u.owner)) continue;
+      this.view.setFogHidden(u.mesh, !this.visibleTo(seat, u.tx, u.ty));
+    }
+    for (const b of this.buildings) {
+      if (b.removed || !this.hostileOwners(seat, b.owner)) continue;
+      this.view.setFogHidden(b.mesh, !this.visibleTo(seat, b.x + 1, b.y + 1));
+    }
+    for (const s of this.sites) {
+      if (s.removed || !this.hostileOwners(seat, s.owner)) continue;
+      const hidden = !this.visibleTo(seat, s.x + 1, s.y + 1);
+      this.view.setFogHidden(s.mesh, hidden);
+      this.view.setFogHidden(s.frame, hidden);
+    }
   }
 
   /** Queue a unit at a barracks/guild hall, paying its own cost from the store. */

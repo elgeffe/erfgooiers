@@ -133,6 +133,17 @@ export interface Tile {
   cshade: number;
 }
 
+/** A live repair order on a standing damaged building. Serfs haul the listed
+ *  materials to it (same bookkeeping as a construction site), then a builder
+ *  claims it and works the damage away over time. Cleared at full health. */
+export interface RepairJob {
+  needs: Record<string, number>;
+  delivered: Record<string, number>;
+  incoming: Record<string, number>;
+  ready: boolean;
+  builder: Unit | null;
+}
+
 export interface Building {
   id: number;
   owner: OwnerId;
@@ -161,6 +172,7 @@ export interface Building {
   removed?: boolean;
   marketOrders?: { item: ItemKey; amount: number }[]; // up to 3 goods to export at once
   marketTimer?: number;
+  repair?: RepairJob;          // set while a repair order is open on this building
   isSite?: false;
 }
 
@@ -186,7 +198,7 @@ export interface Site {
   removed?: boolean;
 }
 
-export interface Task { from: any; to: any; item: string; phase: 'pickup' | 'deliver'; }
+export interface Task { from: any; to: any; item: string; phase: 'pickup' | 'deliver'; repair?: boolean; }
 
 export interface Unit {
   id: number;

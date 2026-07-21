@@ -3,7 +3,7 @@ import { MAX_UNITS } from '../constants';
 import { UNIT_STANCES, type UnitStance } from '../types';
 import type { BuildingKey, Coord, Formation, ItemKey, PlayerId } from '../types';
 
-export const PROTOCOL_VERSION = 3; // v3: repair joined the command set
+export const PROTOCOL_VERSION = 4; // v4: repair became a physical job (hauled materials + builder time)
 export const CONTENT_VERSION = 1;
 export const MAX_MESSAGE_BYTES = 256 * 1024;
 export const MAX_ROOM_NAME = 48;
@@ -49,6 +49,8 @@ export interface RoomSettings {
   difficulty: ExpeditionDifficulty;
   mode: 'expedition' | 'sandbox' | 'skirmish';
   passwordProtected: boolean;
+  /** Skirmish only: fog of war for the match. Absent (older hosts) = on. */
+  fog?: boolean;
 }
 
 export interface RoomPlayer {

@@ -36,7 +36,7 @@ import { fitStep, serializeMPS, deserializeMPS, cloneMPS, type MPS, type Seriali
 import { expertPlans, ACTIONS } from '../../src/ai/tensor/plan';
 import { pretrain, loadModelMPS, writeModel, MODEL_PATH } from './tensorModel';
 
-const OPPONENT = 'classic-godlike-balanced';
+const OPPONENT = 'classic-godlike';
 /** Cap match length while training so a generation is cheap. The dense `margin`
  *  reward (economic + military lead) makes an opening's quality visible well
  *  before an elimination, and late-game ticks with big armies are far too slow

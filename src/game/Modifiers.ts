@@ -1,4 +1,4 @@
-import { BASE_SPEED, BUILD_TIME, CARRY_CAP, OUT_CAP, ROAD_STONE_COST } from '../constants';
+import { BASE_SPEED, BUILD_TIME, CARRY_CAP, OUT_CAP, REPAIR_TIME, ROAD_STONE_COST } from '../constants';
 import type { BuildingDef, Faction, ItemKey, Unit } from '../types';
 
 /**
@@ -109,6 +109,11 @@ export class Modifiers {
 
   /** Seconds of laborer work to raise a building. */
   buildTime(): number { return BUILD_TIME * this.accMult('buildTime'); }
+
+  /** Seconds of builder work to mend a building from zero to full health.
+   *  Deliberately far slower than construction: patching a battered castle
+   *  mid-siege is a commitment, not a click. */
+  repairTime(): number { return REPAIR_TIME * this.accMult('repairTime'); }
 
   /** Producer input-buffer depth the dispatcher fills toward. */
   carryCap(): number { return Math.max(1, Math.round(CARRY_CAP + this.accAdd('carryCap'))); }

@@ -566,20 +566,28 @@ export class UI {
     const visible = obj.style.display !== 'none' && obj.offsetParent !== null;
     $('inspector').style.top = visible ? Math.round(obj.getBoundingClientRect().bottom + 10) + 'px' : 'calc(var(--topbar-h, 52px) + 12px)';
   }
-  /** Health readout for a damaged building, plus a one-payment repair button
-   *  when the local player owns it. Undamaged buildings show nothing (no clutter). */
+  /** Health readout for a damaged building, plus a repair button when the
+   *  local player owns it. A running repair shows its state instead: serfs
+   *  haul the materials in, then a builder mends the damage over time. */
   private buildingHealthHTML(o: any): string {
     if (o.isSite || typeof o.hp !== 'number' || typeof o.maxHp !== 'number') return '';
-    if (o.hp >= o.maxHp) return '';
+    if (o.hp >= o.maxHp && !o.repair) return '';
     const hp = Math.max(0, Math.round(o.hp)), ratio = Math.max(0, o.hp / o.maxHp);
     const col = ratio > 0.5 ? 'var(--good)' : ratio > 0.25 ? 'var(--accent)' : 'var(--bad)';
     let s = `<div class="sect">Health</div><div class="invrow">HP<b>${hp} / ${o.maxHp}</b></div>`;
     s += `<div class="bar"><div style="width:${Math.round(ratio * 100)}%;background:${col}"></div></div>`;
-    if (this.game!.canRepair(o) && this.game!.ownedByLocal(o)) {
+    const repair = o.repair;
+    if (repair) {
+      const chips = Object.keys(repair.needs).map(k =>
+        `<i>${itemIconSVG(k as ItemKey, 13)} ${repair.delivered[k] || 0}/${repair.needs[k]}</i>`).join('');
+      const state = !repair.ready ? 'hauling materials'
+        : repair.builder ? 'builder at work' : 'waiting for a builder';
+      s += `<div class="invrow">\u{1F528} Repairing — ${state}</div><div class="invrow"><span class="tcost">${chips}</span></div>`;
+    } else if (this.game!.canRepair(o) && this.game!.ownedByLocal(o)) {
       const cost = this.game!.repairCost(o);
       const chips = Object.keys(cost).map(k =>
         `<i>${itemIconSVG(k as ItemKey, 13)} ${cost[k]}</i>`).join('');
-      s += `<button class="inspbtn repair" id="repairBtn" title="Pay the build cost once to restore full health">`
+      s += `<button class="inspbtn repair" id="repairBtn" title="Serfs haul these materials in, then a builder mends the damage over time">`
         + `<span class="trow"><span class="tname">\u{1F528} Repair</span></span>`
         + `<span class="tcost">${chips}</span></button>`;
     }

@@ -24,8 +24,8 @@ describe('tensor MPS policy', () => {
   }, 120_000);
 
   it('is replay-deterministic: same seed → bit-identical match', () => {
-    const a = runSelfPlayMatch({ seed: 77, p1: 'tensor', p2: 'classic-easy-balanced', maxSeconds: 240 });
-    const b = runSelfPlayMatch({ seed: 77, p1: 'tensor', p2: 'classic-easy-balanced', maxSeconds: 240 });
+    const a = runSelfPlayMatch({ seed: 77, p1: 'tensor', p2: 'classic-easy', maxSeconds: 240 });
+    const b = runSelfPlayMatch({ seed: 77, p1: 'tensor', p2: 'classic-easy', maxSeconds: 240 });
     expect(b.fingerprint).toBe(a.fingerprint);
     expect(b.replay.commands).toEqual(a.replay.commands);
     // and re-simulating the recorded log lands on the same outcome

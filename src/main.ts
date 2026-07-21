@@ -34,7 +34,7 @@ import { applyGameCommand } from './game/commands';
 import { EXPEDITION_DIFFICULTY, EXPEDITION_LEVEL_COUNT, expeditionLevelFor } from './data/coOpLevels';
 import { SKIRMISH_LEVEL } from './data/skirmishLevels';
 import { AIController } from './ai/AIController';
-import { AI_PROFILES, aiProfile, type AIDifficulty, type AIStance } from './data/aiProfiles';
+import { AI_PROFILES, aiProfile, type AIDifficulty } from './data/aiProfiles';
 import { ReplayRecorder, serializeReplay, skirmishWinner, type Replay } from './game/replay';
 import type { PlayerId } from './types';
 
@@ -183,6 +183,10 @@ function startLevel(): void {
   const startGoldBonus = sandbox ? 0 : mods.startGold();
   if (startGoldBonus > 0) run.gold += startGoldBonus;
   game = new Game(world, view, mods);
+  // Fog of war: the Normal tier plays fully revealed (and tutorialized); every
+  // harder ascension hides hostiles outside your sight. The sandbox has its
+  // own toggle on the setup screen.
+  game.fogOfWar = sandbox ? sandboxCfg.fog : run.ascension >= 1;
   // the settings' performance cap gates spawns in single player only — co-op
   // peers must share one cap (the factory's MAX_UNITS default) to stay in sync
   game.unitCap = settings.unitCap;
@@ -434,6 +438,8 @@ interface MultiplayerLevelSetup {
   /** Shared rule base applied to every seat (expedition difficulty specs). */
   difficultySpecs: ModifierSpec[];
   timerMult: number;
+  /** Fog of war for this match (default: on for skirmish, off for expedition). */
+  fog?: boolean;
 }
 
 /**
@@ -473,6 +479,10 @@ function buildMultiplayerLevel(setup: MultiplayerLevelSetup): { world: World; ga
   // systems treat the rival settlement as hostile. PvE owners keep a team of
   // their own even though the skirmish level spawns none.
   if (mode === 'skirmish') g.setTeams({ p1: 0, p2: 1, enemy: 2, wild: 2 });
+  // fog is information-layer only (render + AI perception), so a mismatched
+  // setting could not desync peers — but both read it from the shared room
+  // settings anyway so the match is fair
+  g.fogOfWar = setup.fog ?? (mode === 'skirmish');
   // skirmish rivals spawn in opposite corners; co-op allies share a mid-map axis
   g.initCoOp(level.kit, level.kit, mode === 'skirmish' ? 'diagonal' : 'axis');
   ui.setGame(g);
@@ -560,6 +570,8 @@ function startCoopLevel(seed: number, levelIndex: number): void {
   buildMultiplayerLevel({
     seed, mode, level, localSeat: playerId, seats,
     difficultySpecs: [...diff.specs], timerMult: diff.timerMult,
+    // hosts before the fog field existed omit it — default on for skirmish
+    fog: mode === 'skirmish' ? snapshot.room?.settings.fog ?? true : false,
   });
   // over the network every gameplay intent goes through the host command
   // sequencer; the accepted broadcast (applyAcceptedCommand) mutates the sim
@@ -598,15 +610,16 @@ function onCoopLevelClear(): void {
 }
 
 // ---------- skirmish vs CPU (local, no lobby) ----------
-interface SkaiSeatCfg { difficulty: AIDifficulty; stance: AIStance; policy: string }
-let skaiCfg: { seat: 'play' | 'spectate'; east: SkaiSeatCfg; west: SkaiSeatCfg } = {
+interface SkaiSeatCfg { difficulty: AIDifficulty; policy: string }
+let skaiCfg: { seat: 'play' | 'spectate'; fog: boolean; east: SkaiSeatCfg; west: SkaiSeatCfg } = {
   seat: 'play',
-  east: { difficulty: 'easy', stance: 'balanced', policy: 'classic' },   // the rival (p2)
-  west: { difficulty: 'hard', stance: 'balanced', policy: 'classic' },   // your seat when spectating (p1)
+  fog: true,
+  east: { difficulty: 'easy', policy: 'classic' },   // the rival (p2)
+  west: { difficulty: 'hard', policy: 'classic' },   // your seat when spectating (p1)
 };
 
 function skaiProfileId(seat: SkaiSeatCfg): string {
-  return seat.policy === 'classic' ? `classic-${seat.difficulty}-${seat.stance}` : seat.policy;
+  return seat.policy === 'classic' ? `classic-${seat.difficulty}` : seat.policy;
 }
 
 function openSkirmishAISetup(): void {
@@ -623,7 +636,6 @@ function renderSkirmishAISetup(): void {
     const groups: { key: keyof SkaiSeatCfg; label: string; opts: [string, string][]; hidden?: boolean }[] = [
       { key: 'policy', label: `${title} — Classic is the benchmark; Tensor is the MPS research brain; Idle & Random are training dummies`, opts: [['classic', '⚔️ Classic'], ['tensor', '🧠 Tensor'], ['random', '🎲 Random'], ['idle', '💤 Idle']] },
       { key: 'difficulty', label: 'Difficulty — a better player, never a cheating one', hidden: !classic, opts: [['easy', '🌱 Easy'], ['hard', '⚔️ Hard'], ['godlike', '🔥 Godlike']] },
-      { key: 'stance', label: 'Stance', hidden: !classic, opts: [['defensive', '🛡️ Defensive'], ['balanced', '⚖️ Balanced'], ['offensive', '🗡️ Offensive']] },
     ];
     let block = '';
     for (const grp of groups) {
@@ -641,11 +653,18 @@ function renderSkirmishAISetup(): void {
     + `<button class="opt${!spectate ? ' on' : ''}" data-seat="play">🧑‍🌾 Play the west seat</button>`
     + `<button class="opt${spectate ? ' on' : ''}" data-seat="spectate">👁️ Spectate — CPUs in both seats</button>`
     + '</div></div>';
+  s += '<div class="optgroup"><div class="optlabel">Fog of war — hostiles are hidden outside your sight (CPUs play under the same fog)</div><div class="optrow">'
+    + `<button class="opt${skaiCfg.fog ? ' on' : ''}" data-fog="on">🌫️ Fog on</button>`
+    + `<button class="opt${!skaiCfg.fog ? ' on' : ''}" data-fog="off">☀️ Revealed</button>`
+    + '</div></div>';
   if (spectate) s += seatGroups('west', 'West CPU (your colours)');
   s += seatGroups('east', spectate ? 'East CPU' : 'Opponent brain');
   el.innerHTML = s;
   el.querySelectorAll<HTMLElement>('.opt[data-seat]').forEach(b => {
     b.onclick = () => { skaiCfg.seat = b.dataset.seat as 'play' | 'spectate'; audio.play('click'); renderSkirmishAISetup(); };
+  });
+  el.querySelectorAll<HTMLElement>('.opt[data-fog]').forEach(b => {
+    b.onclick = () => { skaiCfg.fog = b.dataset.fog === 'on'; audio.play('click'); renderSkirmishAISetup(); };
   });
   el.querySelectorAll<HTMLElement>('.opt[data-key]').forEach(b => {
     b.onclick = () => {
@@ -681,8 +700,11 @@ function startSkirmishAI(): void {
   const session = multiplayer;
   const { world } = buildMultiplayerLevel({
     seed, mode: 'skirmish', level, localSeat: 'p1', seats,
-    difficultySpecs: [], timerMult: 1,
+    difficultySpecs: [], timerMult: 1, fog: skaiCfg.fog,
   });
+  // a spectator is an observer, not a player: the CPU seats still perceive
+  // under fog, but the whole board renders revealed
+  if (spectate) game!.fogRevealAll = true;
   const recorder = new ReplayRecorder(seed, level.name, seats.map(seat =>
     seat.kind === 'cpu' ? { id: seat.id, kind: 'ai' as const, profile: seat.profile! } : { id: seat.id, kind: 'human' as const }));
   session.recorder = recorder;
@@ -961,6 +983,7 @@ function renderSandboxSetup(): void {
   s += '<div class="optgroup"><div class="optlabel">Enemies — toggle any trouble you want (leave all off for a peaceful build)</div><div class="optrow">'
     + `<button class="opt${sandboxCfg.wildBeasts ? ' on' : ''}" data-toggle="wildBeasts">🐗 Wild beasts</button>`
     + `<button class="opt${sandboxCfg.banditCamps ? ' on' : ''}" data-toggle="banditCamps">🗡️ Bandit camps</button>`
+    + `<button class="opt${sandboxCfg.fog ? ' on' : ''}" data-toggle="fog">🌫️ Fog of war</button>`
     + '</div></div>';
   s += `<div class="optgroup"><div class="optlabel">Enemy strongholds — fortified castles with walls & towers dotted across the corners</div>`
     + `<label class="sbxnum">Strongholds <input id="sbxStrongholds" type="number" min="0" max="${MAX_SANDBOX_STRONGHOLDS}" step="1" value="${sandboxCfg.strongholds}"> <span class="whint">(0–${MAX_SANDBOX_STRONGHOLDS})</span></label></div>`;
@@ -977,7 +1000,7 @@ function renderSandboxSetup(): void {
   });
   el.querySelectorAll<HTMLElement>('.opt[data-toggle]').forEach(b => {
     b.onclick = () => {
-      const key = b.dataset.toggle as 'wildBeasts' | 'banditCamps';
+      const key = b.dataset.toggle as 'wildBeasts' | 'banditCamps' | 'fog';
       sandboxCfg[key] = !sandboxCfg[key];
       audio.play('click');
       renderSandboxSetup();

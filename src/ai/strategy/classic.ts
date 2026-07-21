@@ -63,8 +63,9 @@ export function counterMultiplier(myKind: string, enemyDom: ArmyCategory, gain: 
 /**
  * The Classic baseline (Phase 1): a handwritten, layered, fair macro policy.
  * Build order is not a rigid list but a utility score over candidate goals —
- * stances and situations reweight categories (war when outgunned, food when
- * hungry, coin when broke), so the same code plays all nine profiles.
+ * situations reweight categories (war when outgunned, food when hungry, coin
+ * when broke), so the same code plays every difficulty persona; the personas
+ * themselves differ only in profile knobs (docs/skirmish-ai-design.md).
  */
 
 type Category = 'economy' | 'food' | 'coin' | 'war' | 'fort';
@@ -90,12 +91,6 @@ const OUTPUT: Partial<Record<BuildingKey, ItemKey>> = {
   woodcutter: 'trunk', sawmill: 'timber', quarry: 'stone', farm: 'wheat',
   mill: 'flour', bakery: 'bread', goldmine: 'goldore', coalmine: 'coal',
   ironmine: 'iron', mint: 'coin', smithy: 'weapon', armory: 'armor',
-};
-
-const STANCE_WEIGHT: Record<string, Record<Category, number>> = {
-  defensive: { economy: 1, food: 1, coin: 1, war: 0.9, fort: 1.6 },
-  balanced: { economy: 1, food: 1, coin: 1, war: 1, fort: 1 },
-  offensive: { economy: 1, food: 0.95, coin: 1, war: 1.3, fort: 0.6 },
 };
 
 function goals(towers: number, scale: number, expansion: number): BuildGoal[] {
@@ -200,9 +195,9 @@ export class ClassicMacro implements MacroPolicy {
     if (rescue) commands.push(rescue);
     const plots = this.planFieldPlots(ctx);
     if (plots) commands.push(plots);
-    // defensive stances wall first and expand second; everyone else fortifies
-    // with whatever build capacity the economy goals leave over
-    const fortFirst = ctx.profile.stance === 'defensive';
+    // wall-building personas fortify first and expand second; the rest
+    // fortify with whatever build capacity the economy goals leave over
+    const fortFirst = ctx.profile.walls > 0;
     const fort = fortFirst ? this.planFortification(ctx) : null;
     if (fort) commands.push(fort);
     const build = this.planBuild(ctx);
@@ -344,7 +339,6 @@ export class ClassicMacro implements MacroPolicy {
   private planBuild(ctx: PolicyContext): GameCommand | null {
     const { game, world, view, profile, rng } = ctx;
     if (view.sites.length >= profile.maxPendingSites) return null;
-    const weights = STANCE_WEIGHT[profile.stance];
     const hungry = view.averageWorkerHunger < 45 || economyStock(game, view.owner, 'bread') < 2;
     const outgunned = view.enemyArmySize > view.armySize + 3;
     const broke = storeStock(game, view.owner, 'coin') < profile.workerReserveCoin + 2;
@@ -357,7 +351,7 @@ export class ClassicMacro implements MacroPolicy {
       .filter(goal => (goal.requires ?? []).every(key => (view.built[key] ?? 0) > 0))
       .filter(goal => (this.blockedUntil.get(goal.key) ?? 0) <= view.elapsed)
       .map(goal => {
-        let value = goal.priority * weights[goal.category];
+        let value = goal.priority;
         if (goal.category === 'food' && hungry) value *= 1.6;
         if (goal.category === 'war' && (outgunned || threatened)) value *= 1.5;
         if (goal.category === 'coin' && broke) value *= 1.7;

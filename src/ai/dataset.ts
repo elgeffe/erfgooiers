@@ -36,7 +36,7 @@ export type FeatureRow = Record<(typeof FEATURE_NAMES)[number], number>;
 
 /** The observation a policy sees: a flat, numeric snapshot of one seat's view.
  *  Reads stocks through `economyStock`, so it stays inside perception's
- *  information boundary (full visibility today; fog-filtered later). */
+ *  information boundary (fog-filtered when the match ran under fog). */
 export function featureRow(game: Game, view: AIView): FeatureRow {
   const owner = view.owner;
   const stock = (item: string): number => economyStock(game, owner, item);

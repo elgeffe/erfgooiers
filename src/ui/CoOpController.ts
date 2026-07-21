@@ -88,6 +88,7 @@ export class CoOpController {
     $('coopHostSub').textContent = skirmish ? 'Create the battlefield and invite a rival.' : 'Create the world and invite a friend.';
     ($('coopRoomName') as HTMLInputElement).value = skirmish ? 'Border Clash' : 'Polder Expedition';
     $('coopDifficultyField').style.display = skirmish ? 'none' : '';
+    $('coopFogField').style.display = skirmish ? '' : 'none';
   }
 
   renderLobby(): void {
@@ -126,6 +127,7 @@ export class CoOpController {
       visibility: 'unlisted', roomName: ($('coopRoomName') as HTMLInputElement).value, region: 'Europe',
       difficulty: ($('coopDifficulty') as HTMLSelectElement).value as ExpeditionDifficulty,
       mode: this.hostMode, passwordProtected: false,
+      fog: ($('coopFog') as HTMLSelectElement).value !== 'off',
     }); this.renderLobby(); this.ports.showScreen('cooplobby');
   }); }
   private async join(): Promise<void> { await this.withButton('btnCoopJoin', 'Opening host code…', async () => {
