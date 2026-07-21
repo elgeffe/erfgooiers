@@ -12,7 +12,7 @@ import { Modifiers, type ModifierSpec } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, factionForOwner, ownerForFaction } from './ownership';
 import { TradeSystem } from './TradeSystem';
-import { VisionSystem } from './VisionSystem';
+import { VisionSystem, FogLevel } from './VisionSystem';
 import { EncounterDirector } from './EncounterDirector';
 import { ProjectileSystem } from './ProjectileSystem';
 import { MarketSystem } from './MarketSystem';
@@ -121,6 +121,19 @@ export class Game {
   /** Whether `owner` currently sees tile (tx, ty). Always true with fog off. */
   visibleTo(owner: PlayerId, tx: number, ty: number): boolean {
     return !this.fogOfWar || this.vision.visible(owner, tx, ty);
+  }
+
+  /** The local seat's three-state veil for tile (tx, ty), for the render fog.
+   *  Everything reads Visible with fog off or while spectating. */
+  fogLevelAt(tx: number, ty: number): FogLevel {
+    if (!this.fogOfWar || this.fogRevealAll) return FogLevel.Visible;
+    return this.vision.fogLevel(this.localPlayerId, tx, ty);
+  }
+
+  /** Vision revision for the local seat — lets the renderer skip re-uploading
+   *  the fog texture when nothing changed. */
+  fogRevision(): number {
+    return this.fogOfWar && !this.fogRevealAll ? this.vision.revision(this.localPlayerId) : 0;
   }
 
   setTeams(teams: Record<OwnerId, number>): void {
@@ -1122,13 +1135,15 @@ export class Game {
     this.fieldT += sdt;
     if (this.fieldT > 0.5) { this.fieldT = 0; this.workerSystem.recolorFields(); }
     if (this.fogOfWar && !this.fogRevealAll) this.applyFogToView();
+    else this.view.hideFogOverlay();
   }
 
   /** Hide hostile meshes the local seat has no sight of (and re-show them the
-   *  moment sight returns). Presentation only — runs after all sim systems so
-   *  it never fights their own mesh bookkeeping. */
+   *  moment sight returns), and refresh the translucent veil. Presentation
+   *  only — runs after all sim systems so it never fights their bookkeeping. */
   private applyFogToView(): void {
     const seat = this.localPlayerId;
+    this.view.updateFogOverlay(this.vision.revision(seat), (tx, ty) => this.vision.fogLevel(seat, tx, ty));
     for (const u of this.units) {
       if (u.dead || !this.hostileOwners(seat, u.owner)) continue;
       this.view.setFogHidden(u.mesh, !this.visibleTo(seat, u.tx, u.ty));

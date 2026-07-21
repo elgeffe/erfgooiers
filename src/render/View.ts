@@ -190,6 +190,7 @@ export class View {
   loadWorld(world: World): void {
     this.world = world;
     this.fogHidden.clear();        // per-level state; the old meshes are gone
+    this.disposeFog();             // rebuilt lazily at the new map's size
     setActiveBiome(world.biome);   // foliage palette, snowlines, flora variants
     this.fitShadowToMap();
     this.terrain.loadWorld();
@@ -442,6 +443,82 @@ export class View {
     if (hidden) this.fogHidden.add(o);
     else this.fogHidden.delete(o);
     o.traverse(child => { if (hidden) child.layers.set(1); else child.layers.set(0); });
+  }
+
+  /** The translucent veil drawn over unseen ground: a single map-sized plane
+   *  textured one texel per tile (visible = clear, scouted = light haze,
+   *  unexplored = darker). `depthTest:false` so it paints over tall terrain and
+   *  buildings in fogged areas while the low renderOrder keeps it beneath HP
+   *  bars and selection rings. Re-uploaded only when vision changes. */
+  private fogMesh: THREE.Mesh | null = null;
+  private fogTex: THREE.DataTexture | null = null;
+  private fogData: Uint8Array | null = null;
+  private fogW = 0;
+  private fogH = 0;
+  private fogRev = -1;
+
+  /** Veil colour (dark, cool) and its opacity by fog level [unexplored, scouted]. */
+  private static readonly FOG_RGB = [10, 13, 22];
+  private static readonly FOG_ALPHA = [148, 74]; // 0..255 — unexplored, explored
+
+  private ensureFogMesh(w: number, h: number): void {
+    if (this.fogMesh && this.fogW === w && this.fogH === h) return;
+    this.disposeFog();
+    this.fogW = w; this.fogH = h;
+    this.fogData = new Uint8Array(w * h * 4);
+    const tex = new THREE.DataTexture(this.fogData, w, h, THREE.RGBAFormat);
+    tex.minFilter = tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+    this.fogTex = tex;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false });
+    (mat as any).toneMapped = false;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(0, 6, 0);   // depthTest is off, so height only sets draw stacking intent
+    mesh.renderOrder = 850;        // above terrain/units, below HP bars (998) & rings
+    mesh.frustumCulled = false;
+    mesh.layers.set(0);
+    this.fogMesh = mesh;
+    this.scene.add(mesh);
+    this.fogRev = -1;              // force the next update to fill the texture
+  }
+
+  /** Refresh the veil from the local seat's per-tile fog level. `rev` is a
+   *  monotonic vision revision; an unchanged rev skips the texel re-upload. */
+  updateFogOverlay(rev: number, level: (tx: number, ty: number) => number): void {
+    if (!this.world) return;
+    this.ensureFogMesh(this.world.W, this.world.H);
+    this.fogMesh!.visible = true;
+    if (rev === this.fogRev) return;
+    this.fogRev = rev;
+    const { W, H } = this.world;
+    const data = this.fogData!;
+    const [r, g, b] = View.FOG_RGB;
+    for (let ty = 0; ty < H; ty++) {
+      for (let tx = 0; tx < W; tx++) {
+        // texel (col=tx, row=H-1-ty): plane is rotated -90° about X, so the
+        // texture's first row maps to the far (high-ty) edge of the map
+        const idx = ((H - 1 - ty) * W + tx) * 4;
+        const lvl = level(tx, ty);
+        const a = lvl >= 2 ? 0 : lvl === 1 ? View.FOG_ALPHA[1] : View.FOG_ALPHA[0];
+        data[idx] = r; data[idx + 1] = g; data[idx + 2] = b; data[idx + 3] = a;
+      }
+    }
+    this.fogTex!.needsUpdate = true;
+  }
+
+  /** Hide the veil (fog off, or while spectating both seats). */
+  hideFogOverlay(): void { if (this.fogMesh) this.fogMesh.visible = false; }
+
+  private disposeFog(): void {
+    if (!this.fogMesh) return;
+    this.scene.remove(this.fogMesh);
+    this.fogMesh.geometry.dispose();
+    (this.fogMesh.material as THREE.Material).dispose();
+    this.fogTex?.dispose();
+    this.fogMesh = null; this.fogTex = null; this.fogData = null;
+    this.fogW = this.fogH = 0; this.fogRev = -1;
   }
 
   createBuildingMesh(key: BuildingKey, def: BuildingDef, playerColor?: number): THREE.Group { return makeBuilding(key, def, false, playerColor); }

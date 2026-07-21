@@ -23,9 +23,25 @@ interface VisionPorts {
  * the renderer (hiding hostile meshes from the local seat) and AI perception
  * (the fairness boundary — a CPU seat sees exactly what its assets see).
  */
+/** Per-tile fog level for the renderer's veil. */
+export const enum FogLevel {
+  /** Never scouted — the darkest veil. */
+  Unexplored = 0,
+  /** Seen before, out of sight now — a lighter veil (terrain remembered). */
+  Explored = 1,
+  /** In sight this instant — no veil. */
+  Visible = 2,
+}
+
 export class VisionSystem {
   private readonly grids = new Map<PlayerId, Uint8Array>();
+  /** Sticky "ever seen" memory per owner — never cleared, so scouted ground
+   *  stays a light veil instead of snapping back to black. */
+  private readonly explored = new Map<PlayerId, Uint8Array>();
   private readonly freshAt = new Map<PlayerId, number>();
+  /** Bumped whenever a grid is rebuilt, so the renderer only re-uploads the
+   *  fog texture when visibility actually changed. */
+  private readonly revisions = new Map<PlayerId, number>();
 
   constructor(private readonly world: World, private readonly ports: VisionPorts) {}
 
@@ -33,6 +49,20 @@ export class VisionSystem {
   visible(owner: PlayerId, tx: number, ty: number): boolean {
     if (tx < 0 || ty < 0 || tx >= this.world.W || ty >= this.world.H) return false;
     return this.grid(owner)[ty * this.world.W + tx] === 1;
+  }
+
+  /** The renderer's three-state veil for tile (tx, ty). */
+  fogLevel(owner: PlayerId, tx: number, ty: number): FogLevel {
+    if (tx < 0 || ty < 0 || tx >= this.world.W || ty >= this.world.H) return FogLevel.Unexplored;
+    const i = ty * this.world.W + tx;
+    if (this.grid(owner)[i] === 1) return FogLevel.Visible;
+    return (this.explored.get(owner)?.[i] ?? 0) === 1 ? FogLevel.Explored : FogLevel.Unexplored;
+  }
+
+  /** Monotonic revision of `owner`'s vision — changes when the grid rebuilds. */
+  revision(owner: PlayerId): number {
+    this.grid(owner); // ensure the 0.5 s refresh has run
+    return this.revisions.get(owner) ?? 0;
   }
 
   private grid(owner: PlayerId): Uint8Array {
@@ -43,6 +73,11 @@ export class VisionSystem {
     if (!grid) {
       grid = new Uint8Array(this.world.W * this.world.H);
       this.grids.set(owner, grid);
+    }
+    let explored = this.explored.get(owner);
+    if (!explored) {
+      explored = new Uint8Array(this.world.W * this.world.H);
+      this.explored.set(owner, explored);
     }
     grid.fill(0);
     for (const unit of this.ports.units()) {
@@ -57,7 +92,9 @@ export class VisionSystem {
       if (site.removed || site.owner !== owner) continue;
       this.stamp(grid, site.x + 1, site.y + 1, BUILDING_SIGHT);
     }
+    for (let i = 0; i < grid.length; i++) if (grid[i]) explored[i] = 1;
     this.freshAt.set(owner, now);
+    this.revisions.set(owner, (this.revisions.get(owner) ?? 0) + 1);
     return grid;
   }
 
