@@ -2,7 +2,7 @@ import { DEFS } from '../../data/buildings';
 import { UNITS, type UnitKind } from '../../data/units';
 import { findPath } from '../../engine/pathfinding';
 import { doorTile } from '../../game/util';
-import { planFortificationRing, sideToward, type FortSide } from '../../game/fortification';
+import { planDefensiveLine } from '../../game/fortification';
 import type { BuildingKey, Building, Coord, ItemKey } from '../../types';
 import type { GameCommand } from '../../net/protocol';
 import { findBuildingSpot, planPlots } from '../actuation';
@@ -144,22 +144,27 @@ function goals(towers: number, scale: number, expansion: number): BuildGoal[] {
     // Coal is the sharpest one: it feeds the mint AND every smithy AND every
     // armory, so weapons and armour (and thus soldiers/knights/cavalry) all
     // starve behind it — hence the deepest coal ceiling.
+    // The mid-game boom (learned from a winning human replay): the settlement
+    // multiplies its COIN ENGINE — many mints, and the gold + coal to feed
+    // them — so coin compounds into a continuous, diverse late-game army. Caps
+    // are generous CEILINGS; the compounding scorer (expansionValue) decides
+    // how far each actually goes from the chain's real bottleneck.
     const grow: [BuildingKey, number, Category, BuildingKey[]?][] = [
       ['woodcutter', 3 + 2 * E, 'economy'],
       ['sawmill', 2 + E, 'economy', req('woodcutter')],
-      ['forester', E, 'economy', req('woodcutter')],
+      ['forester', 1 + Math.floor(E / 2), 'economy', req('woodcutter')],
       ['quarry', 3 + 2 * E, 'economy'],
       ['farm', 1 + E, 'food'],
       ['mill', E, 'food', req('farm')],
       ['bakery', E, 'food', req('mill')],
       ['tavern', E >= 2 ? 1 : 0, 'food', req('bakery')],
-      ['goldmine', 2 + E, 'coin'],
-      ['coalmine', 3 + 2 * E, 'coin'],         // feeds the mint AND smithies AND armories
-      ['mint', E >= 2 ? 1 : 0, 'coin', req('goldmine', 'coalmine')],
-      // market intentionally omitted — see note in the opening build order
+      ['goldmine', 2 + 2 * E, 'coin'],         // gold ore is the mints' fuel
+      ['coalmine', 3 + 3 * E, 'coin'],         // feeds the mints AND smithies AND armories
+      ['mint', E >= 2 ? 1 + E : 0, 'coin', req('goldmine', 'coalmine')], // the coin engine, multiplied
+      ['market', E >= 3 ? 1 : 0, 'coin', req('quarry')], // late surplus → coin (godlike only)
       ['ironmine', 2 + E, 'war'],
       ['smithy', 1 + E, 'war', req('ironmine', 'coalmine')],
-      ['armory', E >= 2 ? 1 + E : 0, 'war', req('smithy')],   // armour for knights & horse knights
+      ['armory', E >= 2 ? E : 0, 'war', req('smithy')],   // armour for knights & horse knights
       ['barracks', 1 + E, 'war'],
       ['stable', E >= 2 ? 1 : 0, 'war'],       // cavalry: lancers, horse knights/archers
       ['engineer', E >= 2 ? 1 : 0, 'war'],     // siege: onagers, trebuchets
@@ -268,12 +273,13 @@ export class ClassicMacro implements MacroPolicy {
     return { type: 'paintRoad', cells };
   }
 
-  // ---- curtain walls ----
-  /** Raise the profile's fortification rings around the castle: layered
-   *  square curtains with a gate toward the enemy and one at the rear, so
-   *  the baileys between rings stay working ground for the owner's serfs
-   *  while every hostile must batter a way in. One piece per pass; slots the
-   *  ground refuses stay honest gaps. */
+  // ---- defensive lines ----
+  /** Wall the ENEMY APPROACH, not the whole castle: a straight curtain with a
+   *  central sortie gate, thrown across the open ground the rival must cross,
+   *  and anchored to the map's natural barriers — segments whose ground is
+   *  already water or rock are skipped (terrain IS the wall there), so the
+   *  masonry only closes the gaps between them. Higher `walls` add a second,
+   *  closer line as a fallback. Army before masonry; one piece per pass. */
   private planFortification(ctx: PolicyContext): GameCommand | null {
     const { game, world, view, profile } = ctx;
     if (profile.walls <= 0 || !view.store) return null;
@@ -281,13 +287,20 @@ export class ClassicMacro implements MacroPolicy {
     // stands is measured tempo handed to a rushing rival
     if ((view.built.barracks ?? 0) < 1 || view.armySize < profile.attackArmy * 0.5) return null;
     if (view.sites.length >= profile.maxPendingSites) return null;
-    const center = { x: view.store.x, y: view.store.y };
-    const enemySide: FortSide = view.enemyStore ? sideToward(center, view.enemyStore) : 'e';
-    const opposite: Record<FortSide, FortSide> = { n: 's', s: 'n', e: 'w', w: 'e' };
-    const gateSides: FortSide[] = [enemySide, opposite[enemySide]];
-    for (let ring = 0; ring < profile.walls; ring++) {
-      const radius = 6 + ring * 4;
-      for (const piece of planFortificationRing(center, radius, gateSides)) {
+    const center = { x: view.store.x + 1, y: view.store.y + 1 };
+    // face the rival; with none in view, wall the open map centre (the way in)
+    const enemy = view.enemyStore
+      ? { x: view.enemyStore.x, y: view.enemyStore.y }
+      : { x: Math.round(world.W / 2), y: Math.round(world.H / 2) };
+    const naturalBarrier = (x: number, y: number): boolean => {
+      const tile = world.T(x, y);
+      return !tile || tile.type === 'water' || tile.type === 'rock'; // off-map, lake or ridge
+    };
+    for (let line = 0; line < profile.walls; line++) {
+      const distance = 11 - line * 4;   // outer line first, then a closer fallback
+      for (const piece of planDefensiveLine(center, enemy, distance, 6)) {
+        // a segment already backed by terrain needs no wall — that is the point
+        if (naturalBarrier(piece.x, piece.y) || naturalBarrier(piece.x + 1, piece.y + 1)) continue;
         const tile = world.T(piece.x, piece.y);
         if (!tile || tile.b || tile.site) continue;           // held or hopeless slot
         const key: BuildingKey = piece.kind === 'gate' ? 'gate' : 'wall';
@@ -295,7 +308,7 @@ export class ClassicMacro implements MacroPolicy {
         if (!game.canPlace(key, piece.x, piece.y, piece.rot)) continue;
         return { type: 'placeBuilding', key, x: piece.x, y: piece.y, rot: piece.rot };
       }
-      // this ring is as finished as the ground allows — start the next layer
+      // this line is as finished as the ground allows — add the closer fallback
     }
     return null;
   }
@@ -346,8 +359,46 @@ export class ClassicMacro implements MacroPolicy {
 
     const coin = storeStock(game, view.owner, 'coin');
     const armyRoom = view.armySize < profile.armyCap;
+    // The endless mid-game expansion waits for the COIN ENGINE to run: a mint
+    // built AND staffed, earning. Booming before that (a 2nd barracks, deep
+    // mines) drains the opening's finite timber/stone and deadlocks the base at
+    // zero coin — it can never afford the mint that would restart the economy
+    // (measured: godlike froze at 8 buildings, 0 timber). The opening builds
+    // straight through; only the `expand` goals hold for the mint.
+    const coinEngineRunning = view.buildings.some(b => b.key === 'mint' && b.worker);
+    // COIN ENGINE FIRST: until a mint STANDS, build only the chain that leads to
+    // it (wood→timber, stone, gold, coal, mint). The mint's requirements aren't
+    // met until the goldmine & coalmine finish CONSTRUCTING, and while the bot
+    // waits it would otherwise spend its finite starting timber on a barracks /
+    // ironmine / farm and never afford the mint — the coin deadlock. A 2-minute
+    // fallback lets a mint-less map (no gold vein) proceed anyway.
+    const preMint: BuildingKey[] = ['guildhall', 'woodcutter', 'sawmill', 'quarry', 'goldmine', 'coalmine', 'mint', 'forester'];
+    const coinFirst = (view.built.mint ?? 0) === 0 && view.elapsed < 120;
+    // The boom must not outrun its STAFFING: every RAW/food producer needs a
+    // villager, and villagers cost coin, so sprawling those while posts sit
+    // empty spends every coin on hiring and fields no army (measured: 76
+    // buildings, coin 0, army 0). Pausing them while >2 posts are unstaffed
+    // self-throttles the sprawl to what coin income can staff. EXEMPT: the coin
+    // chain (mint + its gold/coal feed) — it GROWS income and takes control of
+    // the map's central ore, the pro's edge — and war/fort (they unlock the
+    // army). This is what compounds coin into the ever bigger, diverse army.
+    const staffed = view.workers.unstaffed <= 2;
+    const grows = (c: Category): boolean => c === 'war' || c === 'fort' || c === 'coin';
+    // ANTI-GRIDLOCK: construction is timber+stone, so starting sites the base
+    // can't supply spreads a trickle of materials across many half-built sites
+    // and NONE finish (measured: timber/stone pinned at 0, goldmines stuck as
+    // sites, the cheap mint never affordable). So while materials are starved,
+    // only the MATERIAL PRODUCERS themselves (which end the starvation) may
+    // start — everything else waits for a small buffer to build up.
+    const timber = economyStock(game, view.owner, 'timber'), stone = economyStock(game, view.owner, 'stone');
+    const materialProducer: BuildingKey[] = ['woodcutter', 'sawmill', 'quarry', 'forester'];
+    const starved = timber < 3 || stone < 3;
     const candidates = goals(profile.towers, profile.econScale, profile.expansion)
       .filter(goal => have(view, goal.key) < goal.target)
+      .filter(goal => coinEngineRunning || !goal.expand)
+      .filter(goal => !coinFirst || preMint.includes(goal.key))
+      .filter(goal => !goal.expand || grows(goal.category) || staffed)
+      .filter(goal => !goal.expand || !starved || materialProducer.includes(goal.key))
       .filter(goal => (goal.requires ?? []).every(key => (view.built[key] ?? 0) > 0))
       .filter(goal => (this.blockedUntil.get(goal.key) ?? 0) <= view.elapsed)
       .map(goal => {
@@ -377,7 +428,11 @@ export class ClassicMacro implements MacroPolicy {
         continue;
       }
       this.savingSince.delete(goal.key);
-      const spot = findBuildingSpot(game, world, view, goal.key, rng, ctx.approach);
+      // how far the profile pushes its economy out: low tiers hug home, higher
+      // tiers reach for the contested central deposits (never past midfield —
+      // findBuildingSpot's safeGround still bars the enemy half)
+      const reach = 22 + profile.expansion * 8;
+      const spot = findBuildingSpot(game, world, view, goal.key, rng, ctx.approach, reach);
       if (spot) return { type: 'placeBuilding', key: goal.key, x: spot.x, y: spot.y, rot: spot.rot };
       this.blockedUntil.set(goal.key, view.elapsed + 45);
     }
@@ -404,35 +459,50 @@ export class ClassicMacro implements MacroPolicy {
       return want > 0 && producers < want ? 40 + (want - producers) * 14 : 0;
     };
 
+    const armySpace = view.armySize < ctx.profile.armyCap;
     switch (goal.key) {
-      // ---- raw miners: balance to the buildings that burn their ore ----
-      // coal feeds the mint AND every smithy AND armory; iron feeds smith+armor.
-      // Both are over-provisioned so the coin mint can't starve the weapon/armour
-      // chain of its shared coal, nor the smithies each other of iron.
-      case 'coalmine': return feed(b('coalmine'), b('mint') + b('smithy') + b('armory'), 1.8);
-      case 'ironmine': return feed(b('ironmine'), b('smithy') + b('armory'), 1.5);
-      case 'goldmine': {
-        // gold ore feeds the mint (coin); keep coin flowing
-        const need = feed(b('goldmine'), b('mint'));
-        return Math.max(need, coin < 10 ? 55 : 0);
+      // ---- the coin engine (the mid-game boom's heart) ----
+      // A winning human multiplies MINTS and feeds them: more mints = more
+      // coin = a bigger, more diverse standing army. Keep opening mints while
+      // gold+coal supply can feed them and there's still an army to pay for.
+      // The COIN ENGINE, decoupled so it actually compounds (a mint-per-goldmine
+      // vs goldmine-per-mint loop kept both pinned at one, starving the army of
+      // the coin that buys knights, cavalry and priests — the all-archer
+      // plateau). A pro instead SEIZES the map's gold: goldmines grow whenever
+      // coin is short (which is most of the game — the army spends it), claiming
+      // veins out to the contested centre; mints then follow the gold, and coal
+      // is over-provisioned to feed the mints and the weapon chain both.
+      case 'mint': {
+        if (b('mint') === 0) return 60;
+        const supply = Math.min(b('goldmine'), b('coalmine')); // one mint per gold+coal feed
+        return b('mint') < supply ? 62 + (supply - b('mint')) * 8 : (coin < 12 ? 40 : 0);
       }
-      // ---- raw for the timber chain: woodcutters feed sawmills ----
-      case 'woodcutter': return Math.max(feed(b('woodcutter'), b('sawmill')), stock('trunk') < 3 ? 45 : 0);
-      case 'forester': return b('forester') < 1 ? 40 : 0;   // one keeps the woods alive
+      case 'goldmine':
+        // grab gold while coin is short (claim the map's veins), but keep only a
+        // small lead on the mints so goldmine sites don't gridlock construction
+        // while the mint they feed waits for materials
+        return b('goldmine') < b('mint') + 1 ? 56 : (coin < 25 && b('goldmine') < 5 ? 46 : 0);
+      case 'coalmine': return feed(b('coalmine'), b('mint') + b('smithy') + b('armory') + b('goldmine'), 1.4);
+      case 'ironmine': return feed(b('ironmine'), b('smithy') + b('armory'), 1.5);
+      // ---- the timber & stone chain: it MUST keep construction supplied, so it
+      // is valued by its good's scarcity and outbids other producers when the
+      // base runs dry (an empty materials pile gridlocks every other site) ----
+      case 'woodcutter': return stock('timber') < 12 ? 44 + (12 - stock('timber')) * 6 : feed(b('woodcutter'), b('sawmill'));
+      case 'sawmill': return b('sawmill') < b('woodcutter') ? 48 : (stock('timber') < 10 ? 30 : 0);
+      case 'quarry': return stock('stone') < 14 ? 44 + (14 - stock('stone')) * 6 : 0;
+      case 'forester': return b('forester') < 1 ? 42 : (b('forester') < b('woodcutter') / 3 ? 30 : 0);
       case 'farm': return feed(b('farm'), b('mill')) || (stock('wheat') < 3 ? 35 : 0);
       // ---- crafters & final goods: stock scarcity (what's actually short) ----
-      case 'sawmill': return stock('timber') < 8 ? 24 + (8 - stock('timber')) * 6 : 0;
-      case 'quarry': return stock('stone') < 8 ? 22 + (8 - stock('stone')) * 6 : 0;
       case 'mill': return b('mill') < b('farm') ? 30 : 0;
       case 'bakery': return stock('bread') < 6 ? 30 : 0;
-      case 'mint': return b('mint') === 0 ? 60 : (coin < 8 ? 40 : 0);
+      case 'market': return b('market') === 0 && coin < 20 && stock('stone') > 12 ? 26 : 0;
       // weapons & armour gate the whole DIVERSE army — short of them the bot can
       // only field timber-only archers (the measured all-archer plateau), so
       // these crafters outbid a cheaper producer whenever they run dry
-      case 'smithy': return b('smithy') === 0 ? 60 : (feed(b('smithy'), b('barracks') + b('stable')) || (stock('weapon') < 6 ? 40 : 0));
+      case 'smithy': return b('smithy') === 0 ? 62 : (feed(b('smithy'), b('barracks') + b('stable') + 1) || (stock('weapon') < 8 ? 42 : 0));
       // the first armory unlocks armour → knights & horse knights (a big slice
       // of the diverse mix); further ones only while armour is short
-      case 'armory': return b('armory') === 0 ? 56 : (stock('armor') < 6 ? 34 : 0);
+      case 'armory': return b('armory') === 0 ? 58 : (stock('armor') < 8 ? 36 : 0);
     }
 
     // ---- military / production-enabling buildings ----

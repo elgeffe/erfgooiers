@@ -27,8 +27,6 @@ const MINE_NODE: Partial<Record<BuildingKey, 'stone' | 'gold' | 'coal' | 'iron'>
 const GATHER_RANGE = 9;
 /** Search rings around the anchor, and a cap on scored legal candidates. */
 const MIN_RADIUS = 2, MAX_RADIUS = 16, MAX_CANDIDATES = 40;
-/** Mines only anchor on deposits reasonably near home — never in the rival base. */
-const MAX_ANCHOR_DISTANCE = 26;
 
 const chebyshev = (a: Coord, b: Coord): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 
@@ -66,14 +64,16 @@ function openPlotGround(world: World, at: Coord): number {
 }
 
 /** The anchor a building key wants to sit near, or null when the map has none
- *  left (e.g. every iron deposit mined out) — the caller skips the goal then. */
-function anchorFor(view: AIView, key: BuildingKey, home: Coord, approach: Coord): Coord | null {
+ *  left (e.g. every iron deposit mined out) — the caller skips the goal then.
+ *  `reach` is how far from home the profile will expand: low tiers hug the
+ *  base, higher tiers push mines out toward the CONTESTED CENTRE deposits. */
+function anchorFor(view: AIView, key: BuildingKey, home: Coord, approach: Coord, reach: number): Coord | null {
   const node = MINE_NODE[key];
   const enemyStore = view.enemyStore ? { x: view.enemyStore.x, y: view.enemyStore.y } : null;
   if (node) {
     // gold is the army's fuel — worth a longer walk than any other deposit,
     // and a follow-up mine must sit at a vein the standing mines don't work
-    let best: Coord | null = null, bestDistance = node === 'gold' ? 30 : MAX_ANCHOR_DISTANCE;
+    let best: Coord | null = null, bestDistance = node === 'gold' ? reach + 4 : reach;
     for (const deposit of view.resources[node]) {
       const distance = chebyshev(deposit, home);
       if (distance >= bestDistance || !safeGround(deposit, home, enemyStore)) continue;
@@ -91,7 +91,7 @@ function anchorFor(view: AIView, key: BuildingKey, home: Coord, approach: Coord)
     let best: Coord | null = null, bestDistance = 1e9;
     for (const tree of view.resources.trees) {
       const distance = chebyshev(tree, home);
-      if (distance >= bestDistance || distance > MAX_ANCHOR_DISTANCE) continue;
+      if (distance >= bestDistance || distance > reach) continue;
       if (!safeGround(tree, home, enemyStore)) continue;
       if (nodesNear(view.resources.trees, tree, 4) < 3) continue;
       bestDistance = distance; best = tree;
@@ -148,12 +148,12 @@ function score(view: AIView, world: World, key: BuildingKey, at: Coord, anchor: 
  * bases grow differently between matches, not between replays of one match.
  */
 export function findBuildingSpot(
-  game: Game, world: World, view: AIView, key: BuildingKey, rng: Rng, approach: Coord,
+  game: Game, world: World, view: AIView, key: BuildingKey, rng: Rng, approach: Coord, reach = 26,
 ): PlacementPlan | null {
   const store = view.store;
   if (!store) return null;
   const home = { x: store.x, y: store.y };
-  const anchor = anchorFor(view, key, home, approach);
+  const anchor = anchorFor(view, key, home, approach, reach);
   if (!anchor) return null;
 
   const candidates: (PlacementPlan & { value: number })[] = [];
@@ -192,7 +192,7 @@ export function findBuildingSpot(
   candidates.sort((a, b) => b.value - a.value);
   const from = doorTile(store);
   for (const candidate of candidates.slice(0, 6)) {
-    if (chebyshev(candidate, home) > 32) continue;
+    if (chebyshev(candidate, home) > reach + 8) continue;
     const door = doorTile(candidate);
     if (findPath(world, from.x, from.y, door.x, door.y, view.owner)) return candidate;
   }
