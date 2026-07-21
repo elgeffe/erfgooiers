@@ -125,7 +125,12 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
   // rival's towers and cracks its storehouse. (No cavalry — simpler roster.)
   godlike: {
     macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 66, errorRate: 0,
-    econScale: 1, expansion: 3, maxPendingSites: 7, workerReserveCoin: 3, towers: 2, walls: 1,
+    // expansion 2 (not 3): matching Hard's proven-balanced economy depth, so
+    // the deeper sprawl doesn't starve the army it needs for the clash — the
+    // edge over Hard is EXECUTION (cadence, APM, reactions, counter, raids) and
+    // a bigger army cap, not a bigger base it can't crew. towers 3 matches
+    // Hard's defensive strength so the close army fights don't tip on a tower.
+    econScale: 1, expansion: 2, maxPendingSites: 6, workerReserveCoin: 3, towers: 3, walls: 1,
     // onagers wreck the enemy line in the field clash (anti-personnel splash),
     // trebuchets (structureMult 4) then break the walls and storehouse — the
     // demolition core, so they're weighted highest of the siege pair
