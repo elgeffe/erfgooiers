@@ -60,7 +60,7 @@ export class WorkerSystem {
         unit.status = `Repairing ${building.def.name}`;
         unit.bob += dt * 12;
         unit.mesh.position.y = Math.abs(Math.sin(unit.bob)) * 0.07;
-        building.hp = Math.min(building.maxHp, building.hp + dt * building.maxHp / this.modsFor(building.owner).repairTime());
+        building.hp = Math.min(building.maxHp, building.hp + dt * building.maxHp / this.modsFor(building.owner).repairTime(building.owner));
         if (building.hp >= building.maxHp) {
           building.repair = undefined;
           unit.wstate = 'idle';
@@ -88,7 +88,7 @@ export class WorkerSystem {
       const door = doorTile(site);
       if (unit.tx === door.x && unit.ty === door.y && !unit.path) {
         unit.status = `Building ${site.def.name}`;
-        site.progress += dt / this.modsFor(site.owner).buildTime();
+        site.progress += dt / this.modsFor(site.owner).buildTime(site.owner);
         unit.bob += dt * 12;
         unit.mesh.position.y = Math.abs(Math.sin(unit.bob)) * 0.07;
         site.frame.scale.y = Math.max(0.05, site.progress);
@@ -262,7 +262,7 @@ export class WorkerSystem {
       const node = unit.target as GatherNode;
       if (unit.tx === node.x && unit.ty === node.y && !unit.path) {
         unit.wstate = 'gather';
-        unit.timer = this.modsFor(building.owner).gatherTime(def);
+        unit.timer = this.modsFor(building.owner).gatherTime(def, building.owner);
       } else if (!unit.path && !this.ports.sendTo(unit, node.x, node.y)) {
         unit.wstate = 'home';
         unit.target = null;

@@ -685,6 +685,12 @@ export class UI {
       } else if (o.def.tavern) {
         const tv = o.def.tavern;
         body += `<div class="sect">Provisions (any food · serves up to ${tv.capacity} workers)</div>` + this.invRowsHTML(o.inp);
+        // the stocked-larder bonuses this tavern is currently granting its owner
+        const perks: string[] = [];
+        if ((o.inp.fish || 0) > 0 || (o.inp.clam || 0) > 0) perks.push('🎣 faster gathering');
+        if ((o.inp.sausage || 0) > 0) perks.push('🔨 faster building');
+        if ((o.inp.wine || 0) > 0) perks.push('🍷 quicker step');
+        body += `<div class="sect">Larder bonuses</div><div class="invrow">${perks.length ? perks.join(' · ') : '<span style="color:var(--ink-dim)">stock fish/clams, sausage or wine for settlement-wide bonuses</span>'}</div>`;
         const fed: any[] = o.fedUnits || [];
         body += `<div class="sect">Feeding now (${fed.length}/${tv.capacity})</div>`;
         if (fed.length) {

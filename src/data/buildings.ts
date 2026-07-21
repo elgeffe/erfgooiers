@@ -76,7 +76,7 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: { timber: 2, stone: 2 }, roof: 0x7a3320, wall: 0xc4a075, accent: 0x9c4a2f,
     recipe: { inp: { meat: 1 }, out: 'sausage', time: 6 }, worker: 'Butcher', wcolor: 0x9c4a2f },
 
-  tavern: { name: 'Tavern', desc: 'Serves any food (bread, sausage, wine, fish…) to keep workers fed & fast', model: 'tavern',
+  tavern: { name: 'Tavern', desc: 'Feeds workers — and a stocked larder pays: fish/clams speed gathering, sausage speeds building, wine quickens every step', model: 'tavern',
     cost: { timber: 4, stone: 3 }, roof: 0x8a5a2b, wall: 0xcaa46e, accent: 0xffb060,
     tavern: { foods: ['bread', 'sausage', 'wine', 'fish', 'clam'], capacity: 6, time: 4 }, worker: 'Taverner', wcolor: 0xb5763a },
 

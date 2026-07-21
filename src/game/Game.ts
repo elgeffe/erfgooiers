@@ -8,7 +8,7 @@ import { diagonalSpawns, type World } from '../world/World';
 import type { View } from '../render/View';
 import { type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit, PLAYER_IDS } from '../types';
 import { doorTile } from './util';
-import { Modifiers, type ModifierSpec } from './Modifiers';
+import { Modifiers, TAVERN_BUILD_BUFF, TAVERN_GATHER_BUFF, TAVERN_SPEED_BUFF, type ModifierSpec } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, factionForOwner, ownerForFaction } from './ownership';
 import { TradeSystem } from './TradeSystem';
@@ -1127,6 +1127,10 @@ export class Game {
         if (owner === this.localPlayerId) this.sfx('build');
       }
     }
+    // Stocked-tavern buffs: refresh the shared ctx snapshot on a slow clock so
+    // keeping fish/sausage/wine in a staffed tavern pays owner-wide bonuses.
+    this.tavernBuffT += sdt;
+    if (this.tavernBuffT >= 2) { this.tavernBuffT = 0; this.refreshTavernBuffs(); }
     const hungerRate = this.mods.hungerRate();
     for (const u of this.units) {
       if (u.dead) continue;
@@ -1199,6 +1203,23 @@ export class Game {
         for (const mesh of tile.field.meshes) this.view.setFogHidden(mesh, hidden);
       }
     }
+  }
+
+  private tavernBuffT = 0;
+
+  /** Rebuild the per-owner tavern-buff snapshot in the shared Modifiers ctx:
+   *  a staffed tavern with seafood/sausage/wine in its larder grants the owner
+   *  faster gathering / building / walking (see Modifiers.TavernBuffs). */
+  private refreshTavernBuffs(): void {
+    const buffs: Modifiers['ctx']['tavernBuffs'] = {};
+    for (const b of this.buildings) {
+      if (b.removed || !b.def.tavern || !b.active || (b.owner !== 'p1' && b.owner !== 'p2')) continue;
+      const own = buffs[b.owner] ?? (buffs[b.owner] = { gather: 1, build: 1, speed: 1 });
+      if ((b.inp.fish || 0) > 0 || (b.inp.clam || 0) > 0) own.gather = TAVERN_GATHER_BUFF;
+      if ((b.inp.sausage || 0) > 0) own.build = TAVERN_BUILD_BUFF;
+      if ((b.inp.wine || 0) > 0) own.speed = TAVERN_SPEED_BUFF;
+    }
+    this.mods.ctx.tavernBuffs = buffs;
   }
 
   /** Queue a unit at a barracks/guild hall, paying its own cost from the store. */
