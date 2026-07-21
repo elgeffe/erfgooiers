@@ -161,10 +161,16 @@ export class Tactics {
     // the death instead of retreating. This is what converts the deep economy
     // and its siege into an actual win rather than a timeout draw.
     this.allIn = view.armySize >= Math.max(needed, Math.round(profile.armyCap * 0.85));
+    // A WALLED rival is never assaulted piecemeal: a periodic mid-size wave just
+    // bleeds out on the curtain and its towers while the turtle masses behind it
+    // (measured: Godlike fed 30-fighter waves into Hard's walls and lost the
+    // army it needed). Against fortifications, hold for the full siege-backed
+    // FINISHER — the trebuchets that actually break the wall — and commit once.
+    const canLaunch = view.enemyBulwarks.length === 0 || this.allIn;
     // the garrison is best-effort surplus, never a reason to delay the launch:
     // demanding wave + full guard before marching left Godlike massing forever
     const guard = this.allIn ? 0 : Math.min(Math.ceil(view.armySize * profile.homeGuard), Math.max(0, view.armySize - needed));
-    if (view.armySize - guard >= needed
+    if (canLaunch && view.armySize - guard >= needed
       && view.elapsed - this.lastAttackAt >= profile.minAttackInterval
       && view.enemyStore) {
       const wave = view.army.slice(0, view.armySize - guard);
