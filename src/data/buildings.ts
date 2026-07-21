@@ -3,7 +3,7 @@ import type { ObjectiveDef } from '../game/Objectives';
 
 export const DEFS: Record<BuildingKey, BuildingDef> = {
   storehouse: { name: 'Castle', desc: 'A fortified depot: stores every good and looses arrows at raiders. Build more to shorten haul routes', model: 'castle',
-    cost: { timber: 12, stone: 16 }, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 750,
+    cost: { timber: 12, stone: 16 }, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 2500,
     tower: { range: 7, dmg: 8, rate: 1.6 } },
 
   guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & builders)', model: 'guildhall',
@@ -168,7 +168,7 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     tower: { range: 6.5, dmg: 9, rate: 1.6 } },
 
   enemycastle: { name: 'Enemy Keep', desc: 'The enemy stronghold', model: 'castle',
-    cost: {}, roof: 0x3a2a3a, wall: 0x8a8078, accent: 0x5a1a26, hp: 900,
+    cost: {}, roof: 0x3a2a3a, wall: 0x8a8078, accent: 0x5a1a26, hp: 2600,
     tower: { range: 7, dmg: 11, rate: 2.2 } },
 
   enemywall: { name: 'Stronghold Wall', desc: 'The stronghold’s rampart — batter it down or find the gate', model: 'mine',

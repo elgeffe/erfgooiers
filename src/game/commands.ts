@@ -132,6 +132,11 @@ export function applyGameCommand(game: Game, playerId: PlayerId, command: GameCo
       game.setBell(playerId, command.active);
       return ok;
     }
+    case 'repair': {
+      const b = buildingOwnedBy(game, command.buildingId, playerId);
+      if (!b) return fail('not_your_building');
+      return game.repairBuilding(b) ? ok : fail('cannot_repair');
+    }
     case 'configureMarket': {
       const b = buildingOwnedBy(game, command.buildingId, playerId);
       if (!b || b.key !== 'market') return fail('not_your_market');

@@ -498,6 +498,14 @@ export class UI {
         if (o && o.def && o.def.store) { this.game!.submitCommand({ type: 'setBell', active: !this.game!.bell }); this.renderInspector(); }
         return;
       }
+      if (t && t.closest('#repairBtn')) {
+        if (o && o.def && !o.isSite && this.game!.canRepair(o)) {
+          audio.play('click');
+          this.game!.submitCommand({ type: 'repair', buildingId: o.id });
+          this.renderInspector();
+        }
+        return;
+      }
       if (t && t.closest('#prioBtn')) {
         if (o && (o.isSite || (o.def && (o.def.recipe || o.def.gather)))) {
           this.game!.submitCommand({ type: 'setPriority', siteId: o.id, priority: !o.priority });
@@ -558,6 +566,25 @@ export class UI {
     const visible = obj.style.display !== 'none' && obj.offsetParent !== null;
     $('inspector').style.top = visible ? Math.round(obj.getBoundingClientRect().bottom + 10) + 'px' : 'calc(var(--topbar-h, 52px) + 12px)';
   }
+  /** Health readout for a damaged building, plus a one-payment repair button
+   *  when the local player owns it. Undamaged buildings show nothing (no clutter). */
+  private buildingHealthHTML(o: any): string {
+    if (o.isSite || typeof o.hp !== 'number' || typeof o.maxHp !== 'number') return '';
+    if (o.hp >= o.maxHp) return '';
+    const hp = Math.max(0, Math.round(o.hp)), ratio = Math.max(0, o.hp / o.maxHp);
+    const col = ratio > 0.5 ? 'var(--good)' : ratio > 0.25 ? 'var(--accent)' : 'var(--bad)';
+    let s = `<div class="sect">Health</div><div class="invrow">HP<b>${hp} / ${o.maxHp}</b></div>`;
+    s += `<div class="bar"><div style="width:${Math.round(ratio * 100)}%;background:${col}"></div></div>`;
+    if (this.game!.canRepair(o) && this.game!.ownedByLocal(o)) {
+      const cost = this.game!.repairCost(o);
+      const chips = Object.keys(cost).map(k =>
+        `<i>${itemIconSVG(k as ItemKey, 13)} ${cost[k]}</i>`).join('');
+      s += `<button class="inspbtn repair" id="repairBtn" title="Pay the build cost once to restore full health">`
+        + `<span class="trow"><span class="tname">\u{1F528} Repair</span></span>`
+        + `<span class="tcost">${chips}</span></button>`;
+    }
+    return s;
+  }
   private renderInspector(): void {
     const o = this.game?.selected; if (!o) return;
     this.placeInspector();
@@ -609,6 +636,7 @@ export class UI {
       if (o.def.military) body += '<div class="hnote">Right-click the map to set the rally flag now; it will remain after construction.</div>';
       body += `<button class="inspbtn${o.priority ? ' on' : ''}" id="prioBtn">${o.priority ? '★ Prioritized — click to unset' : '☆ Prioritize construction'}</button>`;
     } else if (o.def.store) {
+      body += this.buildingHealthHTML(o);
       if (o === this.game!.store) {
       const bell = this.game!.bell;
       body += `<button class="inspbtn${bell ? ' on' : ''}" id="bellBtn">\u{1F514} ${bell ? 'Bell tolling — send workers back out' : 'Ring the bell — shelter all workers'}</button>`;
@@ -616,6 +644,7 @@ export class UI {
       }
       body += '<div class="sect">Stock</div>' + this.invRowsHTML(o.stock);
     } else {
+      body += this.buildingHealthHTML(o);
       if (!o.active) body += o.def.worker ? '<div class="hnote">Waiting for a trained villager to staff it…</div>' : '<div class="hnote">Waiting for worker to arrive…</div>';
       if (o.key === 'market') {
         const orders: { item: ItemKey; amount: number }[] = o.marketOrders ?? [];

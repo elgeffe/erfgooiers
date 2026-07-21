@@ -3,7 +3,7 @@ import { MAX_UNITS } from '../constants';
 import { UNIT_STANCES, type UnitStance } from '../types';
 import type { BuildingKey, Coord, Formation, ItemKey, PlayerId } from '../types';
 
-export const PROTOCOL_VERSION = 2; // v2: configureMarket joined the command set
+export const PROTOCOL_VERSION = 3; // v3: repair joined the command set
 export const CONTENT_VERSION = 1;
 export const MAX_MESSAGE_BYTES = 256 * 1024;
 export const MAX_ROOM_NAME = 48;
@@ -111,6 +111,7 @@ export type GameCommand =
   | { type: 'setStance'; unitIds: EntityId[]; stance: UnitStance }
   | { type: 'collectPickup'; x: number; y: number }
   | { type: 'setBell'; active: boolean }
+  | { type: 'repair'; buildingId: EntityId }
   | { type: 'configureMarket'; buildingId: EntityId; orders: { item: ItemKey; amount: number }[] }
   | { type: 'requestTrade'; item: ItemKey; amount: number; destinationId: EntityId }
   | { type: 'cancelTradeRequest'; requestId: TradeRequestId }
@@ -183,6 +184,7 @@ function validCommand(value: unknown): value is GameCommand {
         && (UNIT_STANCES as string[]).includes(value.stance as string);
     case 'collectPickup': return integer(value.x) && integer(value.y);
     case 'setBell': return typeof value.active === 'boolean';
+    case 'repair': return integer(value.buildingId);
     case 'configureMarket':
       return integer(value.buildingId) && Array.isArray(value.orders) && value.orders.length <= 8
         && value.orders.every(o => object(o) && shortString(o.item, 32) && integer(o.amount) && o.amount >= 0 && o.amount <= 50);

@@ -7,7 +7,7 @@ describe('Game deterministic regression guardrails', () => {
     const p1 = game.storeFor('p1');
     const p2 = game.storeFor('p2');
 
-    expect(gameplayFingerprintHash(game)).toBe('9c5ba485');
+    expect(gameplayFingerprintHash(game)).toBe('bd4b69a7');
 
     game.setEnemies({
       waves: [
@@ -20,15 +20,15 @@ describe('Game deterministic regression guardrails', () => {
     expect(game.trainUnit(game.guild, 'serf')).toBe(true);
     game.setBell('p1', true);
 
-    expect(gameplayFingerprintHash(game)).toBe('6f380063');
+    expect(gameplayFingerprintHash(game)).toBe('a1bb1489');
     tick(game, 2);
-    expect(gameplayFingerprintHash(game)).toBe('f735e3ae');
+    expect(gameplayFingerprintHash(game)).toBe('042c4374');
 
     game.setBell('p1', false);
     tick(game, 18);
-    // golden regenerated 2026-07: deeper gold/coal deposits + raised MIN_ORE
-    // floors intentionally reshaped worldgen's rnd draw on this seed
-    expect(gameplayFingerprintHash(game)).toBe('bb034b1b');
+    // golden regenerated 2026-07: the castle's raised HP (750 → 2500) shifts the
+    // building-HP terms of the fingerprint from the opening tick onward
+    expect(gameplayFingerprintHash(game)).toBe('462a31dc');
   });
 
   it('launches a timed wave on its exact fixed-step boundary', () => {
