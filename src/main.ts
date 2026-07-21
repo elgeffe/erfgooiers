@@ -34,7 +34,7 @@ import { applyGameCommand } from './game/commands';
 import { EXPEDITION_DIFFICULTY, EXPEDITION_LEVEL_COUNT, expeditionLevelFor } from './data/coOpLevels';
 import { SKIRMISH_LEVEL } from './data/skirmishLevels';
 import { AIController } from './ai/AIController';
-import { AI_PROFILES, aiProfile, type AIDifficulty, type AIStance } from './data/aiProfiles';
+import { AI_PROFILES, aiProfile, type AIDifficulty } from './data/aiProfiles';
 import { ReplayRecorder, serializeReplay, skirmishWinner, type Replay } from './game/replay';
 import type { PlayerId } from './types';
 
@@ -610,16 +610,16 @@ function onCoopLevelClear(): void {
 }
 
 // ---------- skirmish vs CPU (local, no lobby) ----------
-interface SkaiSeatCfg { difficulty: AIDifficulty; stance: AIStance; policy: string }
+interface SkaiSeatCfg { difficulty: AIDifficulty; policy: string }
 let skaiCfg: { seat: 'play' | 'spectate'; fog: boolean; east: SkaiSeatCfg; west: SkaiSeatCfg } = {
   seat: 'play',
   fog: true,
-  east: { difficulty: 'easy', stance: 'balanced', policy: 'classic' },   // the rival (p2)
-  west: { difficulty: 'hard', stance: 'balanced', policy: 'classic' },   // your seat when spectating (p1)
+  east: { difficulty: 'easy', policy: 'classic' },   // the rival (p2)
+  west: { difficulty: 'hard', policy: 'classic' },   // your seat when spectating (p1)
 };
 
 function skaiProfileId(seat: SkaiSeatCfg): string {
-  return seat.policy === 'classic' ? `classic-${seat.difficulty}-${seat.stance}` : seat.policy;
+  return seat.policy === 'classic' ? `classic-${seat.difficulty}` : seat.policy;
 }
 
 function openSkirmishAISetup(): void {
@@ -636,7 +636,6 @@ function renderSkirmishAISetup(): void {
     const groups: { key: keyof SkaiSeatCfg; label: string; opts: [string, string][]; hidden?: boolean }[] = [
       { key: 'policy', label: `${title} — Classic is the benchmark; Tensor is the MPS research brain; Idle & Random are training dummies`, opts: [['classic', '⚔️ Classic'], ['tensor', '🧠 Tensor'], ['random', '🎲 Random'], ['idle', '💤 Idle']] },
       { key: 'difficulty', label: 'Difficulty — a better player, never a cheating one', hidden: !classic, opts: [['easy', '🌱 Easy'], ['hard', '⚔️ Hard'], ['godlike', '🔥 Godlike']] },
-      { key: 'stance', label: 'Stance', hidden: !classic, opts: [['defensive', '🛡️ Defensive'], ['balanced', '⚖️ Balanced'], ['offensive', '🗡️ Offensive']] },
     ];
     let block = '';
     for (const grp of groups) {

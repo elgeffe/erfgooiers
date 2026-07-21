@@ -51,7 +51,7 @@ every action — so a win is a win of *strategy*, never of information or reflex
    build order, plus legitimate variants) so it samples a sensible spread before
    any self-play. This is one gradient routine — the same one used for refinement.
 2. **Self-play refinement.** Each generation: sample a batch of whole plans from
-   the current MPS, play each vs `classic-godlike-balanced`, keep the **elite**
+   the current MPS, play each vs `classic-godlike`, keep the **elite**
    (the plans that won, or — since a lead often shows before a 60-min elimination
    — the top plans by an army/economy **margin**), refit the MPS toward the elite
    with a few gradient steps, and keep a light imitation anchor in the batch so
@@ -73,7 +73,7 @@ npm run tensor:eval -- 40                # held-out win rate vs Godlike, full ti
 Per the reality-check doc's rule — *"no runtime integration unless the tensor
 method wins by enough to repay its complexity"* — the bar was fixed in advance:
 
-- **Primary.** The trained tensor policy wins **≥ 50%** vs `classic-godlike-balanced`
+- **Primary.** The trained tensor policy wins **≥ 50%** vs `classic-godlike`
   on the held-out seeds — parity-or-better with the strongest hand-crafted bot,
   earned through the fair seam. (Godlike beats Hard only ~50–59%, so parity with
   Godlike is a real bar for a near-from-scratch generative policy.)
@@ -86,7 +86,7 @@ method wins by enough to repay its complexity"* — the bar was fixed in advance
 ## Result
 
 **The bar was not cleared.** Measured on 24 held-out seeds (disjoint from every
-training seed) at the 25-minute decisive horizon, vs `classic-godlike-balanced`:
+training seed) at the 25-minute decisive horizon, vs `classic-godlike`:
 
 | Model | Win rate vs Godlike | |
 |---|--:|---|

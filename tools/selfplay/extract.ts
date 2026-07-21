@@ -12,7 +12,7 @@ import { extractDataset, datasetToJsonl, FEATURE_NAMES } from '../../src/ai/data
  * at tick T → that seat's next macro action. This is the exit-bar's "dataset
  * extraction works", and the training-set format a learned macro policy uses.
  *
- *   npm run extract -- --pairs classic-hard-balanced:classic-hard-balanced --seeds 20
+ *   npm run extract -- --pairs classic-hard:classic-hard --seeds 20
  *   npm run extract -- --replays target/selfplay/run-.../  --out target/dataset.jsonl
  *
  * Flags:
@@ -33,7 +33,7 @@ interface Options {
 
 function parseArgs(argv: string[]): Options {
   const opts: Options = {
-    pairs: [['classic-hard-balanced', 'classic-hard-balanced']], seeds: 10, baseSeed: 8000,
+    pairs: [['classic-hard', 'classic-hard']], seeds: 10, baseSeed: 8000,
     replays: null, every: 20, horizon: 60, out: join('target', 'selfplay', 'dataset.jsonl'), maxMinutes: 30,
   };
   for (let i = 0; i < argv.length; i++) {

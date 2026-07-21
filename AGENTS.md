@@ -196,7 +196,9 @@ hard placement pressure.
   (or hands both seats to CPUs and spectates):
   `src/ai/` holds the headless agent (perception → strategy → tactics → actuation behind
   `AIController`; only `Game` reads + `GameCommand` writes, so the CPU cannot cheat),
-  `src/data/aiProfiles.ts` the difficulty × stance knob table, and `src/game/replay.ts`
+  `src/data/aiProfiles.ts` the difficulty-persona knob table (Easy defensive & slow,
+  Hard defensive with a late big-wave breakout, Godlike early raids + walled buildup
+  + diverse late army — stances were removed), and `src/game/replay.ts`
   records every match as seed + command log with deterministic re-simulation. Matches run
   on the 1v1 **arena** (`skirmishLevels.ts`): players in opposite corners (`initCoOp`'s
   `diagonal` layout), each corner ore-provisioned with a contested cluster at map centre.
@@ -208,6 +210,14 @@ hard placement pressure.
   and `npm run extract` (`src/ai/dataset.ts`) re-simulates replays into labelled JSONL
   (features → next macro action, the Phase 3 dataset). `docs/skirmish-ai-design.md` tracks
   the phased plan, status, and the open production-line-balance problem.
+- **Fog of war** is an information-layer toggle (`Game.fogOfWar` + `game/VisionSystem.ts`):
+  hostile units/buildings/sites are hidden from render, minimap, and AI perception outside
+  the observer's own sight; the deterministic sim never reads it, so replays and
+  fingerprints are fog-agnostic. Defaults: ON in skirmish (host/setup toggle) and sandbox;
+  solo runs are revealed on Normal and fogged from ascension 1 up. **Building repair** is a
+  physical job through the `repair` command: serfs haul half the build cost to the damaged
+  building, then a builder mends it at `Modifiers.repairTime()` (30 s base for a full heal);
+  the CPU seats order repairs through the same seam, castle first.
 - A Phase 3 **research spike** adds a tensor-network macro: `src/ai/tensor/` holds a Matrix
   Product State (Born-machine) generative model over whole build-order/army plans, the
   `tensor` policy/profile samples ONE plan per game and executes it through the same seam,

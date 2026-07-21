@@ -18,13 +18,34 @@ against the Godlike baseline — the `tensor` policy/profile, `src/ai/tensor/`,
 [tensor-strategy-poc.md](tensor-strategy-poc.md). The rest of Phases 3+
 (state-conditioned learned/adaptive AI, online seats) remain unimplemented.
 
+**Baseline update (July 2026, post-balance-pass).** Three changes reshaped the
+scripted baseline and its training conditions:
+1. **Stances are gone.** The difficulty × stance matrix (nine Classic profiles)
+   collapsed into three difficulty PERSONAS (`classic-easy`/`-hard`/`-godlike`)
+   to shrink the training/evaluation permutations. Easy is a slow defensive
+   homesteader; Hard is a defensive fortress with a slow fuse that breaks out
+   late with one big wave (high `attackArmy`, long `minAttackInterval`);
+   Godlike is the pro — an early raid party pesters the rival's economy (and
+   scouts) from the opening while walls rise and a large diverse late-game
+   army compounds behind them.
+2. **Fog of war shipped**, default ON in skirmish. Perception filters hostile
+   fighters and bulwarks by the seat's own sight (the fairness boundary works
+   as designed); the rival castle's corner and map resources stay known (map
+   knowledge on the fixed symmetric arena). Raids double as scouting. The
+   launch heuristic no longer trusts an unseen army count of zero.
+3. **Repair is a physical action** (serfs haul half the build cost, a builder
+   mends over ~30 s/full HP) and the shared Tactics layer orders it: the
+   castle at the first real dent (< 80%), lesser buildings below half.
+Self-play, the campaign ladder and dataset extraction all run under this
+baseline (fog on), which is what the tensor track retrains against next.
+
 The **1v1 arena** is a 100×88 map with the two players in opposite corners
 (`initCoOp`'s `diagonal` layout), each corner worldgen-provisioned with a full
 ore spread (coal deepest — it feeds the mint AND every smithy AND armory) plus
 a contested gold-and-ore cluster at map centre. `src/game/fortification.ts` is
 the shared curtain-wall planner (gates keep baileys working; sieges breach the
 nearest gate); walls cost 2 stone so layers are affordable, and the Classic bot
-rings its castle only on defensive stances. The Classic macro no longer
+rings its castle on the wall-building personas (Hard and Godlike). The Classic macro no longer
 plateaus: a tier-scaled `expansion` knob (Easy 0 / Hard 1 / Godlike 2) keeps
 compounding producers, chosen by a **producer/consumer balance** model (build
 more of a raw miner while the buildings burning its output outnumber it — a
@@ -162,7 +183,7 @@ Game ──▶ Perception ──▶ Strategy (macro) ──▶ Tactics (micro) �
         │  & threat map  when to expand/attack  target selection   search, orders │
         └──────────────────────────────────────────────────────────────────────────┘
                                         ▲
-                          AIProfile (difficulty × stance × policy type)
+                          AIProfile (difficulty persona × policy type)
 ```
 
 - **Perception** (`src/ai/perception.ts`): pure feature extraction from `Game` —
@@ -170,8 +191,9 @@ Game ──▶ Perception ──▶ Strategy (macro) ──▶ Tactics (micro) �
   vectors (hostile units near own buildings), map control. This is the *only* place
   that reads sim state, and it defines the observation space shared by every policy
   (classic, learned, experimental). What perception may read is the fairness
-  boundary for information: today, anything (full visibility); under future fog,
-  only what the bot's seat could see.
+  boundary for information: under fog of war (shipped, default on in skirmish)
+  it filters hostiles by the bot seat's own sight, so the CPU is exactly as
+  blind as a human under the same fog.
 - **Strategy** (`src/ai/strategy/`): the macro policy. Given features, choose the
   next macro intent: build X, train Y, expand, fortify, mass, attack now. This is
   the layer where classic scripts, learned models, and research-track optimizers
@@ -191,14 +213,15 @@ Game ──▶ Perception ──▶ Strategy (macro) ──▶ Tactics (micro) �
   streams in `src/engine/rng.ts`) — never `Math.random()` — so replays containing
   bot games stay reproducible.
 
-### Profiles: difficulty × stance × policy
+### Profiles: difficulty persona × policy
 
-`src/data/aiProfiles.ts` — data, per the repo convention, not branches in code:
+`src/data/aiProfiles.ts` — data, per the repo convention, not branches in code.
+(Stances were removed in July 2026: three difficulty personas carry both the
+skill ladder AND the temperament, keeping the training matrix small.)
 
 | Axis | Values | What it changes |
 |---|---|---|
-| Difficulty | Easy, Hard, Godlike | Reaction latency, action budget (commands/min), planning quality (script tier or search/model strength), micro precision, deliberate error rate on Easy |
-| Stance | Defensive, Offensive, Balanced | Build priorities (towers/walls vs barracks), army-size threshold before attacking, expansion appetite, retreat thresholds, harass frequency |
+| Difficulty persona | Easy (slow defensive homesteader), Hard (defensive fortress, late big-wave breakout), Godlike (pro: early raids + walled buildup + diverse late army) | Reaction latency, action budget (commands/min), planning quality, expansion depth, tower/wall appetite, attack threshold & cadence, raid pattern, deliberate error rate on Easy |
 | Policy | Classic, Adaptive (learned), Experimental (research winners) | Which strategy implementation drives the macro layer |
 
 "Exponentially increasing" difficulty is defined *empirically*, not by adjectives:
@@ -233,7 +256,7 @@ Each phase is independently shippable and each exit bar is checkable.
 
 The goal is the plumbing, proven end-to-end with a trivial bot.
 
-- Menu entry **Skirmish vs CPU**: setup screen with difficulty, stance, and AI-type
+- Menu entry **Skirmish vs CPU**: setup screen with difficulty and AI-type
   pickers (only "Classic" listed at first; the picker exists from day one because
   policy selection is the epic's product surface).
 - A local start path: reuse the skirmish branch of `startCoopLevel` (`src/main.ts`)
@@ -257,10 +280,10 @@ A handwritten, layered, *fair* agent — the permanent benchmark and the guarant
 fallback if every experiment fails.
 
 - Perception features and threat map (shared by all later policies).
-- Macro: stance-parameterized build-order scripts with reactive branches (lost
+- Macro: profile-parameterized build-order scripts with reactive branches (lost
   workers → rebuild economy; enemy massing → towers/army), driven by a simple
-  utility scorer over candidate next-actions rather than a rigid list, so stances
-  are weights, not separate code paths.
+  utility scorer over candidate next-actions rather than a rigid list, so
+  personas are knob values, not separate code paths.
 - Tactics: defense trigger, attack waves at army thresholds, rally/formation use,
   retreat when losing, target priority (army → production → storehouse).
 - Actuation: robust placement search near own storehouse/resources.
@@ -285,8 +308,9 @@ falsifiable instead of vibes.
 - Batch tournaments across seeds: win rate, match length, economy curves
   (time-to-first-soldier, income at 5/10 min), APM actually used.
 - Balance pass: tune profile knobs until the ladder separates (each tier ≥80% vs the
-  tier below across ≥100 seeded matches) and stances are distinguishable in play
-  (offensive attacks measurably earlier, defensive loses fewer buildings).
+  tier below across ≥100 seeded matches) and the personas are distinguishable in
+  play (Godlike raids measurably earlier; Hard loses fewer buildings and lands
+  its first big wave later but larger).
 - Feature/label extraction from replays (re-simulate, snapshot features every N
   ticks) — the dataset builder for Phase 3, exercised here on bot-vs-bot data first.
 
@@ -308,7 +332,7 @@ Offline learning on the Phase 2 pipeline; inference is a small pure-TS forward p
 - **Adaptation to the player**: an opponent-model extracts habit features from the
   player's replays (attack timing distribution, unit-mix preference, expansion
   pattern) and conditions the policy — at minimum by selecting/blending
-  counter-stance profiles, at best as model inputs. The loop the owner asked for:
+  counter profiles, at best as model inputs. The loop the owner asked for:
   play → download replays → run the pipeline → the shipped "Adaptive" opponent now
   counters your habits.
 - Model constraints: weights shipped as JSON under a size budget (≤ ~200 KB),
@@ -380,7 +404,7 @@ One format everywhere (browser recorder, Node self-play, training pipeline):
   "level": "skirmish-border-clash",
   "players": [
     { "id": "p1", "kind": "human", "hero": "reeve" },
-    { "id": "p2", "kind": "ai", "profile": "classic-hard-offensive" }
+    { "id": "p2", "kind": "ai", "profile": "classic-hard" }
   ],
   "commands": [ { "tick": 412, "playerId": "p1", "command": { "type": "placeBuilding", "...": "..." } } ],
   "outcome": { "winner": "p1", "ticks": 51240, "reason": "storehouse" }
@@ -394,7 +418,7 @@ Phase 0 "replay reproduces outcome" test guards the determinism contract forever
 
 ## Metrics
 
-- **Strength ladder**: win-rate matrix across tiers/stances/policies on ≥100 seeded
+- **Strength ladder**: win-rate matrix across tiers/policies on ≥100 seeded
   headless matches; tiers must hold the ≥80% separation.
 - **Fairness**: zero commands rejected by `applyGameCommand` in tournaments (a
   rejected bot command is a bug); no sim reads outside `perception.ts`.
@@ -415,9 +439,9 @@ Phase 0 "replay reproduces outcome" test guards the determinism contract forever
 - **Determinism vs learned models**: float drift across JS engines. Mitigate:
   quantized/integer inference for shipped models; host-sequenced bot commands
   online so cross-peer replication is never assumed.
-- **Fog of war later**: today's full visibility is symmetric; if fog ships, the
-  fairness contract requires perception to filter through the bot seat's visibility.
-  Keeping all state reads inside `perception.ts` makes that a one-module change.
+- **Fog of war** (shipped July 2026): the fairness contract holds — perception
+  filters hostiles through the bot seat's own visibility, and because all state
+  reads live inside `perception.ts` it was the predicted one-module change.
 - **Training data scarcity**: one owner's replays is a small imitation set.
   Mitigate: self-play data dominates; human replays steer style, not the whole
   policy.
@@ -437,7 +461,7 @@ src/ai/                     # runtime agents — no DOM, no Three.js, Game-reads
   tactics.ts                # squads, defense triggers, attacks, retreats
   actuation.ts              # intents → legal GameCommands; placement search
   models/*.json             # exported quantized weights (size-budgeted)
-src/data/aiProfiles.ts      # difficulty × stance × policy tables (data, not code branches)
+src/data/aiProfiles.ts      # difficulty-persona × policy tables (data, not code branches)
 src/game/replay.ts          # record/serialize/re-simulate replays
 tools/selfplay/             # Node tournament runner, dataset extraction, training (deps live here)
 docs/skirmish-ai-design.md  # this document
@@ -448,8 +472,8 @@ docs/ai-experiments/        # research-track writeups, one per experiment (wins 
 
 - Phase 0: replay determinism test (record → re-simulate → identical outcome).
 - Phase 1: bot-vs-idle victory within hard timer; zero rejected commands over full
-  games; per-pass CPU budget assertions; stance/difficulty knobs alter measured
-  behavior (offensive attacks earlier than defensive on the same seed).
+  games; per-pass CPU budget assertions; persona knobs alter measured
+  behavior (Godlike's raids open earlier than Hard's breakout on the same seed).
 - Phase 2+: the tournament runner *is* the integration test; a small fixed-seed
   tournament can run in CI as a smoke check.
 - Existing `skirmish.test.ts` diplomacy/elimination coverage applies unchanged —

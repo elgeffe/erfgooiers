@@ -11,7 +11,7 @@ import type { PlayerId } from '../../src/types';
  * max speed, with structured logs — the thing that makes "Godlike beats Hard"
  * a measured claim instead of vibes.
  *
- *   npm run selfplay -- --pair classic-hard-balanced:idle --seeds 10
+ *   npm run selfplay -- --pair classic-hard:idle --seeds 10
  *
  * Flags:
  *   --pair a:b         profile ids per seat (repeatable; seats alternate per seed)
@@ -66,7 +66,7 @@ function parseArgs(argv: string[]): CliOptions {
       process.exit(0);
     } else throw new Error(`Unknown argument: ${arg}`);
   }
-  if (!options.pairs.length) options.pairs.push(['classic-hard-balanced', 'idle']);
+  if (!options.pairs.length) options.pairs.push(['classic-hard', 'idle']);
   for (const pair of options.pairs) for (const id of pair) {
     if (!AI_PROFILES[id]) throw new Error(`Unknown profile '${id}' — try --list`);
   }

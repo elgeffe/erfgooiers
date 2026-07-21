@@ -4,7 +4,7 @@ import { extractDataset, datasetToJsonl, macroLabel, FEATURE_NAMES } from '../..
 
 describe('replay dataset extraction', () => {
   it('emits labelled feature rows per seat per snapshot, deterministically', () => {
-    const match = runSelfPlayMatch({ seed: 8000, p1: 'classic-hard-balanced', p2: 'classic-easy-balanced', maxSeconds: 240 });
+    const match = runSelfPlayMatch({ seed: 8000, p1: 'classic-hard', p2: 'classic-easy', maxSeconds: 240 });
     const rows = extractDataset(match.replay, { everySeconds: 20, horizonSeconds: 60 });
 
     expect(rows.length).toBeGreaterThan(10);
@@ -34,7 +34,7 @@ describe('replay dataset extraction', () => {
   });
 
   it('serializes to flat JSONL that parses back to the same feature values', () => {
-    const match = runSelfPlayMatch({ seed: 8001, p1: 'classic-easy-balanced', p2: 'idle', maxSeconds: 120 });
+    const match = runSelfPlayMatch({ seed: 8001, p1: 'classic-easy', p2: 'idle', maxSeconds: 120 });
     const rows = extractDataset(match.replay, { everySeconds: 30 });
     const jsonl = datasetToJsonl(rows);
     const lines = jsonl.trim().split('\n');
