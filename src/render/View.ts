@@ -189,6 +189,7 @@ export class View {
   /** Attach a freshly generated world and build its ground, doodads and ambiance. */
   loadWorld(world: World): void {
     this.world = world;
+    this.fogHidden.clear();        // per-level state; the old meshes are gone
     setActiveBiome(world.biome);   // foliage palette, snowlines, flora variants
     this.fitShadowToMap();
     this.terrain.loadWorld();
@@ -373,12 +374,12 @@ export class View {
       i++;
     };
     for (const u of units) {
-      if (u.dead || u.hp >= u.maxHp || !u.mesh.visible) continue;
+      if (u.dead || u.hp >= u.maxHp || !u.mesh.visible || this.fogHidden.has(u.mesh)) continue;
       const p = u.mesh.position, s = u.mesh.scale.y || 1;
       use(p.x, p.y + 0.95 * s + 0.2, p.z, u.hp / u.maxHp);
     }
     for (const b of buildings) {
-      if (b.removed) continue;
+      if (b.removed || this.fogHidden.has(b.mesh)) continue;
       const enemy = b.faction !== 'player';
       if (!enemy && b.hp >= b.maxHp) continue;   // show player buildings only when hurt
       use(this.world.wx(b.x) + 0.5, 2.3, this.world.wz(b.y) + 0.5, b.hp / b.maxHp);
@@ -421,8 +422,26 @@ export class View {
   add(o: THREE.Object3D): void { this.worldGroup.add(o); this.freeze(o); }
   remove(o: THREE.Object3D): void {
     this.worldGroup.remove(o);
+    this.fogHidden.delete(o);
     // baked unit bodies own their merged geometry — free it now, not at level end
     o.traverse((c) => { if (c.userData.ownGeometry) (c as THREE.Mesh).geometry.dispose(); });
+  }
+
+  // =====================================================================
+  //  Fog of war (presentation side)
+  // =====================================================================
+  /** Roots the sim asked to fog-hide. Hiding moves the subtree to a render
+   *  layer the camera never draws, so it stays orthogonal to the sim's own
+   *  `mesh.visible` bookkeeping (workers indoors, carried-item toggles). */
+  private readonly fogHidden = new Set<THREE.Object3D>();
+
+  isFogHidden(o: THREE.Object3D): boolean { return this.fogHidden.has(o); }
+
+  setFogHidden(o: THREE.Object3D, hidden: boolean): void {
+    if (hidden === this.fogHidden.has(o)) return;
+    if (hidden) this.fogHidden.add(o);
+    else this.fogHidden.delete(o);
+    o.traverse(child => { if (hidden) child.layers.set(1); else child.layers.set(0); });
   }
 
   createBuildingMesh(key: BuildingKey, def: BuildingDef, playerColor?: number): THREE.Group { return makeBuilding(key, def, false, playerColor); }
@@ -635,12 +654,14 @@ export class View {
       else if (t.tree) c = cTree;
       else if (t.dep) c = t.dep.kind === 'stone' ? '#9aa0a3' : t.dep.kind === 'gold' ? '#c9a94e' : t.dep.kind === 'iron' ? '#a86a4a' : '#3d3d44';
       if (t.pickup) c = '#ffd24a';
-      if (t.b) c = '#7a4a2e';
-      if (t.site) c = '#d9a441';
+      // fog-hidden hostile structures stay off the minimap too
+      if (t.b && !this.fogHidden.has(t.b.mesh)) c = '#7a4a2e';
+      if (t.site && !this.fogHidden.has(t.site.mesh)) c = '#d9a441';
       mmx.fillStyle = c;
       mmx.fillRect(x * MMS, y * MMS, MMS + 0.5, MMS + 0.5);
     }
     for (const u of units) {
+      if (this.fogHidden.has(u.mesh)) continue;
       const selected = this.selectedUnits.has(u);
       const size = selected ? 3 : 2;
       mmx.fillStyle = selected ? '#52ff68' : '#fff';

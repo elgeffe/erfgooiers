@@ -49,6 +49,8 @@ export interface RoomSettings {
   difficulty: ExpeditionDifficulty;
   mode: 'expedition' | 'sandbox' | 'skirmish';
   passwordProtected: boolean;
+  /** Skirmish only: fog of war for the match. Absent (older hosts) = on. */
+  fog?: boolean;
 }
 
 export interface RoomPlayer {

@@ -117,7 +117,13 @@ export class Tactics {
     // so demand a real numbers advantage — but never wait on a rival with no
     // army left: an empty base is razed with whatever stands. Higher
     // difficulties keep a standing garrison at home while the wave marches.
-    const needed = Math.max(4, Math.min(profile.attackArmy, Math.ceil(view.enemyArmySize * 1.5) + 4));
+    // Under fog an unseen army reads as 0 — that shortcut only applies when
+    // the count is trustworthy (full visibility), or every profile would
+    // suicide-rush at the 4-fighter floor against a rival it never scouted.
+    const enemyKnown = !ctx.game.fogOfWar || view.enemyArmySize > 0;
+    const needed = Math.max(4, enemyKnown
+      ? Math.min(profile.attackArmy, Math.ceil(view.enemyArmySize * 1.5) + 4)
+      : profile.attackArmy);
     // the garrison is best-effort surplus, never a reason to delay the launch:
     // demanding wave + full guard before marching left Godlike massing forever
     const guard = Math.min(Math.ceil(view.armySize * profile.homeGuard), Math.max(0, view.armySize - needed));

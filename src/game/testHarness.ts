@@ -22,6 +22,7 @@ export function stubView(world: World): View {
   const at = (g: THREE.Object3D, x: number, y: number) => { g.position.set(world.wx(x), 0, world.wz(y)); return g; };
   const view = {
     add() {}, remove() {}, removeMeshes() {},
+    setFogHidden() {}, isFogHidden: () => false,
     refreshTile() {}, dirtyTile() {},
     addRoad() {}, removeRoad() {},
     addFieldCrop() {}, scaleFieldCrop() {}, treeMatured() {}, addTree() {},
@@ -70,11 +71,15 @@ export function makeTestGame(options: TestGameOptions = {}): { game: Game; world
  * walk the same deterministic path. Shared by tests, replay.ts and the
  * tools/selfplay tournament runner.
  */
-export function makeSkirmishGame(seed: number, level: LevelDef = SKIRMISH_LEVEL): { game: Game; world: World; level: LevelDef } {
+export function makeSkirmishGame(seed: number, level: LevelDef = SKIRMISH_LEVEL, fog = true): { game: Game; world: World; level: LevelDef } {
   simRng.reseed(seed ^ 0x5bd1e995);
   uiRng.reseed(seed ^ 0x27d4eb2f);
   const world = new World({ seed, ...level.world, biome: 'gooi' });
   const game = new Game(world, stubView(world), new Modifiers(), 'p1');
+  // Skirmish plays under fog of war by default (matching the browser default);
+  // fog is information-layer only, so replays re-simulate identically either
+  // way — the flag matters to AI perception, not the sim.
+  game.fogOfWar = fog;
   game.objective = new Objective(level.objectives[0]);
   game.setTeams({ p1: 0, p2: 1, enemy: 2, wild: 2 });
   game.initCoOp(level.kit, level.kit, 'diagonal'); // skirmish rivals spawn in opposite corners

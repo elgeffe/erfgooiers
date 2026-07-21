@@ -6,11 +6,14 @@ import type { World } from '../world/World';
 
 /**
  * Pure feature extraction from the simulation — the ONLY ai/ module that reads
- * `Game`/`World` state, which makes it the fairness boundary for information:
- * today skirmish has no fog of war so full visibility is symmetric with the
- * human player; if fog ever ships, filtering this module by the bot seat's
- * visibility is the one required change. Every policy (classic, learned,
- * experimental) shares this observation space.
+ * `Game`/`World` state, which makes it the fairness boundary for information.
+ * Under fog of war (`game.fogOfWar`) every hostile unit and bulwark is
+ * filtered by the bot seat's own visibility (`game.visibleTo`), so a CPU seat
+ * knows exactly what its assets can see — the same information a human at the
+ * screen gets. Two deliberate exceptions, both facts a human also knows on the
+ * fixed symmetric arena: the rival castle's location (spawns are known map
+ * knowledge) and the map's resource nodes (terrain is not shrouded). Every
+ * policy (classic, learned, experimental) shares this observation space.
  */
 
 /** Hostiles this close (tiles, Chebyshev) to an own building count as threats. */
@@ -46,10 +49,14 @@ export interface AIView {
   army: Unit[];
   armySize: number;
 
+  /** The rival's castle. Kept through fog: on the fixed symmetric arena the
+   *  spawn corners are map knowledge a human player has too. */
   enemyStore: Building | null;
+  /** VISIBLE rival fighters — under fog, only what this seat's assets see. */
   enemyArmySize: number;
-  /** The rival army's composition by kind — reads for counter-building (a
-   *  better player scouts what to counter). Full-visibility, so symmetric. */
+  /** The visible rival army's composition by kind — reads for counter-building
+   *  (a better player scouts what to counter). Under fog, raids and towers are
+   *  what feed this read. */
   enemyArmyByKind: Partial<Record<UnitKind, number>>;
   /** The rival's standing curtain (walls + gates) — what a siege must breach. */
   enemyBulwarks: Building[];
@@ -87,7 +94,8 @@ export function perceive(game: Game, world: World, owner: PlayerId): AIView {
   for (const building of game.buildings) {
     if (building.removed) continue;
     if (building.owner !== owner) {
-      if (building.def.bulwark && enemySeats.includes(building.owner as PlayerId)) enemyBulwarks.push(building);
+      if (building.def.bulwark && enemySeats.includes(building.owner as PlayerId)
+        && game.visibleTo(owner, building.x + 1, building.y + 1)) enemyBulwarks.push(building);
       continue;
     }
     buildings.push(building);
@@ -122,6 +130,7 @@ export function perceive(game: Game, world: World, owner: PlayerId): AIView {
       continue;
     }
     if (!game.hostileOwners(owner, unit.owner) || unit.dmg <= 0) continue;
+    if (!game.visibleTo(owner, unit.tx, unit.ty)) continue; // fogged — unseen
     hostiles.push(unit);
     if (enemySeats.includes(unit.owner as PlayerId) && unit.role in UNITS) {
       enemyArmySize++;
@@ -161,7 +170,8 @@ export function perceive(game: Game, world: World, owner: PlayerId): AIView {
   };
 }
 
-/** Live map resource nodes. Skirmish is full-visibility, same as the human. */
+/** Live map resource nodes. Terrain is not shrouded under fog — deposits are
+ *  map knowledge for the human too, so the read stays symmetric. */
 function scanResources(world: World): ResourceMap {
   const resources: ResourceMap = { trees: [], stone: [], gold: [], coal: [], iron: [] };
   for (let y = 0; y < world.H; y++) for (let x = 0; x < world.W; x++) {

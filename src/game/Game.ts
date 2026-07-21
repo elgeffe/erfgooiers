@@ -12,6 +12,7 @@ import { Modifiers, type ModifierSpec } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, factionForOwner, ownerForFaction } from './ownership';
 import { TradeSystem } from './TradeSystem';
+import { VisionSystem } from './VisionSystem';
 import { EncounterDirector } from './EncounterDirector';
 import { ProjectileSystem } from './ProjectileSystem';
 import { MarketSystem } from './MarketSystem';
@@ -104,6 +105,24 @@ export class Game {
    *  this instead of the shared `defeat` flag — identical on both peers. */
   readonly eliminated = new Set<PlayerId>();
 
+  /**
+   * Fog of war: when on, hostile units/buildings/sites are only shown (and
+   * only perceived by AI seats) where the observer's own assets grant sight.
+   * Information-layer only — the deterministic sim itself never reads it, so
+   * replays and fingerprints are identical with fog on or off. Set by main at
+   * level setup (skirmish/sandbox toggle, solo runs by difficulty tier).
+   */
+  fogOfWar = false;
+  /** Spectator display: keep fog for AI perception (the seats still play
+   *  blind) but render everything — an observer is not a player. */
+  fogRevealAll = false;
+  private readonly vision: VisionSystem;
+
+  /** Whether `owner` currently sees tile (tx, ty). Always true with fog off. */
+  visibleTo(owner: PlayerId, tx: number, ty: number): boolean {
+    return !this.fogOfWar || this.vision.visible(owner, tx, ty);
+  }
+
   setTeams(teams: Record<OwnerId, number>): void {
     this.teams = { ...teams };
     this.pvp = PLAYER_IDS.some(a => PLAYER_IDS.some(b => a !== b && this.hostileOwners(a, b)));
@@ -193,6 +212,12 @@ export class Game {
     // a skirmish rival may share your faction but never your gates.
     world.gatePass = (mover, gateOwner) =>
       factionForOwner(mover) === factionForOwner(gateOwner) && !this.hostileOwners(mover, gateOwner);
+    this.vision = new VisionSystem(world, {
+      now: () => this.elapsed,
+      buildings: () => this.buildings,
+      sites: () => this.sites,
+      units: () => this.units,
+    });
     this.trade = new TradeSystem({
       localPlayerId,
       now: () => this.elapsed,
@@ -1096,6 +1121,28 @@ export class Game {
     this.armFortifyWaves();
     this.fieldT += sdt;
     if (this.fieldT > 0.5) { this.fieldT = 0; this.workerSystem.recolorFields(); }
+    if (this.fogOfWar && !this.fogRevealAll) this.applyFogToView();
+  }
+
+  /** Hide hostile meshes the local seat has no sight of (and re-show them the
+   *  moment sight returns). Presentation only — runs after all sim systems so
+   *  it never fights their own mesh bookkeeping. */
+  private applyFogToView(): void {
+    const seat = this.localPlayerId;
+    for (const u of this.units) {
+      if (u.dead || !this.hostileOwners(seat, u.owner)) continue;
+      this.view.setFogHidden(u.mesh, !this.visibleTo(seat, u.tx, u.ty));
+    }
+    for (const b of this.buildings) {
+      if (b.removed || !this.hostileOwners(seat, b.owner)) continue;
+      this.view.setFogHidden(b.mesh, !this.visibleTo(seat, b.x + 1, b.y + 1));
+    }
+    for (const s of this.sites) {
+      if (s.removed || !this.hostileOwners(seat, s.owner)) continue;
+      const hidden = !this.visibleTo(seat, s.x + 1, s.y + 1);
+      this.view.setFogHidden(s.mesh, hidden);
+      this.view.setFogHidden(s.frame, hidden);
+    }
   }
 
   /** Queue a unit at a barracks/guild hall, paying its own cost from the store. */
