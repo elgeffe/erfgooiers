@@ -308,6 +308,25 @@ export class Game {
       buildings: () => this.buildings,
       worldWidth: () => this.world.W,
       buildingCenter: building => this.buildingCenter(building),
+      // The caravan's ground route: from the nearest map edge (west or east,
+      // whichever side the market leans) to the market's door, along walkable
+      // tiles. Starts off-map for the visual roll-in. Null when sealed in.
+      caravanRoute: market => {
+        const door = doorTile(market);
+        const west = market.x < this.world.W / 2;
+        const edgeTileX = west ? 1 : this.world.W - 2;
+        for (let spread = 0; spread < 24; spread++) {
+          for (const startY of spread ? [door.y + spread, door.y - spread] : [door.y]) {
+            if (startY < 1 || startY >= this.world.H - 1 || !this.world.passable(edgeTileX, startY)) continue;
+            const path = findPath(this.world, edgeTileX, startY, door.x, door.y, market.owner);
+            if (!path) continue;
+            const route = path.map(p => ({ x: this.world.wx(p.x), z: this.world.wz(p.y) }));
+            route.unshift({ x: this.world.wx(west ? -3 : this.world.W + 2), z: this.world.wz(startY) });
+            return route;
+          }
+        }
+        return null;
+      },
       createCaravan: () => this.view.createTraderCaravan(),
       remove: mesh => this.view.remove(mesh),
       sfx: name => this.sfx(name),
@@ -1071,9 +1090,9 @@ export class Game {
     this.marketSystem.configure(b, orders);
   }
 
-  /** Projected income at one scheduled trader visit per minute. */
-  marketIncomePerMinute(b: Building): number {
-    return this.marketSystem.incomePerMinute(b);
+  /** Coin one full trader visit earns at the market's current orders. */
+  marketIncomePerVisit(b: Building): number {
+    return this.marketSystem.incomePerVisit(b);
   }
 
   marketCaravansInTransit(b: Building): number {

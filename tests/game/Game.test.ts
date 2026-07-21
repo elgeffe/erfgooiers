@@ -393,7 +393,7 @@ describe('market exports', () => {
     let runGold = 0; game.onGold = n => { runGold += n; };
 
     game.configureMarket(market, [{ item: 'bread', amount: 4 }]);
-    expect(game.marketIncomePerMinute(market)).toBe(12);
+    expect(game.marketIncomePerVisit(market)).toBe(12);
     // serfs haul four bread out of the castle into the market's stall
     for (let i = 0; i < 1200 && (market.inp.bread || 0) < 4; i++) game.update(0.05);
     expect(market.inp.bread).toBe(4);

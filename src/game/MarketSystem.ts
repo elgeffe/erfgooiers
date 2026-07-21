@@ -3,15 +3,17 @@ import { ITEMS, MARKET_VALUES } from '../data/items';
 import type { Building, ItemKey, OwnerId } from '../types';
 
 export const MAX_MARKET_ORDERS = 3;
+/** Seconds between scheduled trader visits. */
+export const MARKET_VISIT_INTERVAL = 180;
 
 interface MarketCaravan {
   mesh: THREE.Group;
   market: Building;
   state: 'arriving' | 'trading' | 'leaving';
-  edgeX: number;
-  edgeZ: number;
-  parkX: number;   // where it halts, just outside the market footprint
-  parkZ: number;
+  /** World-space waypoints from off-map to the halt outside the market.
+   *  Followed forward when arriving, backward when leaving. */
+  route: { x: number; z: number }[];
+  routeI: number;
   wait: number;
   loaded: boolean; // has it taken on cargo at the market yet?
 }
@@ -20,6 +22,10 @@ export interface MarketPort {
   buildings(): readonly Building[];
   worldWidth(): number;
   buildingCenter(building: Building): { x: number; z: number };
+  /** A walkable route from the map edge to just outside the market's door
+   *  (world coords), or null when the market is sealed in — the caravan then
+   *  rolls the old straight line rather than not coming at all. */
+  caravanRoute(building: Building): { x: number; z: number }[] | null;
   createCaravan(): THREE.Group;
   remove(mesh: THREE.Object3D): void;
   sfx(name: string): void;
@@ -29,9 +35,10 @@ export interface MarketPort {
 }
 
 /** Neutral export caravans and the physical market inventory they consume. A
- *  market can export up to three goods at once; the caravan halts just outside
- *  the building, loads whatever is ready (rolling in empty, leaving laden), and
- *  the coin lands directly in the owner's global stock — no serf pickup. */
+ *  market can export up to three goods at once; the caravan follows the road
+ *  network (well, walkable ground) in from the map edge, halts outside the
+ *  building, loads whatever is ready, and the coin lands directly in the
+ *  owner's global stock — no serf pickup. */
 export class MarketSystem {
   private readonly caravans: MarketCaravan[] = [];
 
@@ -53,7 +60,8 @@ export class MarketSystem {
     building.marketOrders = clean;
   }
 
-  incomePerMinute(building: Building): number {
+  /** Coin one full caravan visit earns at current orders. */
+  incomePerVisit(building: Building): number {
     return (building.marketOrders ?? []).reduce((sum, o) => sum + (MARKET_VALUES[o.item] ?? 0) * o.amount, 0);
   }
 
@@ -79,12 +87,12 @@ export class MarketSystem {
   update(dt: number): void {
     for (const building of this.port.buildings()) {
       if (building.key !== 'market' || building.faction !== 'player' || !building.active || building.removed) continue;
-      building.marketTimer = Math.max(0, (building.marketTimer ?? 60) - dt);
+      building.marketTimer = Math.max(0, (building.marketTimer ?? MARKET_VISIT_INTERVAL) - dt);
       if (building.marketTimer > 0 || this.caravansInTransit(building)) continue;
-      if (!(building.marketOrders?.length)) { building.marketTimer = 60; continue; }
-      // wait for something to sell; re-check soon rather than idling a full minute
+      if (!(building.marketOrders?.length)) { building.marketTimer = MARKET_VISIT_INTERVAL; continue; }
+      // wait for something to sell; re-check soon rather than idling a full cycle
       if (this.readyTotal(building) <= 0) { building.marketTimer = 5; continue; }
-      building.marketTimer = 60;
+      building.marketTimer = MARKET_VISIT_INTERVAL;
       this.spawnCaravan(building);
     }
 
@@ -97,29 +105,41 @@ export class MarketSystem {
       }
       if (caravan.state === 'trading') {
         caravan.wait -= dt;
-        if (caravan.wait <= 0) caravan.state = 'leaving';
+        if (caravan.wait <= 0) { caravan.state = 'leaving'; caravan.routeI = caravan.route.length - 2; }
         continue;
       }
-      const targetX = caravan.state === 'arriving' ? caravan.parkX : caravan.edgeX;
-      const targetZ = caravan.state === 'arriving' ? caravan.parkZ : caravan.edgeZ;
-      const dx = targetX - caravan.mesh.position.x, dz = targetZ - caravan.mesh.position.z;
-      const distance = Math.hypot(dx, dz), step = dt * 3;
-      if (distance > 0.01) caravan.mesh.rotation.y = Math.atan2(dx, dz);
-      if (distance > step) {
-        caravan.mesh.position.x += dx / distance * step;
-        caravan.mesh.position.z += dz / distance * step;
-        continue;
+      // follow the route: forward while arriving, backward while leaving
+      const leaving = caravan.state === 'leaving';
+      let step = dt * 3;
+      while (step > 0) {
+        const target = caravan.route[caravan.routeI];
+        if (!target) break;
+        const dx = target.x - caravan.mesh.position.x, dz = target.z - caravan.mesh.position.z;
+        const distance = Math.hypot(dx, dz);
+        if (distance > 0.02) caravan.mesh.rotation.y = Math.atan2(dx, dz);
+        if (distance > step) {
+          caravan.mesh.position.x += dx / distance * step;
+          caravan.mesh.position.z += dz / distance * step;
+          step = 0;
+          break;
+        }
+        caravan.mesh.position.set(target.x, 0, target.z);
+        step -= distance;
+        caravan.routeI += leaving ? -1 : 1;
+        if (leaving && caravan.routeI < 0) break;
+        if (!leaving && caravan.routeI >= caravan.route.length) break;
       }
-      caravan.mesh.position.set(targetX, 0, targetZ);
-      if (caravan.state === 'leaving') {
+      if (leaving && caravan.routeI < 0) {
         this.port.remove(caravan.mesh);
         this.caravans.splice(i, 1);
         continue;
       }
-      // arrived at the parking spot outside the market: load every ordered good
-      if (!caravan.loaded) this.loadCaravan(caravan);
-      caravan.state = 'trading';
-      caravan.wait = 2.5;
+      if (!leaving && caravan.routeI >= caravan.route.length) {
+        // halted outside the market: load every ordered good, then trade
+        if (!caravan.loaded) this.loadCaravan(caravan);
+        caravan.state = 'trading';
+        caravan.wait = 2.5;
+      }
     }
   }
 
@@ -148,14 +168,18 @@ export class MarketSystem {
 
   private spawnCaravan(market: Building): void {
     const center = this.port.buildingCenter(market);
-    const edgeX = center.x < 0 ? -this.port.worldWidth() / 2 - 2 : this.port.worldWidth() / 2 + 2;
-    // halt ~1.6 tiles from the market centre on the approach side, so the
-    // trader sits just outside the building rather than driving into its mesh
-    const parkX = center.x + Math.sign(edgeX - center.x || 1) * 1.6;
+    // walk the real ground route in from the edge (no more driving through
+    // buildings); a sealed-in market falls back to the old straight line
+    let route = this.port.caravanRoute(market);
+    if (!route || route.length < 2) {
+      const edgeX = center.x < 0 ? -this.port.worldWidth() / 2 - 2 : this.port.worldWidth() / 2 + 2;
+      const parkX = center.x + Math.sign(edgeX - center.x || 1) * 1.6;
+      route = [{ x: edgeX, z: center.z }, { x: parkX, z: center.z }];
+    }
     const mesh = this.port.createCaravan();
-    mesh.position.set(edgeX, 0, center.z);
+    mesh.position.set(route[0].x, 0, route[0].z);
     const cargo = mesh.getObjectByName('cargo');
     if (cargo) cargo.visible = false;
-    this.caravans.push({ mesh, market, state: 'arriving', edgeX, edgeZ: center.z, parkX, parkZ: center.z, wait: 0, loaded: false });
+    this.caravans.push({ mesh, market, state: 'arriving', route, routeI: 1, wait: 0, loaded: false });
   }
 }

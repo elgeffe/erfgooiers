@@ -667,7 +667,7 @@ export class UI {
           body += `<div class="marketctl market-row"><label>Resource<select data-market-control>${options}</select></label>`;
           body += `<label>Units<input data-market-control type="number" min="0" max="50" step="1" value="${cur ? cur.amount : 0}"></label></div>`;
         }
-        body += `<div class="invrow">Expected income<b>${this.game!.marketIncomePerMinute(o)} coin / min</b></div>`;
+        body += `<div class="invrow">Expected income<b>${this.game!.marketIncomePerVisit(o)} coin / visit (every 3 min)</b></div>`;
         body += `<div class="invrow">${transit ? 'Trader caravan' : totalAmount > 0 ? 'Next caravan' : 'Exports paused'}<b>${transit ? 'loading outside' : totalAmount > 0 ? `${Math.ceil(o.marketTimer ?? 60)}s` : 'assign a good'}</b></div>`;
         body += '<div class="sect">Waiting at market</div>' + this.invRowsHTML(o.inp);
         body += '<div class="hnote">Serfs carry assigned goods here; a trader halts outside, loads up and pays the coin straight into your global stock. Caravans are neutral and cannot be attacked.</div>';
