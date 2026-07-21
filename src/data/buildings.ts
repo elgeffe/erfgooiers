@@ -96,11 +96,13 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
 
   smithy: { name: 'Weaponsmith', desc: 'Iron + coal → weapons for training infantry & knights', model: 'cottage',
     cost: { timber: 3, stone: 3 }, roof: 0x4a4a52, wall: 0x9c8a6a, accent: 0xd8dde2,
-    recipe: { inp: { iron: 1, coal: 1 }, out: 'weapon', time: 7 }, worker: 'Smith', wcolor: 0x5a5f66 },
+    // slower than the mines that feed it: coal is the shared bottleneck (mint +
+    // smithy + armory), so crafting must not outpace collection
+    recipe: { inp: { iron: 1, coal: 1 }, out: 'weapon', time: 12 }, worker: 'Smith', wcolor: 0x5a5f66 },
 
   armory: { name: 'Armorer', desc: 'Iron + coal → armor for training knights', model: 'cottage',
     cost: { timber: 3, stone: 3 }, roof: 0x5a6470, wall: 0x9c8a6a, accent: 0x7d8794,
-    recipe: { inp: { iron: 1, coal: 1 }, out: 'armor', time: 8 }, worker: 'Armorer', wcolor: 0x7d8794 },
+    recipe: { inp: { iron: 1, coal: 1 }, out: 'armor', time: 14 }, worker: 'Armorer', wcolor: 0x7d8794 },
 
   barracks: { name: 'Barracks', desc: 'Trains soldiers, pikemen, archers & knights — weapons come from the smithy', model: 'barn',
     cost: { timber: 4, stone: 3 }, roof: 0x5a4a6a, wall: 0xb0a48c, accent: 0x8a5a2b, hp: 200,
@@ -144,8 +146,10 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
         desc: 'Humble support unit — automatically heals nearby friendly units and stays at the rear' },
     ] } },
 
-  watchtower: { name: 'Watchtower', desc: 'Looses arrows at raiders in range — build it along their path', model: 'mine',
-    cost: { timber: 2, stone: 5 }, roof: 0x6a7076, wall: 0x9aa0a3, accent: 0x3f5aa0, hp: 320,
+  watchtower: { name: 'Watchtower', desc: 'A wooden arrow tower — looses arrows at raiders in range', model: 'mine',
+    // all-timber: the early tower stands before any quarry does; stone defence
+    // is the stonetower/wall tier's job
+    cost: { timber: 6 }, roof: 0x6a7076, wall: 0x9aa0a3, accent: 0x3f5aa0, hp: 320,
     tower: { range: 7, dmg: 9, rate: 1.4 } },
 
   stonetower: { name: 'Stone Watchtower', desc: 'A tall stone tower — tougher and further-seeing than the wooden one', model: 'mine',

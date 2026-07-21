@@ -86,9 +86,9 @@ export function makeSkirmishGame(seed: number, level: LevelDef = SKIRMISH_LEVEL,
   game.initCoOp(level.kit, level.kit, 'diagonal'); // skirmish rivals spawn in opposite corners
   game.setEnemies(level.enemies ?? null);
   for (const playerId of PLAYER_IDS) {
-    const store = game.storeFor(playerId);
-    const sx = world.wx(store.x) + 0.5, sz = world.wz(store.y) + 0.5;
-    for (const group of level.startArmy ?? []) game.spawnSquad(group.kind, group.count, sx, sz, 'player', playerId);
+    // same call as buildMultiplayerLevel (no heroes on either seat), so a
+    // browser match and its headless re-simulation spawn identical parades
+    if (level.startArmy?.length) game.spawnStartArmy(level.startArmy, playerId);
   }
   return { game, world, level };
 }

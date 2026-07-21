@@ -176,9 +176,12 @@ export class View {
     this.mmx = minimap.getContext('2d')!;
     this.mm.addEventListener('pointerdown', e => {
       if (!this.world) return;
+      // invert the letterboxed drawMinimap mapping (canvas px → tile coords)
       const r = this.mm.getBoundingClientRect();
-      this.camTarget.x = ((e.clientX - r.left) / r.width) * this.world.W - this.world.W / 2;
-      this.camTarget.z = ((e.clientY - r.top) / r.height) * this.world.H - this.world.H / 2;
+      const px = (e.clientX - r.left) / r.width * this.mm.width;
+      const py = (e.clientY - r.top) / r.height * this.mm.height;
+      this.camTarget.x = (px - this.mmOx) / this.mmScale - this.world.W / 2;
+      this.camTarget.z = (py - this.mmOy) / this.mmScale - this.world.H / 2;
       this.clampCam(); this.updateCamera();
     });
   }
@@ -713,10 +716,21 @@ export class View {
   // =====================================================================
   //  Minimap & render
   // =====================================================================
+  /** Letterbox mapping used by drawMinimap and inverted by click-to-navigate:
+   *  non-square maps (the 100×88 arena) scale to fit and centre, and the whole
+   *  canvas is cleared first so the margins never show stale pixels. */
+  private mmScale = 1;
+  private mmOx = 0;
+  private mmOy = 0;
+
   drawMinimap(units: Unit[]): void {
     if (!this.world) return;
     const W = this.world.W, H = this.world.H;
-    const mmx = this.mmx, MMS = this.mm.width / W;
+    const mmx = this.mmx, MMS = Math.min(this.mm.width / W, this.mm.height / H);
+    const ox = (this.mm.width - W * MMS) / 2, oy = (this.mm.height - H * MMS) / 2;
+    this.mmScale = MMS; this.mmOx = ox; this.mmOy = oy;
+    mmx.fillStyle = '#171208';
+    mmx.fillRect(0, 0, this.mm.width, this.mm.height);
     // ground, water and woodland take the biome's own colours (snow, lava, ash)
     const pal = this.world.biome.palette;
     const hex = (n: number): string => '#' + n.toString(16).padStart(6, '0');
@@ -735,18 +749,18 @@ export class View {
       if (t.b && !this.fogHidden.has(t.b.mesh)) c = '#7a4a2e';
       if (t.site && !this.fogHidden.has(t.site.mesh)) c = '#d9a441';
       mmx.fillStyle = c;
-      mmx.fillRect(x * MMS, y * MMS, MMS + 0.5, MMS + 0.5);
+      mmx.fillRect(ox + x * MMS, oy + y * MMS, MMS + 0.5, MMS + 0.5);
     }
     for (const u of units) {
       if (this.fogHidden.has(u.mesh)) continue;
       const selected = this.selectedUnits.has(u);
       const size = selected ? 3 : 2;
       mmx.fillStyle = selected ? '#52ff68' : '#fff';
-      mmx.fillRect((u.mesh.position.x + W / 2) * MMS - size / 2, (u.mesh.position.z + H / 2) * MMS - size / 2, size, size);
+      mmx.fillRect(ox + (u.mesh.position.x + W / 2) * MMS - size / 2, oy + (u.mesh.position.z + H / 2) * MMS - size / 2, size, size);
     }
     const a = innerWidth / innerHeight;
     mmx.strokeStyle = 'rgba(255,255,255,.8)'; mmx.lineWidth = 1;
-    mmx.strokeRect((this.camTarget.x + W / 2 - this.viewSize * a * 0.72) * MMS, (this.camTarget.z + H / 2 - this.viewSize * 0.95) * MMS, this.viewSize * a * 1.44 * MMS, this.viewSize * 1.9 * MMS);
+    mmx.strokeRect(ox + (this.camTarget.x + W / 2 - this.viewSize * a * 0.72) * MMS, oy + (this.camTarget.z + H / 2 - this.viewSize * 0.95) * MMS, this.viewSize * a * 1.44 * MMS, this.viewSize * 1.9 * MMS);
   }
 
   render(): void {

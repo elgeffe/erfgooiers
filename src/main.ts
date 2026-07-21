@@ -493,14 +493,12 @@ function buildMultiplayerLevel(setup: MultiplayerLevelSetup): { world: World; ga
   // Each settlement gets the shared level garrison plus its seat's hero and
   // warband — spawned in fixed seat order so every peer builds the same sim.
   for (const seat of setup.seats) {
-    const st = g.storeFor(seat.id);
-    const sx = world.wx(st.x) + 0.5, sz = world.wz(st.y) + 0.5;
     const heroDef = seat.hero ? HERO_BY_ID[seat.hero] : null;
-    for (const a of [...(level.startArmy ?? []), ...(heroDef?.startArmy ?? [])]) {
-      // the owner is passed so each fighter's combat stats bake from that
-      // seat's own rule set — identically on every peer
-      g.spawnSquad(a.kind, a.count, sx, sz, 'player', seat.id);
-    }
+    // parade each seat's warband in front of its own castle gate (the owner is
+    // passed so combat stats bake from that seat's rule set, identically on
+    // every peer — and identically in headless re-simulation)
+    const army = [...(level.startArmy ?? []), ...(heroDef?.startArmy ?? [])];
+    if (army.length) g.spawnStartArmy(army, seat.id);
     if (heroDef) g.spawnHero(heroDef.id, heroDef.name, seat.id);
   }
   // Mount the local seat's hero on the HUD chip, if it brought one.

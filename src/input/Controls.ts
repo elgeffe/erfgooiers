@@ -7,7 +7,7 @@ import type { Game } from '../game/Game';
 import { DEFAULT_SETTINGS, type GameSettings } from '../game/Settings';
 import type { View } from '../render/View';
 import type { UI } from '../ui/UI';
-import type { Coord, Formation, ItemKey, Mode, Unit, UnitStance } from '../types';
+import type { Coord, Formation, ItemKey, Mode, OwnerId, Unit, UnitStance } from '../types';
 
 // Isometric screen-space basis vectors for panning.
 const RIGHT = new THREE.Vector3(1, 0, -1).normalize();
@@ -374,16 +374,20 @@ export class Controls {
     // ground-only picking can land behind a tall unit when its torso is clicked.
     const foe = this.pickUnitAtPointer(e, true) ?? this.game.pickUnit(gp.x, gp.z);
     const unitIds = this.selUnits.map(u => u.id);
-    if (foe && foe.faction !== 'player') {
+    // hostility is diplomacy, not faction: a skirmish rival's units share the
+    // 'player' faction but sit on an enemy team
+    const hostile = (owner: OwnerId): boolean => this.game!.hostileOwners(this.game!.localPlayerId, owner);
+    if (foe && hostile(foe.owner)) {
       this.game.submitCommand({ type: 'orderUnits', unitIds, order: { type: 'attack', targetId: foe.id }, formation: this.formation, queue });
       this.view.showOrderMarker(foe.mesh.position.x, foe.mesh.position.z, true);
       return;
     }
     const t = this.view.tileAt(e.clientX, e.clientY);
     if (!t) return;
-    // right-click a hostile building (wall, gate, camp, keep): besiege it
+    // right-click a hostile building (wall, gate, camp, keep — or a skirmish
+    // rival's anything): besiege it
     const b = this.game.buildingAt(t.x, t.y);
-    if (b && b.faction !== 'player') {
+    if (b && hostile(b.owner)) {
       this.game.submitCommand({ type: 'orderUnits', unitIds, order: { type: 'attackBuilding', targetId: b.id }, formation: this.formation, queue });
       this.view.showOrderMarker(gp.x, gp.z, true);
       this.ui.toast(`${queue ? 'Then attacking' : 'Attacking'} the ${b.name}`);

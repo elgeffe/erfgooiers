@@ -841,8 +841,8 @@ export class Game {
     this.orderSystem.setRally(target, x, y);
   }
 
-  spawnStartArmy(groups: { kind: UnitKind; count: number }[]): Unit[] {
-    return this.unitFactory.spawnStartArmy(groups);
+  spawnStartArmy(groups: { kind: UnitKind; count: number }[], owner: PlayerId = this.localPlayerId): Unit[] {
+    return this.unitFactory.spawnStartArmy(groups, owner);
   }
 
   spawnSquad(kind: UnitKind, count: number, worldX: number, worldZ: number, faction?: Faction, owner?: OwnerId): Unit[] {
