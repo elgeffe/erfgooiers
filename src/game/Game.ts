@@ -668,10 +668,14 @@ export class Game {
       && building.hp < building.maxHp && Object.keys(building.def.cost).length > 0;
   }
 
-  /** The materials to repair `building` in one payment: its original build cost
-   *  (after the owner's discounts), regardless of how battered it is. */
+  /** The materials to repair `building` in one payment: half its original build
+   *  cost (after the owner's discounts), floored, but never below 1 per material,
+   *  regardless of how battered it is. */
   repairCost(building: Building): Record<string, number> {
-    return this.modsFor(building.owner).buildingCost(building.def) as Record<string, number>;
+    const build = this.modsFor(building.owner).buildingCost(building.def) as Record<string, number>;
+    const cost: Record<string, number> = {};
+    for (const item in build) cost[item] = Math.max(1, Math.floor(build[item] / 2));
+    return cost;
   }
 
   /** Pay a building's build cost once from the owner's castle stock to restore it
