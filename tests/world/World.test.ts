@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { World, type WorldParams } from '../../src/world/World';
+import { World, diagonalSpawns, type WorldParams } from '../../src/world/World';
 import { BIOMES, type BiomeKey } from '../../src/data/biomes';
+import { SKIRMISH_LEVEL } from '../../src/data/skirmishLevels';
 
 /** Serialize everything gameplay-relevant about a map into one string. */
 function mapFingerprint(w: World): string {
@@ -66,6 +67,21 @@ describe('World generation', () => {
     expect(w.H).toBe(40);
     expect(w.tiles.length).toBe(40);
     expect(w.tiles[0].length).toBe(40);
+  });
+});
+
+describe('Arena worldgen', () => {
+  it('keeps water off both corner spawn build zones on every seed', () => {
+    for (let seed = 1; seed <= 24; seed++) {
+      const world = new World({ seed: seed * 7919, ...SKIRMISH_LEVEL.world, biome: 'gooi' });
+      for (const spawn of diagonalSpawns(world.W, world.H)) {
+        for (let dy = -11; dy <= 11; dy++) for (let dx = -11; dx <= 11; dx++) {
+          if (Math.hypot(dx, dy) > 11) continue;
+          const tile = world.T(spawn.x + dx, spawn.y + dy);
+          expect(tile?.type, `seed ${seed * 7919} water at ${spawn.x + dx},${spawn.y + dy}`).not.toBe('water');
+        }
+      }
+    }
   });
 });
 
