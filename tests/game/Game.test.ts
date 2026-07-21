@@ -36,6 +36,7 @@ function headlessView(world: World, caravan?: { created: number; removed: number
     setFogHidden: () => {},
     updateFogOverlay: () => {},
     hideFogOverlay: () => {},
+    roadMeshAt: () => null,
     refreshTile: () => {},
     dirtyTile: () => {},
     removeMeshes: () => {},

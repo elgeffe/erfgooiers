@@ -1141,6 +1141,8 @@ export class Game {
   /** Hide hostile meshes the local seat has no sight of (and re-show them the
    *  moment sight returns), and refresh the translucent veil. Presentation
    *  only — runs after all sim systems so it never fights their bookkeeping. */
+  private fogArtifactsRev = -1;
+
   private applyFogToView(): void {
     const seat = this.localPlayerId;
     this.view.updateFogOverlay(this.vision.revision(seat), (tx, ty) => this.vision.fogLevel(seat, tx, ty));
@@ -1150,13 +1152,33 @@ export class Game {
     }
     for (const b of this.buildings) {
       if (b.removed || !this.hostileOwners(seat, b.owner)) continue;
-      this.view.setFogHidden(b.mesh, !this.visibleTo(seat, b.x + 1, b.y + 1));
+      const hidden = !this.visibleTo(seat, b.x + 1, b.y + 1);
+      this.view.setFogHidden(b.mesh, hidden);
+      if (b.rallyMesh) this.view.setFogHidden(b.rallyMesh, hidden);
     }
     for (const s of this.sites) {
       if (s.removed || !this.hostileOwners(seat, s.owner)) continue;
       const hidden = !this.visibleTo(seat, s.x + 1, s.y + 1);
       this.view.setFogHidden(s.mesh, hidden);
       this.view.setFogHidden(s.frame, hidden);
+      if (s.rallyMesh) this.view.setFogHidden(s.rallyMesh, hidden);
+    }
+    // Tile-level artifacts a rival leaves on the ground — roads and field
+    // crops — leak intel through the translucent veil, so they follow the
+    // same visibility. Swept on the 0.5 s vision clock, not every tick.
+    const rev = this.vision.revision(seat);
+    if (rev === this.fogArtifactsRev) return;
+    this.fogArtifactsRev = rev;
+    for (let y = 0; y < this.world.H; y++) for (let x = 0; x < this.world.W; x++) {
+      const tile = this.world.tiles[y][x];
+      if (tile.road && tile.roadOwner && this.hostileOwners(seat, tile.roadOwner)) {
+        const mesh = this.view.roadMeshAt(x, y);
+        if (mesh) this.view.setFogHidden(mesh, !this.visibleTo(seat, x, y));
+      }
+      if (tile.field && this.hostileOwners(seat, tile.field.farm.owner)) {
+        const hidden = !this.visibleTo(seat, x, y);
+        for (const mesh of tile.field.meshes) this.view.setFogHidden(mesh, hidden);
+      }
     }
   }
 

@@ -24,6 +24,7 @@ export function stubView(world: World): View {
     add() {}, remove() {}, removeMeshes() {},
     setFogHidden() {}, isFogHidden: () => false,
     updateFogOverlay() {}, hideFogOverlay() {},
+    roadMeshAt: () => null,
     refreshTile() {}, dirtyTile() {},
     addRoad() {}, removeRoad() {},
     addFieldCrop() {}, scaleFieldCrop() {}, treeMatured() {}, addTree() {},

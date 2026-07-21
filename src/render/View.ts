@@ -644,6 +644,7 @@ export class View {
   dirtyTile(x: number, y: number): void { this.terrain.dirtyTile(x, y); }
   addRoad(x: number, y: number): void { this.terrain.addRoad(x, y); }
   removeRoad(x: number, y: number): void { this.terrain.removeRoad(x, y); }
+  roadMeshAt(x: number, y: number): THREE.Object3D | null { return this.terrain.roadMeshAt(x, y); }
   /** Real-time animation independent of sim speed. */
   animate(dt: number, buildings: Building[]): void {
     this.ambience.animate(dt, buildings);
