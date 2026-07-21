@@ -478,7 +478,10 @@ export class View {
     (mat as any).toneMapped = false;
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
     mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(0, 6, 0);   // depthTest is off, so height only sets draw stacking intent
+    // AT ground level: the oblique iso camera projects an ELEVATED plane's
+    // clear holes several tiles north-west of the ground they should reveal
+    // (depthTest is off, so draw order comes from renderOrder alone anyway)
+    mesh.position.set(0, 0.05, 0);
     mesh.renderOrder = 850;        // above terrain/units, below HP bars (998) & rings
     mesh.frustumCulled = false;
     mesh.layers.set(0);
