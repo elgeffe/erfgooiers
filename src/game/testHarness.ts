@@ -139,6 +139,12 @@ export function gameplayFingerprint(game: Game, includeLocalPresentation = true)
     stock: record(b.stock), trainQ: b.trainQ ?? [], rally: b.rally ?? null,
     priority: !!b.priority, removed: !!b.removed,
     market: b.marketOrders?.length ? [b.marketOrders.map(o => `${o.item}:${o.amount}`).join(','), round(b.marketTimer ?? 0)] : null,
+    // spread-conditional: absent on buildings with no repair order, so golden
+    // fingerprints from before repair existed stay valid
+    ...(b.repair ? { repair: {
+      needs: record(b.repair.needs), delivered: record(b.repair.delivered),
+      incoming: record(b.repair.incoming), ready: b.repair.ready, builder: ref(b.repair.builder),
+    } } : {}),
   });
   const unit = (u: Unit): unknown => ({
     id: u.id, owner: u.owner, role: u.role, tx: u.tx, ty: u.ty,
@@ -148,7 +154,7 @@ export function gameplayFingerprint(game: Game, includeLocalPresentation = true)
     atkTimer: round(u.atkTimer), dead: u.dead, raider: u.raider,
     foe: ref(u.foe), foeB: ref(u.foeB), order: order(u.order), queue: u.orderQueue.map(order),
     obeyT: round(u.obeyT), special: round(u.special), anchor: u.anchor,
-    task: u.task ? { item: u.task.item, phase: u.task.phase, from: ref(u.task.from), to: ref(u.task.to) } : null,
+    task: u.task ? { item: u.task.item, phase: u.task.phase, from: ref(u.task.from), to: ref(u.task.to), ...(u.task.repair ? { repair: true } : {}) } : null,
   });
 
   return JSON.stringify({

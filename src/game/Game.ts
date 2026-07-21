@@ -661,16 +661,16 @@ export class Game {
     this.placementSystem.demolishAt(tx, ty, dragOnly, owner);
   }
 
-  /** True when `building` is a player structure that has taken damage. Drives
-   *  whether the inspector offers a repair button. */
+  /** True when `building` is a player structure that has taken damage and no
+   *  repair order is already open on it. Drives the inspector's repair button. */
   canRepair(building: Building): boolean {
-    return (building.owner === 'p1' || building.owner === 'p2') && !building.removed
+    return (building.owner === 'p1' || building.owner === 'p2') && !building.removed && !building.repair
       && building.hp < building.maxHp && Object.keys(building.def.cost).length > 0;
   }
 
-  /** The materials to repair `building` in one payment: half its original build
-   *  cost (after the owner's discounts), floored, but never below 1 per material,
-   *  regardless of how battered it is. */
+  /** The materials a repair order wants hauled in: half the original build
+   *  cost (after the owner's discounts), floored, but never below 1 per
+   *  material, regardless of how battered it is. */
   repairCost(building: Building): Record<string, number> {
     const build = this.modsFor(building.owner).buildingCost(building.def) as Record<string, number>;
     const cost: Record<string, number> = {};
@@ -678,23 +678,15 @@ export class Game {
     return cost;
   }
 
-  /** Pay a building's build cost once from the owner's castle stock to restore it
-   *  to full health. No scaling with damage — one payment mends the whole thing. */
-  repairBuilding(building: Building): boolean {
+  /** Open a repair order: serfs haul the materials in like a construction
+   *  site's, then a builder claims the job and mends the damage over time —
+   *  there is no instant fix. */
+  startRepair(building: Building): boolean {
     if (!this.canRepair(building)) return false;
     const owner = building.owner as PlayerId;
-    const cost = this.repairCost(building);
-    for (const item in cost) {
-      if (this.storeTotal(item, owner) < cost[item]) {
-        this.emitToast(`Not enough ${ITEMS[item as keyof typeof ITEMS].name} in the castle to repair the ${building.def.name}`, 'err', owner);
-        this.sfx('error');
-        return false;
-      }
-    }
-    for (const item in cost) this.takeStock(item, cost[item], owner);
-    building.hp = building.maxHp;
+    building.repair = { needs: this.repairCost(building), delivered: {}, incoming: {}, ready: false, builder: null };
     this.sfx('place');
-    this.emitToast(`${building.def.name} repaired`, undefined, owner);
+    this.emitToast(`Repair ordered — serfs will haul materials to the ${building.def.name}`, undefined, owner);
     return true;
   }
 

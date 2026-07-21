@@ -428,6 +428,9 @@ export class PlacementSystem {
   removeBuilding(building: Building): void {
     building.removed = true;
     for (const unit of this.units) if (unit.task && (unit.task.to === building || unit.task.from === building)) this.ports.cancelTask(unit);
+    const mender = building.repair?.builder;
+    if (mender) { mender.wstate = 'idle'; mender.target = null; mender.status = 'Idle'; }
+    building.repair = undefined;
     if (building.worker) {
       const worker = building.worker;
       this.view.remove(worker.mesh);

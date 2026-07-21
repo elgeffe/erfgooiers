@@ -47,6 +47,37 @@ export class WorkerSystem {
   ) {}
 
   updateLaborer(unit: Unit, dt: number): void {
+    if (unit.wstate === 'repair') {
+      const building = unit.target as Building;
+      const repair = building?.repair;
+      if (!building || building.removed || !repair) {
+        unit.wstate = 'idle';
+        unit.target = null;
+        return;
+      }
+      const door = doorTile(building);
+      if (unit.tx === door.x && unit.ty === door.y && !unit.path) {
+        unit.status = `Repairing ${building.def.name}`;
+        unit.bob += dt * 12;
+        unit.mesh.position.y = Math.abs(Math.sin(unit.bob)) * 0.07;
+        building.hp = Math.min(building.maxHp, building.hp + dt * building.maxHp / this.modsFor(building.owner).repairTime());
+        if (building.hp >= building.maxHp) {
+          building.repair = undefined;
+          unit.wstate = 'idle';
+          unit.target = null;
+          unit.status = 'Idle';
+          unit.mesh.position.y = 0;
+          this.ports.toast(`${building.def.name} repaired`, building.owner);
+          this.ports.sfx('place');
+        }
+      } else if (!unit.path && !this.ports.sendTo(unit, door.x, door.y)) {
+        repair.builder = null;
+        unit.wstate = 'idle';
+        unit.target = null;
+      }
+      if (unit.path) this.ports.moveUnit(unit, dt);
+      return;
+    }
     if (unit.wstate === 'build') {
       const site = unit.target as Site;
       if (!site || this.ports.sites().indexOf(site) < 0) {
@@ -89,6 +120,25 @@ export class WorkerSystem {
       if (claimable(site) && site.priority) {
         target = site;
         break;
+      }
+    }
+    // Repairs come after player-flagged priority sites but before routine
+    // construction: mending what stands beats breaking new ground.
+    if (!target) {
+      const claimableRepair = (building: Building): boolean => {
+        const repair = building.repair;
+        if (!repair || building.removed || building.owner !== unit.owner || !repair.ready) return false;
+        if (repair.builder && (repair.builder.dead || repair.builder.target !== building)) repair.builder = null;
+        return !repair.builder;
+      };
+      for (const building of this.ports.buildings()) {
+        if (claimableRepair(building)) {
+          building.repair!.builder = unit;
+          unit.target = building;
+          unit.wstate = 'repair';
+          unit.path = null;
+          return;
+        }
       }
     }
     if (!target) {

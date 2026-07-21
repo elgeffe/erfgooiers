@@ -19,6 +19,8 @@ interface Demand {
   to: Building | Site;
   item: string;
   from?: Building;
+  /** Delivery feeds the building's repair order, not its stock/input slots. */
+  repair?: boolean;
 }
 
 /** Assigns physical deliveries and advances serfs through their current task. */
@@ -52,7 +54,14 @@ export class LogisticsSystem {
     if (task.phase === 'deliver') {
       const door = doorTile(task.to);
       if (unit.tx === door.x && unit.ty === door.y && !unit.path) {
-        if (task.to.isSite) {
+        if (task.repair && !task.to.isSite) {
+          const repair = (task.to as Building).repair;
+          if (repair) {
+            repair.incoming[task.item] = Math.max(0, (repair.incoming[task.item] || 0) - 1);
+            repair.delivered[task.item] = (repair.delivered[task.item] || 0) + 1;
+            this.checkRepairReady(task.to as Building);
+          }
+        } else if (task.to.isSite) {
           task.to.incoming[task.item]--;
           task.to.delivered[task.item]++;
           this.checkSiteReady(task.to);
@@ -81,7 +90,10 @@ export class LogisticsSystem {
       if (task.from.def && task.from.def.store) task.from.stock![task.item]++;
       else task.from.out[task.item]++;
     }
-    if (task.to.isSite) task.to.incoming[task.item] = Math.max(0, (task.to.incoming[task.item] || 0) - 1);
+    if (task.repair && !task.to.isSite) {
+      const repair = (task.to as Building).repair;
+      if (repair) repair.incoming[task.item] = Math.max(0, (repair.incoming[task.item] || 0) - 1);
+    } else if (task.to.isSite) task.to.incoming[task.item] = Math.max(0, (task.to.incoming[task.item] || 0) - 1);
     else if (task.to.def && !task.to.def.store) task.to.incoming[task.item] = Math.max(0, (task.to.incoming[task.item] || 0) - 1);
     if (unit.carrying && (unit.owner === 'p1' || unit.owner === 'p2')) {
       const store = this.ports.storeFor(unit.owner);
@@ -104,6 +116,15 @@ export class LogisticsSystem {
       for (const item in site.needs) {
         const remaining = site.needs[item] - (site.delivered[item] || 0) - (site.incoming[item] || 0);
         for (let i = 0; i < remaining; i++) demands.push({ pri: site.priority ? -1 : 0, to: site, item });
+      }
+    }
+    // open repair orders want their materials like a construction site does
+    for (const building of this.ports.buildings()) {
+      const repair = building.repair;
+      if (!repair || building.owner !== owner || building.removed) continue;
+      for (const item in repair.needs) {
+        const remaining = repair.needs[item] - (repair.delivered[item] || 0) - (repair.incoming[item] || 0);
+        for (let i = 0; i < remaining; i++) demands.push({ pri: 0, to: building, item, repair: true });
       }
     }
     for (const building of this.ports.buildings()) {
@@ -157,7 +178,9 @@ export class LogisticsSystem {
         let best: Building | null = null;
         let bestDistance = 1e9;
         for (const building of this.ports.buildings()) {
-          if (building.owner !== owner || building === demand.to) continue;
+          // a repair may draw on the damaged building's own stock (castle
+          // stone mends the castle) — the serf just works at its door
+          if (building.owner !== owner || (building === demand.to && !demand.repair)) continue;
           const available = building.def.store ? (building.stock![demand.item] || 0) : (building.out[demand.item] || 0);
           if (available <= 0) continue;
           const distance = this.buildingDistance(building, demand.to) + (building.def.store ? 0.5 : 0);
@@ -183,9 +206,12 @@ export class LogisticsSystem {
       if (!serf) continue;
       if (from.def.store) from.stock![demand.item]--;
       else from.out[demand.item]--;
-      if (demand.to.isSite) demand.to.incoming[demand.item] = (demand.to.incoming[demand.item] || 0) + 1;
+      if (demand.repair && !demand.to.isSite) {
+        const repair = (demand.to as Building).repair!;
+        repair.incoming[demand.item] = (repair.incoming[demand.item] || 0) + 1;
+      } else if (demand.to.isSite) demand.to.incoming[demand.item] = (demand.to.incoming[demand.item] || 0) + 1;
       else if (!demand.to.def.store) demand.to.incoming[demand.item] = (demand.to.incoming[demand.item] || 0) + 1;
-      serf.task = { from, to: demand.to, item: demand.item, phase: 'pickup' };
+      serf.task = { from, to: demand.to, item: demand.item, phase: 'pickup', repair: demand.repair };
       serf.status = `Fetching ${ITEMS[demand.item as keyof typeof ITEMS].name}`;
       idle = idle.filter(unit => unit !== serf);
     }
@@ -196,6 +222,14 @@ export class LogisticsSystem {
     site.ready = true;
     site.frame.visible = true;
     site.frame.scale.set(1, 0.05, 1);
+  }
+
+  /** All repair materials delivered — the job now waits for a builder. */
+  checkRepairReady(building: Building): void {
+    const repair = building.repair;
+    if (!repair) return;
+    for (const item in repair.needs) if ((repair.delivered[item] || 0) < repair.needs[item]) return;
+    repair.ready = true;
   }
 
   private buildingDistance(left: { x: number; y: number }, right: { x: number; y: number }): number {
