@@ -124,13 +124,13 @@ a{color:var(--accent);} a:hover{color:#f0c060;}
 /* what a trainable unit actually does, shown right under its train button */
 .tinfo{font-size:10.5px;line-height:1.35;color:var(--ink-dim);margin:3px 2px 5px;}
 .inspbtn:hover{background:#e8b855;}
-/* train buttons: unit name left, cost chips + train time right */
-.inspbtn.train{display:flex;flex-direction:column;align-items:stretch;gap:5px;text-align:left;}
-.inspbtn.train .trow{display:flex;align-items:center;justify-content:space-between;gap:8px;}
-.inspbtn.train .tname{white-space:nowrap;}
+/* train buttons: unit name left, cost chips + train time right (repair reuses the layout) */
+.inspbtn.train, .inspbtn.repair{display:flex;flex-direction:column;align-items:stretch;gap:5px;text-align:left;}
+.inspbtn.train .trow, .inspbtn.repair .trow{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.inspbtn.train .tname, .inspbtn.repair .tname{white-space:nowrap;}
 .inspbtn.train .ttime{opacity:.7;font-weight:600;font-variant-numeric:tabular-nums;}
-.inspbtn.train .tcost{display:flex;flex-wrap:wrap;align-items:center;gap:4px 5px;font-weight:600;}
-.inspbtn.train .tcost i{display:inline-flex;align-items:center;gap:3px;font-style:normal;background:rgba(36,26,14,.16);border-radius:5px;padding:2px 6px;font-variant-numeric:tabular-nums;}
+.inspbtn.train .tcost, .inspbtn.repair .tcost{display:flex;flex-wrap:wrap;align-items:center;gap:4px 5px;font-weight:600;}
+.inspbtn.train .tcost i, .inspbtn.repair .tcost i{display:inline-flex;align-items:center;gap:3px;font-style:normal;background:rgba(36,26,14,.16);border-radius:5px;padding:2px 6px;font-variant-numeric:tabular-nums;}
 .inspbtn.train .tcost .tcname{font-weight:600;}
 .inspbtn.train .tcost .tcfree{opacity:.7;}
 .inspbtn.on{background:#3a2d1a;color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);}

@@ -661,6 +661,39 @@ export class Game {
     this.placementSystem.demolishAt(tx, ty, dragOnly, owner);
   }
 
+  /** True when `building` is a player structure that has taken damage. Drives
+   *  whether the inspector offers a repair button. */
+  canRepair(building: Building): boolean {
+    return (building.owner === 'p1' || building.owner === 'p2') && !building.removed
+      && building.hp < building.maxHp && Object.keys(building.def.cost).length > 0;
+  }
+
+  /** The materials to repair `building` in one payment: its original build cost
+   *  (after the owner's discounts), regardless of how battered it is. */
+  repairCost(building: Building): Record<string, number> {
+    return this.modsFor(building.owner).buildingCost(building.def) as Record<string, number>;
+  }
+
+  /** Pay a building's build cost once from the owner's castle stock to restore it
+   *  to full health. No scaling with damage — one payment mends the whole thing. */
+  repairBuilding(building: Building): boolean {
+    if (!this.canRepair(building)) return false;
+    const owner = building.owner as PlayerId;
+    const cost = this.repairCost(building);
+    for (const item in cost) {
+      if (this.storeTotal(item, owner) < cost[item]) {
+        this.emitToast(`Not enough ${ITEMS[item as keyof typeof ITEMS].name} in the castle to repair the ${building.def.name}`, 'err', owner);
+        this.sfx('error');
+        return false;
+      }
+    }
+    for (const item in cost) this.takeStock(item, cost[item], owner);
+    building.hp = building.maxHp;
+    this.sfx('place');
+    this.emitToast(`${building.def.name} repaired`, undefined, owner);
+    return true;
+  }
+
   private removeBuilding(building: Building): void {
     this.placementSystem.removeBuilding(building);
   }
