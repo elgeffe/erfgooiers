@@ -164,10 +164,10 @@ function goals(towers: number, scale: number, expansion: number): BuildGoal[] {
       ['market', E >= 3 ? 1 : 0, 'coin', req('quarry')], // late surplus → coin (godlike only)
       ['ironmine', 2 + E, 'war'],
       ['smithy', 1 + E, 'war', req('ironmine', 'coalmine')],
-      ['armory', E >= 2 ? E : 0, 'war', req('smithy')],   // armour for knights & horse knights
+      ['armory', E >= 2 ? 1 + E : 0, 'war', req('smithy')],  // armour → knights (the diverse line)
       ['barracks', 1 + E, 'war'],
-      ['stable', E >= 2 ? 1 : 0, 'war'],       // cavalry: lancers, horse knights/archers
-      ['engineer', E >= 2 ? 1 : 0, 'war'],     // siege: onagers, trebuchets
+      // NO stable — cavalry is deliberately off the AI roster for now
+      ['engineer', E >= 2 ? 1 + Math.floor(E / 2) : 0, 'war'], // SIEGE: onagers/trebuchets — the wall & castle breaker
       ['monastery', E >= 2 ? 1 : 0, 'war'],    // priests to heal the line
     ];
     for (const [key, base, category, requires] of grow) {
@@ -392,7 +392,17 @@ export class ClassicMacro implements MacroPolicy {
     // start — everything else waits for a small buffer to build up.
     const timber = economyStock(game, view.owner, 'timber'), stone = economyStock(game, view.owner, 'stone');
     const materialProducer: BuildingKey[] = ['woodcutter', 'sawmill', 'quarry', 'forester'];
-    const starved = timber < 3 || stone < 3;
+    // SIEGE RESERVE: siege (the castle-cracker) is timber-only, but routine
+    // construction spends timber the instant it lands, so the engineer stands
+    // idle and the demolition army has no siege (measured: 0 onagers built).
+    // Once an engineer stands and the army is short of siege, hold a TIMBER
+    // buffer — pause non-material construction until timber builds up — so the
+    // surplus flows to the siege line. Timber is non-depletable, so the boosted
+    // woodcutter/forester economy refills it fast.
+    const wantsSiege = (view.built.engineer ?? 0) > 0
+      && view.army.filter(u => u.role === 'onager' || u.role === 'trebuchet' || u.role === 'ballista').length < 3;
+    const timberBuffer = wantsSiege ? 12 : 3; // one siege = 10 timber, plus a little slack
+    const starved = timber < timberBuffer || stone < 3;
     const candidates = goals(profile.towers, profile.econScale, profile.expansion)
       .filter(goal => have(view, goal.key) < goal.target)
       .filter(goal => coinEngineRunning || !goal.expand)
@@ -594,47 +604,49 @@ export class ClassicMacro implements MacroPolicy {
     const coinEngineRunning = view.buildings.some(b => b.key === 'mint' && b.worker);
     const coinReserve = coinEngineRunning ? 0 : profile.workerReserveCoin;
 
-    // A better player scouts the rival army and trains counters: the base mix
-    // is reweighted toward what beats the enemy's dominant category (graded by
-    // profile.counter, and by how lopsided the enemy is). Full visibility, so
-    // it's the same read a human gets — no cheat.
+    // A better player scouts the rival army and trains counters: the target
+    // mix is reweighted toward what beats the enemy's dominant category (graded
+    // by profile.counter). Full visibility, so it's the same read a human gets.
     const enemyDom = profile.counter > 0 ? dominantEnemyCategory(view.enemyArmyByKind) : null;
 
-    // A mature economy fields the DEMOLITION army the pro wins with — siege to
-    // out-range towers and break the storehouse, heavy cavalry and knights to
-    // shatter the line, priests to keep it alive — not an endless soldier/archer
-    // spam. The weighted pick only ever sees AFFORDABLE kinds, so cheap units
-    // dominate by default; once coin is plentiful, bias hard toward the premium
-    // kinds so the surplus actually buys them. This is what ends the stalemate
-    // of two armies that can't crack each other's castle.
-    const richArmy = storeStock(game, view.owner, 'coin') > profile.workerReserveCoin + 20;
-    const PREMIUM: Record<string, number> = {
-      trebuchet: 6, onager: 5, horseknight: 4, knight: 3, lancer: 2.5, horsearcher: 2.5, priest: 3,
-    };
-    // weighted pick among the mix entries some standing trainer offers & the store affords
-    const options: { building: Building; kind: string; weight: number }[] = [];
+    // Build the effective TARGET SHARE of each kind (unitMix × counter), then
+    // train toward it by picking the offered+affordable kind furthest BELOW its
+    // target. A weighted-random pick let the cheapest unit (soldier/archer) win
+    // by sheer affordability and flood the army — the measured 62-soldier
+    // plateau. Composition targeting instead fills out the roster: once the
+    // army is soldier-heavy, soldiers are over-target so knights, priests and
+    // SIEGE (the demolition core) are chosen the moment their inputs arrive.
+    const target: Record<string, number> = {};
+    let targetSum = 0;
+    for (const kind in profile.unitMix) {
+      let w = profile.unitMix[kind as keyof typeof profile.unitMix] ?? 0;
+      if (enemyDom) w *= counterMultiplier(kind, enemyDom.cat, profile.counter * enemyDom.frac);
+      if (w > 0) { target[kind] = w; targetSum += w; }
+    }
+    const armyN = Math.max(1, view.armySize);
+    const have: Record<string, number> = {};
+    for (const unit of view.army) have[unit.role] = (have[unit.role] ?? 0) + 1;
+
+    let best: { building: Building; kind: string } | null = null;
+    let bestDeficit = -Infinity;
     for (const building of trainers) {
       for (const training of building.def.military!.units) {
-        let weight = profile.unitMix[training.kind as keyof typeof profile.unitMix] ?? 0;
-        if (weight <= 0) continue;
-        if (enemyDom) weight *= counterMultiplier(training.kind, enemyDom.cat, profile.counter * enemyDom.frac);
-        if (richArmy) weight *= PREMIUM[training.kind] ?? 1; // spend the surplus on the decisive units
-        const cost = game.modsFor(view.owner).unitCost(training.kind, training.cost) as Record<string, number>;
+        const kind = training.kind;
+        if (!target[kind]) continue;
+        const cost = game.modsFor(view.owner).unitCost(kind, training.cost) as Record<string, number>;
         let ok = true;
         for (const item in cost) {
           const reserve = item === 'coin' ? coinReserve : 0;
           if (storeStock(game, view.owner, item) < cost[item] + reserve) { ok = false; break; }
         }
-        if (ok) options.push({ building, kind: training.kind, weight });
+        if (!ok) continue;
+        // how far below its target share this kind sits (+ tiny rng jitter so
+        // ties vary between matches, deterministic per seed)
+        const deficit = target[kind] / targetSum - (have[kind] ?? 0) / armyN + rng.next() * 0.02;
+        if (deficit > bestDeficit) { bestDeficit = deficit; best = { building, kind }; }
       }
     }
-    if (!options.length) return null;
-    let roll = rng.next() * options.reduce((sum, option) => sum + option.weight, 0);
-    for (const option of options) {
-      roll -= option.weight;
-      if (roll <= 0) return { type: 'queueTraining', buildingId: option.building.id, unit: option.kind };
-    }
-    const last = options[options.length - 1];
-    return { type: 'queueTraining', buildingId: last.building.id, unit: last.kind };
+    if (!best) return null;
+    return { type: 'queueTraining', buildingId: best.building.id, unit: best.kind };
   }
 }

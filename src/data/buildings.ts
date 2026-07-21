@@ -130,13 +130,22 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
 
   engineer: { name: 'Engineer\u2019s Workshop', desc: 'Builds siege engines — ballistas, onagers & trebuchets', model: 'cottage',
     cost: { timber: 5, stone: 4 }, roof: 0x5a5346, wall: 0x9c8a6a, accent: 0xc9a94e, hp: 240,
+    // Siege is TIMBER-ONLY: the war machines are built of wood, and timber is
+    // the one non-depletable resource (foresters replant), so a settlement that
+    // scales its timber economy can field siege in numbers — the intended path
+    // to the wall/castle-breaker, rather than gating it behind scarce stone/coin.
+    // All siege cost the SAME 10 timber — the roles differ by what they hit
+    // (ballista spikes single tough units, onager splashes anti-personnel,
+    // trebuchet breaks walls & structures), not by price, so the AI and player
+    // pick by tactical need rather than affordability. Timber is non-depletable
+    // (foresters replant), so a scaled wood economy fields siege in numbers.
     military: { units: [
-      { kind: 'ballista', cost: { timber: 3, weapon: 1, coin: 2 }, time: 10,
-        desc: 'Giant crossbow on wheels — long-ranged bolts, slow to move' },
-      { kind: 'onager', cost: { timber: 3, stone: 2, coin: 3 }, time: 11,
+      { kind: 'ballista', cost: { timber: 10 }, time: 10,
+        desc: 'Giant crossbow on wheels — long-ranged bolts that spike one tough target' },
+      { kind: 'onager', cost: { timber: 10 }, time: 11,
         desc: 'Rock-lobbing catapult — splashes damage across a cluster of foes' },
-      { kind: 'trebuchet', cost: { timber: 5, stone: 3, coin: 4 }, time: 14,
-        desc: 'The wall-breaker — devastating stones from far off, but crawls' },
+      { kind: 'trebuchet', cost: { timber: 10 }, time: 14,
+        desc: 'The wall-breaker — devastating stones that shatter walls & structures' },
     ] } },
 
   monastery: { name: 'Monastery', desc: 'A stone cloister and chapel that trains priests to heal nearby allies', model: 'cottage',

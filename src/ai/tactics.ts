@@ -34,6 +34,7 @@ export class Tactics {
   private threatSince: number | null = null;
   private bellOn = false;
   private sieging = false;
+  private allIn = false;
   private lastRepairAt = -Infinity;
   /** First launched attack (sim seconds) — the stance-separation metric. */
   firstAttackAt: number | null = null;
@@ -154,9 +155,15 @@ export class Tactics {
     const needed = Math.max(4, enemyKnown
       ? Math.min(profile.attackArmy, Math.ceil(view.enemyArmySize * 1.5) + 4)
       : profile.attackArmy);
+    // THE FINISHER: once the army fills the cap the economy has nothing bigger
+    // to build toward, so massing further is wasted time — commit EVERYTHING
+    // (no home guard) to a decisive assault, and (in pressAttack) fight it to
+    // the death instead of retreating. This is what converts the deep economy
+    // and its siege into an actual win rather than a timeout draw.
+    this.allIn = view.armySize >= Math.max(needed, Math.round(profile.armyCap * 0.85));
     // the garrison is best-effort surplus, never a reason to delay the launch:
     // demanding wave + full guard before marching left Godlike massing forever
-    const guard = Math.min(Math.ceil(view.armySize * profile.homeGuard), Math.max(0, view.armySize - needed));
+    const guard = this.allIn ? 0 : Math.min(Math.ceil(view.armySize * profile.homeGuard), Math.max(0, view.armySize - needed));
     if (view.armySize - guard >= needed
       && view.elapsed - this.lastAttackAt >= profile.minAttackInterval
       && view.enemyStore) {
@@ -252,7 +259,11 @@ export class Tactics {
       return [];
     }
     // cut losses: below the retreat fraction the survivors walk home to re-mass
-    if (squadUnits.length < Math.ceil(this.launchSize * profile.retreatRatio)) {
+    // — but an ALL-IN finisher fights to the death (a low floor), because
+    // there is no bigger army to re-mass into and a razed enemy storehouse ends
+    // the match outright
+    const retreatRatio = this.allIn ? 0.12 : profile.retreatRatio;
+    if (squadUnits.length < Math.ceil(this.launchSize * retreatRatio)) {
       this.squad.clear();
       this.mode = 'muster';
       this.lastOrderAt = view.elapsed;

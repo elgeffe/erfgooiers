@@ -104,14 +104,15 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
     counter: 0, homeGuard: 0.35, raidSize: 0, raidInterval: 1e9,
   },
   // The fortress with a slow fuse: quicker cadence and cleaner play than
-  // Easy. It runs the mid-game resource BOOM (expansion 2 opens the full
-  // military spread — cavalry, siege, priests — and keeps multiplying the
-  // coin engine: mints and the gold/coal to feed them), hoards a big DIVERSE
-  // army behind walls + towers, then breaks out LATE with one hard wave.
+  // Easy. It runs the mid-game resource BOOM (expansion 2 opens the weapons +
+  // armour + priest spread and keeps multiplying the coin engine: mints and
+  // the gold/coal to feed them), hoards a big army of infantry + archers +
+  // knights + priests behind walls + towers, then breaks out LATE with one
+  // hard wave. (No cavalry — a deliberately simpler roster.)
   hard: {
     macroPeriod: 2.5, tacticsPeriod: 1, reactionDelay: 2, apm: 40, errorRate: 0.03,
     econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 3, walls: 1,
-    armyCap: 50, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 2, lancer: 1, horseknight: 1, priest: 1 },
+    armyCap: 50, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 2, trebuchet: 1, priest: 1 },
     attackArmy: 30, minAttackInterval: 190, retreatRatio: 0.5, useBell: true,
     counter: 0.6, homeGuard: 0.3, raidSize: 0, raidInterval: 1e9,
   },
@@ -119,12 +120,16 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
   // scouts through the fog) from the opening, walls and towers rise at home
   // meanwhile, the deepest economy compounds (expansion 3 — it contests the
   // map's central resources and never stops multiplying producers), and the
-  // kill arrives late as a large, diverse, counter-picked army. Strictly
-  // better cadence, APM, reactions and counter-play than Hard.
+  // kill arrives late as a large, counter-picked DEMOLITION army: infantry +
+  // knights + archers + priests, spearheaded by SIEGE that out-ranges the
+  // rival's towers and cracks its storehouse. (No cavalry — simpler roster.)
   godlike: {
     macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 66, errorRate: 0,
     econScale: 1, expansion: 3, maxPendingSites: 7, workerReserveCoin: 3, towers: 2, walls: 1,
-    armyCap: 75, unitMix: { soldier: 3, archer: 3, pikeman: 2, knight: 3, lancer: 2, horseknight: 2, horsearcher: 1, onager: 1, trebuchet: 1, priest: 1 },
+    // onagers wreck the enemy line in the field clash (anti-personnel splash),
+    // trebuchets (structureMult 4) then break the walls and storehouse — the
+    // demolition core, so they're weighted highest of the siege pair
+    armyCap: 75, unitMix: { soldier: 3, archer: 3, pikeman: 2, knight: 3, onager: 2, trebuchet: 3, priest: 1 },
     attackArmy: 30, minAttackInterval: 150, retreatRatio: 0.55, useBell: true,
     counter: 1, homeGuard: 0.25, raidSize: 6, raidInterval: 90,
   },
