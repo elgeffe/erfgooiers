@@ -62,6 +62,40 @@ export function planFortificationRing(center: Coord, radius: number, gateSides: 
   return pieces;
 }
 
+/**
+ * Plan a straight DEFENSIVE LINE facing the enemy, instead of a full square
+ * curtain. The line sits `distance` tiles from `center` on the side toward
+ * `enemy`, spanning `halfSpan` 2×2 blocks each way along the perpendicular,
+ * with a gate on the central approach so the garrison can sortie. Pieces are
+ * ordered from the centre outward so a caller placing one per pass grows the
+ * wall symmetrically from the gate.
+ *
+ * This is the "use the terrain" primitive: the caller skips any segment whose
+ * ground is already impassable (a lake, a ridge) — natural barriers ARE the
+ * wall there — so the masonry only closes the OPEN approaches between them,
+ * which is what makes a line strategic rather than a pointless full ring.
+ */
+export function planDefensiveLine(center: Coord, enemy: Coord, distance: number, halfSpan: number): FortificationPiece[] {
+  const dx = enemy.x - center.x, dy = enemy.y - center.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const fx = dx / len, fy = dy / len;             // unit vector toward the enemy
+  const px = -fy, py = fx;                          // perpendicular (the wall's run)
+  const side: FortSide = Math.abs(fx) > Math.abs(fy) ? (fx > 0 ? 'e' : 'w') : (fy > 0 ? 's' : 'n');
+  const lineX = center.x + fx * distance, lineY = center.y + fy * distance;
+  // gate archway runs along the enemy axis: a mostly-vertical approach (n/s)
+  // wants a north–south gate (rot 0), an east–west approach an e–w gate (rot 1)
+  const gateRot = side === 'e' || side === 'w' ? 1 : 0;
+  const order: number[] = [0];
+  for (let k = 1; k <= halfSpan; k++) order.push(k, -k);
+  const pieces: FortificationPiece[] = [];
+  for (const k of order) {
+    const x = Math.round(lineX + px * k * 2);
+    const y = Math.round(lineY + py * k * 2);
+    pieces.push({ kind: k === 0 ? 'gate' : 'wall', x, y, rot: k === 0 ? gateRot : 0, side });
+  }
+  return pieces;
+}
+
 /** Inner-corner tower spots for a ring (just behind the curtain), in the
  *  stronghold builder's historical order. */
 export function ringTowerSpots(center: Coord, radius: number): Coord[] {

@@ -34,6 +34,7 @@ export class Tactics {
   private threatSince: number | null = null;
   private bellOn = false;
   private sieging = false;
+  private allIn = false;
   private lastRepairAt = -Infinity;
   /** First launched attack (sim seconds) — the stance-separation metric. */
   firstAttackAt: number | null = null;
@@ -154,10 +155,22 @@ export class Tactics {
     const needed = Math.max(4, enemyKnown
       ? Math.min(profile.attackArmy, Math.ceil(view.enemyArmySize * 1.5) + 4)
       : profile.attackArmy);
+    // THE FINISHER: once the army fills the cap the economy has nothing bigger
+    // to build toward, so massing further is wasted time — commit EVERYTHING
+    // (no home guard) to a decisive assault, and (in pressAttack) fight it to
+    // the death instead of retreating. This is what converts the deep economy
+    // and its siege into an actual win rather than a timeout draw.
+    this.allIn = view.armySize >= Math.max(needed, Math.round(profile.armyCap * 0.85));
+    // A WALLED rival is never assaulted piecemeal: a periodic mid-size wave just
+    // bleeds out on the curtain and its towers while the turtle masses behind it
+    // (measured: Godlike fed 30-fighter waves into Hard's walls and lost the
+    // army it needed). Against fortifications, hold for the full siege-backed
+    // FINISHER — the trebuchets that actually break the wall — and commit once.
+    const canLaunch = view.enemyBulwarks.length === 0 || this.allIn;
     // the garrison is best-effort surplus, never a reason to delay the launch:
     // demanding wave + full guard before marching left Godlike massing forever
-    const guard = Math.min(Math.ceil(view.armySize * profile.homeGuard), Math.max(0, view.armySize - needed));
-    if (view.armySize - guard >= needed
+    const guard = this.allIn ? 0 : Math.min(Math.ceil(view.armySize * profile.homeGuard), Math.max(0, view.armySize - needed));
+    if (canLaunch && view.armySize - guard >= needed
       && view.elapsed - this.lastAttackAt >= profile.minAttackInterval
       && view.enemyStore) {
       const wave = view.army.slice(0, view.armySize - guard);
@@ -179,9 +192,13 @@ export class Tactics {
     // Harassment raids between waves (higher difficulties): a small party
     // rides at the rival base to bleed workers, scout, and force reactions —
     // but never into a garrison that outnumbers it (a beaten raid invites the
-    // counter-chase that razes half the home base).
+    // counter-chase that razes half the home base), and never once the rival
+    // has WALLED UP: a light raid party just dies on the curtain and its
+    // towers, feeding the turtle instead of pestering it. Raids harass an open
+    // economy; a fortified one is cracked by the main wave and its siege.
     if (profile.raidSize > 0 && view.enemyStore && !this.raiders.size
       && view.enemyArmySize < profile.raidSize
+      && view.enemyBulwarks.length === 0
       && view.elapsed - this.lastRaidAt >= profile.raidInterval
       && view.armySize - guard >= profile.raidSize + 4) {
       const party = view.army.filter(unit => !this.squad.has(unit.id)).slice(0, profile.raidSize);
@@ -248,7 +265,11 @@ export class Tactics {
       return [];
     }
     // cut losses: below the retreat fraction the survivors walk home to re-mass
-    if (squadUnits.length < Math.ceil(this.launchSize * profile.retreatRatio)) {
+    // — but an ALL-IN finisher fights to the death (a low floor), because
+    // there is no bigger army to re-mass into and a razed enemy storehouse ends
+    // the match outright
+    const retreatRatio = this.allIn ? 0.12 : profile.retreatRatio;
+    if (squadUnits.length < Math.ceil(this.launchSize * retreatRatio)) {
       this.squad.clear();
       this.mode = 'muster';
       this.lastOrderAt = view.elapsed;

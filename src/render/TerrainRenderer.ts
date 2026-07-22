@@ -385,4 +385,9 @@ export class TerrainRenderer {
     const m = this.roadMeshes.get(key);
     if (m) { this.worldGroup.remove(m); this.roadMeshes.delete(key); }
   }
+
+  /** The road tile's mesh, for the fog pass to hide/show. */
+  roadMeshAt(x: number, y: number): THREE.Mesh | null {
+    return this.roadMeshes.get(x + ',' + y) ?? null;
+  }
 }

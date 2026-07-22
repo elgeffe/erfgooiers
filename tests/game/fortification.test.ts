@@ -1,8 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { planFortificationRing, ringTowerSpots, sideToward } from '../../src/game/fortification';
+import { planDefensiveLine, planFortificationRing, ringTowerSpots, sideToward } from '../../src/game/fortification';
 import { makeTestGame } from '../../src/game/testHarness';
 import { findPath } from '../../src/engine/pathfinding';
 import { doorTile } from '../../src/game/util';
+
+describe('defensive line planner', () => {
+  it('throws a straight wall across the enemy approach with a central gate', () => {
+    const center = { x: 20, y: 20 };
+    const enemy = { x: 60, y: 20 }; // due east
+    const pieces = planDefensiveLine(center, enemy, 11, 6);
+    // one gate, the rest walls; gate is first (central approach)
+    expect(pieces[0].kind).toBe('gate');
+    expect(pieces.filter(p => p.kind === 'gate')).toHaveLength(1);
+    expect(pieces.filter(p => p.kind === 'wall').length).toBe(pieces.length - 1);
+    // the line runs perpendicular to the east approach: same x, spread in y
+    const xs = new Set(pieces.map(p => p.x));
+    expect(xs.size).toBe(1);           // a single column at distance 11 east
+    expect([...xs][0]).toBe(31);       // 20 + 11
+    const ys = pieces.map(p => p.y).sort((a, b) => a - b);
+    expect(ys[0]).toBeLessThan(20);    // spans both sides of centre
+    expect(ys[ys.length - 1]).toBeGreaterThan(20);
+  });
+
+  it('faces the gate toward whichever side the enemy sits', () => {
+    const north = planDefensiveLine({ x: 20, y: 20 }, { x: 20, y: -20 }, 8, 3);
+    expect(north[0].side).toBe('n');
+    const ysSame = new Set(north.map(p => p.y));
+    expect(ysSame.size).toBe(1);       // a horizontal line north of centre
+  });
+});
 
 describe('fortification planner', () => {
   it('draws a closed square curtain with gates mid-side', () => {

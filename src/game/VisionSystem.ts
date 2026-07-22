@@ -5,8 +5,9 @@ import type { World } from '../world/World';
 const UNIT_SIGHT = 7;
 /** Tiles a standing building or construction site reveals. */
 const BUILDING_SIGHT = 7;
-/** Watchtowers overlook farther — the scouting anchor of a fortified line. */
-const TOWER_SIGHT = 12;
+/** Watchtowers overlook FAR farther — the whole point of building one is the
+ *  extended view, so the ring must read clearly beyond ordinary sight. */
+const TOWER_SIGHT = 15;
 
 interface VisionPorts {
   now: () => number;

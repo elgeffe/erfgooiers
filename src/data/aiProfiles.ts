@@ -92,36 +92,50 @@ export interface AIProfile {
 }
 
 const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'desc' | 'policy' | 'difficulty'>> = {
-  // The defensive, slow homesteader: towers over walls, no raids, and an
-  // attack so rare it reads as a counter-punch. Blunders one pass in five.
+  // The defensive, slow homesteader: it stays a small settlement (no endless
+  // expansion) but bolsters DEFENCE — a ring of towers and a defensive unit
+  // mix (spearwall + archers, no cavalry) — and only rarely counter-punches.
+  // Blunders one pass in five.
   easy: {
     macroPeriod: 6, tacticsPeriod: 2, reactionDelay: 5, apm: 10, errorRate: 0.2,
-    econScale: 0.8, expansion: 0, maxPendingSites: 2, workerReserveCoin: 2, towers: 2, walls: 0,
-    armyCap: 16, unitMix: { soldier: 2, archer: 2 },
-    attackArmy: 12, minAttackInterval: 240, retreatRatio: 0.3, useBell: false,
-    counter: 0, homeGuard: 0.25, raidSize: 0, raidInterval: 1e9,
+    econScale: 0.85, expansion: 0, maxPendingSites: 2, workerReserveCoin: 2, towers: 4, walls: 0,
+    armyCap: 18, unitMix: { soldier: 3, pikeman: 2, archer: 3 },
+    attackArmy: 14, minAttackInterval: 240, retreatRatio: 0.3, useBell: true,
+    counter: 0, homeGuard: 0.35, raidSize: 0, raidInterval: 1e9,
   },
-  // The fortress with a slow fuse: quicker cadence and cleaner play than
-  // Easy, walls + towers early, then a deliberately LATE game — it hoards a
-  // big combined army behind the curtain (high attackArmy, long interval)
-  // and breaks out with one wave that is genuinely hard to stop.
+  // The defensive-but-mobile tier with a slow fuse: quicker cadence and cleaner
+  // play than Easy. It runs the mid-game resource BOOM (expansion 2 opens the
+  // weapons + armour + priest spread and keeps multiplying the coin engine),
+  // hoards a big army of infantry + archers + knights + priests behind a ring
+  // of TOWERS (no walls — the impregnable curtain is Godlike's alone), then
+  // breaks out LATE with one hard wave. (No cavalry — a simpler roster.)
   hard: {
-    macroPeriod: 2.5, tacticsPeriod: 1, reactionDelay: 2, apm: 36, errorRate: 0.03,
-    econScale: 1, expansion: 1, maxPendingSites: 4, workerReserveCoin: 3, towers: 3, walls: 1,
-    armyCap: 40, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 2, lancer: 1 },
-    attackArmy: 28, minAttackInterval: 200, retreatRatio: 0.5, useBell: true,
+    macroPeriod: 2.5, tacticsPeriod: 1, reactionDelay: 2, apm: 40, errorRate: 0.03,
+    econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 3, walls: 0,
+    armyCap: 50, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 2, trebuchet: 1, priest: 1 },
+    attackArmy: 30, minAttackInterval: 190, retreatRatio: 0.5, useBell: true,
     counter: 0.6, homeGuard: 0.3, raidSize: 0, raidInterval: 1e9,
   },
   // The pro: a fast raid party pesters the rival's infrastructure (and
   // scouts through the fog) from the opening, walls and towers rise at home
-  // meanwhile, the deep economy compounds (expansion 2 opens the full
-  // military spread — cavalry, siege, priests), and the kill arrives late as
-  // a large, diverse, counter-picked army. Strictly better cadence, APM,
-  // reactions and counter-play than Hard — never extra resources.
+  // meanwhile, the deepest economy compounds (expansion 3 — it contests the
+  // map's central resources and never stops multiplying producers), and the
+  // kill arrives late as a large, counter-picked DEMOLITION army: infantry +
+  // knights + archers + priests, spearheaded by SIEGE that out-ranges the
+  // rival's towers and cracks its storehouse. (No cavalry — simpler roster.)
   godlike: {
-    macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 60, errorRate: 0,
-    econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 2, walls: 1,
-    armyCap: 60, unitMix: { soldier: 3, archer: 3, pikeman: 2, knight: 3, lancer: 2, horseknight: 2, horsearcher: 1, onager: 1, trebuchet: 1, priest: 1 },
+    macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 66, errorRate: 0,
+    // expansion 3 is the deepest economy — the pro contests the map's central
+    // ore and never stops compounding producers. It edges Hard on execution
+    // (cadence, APM, reactions, counter, early raids) and army cap; towers 3
+    // gives defensive parity. NOTE: vs Hard's turtle this is still a close,
+    // slightly-losing matchup in self-play — an aggressive-vs-turtle archetype
+    // clash left as a known playtest/balance item, not a regression.
+    econScale: 1, expansion: 3, maxPendingSites: 7, workerReserveCoin: 3, towers: 3, walls: 1,
+    // onagers wreck the enemy line in the field clash (anti-personnel splash),
+    // trebuchets (structureMult 4) then break the walls and storehouse — the
+    // demolition core, so they're weighted highest of the siege pair
+    armyCap: 75, unitMix: { soldier: 3, archer: 3, pikeman: 2, knight: 3, onager: 2, trebuchet: 3, priest: 1 },
     attackArmy: 30, minAttackInterval: 150, retreatRatio: 0.55, useBell: true,
     counter: 1, homeGuard: 0.25, raidSize: 6, raidInterval: 90,
   },

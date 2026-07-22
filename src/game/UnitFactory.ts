@@ -102,13 +102,17 @@ export class UnitFactory {
     return unit;
   }
 
-  spawnStartArmy(groups: { kind: UnitKind; count: number }[]): Unit[] {
+  /** Parade the granted warband in ranks on open ground WELL in front of the
+   *  owner's castle gate — a garrison stands guard on the approach, it does
+   *  not crowd the keep's doorstep. */
+  spawnStartArmy(groups: { kind: UnitKind; count: number }[], owner: PlayerId = this.localPlayerId): Unit[] {
     const total = groups.reduce((sum, group) => sum + group.count, 0);
     if (total <= 0) return [];
-    const store = this.ports.primaryStore();
+    const store = this.ports.storeFor(owner);
     const door = doorTile(store);
     const [dirX, dirY] = [[0, 1], [-1, 0], [0, -1], [1, 0]][store.rot || 0];
     const columns = Math.max(4, Math.ceil(Math.sqrt(total * 1.8)));
+    const FRONT = 6; // tiles of open ground between the gate and the first rank
     const result: Unit[] = [];
     const queue: UnitKind[] = [];
     for (const group of groups) for (let index = 0; index < group.count; index++) queue.push(group.kind);
@@ -116,16 +120,16 @@ export class UnitFactory {
       if (!queue.length || this.units.length >= this.unitCap) return;
       const tile = this.world.T(x, y);
       if (!tile || tile.type !== 'grass' || tile.b || tile.site || tile.dep || tile.tree || tile.field) return;
-      result.push(this.spawnFighter(queue.shift()!, { x, y }, 'player'));
+      result.push(this.spawnFighter(queue.shift()!, { x, y }, 'player', owner));
     };
     for (let rank = 0; queue.length && rank < 40; rank++) {
-      const x = door.x + dirX * (2 + rank), y = door.y + dirY * (2 + rank);
+      const x = door.x + dirX * (FRONT + rank), y = door.y + dirY * (FRONT + rank);
       for (let column = 0; queue.length && column < columns; column++) {
         const offset = (column % 2 === 0 ? 1 : -1) * Math.ceil(column / 2);
         tryTile(x + (dirY !== 0 ? offset : 0), y + (dirX !== 0 ? offset : 0));
       }
     }
-    for (const kind of queue.splice(0)) result.push(...this.spawnSquad(kind, 1, this.world.wx(door.x) + dirX * 2, this.world.wz(door.y) + dirY * 2, 'player'));
+    for (const kind of queue.splice(0)) result.push(...this.spawnSquad(kind, 1, this.world.wx(door.x + dirX * FRONT), this.world.wz(door.y + dirY * FRONT), 'player', owner));
     for (const unit of result) unit.mesh.rotation.y = Math.atan2(dirX, dirY);
     return result;
   }

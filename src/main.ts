@@ -32,7 +32,7 @@ import { PeerCoOpClient, type ConnectionSnapshot } from './net/PeerCoOpClient';
 import { PLAYER_COLOR_PRESETS, type AcceptedCommand, type ExpeditionDifficulty, type GameCommand } from './net/protocol';
 import { applyGameCommand } from './game/commands';
 import { EXPEDITION_DIFFICULTY, EXPEDITION_LEVEL_COUNT, expeditionLevelFor } from './data/coOpLevels';
-import { SKIRMISH_LEVEL } from './data/skirmishLevels';
+import { SKIRMISH_LEVEL, skirmishLevel, DEFAULT_SKIRMISH, type SkirmishConfig } from './data/skirmishLevels';
 import { AIController } from './ai/AIController';
 import { AI_PROFILES, aiProfile, type AIDifficulty } from './data/aiProfiles';
 import { ReplayRecorder, serializeReplay, skirmishWinner, type Replay } from './game/replay';
@@ -454,7 +454,7 @@ function buildMultiplayerLevel(setup: MultiplayerLevelSetup): { world: World; ga
   currentLevel = level;
   simRng.reseed(setup.seed ^ 0x5bd1e995);
   uiRng.reseed(setup.seed ^ 0x27d4eb2f);
-  const world = new World({ seed: setup.seed, ...level.world, biome: 'gooi' });
+  const world = new World({ seed: setup.seed, ...level.world, biome: level.world.biome ?? 'gooi' });
   view.loadWorld(world);
   const g = new Game(world, view, new Modifiers([...setup.difficultySpecs]), setup.localSeat);
   game = g;
@@ -469,7 +469,7 @@ function buildMultiplayerLevel(setup: MultiplayerLevelSetup): { world: World; ga
   g.toast = (m, c) => ui.toast(m, c);
   g.onSelect = o => ui.showInspector(o);
   g.sfx = name => audio.play(name as any);
-  audio.setBiome('gooi');
+  audio.setBiome(level.world.biome ?? 'gooi');
   audio.setLevel(level.index);
   g.onGold = amt => { if (run) { run.gold = Math.max(0, run.gold + amt); if (amt > 0) goldEarnedThisRun += amt; ui.setGold(run.gold); } };
   g.onHurt = (x, z) => view.spawnHurt(x, z);
@@ -493,14 +493,12 @@ function buildMultiplayerLevel(setup: MultiplayerLevelSetup): { world: World; ga
   // Each settlement gets the shared level garrison plus its seat's hero and
   // warband — spawned in fixed seat order so every peer builds the same sim.
   for (const seat of setup.seats) {
-    const st = g.storeFor(seat.id);
-    const sx = world.wx(st.x) + 0.5, sz = world.wz(st.y) + 0.5;
     const heroDef = seat.hero ? HERO_BY_ID[seat.hero] : null;
-    for (const a of [...(level.startArmy ?? []), ...(heroDef?.startArmy ?? [])]) {
-      // the owner is passed so each fighter's combat stats bake from that
-      // seat's own rule set — identically on every peer
-      g.spawnSquad(a.kind, a.count, sx, sz, 'player', seat.id);
-    }
+    // parade each seat's warband in front of its own castle gate (the owner is
+    // passed so combat stats bake from that seat's rule set, identically on
+    // every peer — and identically in headless re-simulation)
+    const army = [...(level.startArmy ?? []), ...(heroDef?.startArmy ?? [])];
+    if (army.length) g.spawnStartArmy(army, seat.id);
     if (heroDef) g.spawnHero(heroDef.id, heroDef.name, seat.id);
   }
   // Mount the local seat's hero on the HUD chip, if it brought one.
@@ -610,10 +608,17 @@ function onCoopLevelClear(): void {
 }
 
 // ---------- skirmish vs CPU (local, no lobby) ----------
+/** Biome & map-density pickers, shared verbatim by the sandbox and skirmish
+ *  setup screens (the arena reuses the sandbox's world knobs). */
+const BIOME_OPTS: [string, string][] = [['gooi', 'Het Gooi'], ['ardennes', 'The Ardennes'], ['blackforest', 'The Black Forest'], ['alps', 'The Alps'], ['winter', 'Winter'], ['polder', 'The Polder'], ['seaside', 'Zeeland Delta'], ['island', 'Texel'], ['hell', 'Hell']];
+const MAP_RES_OPTS: [string, string][] = [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']];
+const SKIRMISH_SIZE_OPTS: [string, string][] = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large'], ['huge', 'Huge']];
+
 interface SkaiSeatCfg { difficulty: AIDifficulty; policy: string }
-let skaiCfg: { seat: 'play' | 'spectate'; fog: boolean; east: SkaiSeatCfg; west: SkaiSeatCfg } = {
+let skaiCfg: { seat: 'play' | 'spectate'; fog: boolean; map: SkirmishConfig; east: SkaiSeatCfg; west: SkaiSeatCfg } = {
   seat: 'play',
   fog: true,
+  map: { ...DEFAULT_SKIRMISH },
   east: { difficulty: 'easy', policy: 'classic' },   // the rival (p2)
   west: { difficulty: 'hard', policy: 'classic' },   // your seat when spectating (p1)
 };
@@ -657,6 +662,19 @@ function renderSkirmishAISetup(): void {
     + `<button class="opt${skaiCfg.fog ? ' on' : ''}" data-fog="on">🌫️ Fog on</button>`
     + `<button class="opt${!skaiCfg.fog ? ' on' : ''}" data-fog="off">☀️ Revealed</button>`
     + '</div></div>';
+  // the arena's world knobs, shared with the sandbox setup screen
+  const mapGroups: { key: keyof SkirmishConfig; label: string; opts: [string, string][] }[] = [
+    { key: 'size', label: 'Arena size', opts: SKIRMISH_SIZE_OPTS },
+    { key: 'biome', label: 'Biome', opts: BIOME_OPTS },
+    { key: 'mapRes', label: 'Map resources', opts: MAP_RES_OPTS },
+  ];
+  for (const grp of mapGroups) {
+    s += `<div class="optgroup"><div class="optlabel">${grp.label}</div><div class="optrow">`;
+    for (const [val, label] of grp.opts) {
+      s += `<button class="opt${skaiCfg.map[grp.key] === val ? ' on' : ''}" data-map="${grp.key}" data-val="${val}">${label}</button>`;
+    }
+    s += '</div></div>';
+  }
   if (spectate) s += seatGroups('west', 'West CPU (your colours)');
   s += seatGroups('east', spectate ? 'East CPU' : 'Opponent brain');
   el.innerHTML = s;
@@ -665,6 +683,9 @@ function renderSkirmishAISetup(): void {
   });
   el.querySelectorAll<HTMLElement>('.opt[data-fog]').forEach(b => {
     b.onclick = () => { skaiCfg.fog = b.dataset.fog === 'on'; audio.play('click'); renderSkirmishAISetup(); };
+  });
+  el.querySelectorAll<HTMLElement>('.opt[data-map]').forEach(b => {
+    b.onclick = () => { (skaiCfg.map as any)[b.dataset.map!] = b.dataset.val; audio.play('click'); renderSkirmishAISetup(); };
   });
   el.querySelectorAll<HTMLElement>('.opt[data-key]').forEach(b => {
     b.onclick = () => {
@@ -685,7 +706,7 @@ function startSkirmishAI(): void {
   run = newRun(seed);           // local gold container — nothing is banked
   clearedThisRun = 0;
   goldEarnedThisRun = 0;
-  const level = SKIRMISH_LEVEL;
+  const level = skirmishLevel({ ...skaiCfg.map, fog: skaiCfg.fog });
   const spectate = skaiCfg.seat === 'spectate';
   const seats: MultiplayerSeat[] = [
     spectate
@@ -956,8 +977,8 @@ let sandboxCfg: SandboxConfig = { ...DEFAULT_SANDBOX };
 function sbxGroups(): { key: keyof SandboxConfig; label: string; opts: [string, string][] }[] {
   return [
     { key: 'size', label: 'Map size', opts: [['small', 'Small · 48'], ['medium', 'Medium · 64'], ['large', 'Large · 84'], ['huge', 'Huge · 112'], ['colossal', 'Colossal · 144']] },
-    { key: 'biome', label: 'Biome', opts: [['gooi', 'Het Gooi'], ['ardennes', 'The Ardennes'], ['blackforest', 'The Black Forest'], ['alps', 'The Alps'], ['winter', 'Winter'], ['polder', 'The Polder'], ['seaside', 'Zeeland Delta'], ['island', 'Texel'], ['hell', 'Hell']] },
-    { key: 'mapRes', label: 'Map resources', opts: [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']] },
+    { key: 'biome', label: 'Biome', opts: BIOME_OPTS },
+    { key: 'mapRes', label: 'Map resources', opts: MAP_RES_OPTS },
     { key: 'startRes', label: 'Starting stock', opts: [['modest', 'Modest'], ['plentiful', 'Plentiful'], ['cornucopia', 'Cornucopia']] },
     { key: 'hero', label: 'Hero', opts: [['none', 'No hero'], ...HEROES.map(h => [h.id, `${h.icon} ${h.name}`] as [string, string])] },
   ];

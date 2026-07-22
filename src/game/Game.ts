@@ -8,7 +8,7 @@ import { diagonalSpawns, type World } from '../world/World';
 import type { View } from '../render/View';
 import { type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit, PLAYER_IDS } from '../types';
 import { doorTile } from './util';
-import { Modifiers, type ModifierSpec } from './Modifiers';
+import { Modifiers, TAVERN_BUILD_BUFF, TAVERN_GATHER_BUFF, TAVERN_SPEED_BUFF, type ModifierSpec } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, factionForOwner, ownerForFaction } from './ownership';
 import { TradeSystem } from './TradeSystem';
@@ -308,6 +308,25 @@ export class Game {
       buildings: () => this.buildings,
       worldWidth: () => this.world.W,
       buildingCenter: building => this.buildingCenter(building),
+      // The caravan's ground route: from the nearest map edge (west or east,
+      // whichever side the market leans) to the market's door, along walkable
+      // tiles. Starts off-map for the visual roll-in. Null when sealed in.
+      caravanRoute: market => {
+        const door = doorTile(market);
+        const west = market.x < this.world.W / 2;
+        const edgeTileX = west ? 1 : this.world.W - 2;
+        for (let spread = 0; spread < 24; spread++) {
+          for (const startY of spread ? [door.y + spread, door.y - spread] : [door.y]) {
+            if (startY < 1 || startY >= this.world.H - 1 || !this.world.passable(edgeTileX, startY)) continue;
+            const path = findPath(this.world, edgeTileX, startY, door.x, door.y, market.owner);
+            if (!path) continue;
+            const route = path.map(p => ({ x: this.world.wx(p.x), z: this.world.wz(p.y) }));
+            route.unshift({ x: this.world.wx(west ? -3 : this.world.W + 2), z: this.world.wz(startY) });
+            return route;
+          }
+        }
+        return null;
+      },
       createCaravan: () => this.view.createTraderCaravan(),
       remove: mesh => this.view.remove(mesh),
       sfx: name => this.sfx(name),
@@ -841,8 +860,8 @@ export class Game {
     this.orderSystem.setRally(target, x, y);
   }
 
-  spawnStartArmy(groups: { kind: UnitKind; count: number }[]): Unit[] {
-    return this.unitFactory.spawnStartArmy(groups);
+  spawnStartArmy(groups: { kind: UnitKind; count: number }[], owner: PlayerId = this.localPlayerId): Unit[] {
+    return this.unitFactory.spawnStartArmy(groups, owner);
   }
 
   spawnSquad(kind: UnitKind, count: number, worldX: number, worldZ: number, faction?: Faction, owner?: OwnerId): Unit[] {
@@ -1071,9 +1090,9 @@ export class Game {
     this.marketSystem.configure(b, orders);
   }
 
-  /** Projected income at one scheduled trader visit per minute. */
-  marketIncomePerMinute(b: Building): number {
-    return this.marketSystem.incomePerMinute(b);
+  /** Coin one full trader visit earns at the market's current orders. */
+  marketIncomePerVisit(b: Building): number {
+    return this.marketSystem.incomePerVisit(b);
   }
 
   marketCaravansInTransit(b: Building): number {
@@ -1108,6 +1127,10 @@ export class Game {
         if (owner === this.localPlayerId) this.sfx('build');
       }
     }
+    // Stocked-tavern buffs: refresh the shared ctx snapshot on a slow clock so
+    // keeping fish/sausage/wine in a staffed tavern pays owner-wide bonuses.
+    this.tavernBuffT += sdt;
+    if (this.tavernBuffT >= 2) { this.tavernBuffT = 0; this.refreshTavernBuffs(); }
     const hungerRate = this.mods.hungerRate();
     for (const u of this.units) {
       if (u.dead) continue;
@@ -1141,6 +1164,8 @@ export class Game {
   /** Hide hostile meshes the local seat has no sight of (and re-show them the
    *  moment sight returns), and refresh the translucent veil. Presentation
    *  only — runs after all sim systems so it never fights their bookkeeping. */
+  private fogArtifactsRev = -1;
+
   private applyFogToView(): void {
     const seat = this.localPlayerId;
     this.view.updateFogOverlay(this.vision.revision(seat), (tx, ty) => this.vision.fogLevel(seat, tx, ty));
@@ -1150,14 +1175,51 @@ export class Game {
     }
     for (const b of this.buildings) {
       if (b.removed || !this.hostileOwners(seat, b.owner)) continue;
-      this.view.setFogHidden(b.mesh, !this.visibleTo(seat, b.x + 1, b.y + 1));
+      const hidden = !this.visibleTo(seat, b.x + 1, b.y + 1);
+      this.view.setFogHidden(b.mesh, hidden);
+      if (b.rallyMesh) this.view.setFogHidden(b.rallyMesh, hidden);
     }
     for (const s of this.sites) {
       if (s.removed || !this.hostileOwners(seat, s.owner)) continue;
       const hidden = !this.visibleTo(seat, s.x + 1, s.y + 1);
       this.view.setFogHidden(s.mesh, hidden);
       this.view.setFogHidden(s.frame, hidden);
+      if (s.rallyMesh) this.view.setFogHidden(s.rallyMesh, hidden);
     }
+    // Tile-level artifacts a rival leaves on the ground — roads and field
+    // crops — leak intel through the translucent veil, so they follow the
+    // same visibility. Swept on the 0.5 s vision clock, not every tick.
+    const rev = this.vision.revision(seat);
+    if (rev === this.fogArtifactsRev) return;
+    this.fogArtifactsRev = rev;
+    for (let y = 0; y < this.world.H; y++) for (let x = 0; x < this.world.W; x++) {
+      const tile = this.world.tiles[y][x];
+      if (tile.road && tile.roadOwner && this.hostileOwners(seat, tile.roadOwner)) {
+        const mesh = this.view.roadMeshAt(x, y);
+        if (mesh) this.view.setFogHidden(mesh, !this.visibleTo(seat, x, y));
+      }
+      if (tile.field && this.hostileOwners(seat, tile.field.farm.owner)) {
+        const hidden = !this.visibleTo(seat, x, y);
+        for (const mesh of tile.field.meshes) this.view.setFogHidden(mesh, hidden);
+      }
+    }
+  }
+
+  private tavernBuffT = 0;
+
+  /** Rebuild the per-owner tavern-buff snapshot in the shared Modifiers ctx:
+   *  a staffed tavern with seafood/sausage/wine in its larder grants the owner
+   *  faster gathering / building / walking (see Modifiers.TavernBuffs). */
+  private refreshTavernBuffs(): void {
+    const buffs: Modifiers['ctx']['tavernBuffs'] = {};
+    for (const b of this.buildings) {
+      if (b.removed || !b.def.tavern || !b.active || (b.owner !== 'p1' && b.owner !== 'p2')) continue;
+      const own = buffs[b.owner] ?? (buffs[b.owner] = { gather: 1, build: 1, speed: 1 });
+      if ((b.inp.fish || 0) > 0 || (b.inp.clam || 0) > 0) own.gather = TAVERN_GATHER_BUFF;
+      if ((b.inp.sausage || 0) > 0) own.build = TAVERN_BUILD_BUFF;
+      if ((b.inp.wine || 0) > 0) own.speed = TAVERN_SPEED_BUFF;
+    }
+    this.mods.ctx.tavernBuffs = buffs;
   }
 
   /** Queue a unit at a barracks/guild hall, paying its own cost from the store. */

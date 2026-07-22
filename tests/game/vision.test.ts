@@ -36,6 +36,18 @@ describe('fog of war (information layer)', () => {
     expect(seen.enemyArmySize).toBeGreaterThan(0);   // same sim, fog off — army visible
   });
 
+  it('a watchtower extends sight well beyond ordinary building range', () => {
+    const { game } = makeSkirmishGame(5);
+    const store = game.storeFor('p1');
+    // a completed tower far enough from the rest of the base that its ring is its own
+    const tower = game.placeBuilding('watchtower', store.x + 2, store.y + 12, true, 0, 'player', 'p1');
+    tick(game, 1);
+    expect(tower).toBeTruthy();
+    const cx = store.x + 3, cy = store.y + 13;
+    expect(game.visibleTo('p1', cx, cy + 13)).toBe(true);   // inside tower sight (15)
+    expect(game.visibleTo('p1', cx, cy + 20)).toBe(false);  // beyond it
+  });
+
   it('a hostile that walks into sight range becomes visible', () => {
     const { game } = makeSkirmishGame(5);
     const own = game.storeFor('p1');

@@ -1,5 +1,18 @@
 import { BASE_SPEED, BUILD_TIME, CARRY_CAP, OUT_CAP, REPAIR_TIME, ROAD_STONE_COST } from '../constants';
-import type { BuildingDef, Faction, ItemKey, Unit } from '../types';
+import type { BuildingDef, Faction, ItemKey, OwnerId, Unit } from '../types';
+
+/**
+ * Owner-wide bonuses earned by keeping specialty foods STOCKED in a staffed
+ * tavern (Game refreshes the ctx snapshot on a slow clock). This is what makes
+ * the fish/sausage/wine chains worth running beyond hunger:
+ *   fish or clams → workers gather faster;  sausage → builders build & repair
+ *   faster;  wine → everyone walks a little quicker.
+ */
+export interface TavernBuffs { gather: number; build: number; speed: number }
+export const NO_TAVERN_BUFFS: TavernBuffs = { gather: 1, build: 1, speed: 1 };
+export const TAVERN_GATHER_BUFF = 1.15;  // seafood on the menu: -13% gather time
+export const TAVERN_BUILD_BUFF = 1.2;    // sausage on the menu: -17% build/repair time
+export const TAVERN_SPEED_BUFF = 1.06;   // wine on the menu: +6% walk speed
 
 /**
  * A single upgrade/perk effect, expressed as pure data (see data/upgrades.ts).
@@ -45,12 +58,18 @@ export function hungerFactor(hunger: number): number {
  */
 export class Modifiers {
   /** Live sim context consumed by dynamic modifiers (Game keeps it current).
-   *  Co-op's per-player Modifiers share one ctx so road-derived bonuses read the
-   *  same paved-tile count regardless of which player's rule set is consulted. */
-  readonly ctx: { roadTiles: number };
+   *  Co-op's per-player Modifiers share one ctx so road-derived bonuses read
+   *  the same paved-tile count regardless of which player's rule set is
+   *  consulted; tavern buffs are keyed per owner inside the shared ctx. */
+  readonly ctx: { roadTiles: number; tavernBuffs: Partial<Record<string, TavernBuffs>> };
 
-  constructor(private readonly specs: ModifierSpec[] = [], ctx?: { roadTiles: number }) {
-    this.ctx = ctx ?? { roadTiles: 0 };
+  constructor(private readonly specs: ModifierSpec[] = [], ctx?: Modifiers['ctx']) {
+    this.ctx = ctx ?? { roadTiles: 0, tavernBuffs: {} };
+  }
+
+  /** The owner's stocked-tavern bonuses (neutral for enemies/wild). */
+  tavernBuffs(owner: OwnerId | undefined): TavernBuffs {
+    return (owner && this.ctx.tavernBuffs[owner]) || NO_TAVERN_BUFFS;
   }
 
   /** Add live rules (sandbox cards use this without rebuilding the level). */
@@ -90,7 +109,8 @@ export class Modifiers {
 
   /** Walk speed (tiles/s) for a unit, before the road bonus. */
   unitSpeed(u: Unit): number {
-    return (u.spd || BASE_SPEED) * this.accMult('unitSpeed', u.role, u.faction ?? 'player', true) * hungerFactor(u.hunger);
+    return (u.spd || BASE_SPEED) * this.accMult('unitSpeed', u.role, u.faction ?? 'player', true)
+      * hungerFactor(u.hunger) * this.tavernBuffs(u.owner).speed;
   }
 
   /** Combat stat multiplier for a unit kind — upgrades/mutators scale these at spawn. */
@@ -108,12 +128,12 @@ export class Modifiers {
   castleHpMult(): number { return this.accMult('castleHp'); }
 
   /** Seconds of laborer work to raise a building. */
-  buildTime(): number { return BUILD_TIME * this.accMult('buildTime'); }
+  buildTime(owner?: OwnerId): number { return BUILD_TIME * this.accMult('buildTime') / this.tavernBuffs(owner).build; }
 
   /** Seconds of builder work to mend a building from zero to full health.
    *  Deliberately far slower than construction: patching a battered castle
    *  mid-siege is a commitment, not a click. */
-  repairTime(): number { return REPAIR_TIME * this.accMult('repairTime'); }
+  repairTime(owner?: OwnerId): number { return REPAIR_TIME * this.accMult('repairTime') / this.tavernBuffs(owner).build; }
 
   /** Producer input-buffer depth the dispatcher fills toward. */
   carryCap(): number { return Math.max(1, Math.round(CARRY_CAP + this.accAdd('carryCap'))); }
@@ -122,8 +142,8 @@ export class Modifiers {
   outCap(): number { return Math.max(1, Math.round(OUT_CAP + this.accAdd('outCap'))); }
 
   /** Seconds to gather one unit from a node. */
-  gatherTime(def: BuildingDef): number {
-    return def.gather!.time * this.accMult('gatherTime', def.gather!.node);
+  gatherTime(def: BuildingDef, owner?: OwnerId): number {
+    return def.gather!.time * this.accMult('gatherTime', def.gather!.node) / this.tavernBuffs(owner).gather;
   }
 
   /** Seconds to craft one recipe output. */

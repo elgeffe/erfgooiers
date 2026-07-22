@@ -165,9 +165,14 @@ export class World {
     };
 
     // ---- water: one large lake plus a few small ponds ----
-    // (kept away from the central build zone so the starting settlement fits)
-    const central = (x: number, y: number) => Math.hypot(x - W / 2, y - H / 2) < 9;
-    const nearCentre = (cx: number, cy: number, r: number) => Math.hypot(cx - W / 2, cy - H / 2) < 10 + r;
+    // Kept away from every BUILD ZONE: the map centre in solo/co-op, and on
+    // arena maps also the two opposite-corner spawns — the wandering lake's
+    // outer band runs straight through those corners otherwise, drowning a
+    // skirmish settlement's only building ground.
+    const buildZones: { x: number; y: number; r: number }[] = [{ x: W / 2, y: H / 2, r: 10 }];
+    if (this.p.arena) for (const s of diagonalSpawns(W, H)) buildZones.push({ x: s.x, y: s.y, r: 14 });
+    const central = (x: number, y: number) => buildZones.some(z => Math.hypot(x - z.x, y - z.y) < z.r - 1);
+    const nearCentre = (cx: number, cy: number, r: number) => buildZones.some(z => Math.hypot(cx - z.x, cy - z.y) < z.r + r);
     const water = (cx: number, cy: number, r: number) => blob(cx, cy, r, t => t.type = 'water');
     // the big body's tiles are tagged as lake (fish live here; ponds stay bare)
     const lakeWater = (cx: number, cy: number, r: number) => blob(cx, cy, r, t => { t.type = 'water'; t.lake = true; });

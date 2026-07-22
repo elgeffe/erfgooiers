@@ -76,7 +76,7 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: { timber: 2, stone: 2 }, roof: 0x7a3320, wall: 0xc4a075, accent: 0x9c4a2f,
     recipe: { inp: { meat: 1 }, out: 'sausage', time: 6 }, worker: 'Butcher', wcolor: 0x9c4a2f },
 
-  tavern: { name: 'Tavern', desc: 'Serves any food (bread, sausage, wine, fish…) to keep workers fed & fast', model: 'tavern',
+  tavern: { name: 'Tavern', desc: 'Feeds workers — and a stocked larder pays: fish/clams speed gathering, sausage speeds building, wine quickens every step', model: 'tavern',
     cost: { timber: 4, stone: 3 }, roof: 0x8a5a2b, wall: 0xcaa46e, accent: 0xffb060,
     tavern: { foods: ['bread', 'sausage', 'wine', 'fish', 'clam'], capacity: 6, time: 4 }, worker: 'Taverner', wcolor: 0xb5763a },
 
@@ -96,11 +96,13 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
 
   smithy: { name: 'Weaponsmith', desc: 'Iron + coal → weapons for training infantry & knights', model: 'cottage',
     cost: { timber: 3, stone: 3 }, roof: 0x4a4a52, wall: 0x9c8a6a, accent: 0xd8dde2,
-    recipe: { inp: { iron: 1, coal: 1 }, out: 'weapon', time: 7 }, worker: 'Smith', wcolor: 0x5a5f66 },
+    // slower than the mines that feed it: coal is the shared bottleneck (mint +
+    // smithy + armory), so crafting must not outpace collection
+    recipe: { inp: { iron: 1, coal: 1 }, out: 'weapon', time: 12 }, worker: 'Smith', wcolor: 0x5a5f66 },
 
   armory: { name: 'Armorer', desc: 'Iron + coal → armor for training knights', model: 'cottage',
     cost: { timber: 3, stone: 3 }, roof: 0x5a6470, wall: 0x9c8a6a, accent: 0x7d8794,
-    recipe: { inp: { iron: 1, coal: 1 }, out: 'armor', time: 8 }, worker: 'Armorer', wcolor: 0x7d8794 },
+    recipe: { inp: { iron: 1, coal: 1 }, out: 'armor', time: 14 }, worker: 'Armorer', wcolor: 0x7d8794 },
 
   barracks: { name: 'Barracks', desc: 'Trains soldiers, pikemen, archers & knights — weapons come from the smithy', model: 'barn',
     cost: { timber: 4, stone: 3 }, roof: 0x5a4a6a, wall: 0xb0a48c, accent: 0x8a5a2b, hp: 200,
@@ -128,13 +130,22 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
 
   engineer: { name: 'Engineer\u2019s Workshop', desc: 'Builds siege engines — ballistas, onagers & trebuchets', model: 'cottage',
     cost: { timber: 5, stone: 4 }, roof: 0x5a5346, wall: 0x9c8a6a, accent: 0xc9a94e, hp: 240,
+    // Siege is TIMBER-ONLY: the war machines are built of wood, and timber is
+    // the one non-depletable resource (foresters replant), so a settlement that
+    // scales its timber economy can field siege in numbers — the intended path
+    // to the wall/castle-breaker, rather than gating it behind scarce stone/coin.
+    // All siege cost the SAME 10 timber — the roles differ by what they hit
+    // (ballista spikes single tough units, onager splashes anti-personnel,
+    // trebuchet breaks walls & structures), not by price, so the AI and player
+    // pick by tactical need rather than affordability. Timber is non-depletable
+    // (foresters replant), so a scaled wood economy fields siege in numbers.
     military: { units: [
-      { kind: 'ballista', cost: { timber: 3, weapon: 1, coin: 2 }, time: 10,
-        desc: 'Giant crossbow on wheels — long-ranged bolts, slow to move' },
-      { kind: 'onager', cost: { timber: 3, stone: 2, coin: 3 }, time: 11,
+      { kind: 'ballista', cost: { timber: 10 }, time: 10,
+        desc: 'Giant crossbow on wheels — long-ranged bolts that spike one tough target' },
+      { kind: 'onager', cost: { timber: 10 }, time: 11,
         desc: 'Rock-lobbing catapult — splashes damage across a cluster of foes' },
-      { kind: 'trebuchet', cost: { timber: 5, stone: 3, coin: 4 }, time: 14,
-        desc: 'The wall-breaker — devastating stones from far off, but crawls' },
+      { kind: 'trebuchet', cost: { timber: 10 }, time: 14,
+        desc: 'The wall-breaker — devastating stones that shatter walls & structures' },
     ] } },
 
   monastery: { name: 'Monastery', desc: 'A stone cloister and chapel that trains priests to heal nearby allies', model: 'cottage',
@@ -144,8 +155,10 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
         desc: 'Humble support unit — automatically heals nearby friendly units and stays at the rear' },
     ] } },
 
-  watchtower: { name: 'Watchtower', desc: 'Looses arrows at raiders in range — build it along their path', model: 'mine',
-    cost: { timber: 2, stone: 5 }, roof: 0x6a7076, wall: 0x9aa0a3, accent: 0x3f5aa0, hp: 320,
+  watchtower: { name: 'Watchtower', desc: 'A wooden arrow tower — looses arrows at raiders in range', model: 'mine',
+    // all-timber: the early tower stands before any quarry does; stone defence
+    // is the stonetower/wall tier's job
+    cost: { timber: 6 }, roof: 0x6a7076, wall: 0x9aa0a3, accent: 0x3f5aa0, hp: 320,
     tower: { range: 7, dmg: 9, rate: 1.4 } },
 
   stonetower: { name: 'Stone Watchtower', desc: 'A tall stone tower — tougher and further-seeing than the wooden one', model: 'mine',
