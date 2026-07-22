@@ -8,7 +8,7 @@ import { diagonalSpawns, type World } from '../world/World';
 import type { View } from '../render/View';
 import { type Building, type BuildingKey, type Coord, type Faction, type Formation, type ItemKey, type OwnerId, type PlayerId, type Site, type Unit, PLAYER_IDS } from '../types';
 import { doorTile } from './util';
-import { Modifiers, TAVERN_BUILD_BUFF, TAVERN_GATHER_BUFF, TAVERN_SPEED_BUFF, type ModifierSpec } from './Modifiers';
+import { Modifiers, TAVERN_BUILD_BUFF, TAVERN_GATHER_BUFF, TAVERN_HUNGER_BUFF, TAVERN_SPEED_BUFF, type ModifierSpec } from './Modifiers';
 import type { Objective } from './Objectives';
 import { canControl, factionForOwner, ownerForFaction } from './ownership';
 import { TradeSystem } from './TradeSystem';
@@ -905,8 +905,8 @@ export class Game {
     let walls = 0, gates = 0, towers = 0;
     for (const b of this.buildings) {
       if (b.removed || b.faction !== 'player' || !b.active) continue;
-      if (b.key === 'wall') walls++;
-      else if (b.key === 'gate') gates++;
+      if (b.key === 'wall' || b.key === 'woodwall') walls++;
+      else if (b.key === 'gate' || b.key === 'woodgate') gates++;
       else if (b.key === 'watchtower' || b.key === 'stonetower') towers++;
     }
     return { walls, gates, towers };
@@ -1128,13 +1128,12 @@ export class Game {
       }
     }
     // Stocked-tavern buffs: refresh the shared ctx snapshot on a slow clock so
-    // keeping fish/sausage/wine in a staffed tavern pays owner-wide bonuses.
+    // keeping specialty foods in a staffed tavern pays owner-wide bonuses.
     this.tavernBuffT += sdt;
     if (this.tavernBuffT >= 2) { this.tavernBuffT = 0; this.refreshTavernBuffs(); }
-    const hungerRate = this.mods.hungerRate();
     for (const u of this.units) {
       if (u.dead) continue;
-      u.hunger = Math.max(0, u.hunger - sdt * 100 / 600 * hungerRate);
+      u.hunger = Math.max(0, u.hunger - sdt * 100 / 600 * this.modsFor(u.owner).hungerRate(u.owner));
       if (this.isFighter(u)) this.combatSystem.update(u, sdt);
       else if (u.role === 'carrier') continue; // trade carts are driven by updateTrade
       else if ((u.owner === 'p1' || u.owner === 'p2') && this.refugeSystem.active(u.owner) && u.faction === 'player') this.refugeSystem.updateUnit(u, sdt);
@@ -1208,16 +1207,17 @@ export class Game {
   private tavernBuffT = 0;
 
   /** Rebuild the per-owner tavern-buff snapshot in the shared Modifiers ctx:
-   *  a staffed tavern with seafood/sausage/wine in its larder grants the owner
-   *  faster gathering / building / walking (see Modifiers.TavernBuffs). */
+   *  a staffed tavern with specialty food in its larder grants its owner the
+   *  matching worker bonus (see Modifiers.TavernBuffs). */
   private refreshTavernBuffs(): void {
     const buffs: Modifiers['ctx']['tavernBuffs'] = {};
     for (const b of this.buildings) {
       if (b.removed || !b.def.tavern || !b.active || (b.owner !== 'p1' && b.owner !== 'p2')) continue;
-      const own = buffs[b.owner] ?? (buffs[b.owner] = { gather: 1, build: 1, speed: 1 });
+      const own = buffs[b.owner] ?? (buffs[b.owner] = { gather: 1, build: 1, speed: 1, hunger: 1 });
       if ((b.inp.fish || 0) > 0 || (b.inp.clam || 0) > 0) own.gather = TAVERN_GATHER_BUFF;
       if ((b.inp.sausage || 0) > 0) own.build = TAVERN_BUILD_BUFF;
-      if ((b.inp.wine || 0) > 0) own.speed = TAVERN_SPEED_BUFF;
+      if ((b.inp.bread || 0) > 0) own.speed = TAVERN_SPEED_BUFF;
+      if ((b.inp.wine || 0) > 0) own.hunger = TAVERN_HUNGER_BUFF;
     }
     this.mods.ctx.tavernBuffs = buffs;
   }

@@ -30,7 +30,7 @@ export const RES_SHOWN: ItemKey[] = [
 
 /** Coin paid per exported unit at a market. Coin itself is not exportable. */
 export const MARKET_VALUES: Partial<Record<ItemKey, number>> = {
-  trunk: 1, timber: 2, stone: 2, wheat: 1, flour: 2, bread: 3,
+  trunk: 1, timber: 2, stone: 2, wheat: 1, flour: 2, bread: 2,
   goldore: 5, coal: 2, grape: 2, wine: 5, meat: 2, sausage: 4,
   fish: 3, clam: 3, iron: 4, weapon: 7, armor: 8,
 };
