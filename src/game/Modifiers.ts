@@ -4,15 +4,16 @@ import type { BuildingDef, Faction, ItemKey, OwnerId, Unit } from '../types';
 /**
  * Owner-wide bonuses earned by keeping specialty foods STOCKED in a staffed
  * tavern (Game refreshes the ctx snapshot on a slow clock). This is what makes
- * the fish/sausage/wine chains worth running beyond hunger:
+ * every tavern food chain worth running beyond hunger:
  *   fish or clams → workers gather faster;  sausage → builders build & repair
- *   faster;  wine → everyone walks a little quicker.
+ *   faster; bread → serfs walk quicker; wine → workers get hungry slower.
  */
-export interface TavernBuffs { gather: number; build: number; speed: number }
-export const NO_TAVERN_BUFFS: TavernBuffs = { gather: 1, build: 1, speed: 1 };
+export interface TavernBuffs { gather: number; build: number; speed: number; hunger: number }
+export const NO_TAVERN_BUFFS: TavernBuffs = { gather: 1, build: 1, speed: 1, hunger: 1 };
 export const TAVERN_GATHER_BUFF = 1.15;  // seafood on the menu: -13% gather time
 export const TAVERN_BUILD_BUFF = 1.2;    // sausage on the menu: -17% build/repair time
-export const TAVERN_SPEED_BUFF = 1.06;   // wine on the menu: +6% walk speed
+export const TAVERN_SPEED_BUFF = 1.06;   // bread on the menu: +6% serf walk speed
+export const TAVERN_HUNGER_BUFF = 0.75;  // wine on the menu: workers get hungry 25% slower
 
 /**
  * A single upgrade/perk effect, expressed as pure data (see data/upgrades.ts).
@@ -110,7 +111,7 @@ export class Modifiers {
   /** Walk speed (tiles/s) for a unit, before the road bonus. */
   unitSpeed(u: Unit): number {
     return (u.spd || BASE_SPEED) * this.accMult('unitSpeed', u.role, u.faction ?? 'player', true)
-      * hungerFactor(u.hunger) * this.tavernBuffs(u.owner).speed;
+      * hungerFactor(u.hunger) * (u.role === 'serf' ? this.tavernBuffs(u.owner).speed : 1);
   }
 
   /** Combat stat multiplier for a unit kind — upgrades/mutators scale these at spawn. */
@@ -180,7 +181,7 @@ export class Modifiers {
   taxPerMin(): number { return this.accAdd('taxPerMin'); }
 
   /** Multiplier on how fast workers get hungry (mutator). */
-  hungerRate(): number { return this.accMult('hungerRate'); }
+  hungerRate(owner?: OwnerId): number { return this.accMult('hungerRate') * this.tavernBuffs(owner).hunger; }
 
   /** Field growth-rate multiplier (>1 = faster). */
   fieldGrowth(): number { return this.accMult('fieldGrowth'); }

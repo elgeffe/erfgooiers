@@ -107,7 +107,7 @@ function anchorFor(view: AIView, key: BuildingKey, home: Coord, approach: Coord,
     }
     return best;
   }
-  if (key === 'watchtower' || key === 'stonetower' || key === 'gate' || key === 'wall') return approach;
+  if (key === 'watchtower' || key === 'stonetower' || key === 'woodgate' || key === 'woodwall' || key === 'gate' || key === 'wall') return approach;
   return home;
 }
 
