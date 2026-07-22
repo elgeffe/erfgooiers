@@ -393,7 +393,7 @@ describe('market exports', () => {
     let runGold = 0; game.onGold = n => { runGold += n; };
 
     game.configureMarket(market, [{ item: 'bread', amount: 4 }]);
-    expect(game.marketIncomePerVisit(market)).toBe(12);
+    expect(game.marketIncomePerVisit(market)).toBe(8);
     // serfs haul four bread out of the castle into the market's stall
     for (let i = 0; i < 1200 && (market.inp.bread || 0) < 4; i++) game.update(0.05);
     expect(market.inp.bread).toBe(4);
@@ -406,7 +406,7 @@ describe('market exports', () => {
     expect(caravan.removed).toBeGreaterThanOrEqual(1);
     // the sale drained the stall and the proceeds landed in the global stock,
     // not the run's shop gold and not a pickup pile at the market
-    expect(game.store.stock!.coin).toBeGreaterThanOrEqual(12);
+    expect(game.store.stock!.coin).toBeGreaterThanOrEqual(8);
     expect(runGold).toBe(0);
     expect(market.out.coin || 0).toBe(0);
     expect(game.units).toHaveLength(4); // the four serfs; caravans are not targetable Units
@@ -437,7 +437,7 @@ describe('market exports', () => {
     for (let i = 0; i < 4000 && caravan.removed === 0; i++) game.update(0.05);
     expect(caravan.created).toBe(1);
     expect(market.inp.bread || 0).toBe(0);
-    expect(game.store.stock!.coin).toBe(6); // 2 bread × 3 coin, straight to stock
+    expect(game.store.stock!.coin).toBe(4); // 2 bread × 2 coin, straight to stock
   });
 });
 
