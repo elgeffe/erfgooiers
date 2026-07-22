@@ -319,23 +319,23 @@ export class PlacementSystem {
     return banned;
   }
 
-  tryPlace(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId): void {
+  tryPlace(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId): boolean {
     if (this.disabledBuildings().includes(key)) {
       this.ports.sfx('error');
       this.ports.toast(`No ${DEFS[key].name.toLowerCase()} can be raised in ${this.world.biome.name}`, 'err', owner);
-      return;
+      return false;
     }
     if (!this.canPlace(key, tx, ty, rot)) {
-      this.ports.sfx('error'); this.ports.toast("Cannot build here — don't cover or seal off another building's doorway", 'err', owner); return;
+      this.ports.sfx('error'); this.ports.toast("Cannot build here — don't cover or seal off another building's doorway", 'err', owner); return false;
     }
     const def = DEFS[key];
     // Mines and quarries must stand within reach of live deposits — their
     // miners gather from those tiles, so a site out of range could never work.
-    if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.ports.toast('No stone deposits in range — build near the grey rocks', 'err', owner); return; }
-    if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.ports.toast('No gold deposits in range', 'err', owner); return; }
-    if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.ports.toast('No coal deposits in range', 'err', owner); return; }
-    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.ports.toast('No iron deposits in range — build near the rusty rocks', 'err', owner); return; }
-    if (def.gather?.node === 'fish' && !this.fishingSpotInRange(tx, ty, def.gather.range)) { this.ports.toast('No open water in range — build on the shore', 'err', owner); return; }
+    if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.ports.toast('No stone deposits in range — build near the grey rocks', 'err', owner); return false; }
+    if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.ports.toast('No gold deposits in range', 'err', owner); return false; }
+    if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.ports.toast('No coal deposits in range', 'err', owner); return false; }
+    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.ports.toast('No iron deposits in range — build near the rusty rocks', 'err', owner); return false; }
+    if (def.gather?.node === 'fish' && !this.fishingSpotInRange(tx, ty, def.gather.range)) { this.ports.toast('No open water in range — build on the shore', 'err', owner); return false; }
     if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.ports.toast('Warning: few trees nearby', 'err', owner);
     const cost = this.modsFor(owner).buildingCost(def) as Record<string, number>;
     for (const item in cost) {
@@ -347,6 +347,7 @@ export class PlacementSystem {
     this.placeSite(key, tx, ty, rot, owner);
     this.ports.sfx('place');
     this.ports.toast(`${def.name} site placed — serfs will deliver materials`, undefined, owner);
+    return true;
   }
 
   paintRoad(tx: number, ty: number, owner: PlayerId): void {

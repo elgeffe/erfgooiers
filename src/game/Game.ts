@@ -701,13 +701,13 @@ export class Game {
     return this.placementSystem.disabledBuildings();
   }
 
-  tryPlace(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId = this.localPlayerId): void {
+  tryPlace(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId = this.localPlayerId): boolean {
     if (this.lockedBuildings.has(key)) {
       this.sfx('error');
       this.toast(`${DEFS[key].name} unlocks on a later level`, 'err');
-      return;
+      return false;
     }
-    this.placementSystem.tryPlace(key, tx, ty, rot, owner);
+    return this.placementSystem.tryPlace(key, tx, ty, rot, owner);
   }
 
   paintRoad(tx: number, ty: number, owner: PlayerId = this.localPlayerId): void {

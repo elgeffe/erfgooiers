@@ -28,8 +28,7 @@ export function applyGameCommand(game: Game, playerId: PlayerId, command: GameCo
   switch (command.type) {
     case 'placeBuilding': {
       if (!(command.key in DEFS)) return fail('unknown_building');
-      game.tryPlace(command.key, command.x, command.y, command.rot, playerId);
-      return ok;
+      return game.tryPlace(command.key, command.x, command.y, command.rot, playerId) ? ok : fail('cannot_place');
     }
     case 'paintRoad': {
       for (const c of command.cells) game.paintRoad(c.x, c.y, playerId);

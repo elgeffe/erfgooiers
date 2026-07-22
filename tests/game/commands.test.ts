@@ -12,6 +12,35 @@ describe('command application and ownership boundaries', () => {
     expect(game.sites[0].owner).toBe('p2');
   });
 
+  it('rejects an occupied building footprint without creating a site', () => {
+    const { game } = makeTestGame();
+    const store = game.storeFor('p1');
+    const before = game.sites.length;
+
+    const result = applyGameCommand(game, 'p1', {
+      type: 'placeBuilding', key: 'woodcutter', x: store.x, y: store.y, rot: 0,
+    });
+
+    expect(result).toEqual({ ok: false, reason: 'cannot_place' });
+    expect(game.sites).toHaveLength(before);
+  });
+
+  it('rejects a mine with no matching deposit in range without creating a site', () => {
+    const { game, world } = makeTestGame();
+    for (const row of world.tiles) for (const tile of row) tile.dep = null;
+    const store = game.storeFor('p2');
+    const x = store.x + 4, y = store.y + 4;
+    expect(game.canPlace('quarry', x, y, 0)).toBe(true);
+    const before = game.sites.length;
+
+    const result = applyGameCommand(game, 'p2', {
+      type: 'placeBuilding', key: 'quarry', x, y, rot: 0,
+    });
+
+    expect(result).toEqual({ ok: false, reason: 'cannot_place' });
+    expect(game.sites).toHaveLength(before);
+  });
+
   it('rejects unknown building keys and malformed entity ids', () => {
     const { game } = makeTestGame();
     expect(applyGameCommand(game, 'p1', { type: 'placeBuilding', key: 'castleofdoom' as never, x: 5, y: 5, rot: 0 }).ok).toBe(false);
