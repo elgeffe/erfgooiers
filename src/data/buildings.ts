@@ -3,7 +3,7 @@ import type { ObjectiveDef } from '../game/Objectives';
 
 export const DEFS: Record<BuildingKey, BuildingDef> = {
   storehouse: { name: 'Castle', desc: 'A fortified depot: stores every good and shoots arrows at enemies', model: 'castle',
-    cost: { timber: 12, stone: 16 }, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 2500,
+    cost: { timber: 12, stone: 16 }, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 2000,
     tower: { range: 7, dmg: 8, rate: 1.6 } },
 
   guildhall: { name: 'Guild Hall', desc: 'Trains villagers, serfs and builders', model: 'guildhall',
