@@ -15,9 +15,9 @@ import type { UnitKind } from './units';
  * - HARD: a defensive fortress-builder with a slow fuse. Quicker hands than
  *   Easy, towers built early, sits on its hoard building a real military
  *   through the midgame — then breaks out late with one big combined wave.
- * - GODLIKE: the pro. Fields a fast raid party that defends expansion into  
- *   the contested area, walls up and counters what it scouts
- *   meanwhile, and plans a large, diverse late-game army for the kill.
+ * - GODLIKE: the pro. Contests remote resources, fields mounted scouting raids
+ *   once the stable is online, walls up and counters what it scouts, then
+ *   commits a large, staged combined-arms force for the kill.
  */
 export type AIDifficulty = 'easy' | 'hard' | 'godlike';
 export type AIPolicyKind = 'idle' | 'random' | 'classic' | 'tensor';
@@ -131,10 +131,10 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
     attackArmy: 36, attackEnabled: true, waveGrowth: 6, minAttackInterval: 190, retreatRatio: 0.5, useBell: true,
     counter: 0.6, homeGuard: 0.3, raidSize: 0, raidInterval: 1e9,
   },
-  // The pro: a fast raid party pesters the rival's infrastructure (and
-  // scouts through the fog) from the opening, walls and towers rise at home
-  // meanwhile, the deepest economy compounds (expansion 3 — it contests the
-  // map's central resources and never stops multiplying producers), and the
+  // The pro: a mounted raid party pesters the rival's infrastructure (and
+  // scouts through the fog) after the stable comes online, while walls and
+  // towers rise at home. The deepest economy compounds (expansion 3 — it
+  // contests the map's central resources and never stops multiplying producers), and the
   // kill arrives late as a large, counter-picked DEMOLITION army: infantry +
   // knights, cavalry, archers and priests, spearheaded by SIEGE that out-ranges
   // the rival's towers and cracks its storehouse.
@@ -142,7 +142,7 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
     macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 66, errorRate: 0,
     // expansion 3 is the deepest economy — the pro contests the map's central
     // ore and never stops compounding producers. It edges Hard on execution
-    // (cadence, APM, reactions, counter, early raids) and army cap; towers 3
+    // (cadence, APM, reactions, counters, mounted scouting) and army cap; towers 3
     // gives defensive parity while a stone curtain protects the deeper base.
     econScale: 1, expansion: 3, maxPendingSites: 4, workerReserveCoin: 3, towers: 3, forwardTowers: 2, walls: 1, wallMaterial: 'stone',
     // onagers wreck the enemy line in the field clash (anti-personnel splash),
@@ -163,7 +163,7 @@ const DIFFICULTY_NAME: Record<AIDifficulty, string> = { easy: 'Easy', hard: 'Har
 const DIFFICULTY_DESC: Record<AIDifficulty, string> = {
   easy: 'A slow, defensive homesteader — guards its towers and rarely marches.',
   hard: 'A defensive tower stronghold with a slow fuse — builds up, then hits hard late.',
-  godlike: 'The pro — early raids into the contested area while a walled, diverse late-game army grows.',
+  godlike: 'The pro — contests remote resources, scouts with mounted raids, and fields a staged combined-arms army.',
 };
 
 function classic(difficulty: AIDifficulty): AIProfile {
