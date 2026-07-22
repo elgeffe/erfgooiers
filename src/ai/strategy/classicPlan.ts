@@ -31,7 +31,6 @@ export const COMMON_OPENING = [
   { key: 'bakery', target: 1 },
   { key: 'tavern', target: 1 },
   { key: 'barracks', target: 1 },
-  { key: 'watchtower', target: 1 },
   { key: 'ironmine', target: 1 },
   { key: 'coalmine', target: 2 },
   { key: 'smithy', target: 1 },

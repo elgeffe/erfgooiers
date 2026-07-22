@@ -3,6 +3,7 @@ import { DEFS } from '../data/buildings';
 import { ITEMS } from '../data/items';
 import { DIRS } from '../engine/pathfinding';
 import { simRng } from '../engine/rng';
+import { buildingFootprintCenter, buildingFootprintTiles } from '../engine/buildingFootprint';
 import type { View } from '../render/View';
 import type { Building, BuildingKey, Coord, Faction, OwnerId, PlayerId, Site, Unit } from '../types';
 import type { World } from '../world/World';
@@ -62,7 +63,8 @@ export class PlacementSystem {
     const def = DEFS[key];
     const mesh = this.view.createBuildingMesh(key, def, faction === 'player' ? this.ports.playerColor(owner) : undefined);
     mesh.rotation.y = -rot * Math.PI / 2;
-    mesh.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
+    const center = buildingFootprintCenter({ x: tx, y: ty, rot, def });
+    mesh.position.set(this.world.wx(center.x), 0, this.world.wz(center.y));
     this.view.add(mesh);
     const factionMultiplier = faction === 'player' ? (def.store ? this.modsFor(owner).castleHpMult() : 1) : (this.modsFor(owner).buildingHpMult(faction) || 1);
     const maxHp = Math.round((def.hp ?? 100) * factionMultiplier);
@@ -73,14 +75,13 @@ export class PlacementSystem {
     };
     if (def.store) building.stock = {};
     if (key === 'market') { building.marketOrders = []; building.marketTimer = 60; }
-    for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) {
+    for (const { x, y } of buildingFootprintTiles(building)) {
       const tile = this.world.tiles[y][x];
       tile.b = building;
       if (tile.tree) this.removeTree(x, y);
       if (tile.deco) this.removeDecoration(x, y);
     }
     this.buildings.push(building);
-    this.refreshWoodenWallsAround(building);
     if (instant) building.active = true;
     // The "wants plots" crystal is a prompt to its owner, so only the player who
     // placed the building sees it — in co-op the ally's fields carry no marker.
@@ -141,8 +142,9 @@ export class PlacementSystem {
   placeSite(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId): Site {
     const def = DEFS[key];
     const { group, frame } = this.view.createScaffold(key, def, this.ports.playerColor(owner));
-    frame.rotation.y = -rot * Math.PI / 2;
-    group.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
+    group.rotation.y = -rot * Math.PI / 2;
+    const center = buildingFootprintCenter({ x: tx, y: ty, rot, def });
+    group.position.set(this.world.wx(center.x), 0, this.world.wz(center.y));
     this.view.add(group);
     const site: Site = {
       id: this.ports.nextId(), owner, key, def, x: tx, y: ty, rot,
@@ -150,7 +152,7 @@ export class PlacementSystem {
       progress: 0, ready: false, builder: null, mesh: group, frame, isSite: true, name: `${def.name} (site)`,
     };
     for (const item in site.needs) { site.delivered[item] = 0; site.incoming[item] = 0; }
-    for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) {
+    for (const { x, y } of buildingFootprintTiles(site)) {
       const tile = this.world.tiles[y][x];
       tile.site = site;
       if (tile.tree) this.removeTree(x, y);
@@ -162,7 +164,7 @@ export class PlacementSystem {
   }
 
   completeSite(site: Site): void {
-    for (let y = site.y; y < site.y + 2; y++) for (let x = site.x; x < site.x + 2; x++) this.world.tiles[y][x].site = null;
+    for (const { x, y } of buildingFootprintTiles(site)) this.world.tiles[y][x].site = null;
     this.view.remove(site.mesh);
     this.sites.splice(this.sites.indexOf(site), 1);
     const building = this.placeBuilding(site.key, site.x, site.y, false, site.rot, 'player', site.owner);
@@ -241,8 +243,9 @@ export class PlacementSystem {
     // cover an existing building's or site's entrance tile — otherwise the
     // neighbour is sealed in and its serfs can never reach it.
     const blockedEntrances = this.entranceTileKeys();
+    const pending = { x: tx, y: ty, rot, def: DEFS[key] };
     const footprint = new Set<string>();
-    for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) {
+    for (const { x, y } of buildingFootprintTiles(pending)) {
       const tile = this.world.T(x, y);
       if (!tile || tile.type !== 'grass' || tile.b || tile.site || tile.dep || tile.road || tile.field || tile.tree?.dense) return false;
       if (blockedEntrances.has(`${x},${y}`)) return false;
@@ -259,16 +262,16 @@ export class PlacementSystem {
     // Covering a doorway is rejected above, but a building set down sideways can
     // still wall off the corridor a doorway opens onto without touching the door
     // tile itself. Reject placements that would seal any neighbouring doorway in.
-    return !this.sealsNeighbourDoorway(footprint, tx, ty);
+    const center = buildingFootprintCenter(pending);
+    return !this.sealsNeighbourDoorway(footprint, center.x, center.y);
   }
 
   /** True if the pending footprint would trap a nearby building/site doorway,
    *  leaving its owner's serfs unable to walk out to open ground. */
-  private sealsNeighbourDoorway(footprint: Set<string>, tx: number, ty: number): boolean {
+  private sealsNeighbourDoorway(footprint: Set<string>, cx: number, cy: number): boolean {
     // Only doorways close enough that the new footprint could plug their escape
     // corridor are worth flooding — anything further can't be walled in by a
-    // single 2×2. Chebyshev distance from the footprint centre keeps it cheap.
-    const cx = tx + 0.5, cy = ty + 0.5;
+    // single footprint. Chebyshev distance from its centre keeps this cheap.
     for (const b of [...this.buildings, ...this.sites]) {
       for (const door of buildingEntranceTiles(b)) {
         if (footprint.has(`${door.x},${door.y}`)) continue;
@@ -319,6 +322,19 @@ export class PlacementSystem {
     return banned;
   }
 
+  /** Exact non-geometric workability gate shared by placement execution and AI
+   * validation. Resource caches may suggest a mine after its last node is
+   * exhausted; this always reads live world state. */
+  canWorkBuildingAt(key: BuildingKey, tx: number, ty: number): boolean {
+    if (key === 'quarry') return this.depositInRange('stone', tx, ty, 9);
+    if (key === 'goldmine') return this.depositInRange('gold', tx, ty, 9);
+    if (key === 'coalmine') return this.depositInRange('coal', tx, ty, 9);
+    if (key === 'ironmine') return this.depositInRange('iron', tx, ty, 9);
+    const def = DEFS[key];
+    if (def.gather?.node === 'fish') return this.fishingSpotInRange(tx, ty, def.gather.range);
+    return true;
+  }
+
   tryPlace(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId): boolean {
     if (this.disabledBuildings().includes(key)) {
       this.ports.sfx('error');
@@ -331,11 +347,15 @@ export class PlacementSystem {
     const def = DEFS[key];
     // Mines and quarries must stand within reach of live deposits — their
     // miners gather from those tiles, so a site out of range could never work.
-    if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.ports.toast('No stone deposits in range — build near the grey rocks', 'err', owner); return false; }
-    if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.ports.toast('No gold deposits in range', 'err', owner); return false; }
-    if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.ports.toast('No coal deposits in range', 'err', owner); return false; }
-    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.ports.toast('No iron deposits in range — build near the rusty rocks', 'err', owner); return false; }
-    if (def.gather?.node === 'fish' && !this.fishingSpotInRange(tx, ty, def.gather.range)) { this.ports.toast('No open water in range — build on the shore', 'err', owner); return false; }
+    if (!this.canWorkBuildingAt(key, tx, ty)) {
+      const message = key === 'quarry' ? 'No stone deposits in range — build near the grey rocks'
+        : key === 'goldmine' ? 'No gold deposits in range'
+          : key === 'coalmine' ? 'No coal deposits in range'
+            : key === 'ironmine' ? 'No iron deposits in range — build near the rusty rocks'
+              : 'No open water in range — build on the shore';
+      this.ports.toast(message, 'err', owner);
+      return false;
+    }
     if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.ports.toast('Warning: few trees nearby', 'err', owner);
     const cost = this.modsFor(owner).buildingCost(def) as Record<string, number>;
     for (const item in cost) {
@@ -419,7 +439,7 @@ export class PlacementSystem {
     site.removed = true;
     for (const unit of this.units) if (unit.task && (unit.task.to === site || unit.task.from === site)) this.ports.cancelTask(unit);
     if (site.builder) { site.builder.wstate = 'idle'; site.builder.target = null; site.builder.status = 'Idle'; }
-    for (let y = site.y; y < site.y + 2; y++) for (let x = site.x; x < site.x + 2; x++) this.world.tiles[y][x].site = null;
+    for (const { x, y } of buildingFootprintTiles(site)) this.world.tiles[y][x].site = null;
     if (site.rallyMesh) this.view.remove(site.rallyMesh);
     this.view.remove(site.mesh);
     this.sites.splice(this.sites.indexOf(site), 1);
@@ -443,33 +463,12 @@ export class PlacementSystem {
       const tile = this.world.tiles[field.y][field.x];
       if (tile.field) { this.view.removeMeshes(tile.field.meshes); tile.field = null; this.view.refreshTile(field.x, field.y); }
     }
-    for (let y = building.y; y < building.y + 2; y++) for (let x = building.x; x < building.x + 2; x++) this.world.tiles[y][x].b = null;
+    for (const { x, y } of buildingFootprintTiles(building)) this.world.tiles[y][x].b = null;
     if (building.rallyMesh) this.view.remove(building.rallyMesh);
     this.markets.removeBuilding(building);
     this.view.remove(building.mesh);
     this.buildings.splice(this.buildings.indexOf(building), 1);
-    this.refreshWoodenWallsAround(building);
     if (this.ports.selected() === building) this.ports.select(null);
-  }
-
-  /** Re-resolve neighbouring palisade arms after construction or demolition.
-   *  Buildings occupy 2×2 tiles, hence cardinal neighbours are two tiles away. */
-  private refreshWoodenWallsAround(changed: Building): void {
-    const fortification = (building: Building | null | undefined): building is Building =>
-      !!building && !building.removed && building.owner === changed.owner
-      && (building.key === 'woodwall' || building.key === 'woodgate');
-    const at = (x: number, y: number): Building | null => this.world.T(x, y)?.b ?? null;
-    const candidates = new Set<Building>();
-    for (const [dx, dy] of [[0, 0], [0, -2], [2, 0], [0, 2], [-2, 0]]) {
-      const building = at(changed.x + dx, changed.y + dy);
-      if (building?.key === 'woodwall') candidates.add(building);
-    }
-    for (const wall of candidates) this.view.configureWoodenWall?.(wall.mesh, {
-      north: fortification(at(wall.x, wall.y - 2)),
-      east: fortification(at(wall.x + 2, wall.y)),
-      south: fortification(at(wall.x, wall.y + 2)),
-      west: fortification(at(wall.x - 2, wall.y)),
-    });
   }
 
   private openGround(tx: number, ty: number): boolean {

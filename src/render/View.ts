@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { uiRng } from '../engine/rng';
+import { buildingFootprint, buildingFootprintCenter } from '../engine/buildingFootprint';
 import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, BuildingKey, Coord, Faction, Field, Pickup, Tree, Unit } from '../types';
-import { circle, cone, configureWoodenWall, makeArrow, makeBuilding, makeUnitCorpse, makeFireball, makeFlag, makeFlame, makeHealGlow, makeHero, makeRock, makePlotMarker, makeScaffold, makeTraderCaravan, makeUnit, noOutline, setActiveBiome, stdMat } from './models';
+import { circle, cone, makeArrow, makeBuilding, makeUnitCorpse, makeFireball, makeFlag, makeFlame, makeHealGlow, makeHero, makeRock, makePlotMarker, makeScaffold, makeTraderCaravan, makeUnit, noOutline, setActiveBiome, stdMat } from './models';
 import { Ambience } from './Ambience';
 import { TerrainRenderer } from './TerrainRenderer';
 
@@ -150,7 +151,7 @@ export class View {
     );
     this.roadCursor.rotation.x = -Math.PI / 2; this.roadCursor.position.y = 0.03; this.roadCursor.visible = false;
     this.scene.add(this.roadCursor);
-    // demolish-target marker: a red frame + tint over a doomed building's 2×2
+    // demolish-target marker: a red frame + tint scaled to the doomed footprint
     this.demoTarget = new THREE.Group();
     const demoFill = new THREE.Mesh(
       new THREE.PlaneGeometry(2.15, 2.15),
@@ -386,7 +387,7 @@ export class View {
       if (b.removed || this.fogHidden.has(b.mesh)) continue;
       const enemy = b.faction !== 'player';
       if (!enemy && b.hp >= b.maxHp) continue;   // show player buildings only when hurt
-      use(this.world.wx(b.x) + 0.5, 2.3, this.world.wz(b.y) + 0.5, b.hp / b.maxHp);
+      use(b.mesh.position.x, 2.3, b.mesh.position.z, b.hp / b.maxHp);
     }
     for (; i < this.hpBars.length; i++) this.hpBars[i].group.visible = false;
   }
@@ -528,9 +529,6 @@ export class View {
   }
 
   createBuildingMesh(key: BuildingKey, def: BuildingDef, playerColor?: number): THREE.Group { return makeBuilding(key, def, false, playerColor); }
-  configureWoodenWall(mesh: THREE.Group, neighbours: { north: boolean; east: boolean; south: boolean; west: boolean }): void {
-    configureWoodenWall(mesh, neighbours);
-  }
   createScaffold(key: BuildingKey, def: BuildingDef, playerColor?: number) { return makeScaffold(key, def, playerColor); }
 
   createUnit(colorHex: number, role: string, tileX: number, tileY: number, faction: Faction = 'player', teamHex?: number): { group: THREE.Group; itemMesh: THREE.Mesh } {
@@ -661,8 +659,14 @@ export class View {
     if (this.ghostKey !== key) {
       this.scene.remove(this.ghost);
       this.ghost = makeBuilding(key, def, true);
-      const offsets = def.entrance === 'none' ? [] : def.entrance === 'through'
-        ? [[-0.5, -1.5], [0.5, -1.5], [-0.5, 1.5], [0.5, 1.5]] : [[-0.5, 1.5]];
+      const footprint = buildingFootprint(def);
+      const offsets: number[][] = [];
+      if (def.entrance === 'through') {
+        for (let x = 0; x < footprint.width; x++) offsets.push([x - (footprint.width - 1) / 2, -(footprint.height + 1) / 2]);
+        for (let x = 0; x < footprint.width; x++) offsets.push([x - (footprint.width - 1) / 2, (footprint.height + 1) / 2]);
+      } else if (def.entrance !== 'none') {
+        offsets.push([-(footprint.width - 1) / 2, (footprint.height + 1) / 2]);
+      }
       for (const [x, z] of offsets) {
         const mk = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), noOutline(new THREE.MeshBasicMaterial({ color: 0xd9a441, transparent: true, opacity: 0.7, side: THREE.DoubleSide })));
         mk.rotation.x = -Math.PI / 2; mk.position.set(x, 0.04, z); mk.userData.marker = true;
@@ -672,7 +676,8 @@ export class View {
     }
     this.ghost.visible = true;
     this.ghost.rotation.y = -rot * Math.PI / 2;
-    this.ghost.position.set(this.world.wx(tx) + 0.5, 0, this.world.wz(ty) + 0.5);
+    const center = buildingFootprintCenter({ x: tx, y: ty, rot, def });
+    this.ghost.position.set(this.world.wx(center.x), 0, this.world.wz(center.y));
     this.ghost.traverse((o: any) => {
       if (o.userData.marker) return;
       if (o.material) o.material.color.setHex(ok ? def.wall : 0xcc3322);
@@ -695,11 +700,14 @@ export class View {
   }
   hideRoadCursor(): void { this.roadCursor.visible = false; }
 
-  /** Frame a 2×2 building/site footprint in red while demolish hovers it. */
-  showDemolishTarget(tx: number, ty: number): void {
+  /** Frame a building/site's rotated logical footprint in red while demolish hovers it. */
+  showDemolishTarget(tx: number, ty: number, def: BuildingDef, rot: number): void {
+    const size = buildingFootprint(def, rot);
+    const center = buildingFootprintCenter({ x: tx, y: ty, rot, def });
     this.demoTarget.visible = true;
-    this.demoTarget.position.x = this.world.wx(tx) + 0.5;
-    this.demoTarget.position.z = this.world.wz(ty) + 0.5;
+    this.demoTarget.scale.set(size.width / 2, 1, size.height / 2);
+    this.demoTarget.position.x = this.world.wx(center.x);
+    this.demoTarget.position.z = this.world.wz(center.y);
   }
   hideDemolishTarget(): void { this.demoTarget.visible = false; }
 

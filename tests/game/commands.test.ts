@@ -31,6 +31,7 @@ describe('command application and ownership boundaries', () => {
     const store = game.storeFor('p2');
     const x = store.x + 4, y = store.y + 4;
     expect(game.canPlace('quarry', x, y, 0)).toBe(true);
+    expect(game.canWorkBuildingAt('quarry', x, y)).toBe(false);
     const before = game.sites.length;
 
     const result = applyGameCommand(game, 'p2', {

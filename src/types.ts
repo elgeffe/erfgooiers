@@ -98,6 +98,8 @@ export interface BuildingDef {
   bulwark?: boolean;           // fortification: razing it never counts as a stronghold
   gate?: boolean;              // its own faction walks through; enemies must break it
   entrance?: 'none' | 'through'; // default front door; through = two-wide on both faces
+  /** Logical footprint before rotation. Buildings default to 2x2. */
+  footprint?: { width: number; height: number };
 }
 
 export interface Coord { x: number; y: number; }

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DEFS } from '../../src/data/buildings';
-import { configureWoodenWall, makeBuilding } from '../../src/render/buildingModels';
+import { makeBuilding } from '../../src/render/buildingModels';
 
 /** True when any mesh in the group carries a material of the given colour. */
 function hasColor(group: THREE.Object3D, hex: number): boolean {
@@ -34,15 +34,19 @@ describe('co-op player building colour', () => {
   });
 });
 
-describe('wooden wall joins', () => {
-  it('shows the correct arms for corners, T-junctions and intersections', () => {
-    const wall = makeBuilding('woodwall', DEFS.woodwall, false);
-    const visible = () => ['north', 'east', 'south', 'west'].filter(side => wall.getObjectByName(`wall-${side}`)?.visible);
-    configureWoodenWall(wall, { north: true, east: true, south: false, west: false });
-    expect(visible()).toEqual(['north', 'east']);
-    configureWoodenWall(wall, { north: true, east: true, south: true, west: false });
-    expect(visible()).toEqual(['north', 'east', 'south']);
-    configureWoodenWall(wall, { north: true, east: true, south: true, west: true });
-    expect(visible()).toEqual(['north', 'east', 'south', 'west']);
+describe('wooden fortification segments', () => {
+  it('puts one thin wall or gate face along the edge of its base 2x1 footprint', () => {
+    for (const key of ['woodwall', 'woodgate'] as const) {
+      const model = makeBuilding(key, DEFS[key], false);
+      const box = new THREE.Box3().setFromObject(model);
+      const bounds = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      expect(bounds.x).toBeGreaterThanOrEqual(2);
+      expect(bounds.z).toBeLessThan(0.6);
+      expect(center.z).toBeCloseTo(0.5, 1);
+      for (const side of ['north', 'east', 'south', 'west']) {
+        expect(model.getObjectByName(`wall-${side}`)).toBeUndefined();
+      }
+    }
   });
 });

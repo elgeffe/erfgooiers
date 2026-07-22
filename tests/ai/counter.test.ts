@@ -3,6 +3,7 @@ import {
   allocateUnitQuotas,
   counterMultiplier,
   dominantEnemyCategory,
+  rankPerimeterTowerAnchors,
   selectUncoveredWoodcutter,
 } from '../../src/ai/strategy/classic';
 
@@ -67,5 +68,20 @@ describe('timber ecosystem coverage', () => {
 
   it('uses coordinate order rather than input order for deterministic selection', () => {
     expect(selectUncoveredWoodcutter([{ x: 30, y: 20 }, { x: 10, y: 10 }], [])).toEqual({ x: 10, y: 10 });
+  });
+});
+
+describe('perimeter tower coverage', () => {
+  const home = { x: 20, y: 20 };
+  const approach = { x: 40, y: 40 };
+
+  it('starts on the enemy-facing perimeter', () => {
+    expect(rankPerimeterTowerAnchors(home, approach, [])[0]).toEqual({ x: 31, y: 31 });
+  });
+
+  it('spreads later towers across unguarded sectors', () => {
+    const ranked = rankPerimeterTowerAnchors(home, approach, [{ x: 31, y: 31 }]);
+    expect(ranked[0]).toEqual({ x: 9, y: 9 });
+    expect(Math.max(Math.abs(ranked[0].x - home.x), Math.abs(ranked[0].y - home.y))).toBe(11);
   });
 });

@@ -12,11 +12,11 @@ import type { UnitKind } from './units';
  * The personas:
  * - EASY: a defensive, slow homesteader. Guards its patch behind towers,
  *   blunders often, and only rarely wanders over to bother you.
- * - HARD: a defensive fortress-builder with a slow fuse. Quicker hands than
- *   Easy, towers built early, sits on its hoard building a real military
+ * - HARD: a defensive tower-builder with a slow fuse. Quicker hands than
+ *   Easy, wooden watchtowers built early, sits on its hoard building a real military
  *   through the midgame — then breaks out late with one big combined wave.
  * - GODLIKE: the pro. Contests remote resources, fields mounted scouting raids
- *   once the stable is online, walls up and counters what it scouts, then
+ *   once the stable is online, rings its perimeter with stone towers and counters what it scouts, then
  *   commits a large, staged combined-arms force for the kill.
  */
 export type AIDifficulty = 'easy' | 'hard' | 'godlike';
@@ -53,17 +53,12 @@ export interface AIProfile {
   maxPendingSites: number;
   /** Never spend the last coins on workers: keep this buffer for the army. */
   workerReserveCoin: number;
-  /** Watchtowers wanted on the home approach. */
+  /** Defensive towers wanted around the home perimeter. */
   towers: number;
+  /** Defensive tower used around the home perimeter. */
+  towerKey: 'watchtower' | 'stonetower';
   /** Extra stone towers guarding distinct forward resource outposts. */
   forwardTowers: number;
-  /** Fortification RINGS around the castle (0–2): layered square curtains
-   *  with gates toward the enemy and the rear, planned by the shared
-   *  fortification planner. Gates keep the owner's serfs and armies flowing,
-   *  so the baileys between rings stay working ground. */
-  walls: number;
-  /** Material used by the defensive-line planner. */
-  wallMaterial: 'wood' | 'stone';
 
   // ---- army shape ----
   /** Stop training fighters beyond this standing-army size. */
@@ -112,7 +107,7 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
   // Blunders one pass in five.
   easy: {
     macroPeriod: 6, tacticsPeriod: 2, reactionDelay: 5, apm: 10, errorRate: 0.2,
-    econScale: 0.85, expansion: 1, maxPendingSites: 2, workerReserveCoin: 2, towers: 4, forwardTowers: 0, walls: 0, wallMaterial: 'wood',
+    econScale: 0.85, expansion: 1, maxPendingSites: 2, workerReserveCoin: 2, towers: 4, towerKey: 'watchtower', forwardTowers: 0,
     armyCap: 18, unitMix: { soldier: 3, pikeman: 2, archer: 3 },
     minSiege: 0, minPriests: 0, flankSize: 0,
     attackArmy: 18, attackEnabled: false, waveGrowth: 0, minAttackInterval: 1e9, retreatRatio: 0.3, useBell: true,
@@ -122,18 +117,18 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
   // play than Easy. It runs the mid-game resource BOOM (expansion 2 opens the
   // weapons + armour + priest spread and keeps multiplying the coin engine),
   // hoards a big army of infantry + archers + knights + priests behind wooden
-  // walls and towers, then breaks out late in increasingly large waves.
+  // watchtowers, then breaks out late in increasingly large waves.
   hard: {
     macroPeriod: 2.5, tacticsPeriod: 1, reactionDelay: 2, apm: 40, errorRate: 0.03,
-    econScale: 1, expansion: 2, maxPendingSites: 3, workerReserveCoin: 3, towers: 3, forwardTowers: 0, walls: 1, wallMaterial: 'wood',
+    econScale: 1, expansion: 2, maxPendingSites: 3, workerReserveCoin: 3, towers: 4, towerKey: 'watchtower', forwardTowers: 0,
     armyCap: 48, unitMix: { soldier: 4, archer: 4, pikeman: 1, knight: 1 },
     minSiege: 0, minPriests: 0, flankSize: 0,
     attackArmy: 36, attackEnabled: true, waveGrowth: 6, minAttackInterval: 190, retreatRatio: 0.5, useBell: true,
     counter: 0.6, homeGuard: 0.3, raidSize: 0, raidInterval: 1e9,
   },
   // The pro: a mounted raid party pesters the rival's infrastructure (and
-  // scouts through the fog) after the stable comes online, while walls and
-  // towers rise at home. The deepest economy compounds (expansion 3 — it
+  // scouts through the fog) after the stable comes online, while stone towers
+  // rise around the home perimeter. The deepest economy compounds (expansion 3 — it
   // contests the map's central resources and never stops multiplying producers), and the
   // kill arrives late as a large, counter-picked DEMOLITION army: infantry +
   // knights, cavalry, archers and priests, spearheaded by SIEGE that out-ranges
@@ -142,9 +137,9 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
     macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 66, errorRate: 0,
     // expansion 3 is the deepest economy — the pro contests the map's central
     // ore and never stops compounding producers. It edges Hard on execution
-    // (cadence, APM, reactions, counters, mounted scouting) and army cap; towers 3
-    // gives defensive parity while a stone curtain protects the deeper base.
-    econScale: 1, expansion: 3, maxPendingSites: 4, workerReserveCoin: 3, towers: 3, forwardTowers: 2, walls: 1, wallMaterial: 'stone',
+    // (cadence, APM, reactions, counters, mounted scouting) and army cap; four
+    // stone towers cover the home perimeter without fragile wall placement.
+    econScale: 1, expansion: 3, maxPendingSites: 4, workerReserveCoin: 3, towers: 4, towerKey: 'stonetower', forwardTowers: 2,
     // onagers wreck the enemy line in the field clash (anti-personnel splash),
     // trebuchets (structureMult 4) then break the walls and storehouse — the
     // demolition core, so they're weighted highest of the siege pair
@@ -181,7 +176,7 @@ const IDLE: AIProfile = {
   id: 'idle', name: 'Idle', desc: 'Does nothing — proves the seat plumbing.',
   policy: 'idle', difficulty: 'easy',
   macroPeriod: 3600, tacticsPeriod: 3600, reactionDelay: 3600, apm: 0, errorRate: 0,
-  econScale: 0, expansion: 0, maxPendingSites: 0, workerReserveCoin: 0, towers: 0, forwardTowers: 0, walls: 0, wallMaterial: 'wood',
+  econScale: 0, expansion: 0, maxPendingSites: 0, workerReserveCoin: 0, towers: 0, towerKey: 'watchtower', forwardTowers: 0,
   armyCap: 0, unitMix: {},
   minSiege: 0, minPriests: 0, flankSize: 0,
   attackArmy: 1e9, attackEnabled: false, waveGrowth: 0, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
@@ -192,7 +187,7 @@ const RANDOM: AIProfile = {
   id: 'random', name: 'Random', desc: 'Legal random commands on a slow cadence.',
   policy: 'random', difficulty: 'easy',
   macroPeriod: 5, tacticsPeriod: 5, reactionDelay: 5, apm: 12, errorRate: 0,
-  econScale: 1, expansion: 0, maxPendingSites: 3, workerReserveCoin: 0, towers: 0, forwardTowers: 0, walls: 0, wallMaterial: 'wood',
+  econScale: 1, expansion: 0, maxPendingSites: 3, workerReserveCoin: 0, towers: 0, towerKey: 'watchtower', forwardTowers: 0,
   armyCap: 12, unitMix: { soldier: 1, archer: 1 },
   minSiege: 0, minPriests: 0, flankSize: 0,
   attackArmy: 1e9, attackEnabled: false, waveGrowth: 0, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
@@ -210,7 +205,7 @@ const TENSOR: AIProfile = {
   id: 'tensor', name: 'Tensor (MPS)', desc: 'Experimental research model for AI based on tensor networks.',
   policy: 'tensor', difficulty: 'godlike',
   macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 60, errorRate: 0,
-  econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 1, forwardTowers: 0, walls: 0, wallMaterial: 'stone',
+  econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 1, towerKey: 'stonetower', forwardTowers: 0,
   armyCap: 55, unitMix: {}, // the mix comes from the sampled plan, not this table
   minSiege: 0, minPriests: 0, flankSize: 0,
   attackArmy: 16, attackEnabled: true, waveGrowth: 4, minAttackInterval: 80, retreatRatio: 0.55, useBell: true,

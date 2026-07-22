@@ -97,40 +97,21 @@ function marketBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
 function woodenWall(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   const timber = mkMat(def.wall, ghost), dark = mkMat(def.accent ?? 0x4b3222, ghost);
-  const centre = new THREE.Group();
-  const addPost = (parent: THREE.Group, x: number, z: number): void => {
+  const addPost = (x: number, z: number): void => {
     const post = new THREE.Mesh(cyl(0.12, 0.12, 1.35, 7), timber);
-    post.position.set(x, 0.68, z); post.castShadow = !ghost; parent.add(post);
+    post.position.set(x, 0.68, z); post.castShadow = !ghost; g.add(post);
     const point = new THREE.Mesh(cone(0.13, 0.3, 7), timber);
-    point.position.set(x, 1.5, z); parent.add(point);
+    point.position.set(x, 1.5, z); g.add(point);
   };
-  addPost(centre, 0, 0); g.add(centre);
-  for (const [name, dx, dz] of [['north', 0, -1], ['east', 1, 0], ['south', 0, 1], ['west', -1, 0]] as const) {
-    const arm = new THREE.Group(); arm.name = `wall-${name}`;
-    for (const distance of [0.205, 0.41, 0.615, 0.82]) addPost(arm, dx * distance, dz * distance);
-    for (const y of [0.42, 1.02]) {
-      const rail = new THREE.Mesh(box(dx ? 0.95 : 0.2, 0.16, dz ? 0.95 : 0.2), dark);
-      rail.position.set(dx * 0.47, y, dz * 0.47); arm.add(rail);
-    }
-    arm.visible = name === 'east' || name === 'west'; g.add(arm);
+  // One immutable palisade face along the south edge of its base 2x1 footprint.
+  // Placement rotation selects any of the four edges; neighbours never reshape it.
+  const posts = [-0.9, -0.675, -0.45, -0.225, 0, 0.225, 0.45, 0.675, 0.9];
+  for (const x of posts) addPost(x, 0.5);
+  for (const y of [0.42, 1.02]) {
+    const rail = new THREE.Mesh(box(2.04, 0.16, 0.2), dark);
+    rail.position.set(0, y, 0.5); g.add(rail);
   }
   return g;
-}
-
-/** Select the arms of a wooden palisade segment from its cardinal neighbours.
- *  Corners, T-junctions and crossings are all the same composable model. */
-export function configureWoodenWall(mesh: THREE.Group, neighbours: { north: boolean; east: boolean; south: boolean; west: boolean }): void {
-  const connected = Object.values(neighbours).filter(Boolean).length;
-  // A new isolated segment keeps the placement rotation's traditional line;
-  // once connected, every real neighbour gets an arm from the centre post.
-  const fallback = Math.abs(Math.sin(mesh.rotation.y)) > 0.5
-    ? { north: true, east: false, south: true, west: false }
-    : { north: false, east: true, south: false, west: true };
-  for (const name of ['north', 'east', 'south', 'west'] as const) {
-    const arm = mesh.getObjectByName(`wall-${name}`);
-    if (arm) arm.visible = connected ? neighbours[name] : fallback[name];
-  }
-  mesh.rotation.y = 0;
 }
 
 function woodenGate(def: BuildingDef, ghost: boolean): THREE.Group {
@@ -138,15 +119,15 @@ function woodenGate(def: BuildingDef, ghost: boolean): THREE.Group {
   const timber = mkMat(def.wall, ghost), dark = mkMat(def.accent ?? 0x4b3222, ghost);
   for (const x of [-0.82, 0.82]) {
     const post = new THREE.Mesh(box(0.24, 1.75, 0.3), timber);
-    post.position.set(x, 0.88, 0); post.castShadow = !ghost; g.add(post);
+    post.position.set(x, 0.88, 0.5); post.castShadow = !ghost; g.add(post);
     const point = new THREE.Mesh(cone(0.19, 0.38, 4), timber);
-    point.position.set(x, 1.94, 0); point.rotation.y = Math.PI / 4; g.add(point);
+    point.position.set(x, 1.94, 0.5); point.rotation.y = Math.PI / 4; g.add(point);
   }
   const beam = new THREE.Mesh(box(1.9, 0.25, 0.34), dark);
-  beam.position.set(0, 1.55, 0); g.add(beam);
+  beam.position.set(0, 1.55, 0.5); g.add(beam);
   for (const x of [-0.48, -0.24, 0, 0.24, 0.48]) {
     const bar = new THREE.Mesh(box(0.1, 1.25, 0.1), timber);
-    bar.position.set(x, 0.65, 0); bar.userData.marker = true; g.add(bar);
+    bar.position.set(x, 0.65, 0.5); bar.userData.marker = true; g.add(bar);
   }
   return g;
 }
@@ -258,9 +239,11 @@ function guildhall(def: BuildingDef, ghost: boolean): THREE.Group {
 /** Scaffold shown while a building is under construction. */
 export function makeScaffold(key: BuildingKey, def: BuildingDef, playerColor?: number): { group: THREE.Group; frame: THREE.Group } {
   const g = new THREE.Group();
-  const pad = new THREE.Mesh(box(1.9, 0.08, 1.9), mat(0x8a6b42)); pad.position.y = 0.04; g.add(pad);
-  for (const [px, pz] of [[-0.85, -0.85], [0.85, -0.85], [-0.85, 0.85], [0.85, 0.85]]) {
-    const post = new THREE.Mesh(geoPost, mat(0xc9a06a)); post.position.set(px, 0.35, pz); post.castShadow = true; g.add(post);
+  const { width = 2, height = 2 } = def.footprint ?? {};
+  const pad = new THREE.Mesh(box(width - 0.1, 0.08, height - 0.1), mat(0x8a6b42)); pad.position.y = 0.04; g.add(pad);
+  const px = width / 2 - 0.15, pz = height / 2 - 0.15;
+  for (const [x, z] of [[-px, -pz], [px, -pz], [-px, pz], [px, pz]]) {
+    const post = new THREE.Mesh(geoPost, mat(0xc9a06a)); post.position.set(x, 0.35, z); post.castShadow = true; g.add(post);
   }
   const frame = makeBuilding(key, def, true, playerColor);
   frame.visible = false;

@@ -151,10 +151,12 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     tower: { range: 9, dmg: 11, rate: 1.5 } },
 
   woodwall: { name: 'Wooden Wall', desc: 'A quick timber palisade — cheap to raise, but less durable than stone', model: 'mine',
-    cost: { timber: 2 }, roof: 0x8a603c, wall: 0x6b472d, accent: 0x4b3222, hp: 300, bulwark: true, entrance: 'none' },
+    cost: { timber: 2 }, roof: 0x8a603c, wall: 0x6b472d, accent: 0x4b3222, hp: 300, bulwark: true, entrance: 'none',
+    footprint: { width: 2, height: 1 } },
 
   woodgate: { name: 'Wooden Gate', desc: 'A timber gateway: friendly units pass freely, enemies must break it down', model: 'mine',
-    cost: { timber: 2 }, roof: 0x8a603c, wall: 0x6b472d, accent: 0x4b3222, hp: 250, bulwark: true, gate: true, entrance: 'through' },
+    cost: { timber: 2 }, roof: 0x8a603c, wall: 0x6b472d, accent: 0x4b3222, hp: 250, bulwark: true, gate: true, entrance: 'through',
+    footprint: { width: 2, height: 1 } },
 
   wall: { name: 'Stone Wall', desc: 'A solid stretch of rampart — raiders must batter it down to pass', model: 'mine',
     cost: { stone: 3 }, roof: 0x8a9095, wall: 0x9aa0a3, accent: 0x6a7076, hp: 600, bulwark: true, entrance: 'none' },

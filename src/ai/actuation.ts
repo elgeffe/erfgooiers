@@ -158,7 +158,13 @@ function anchorFor(
  *  the bot never submits a placement the sim would refuse with a toast. */
 function workable(view: AIView, world: World, key: BuildingKey, at: Coord): boolean {
   const node = MINE_NODE[key];
-  if (node) return nodesNear(view.resources[node], at, GATHER_RANGE) > 0;
+  if (node) return view.resources[node].some(candidate => {
+    if (chebyshev(candidate, at) > GATHER_RANGE + 1) return false;
+    const deposit = world.T(candidate.x, candidate.y)?.dep;
+    if (!deposit || deposit.kind !== node || deposit.amt <= 0) return false;
+    return [[1, 0], [-1, 0], [0, 1], [0, -1]]
+      .some(([ox, oy]) => world.passable(candidate.x + ox, candidate.y + oy));
+  });
   if (key === 'woodcutter') return nodesNear(view.resources.trees, at, GATHER_RANGE) >= 2;
   if (DEFS[key].fields) return openPlotGround(world, at) >= 6;
   if (DEFS[key].gather?.node === 'fish') return fishingSpotsNear(world, at, DEFS[key].gather.range) > 0;
@@ -327,6 +333,7 @@ export function findBuildingSpot(
     for (const candidate of candidates) {
       if (candidate.gap < band.min || candidate.gap >= band.max) continue;
       if (exactChecks++ >= EXACT_BUDGETS[pass]) break;
+      if (!game.canWorkBuildingAt(key, candidate.x, candidate.y)) continue;
       const preferred = rotFacing(candidate, home);
       let rot = -1;
       for (const r of new Set([preferred, 0, 1, 2, 3])) {
