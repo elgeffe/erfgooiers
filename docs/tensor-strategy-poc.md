@@ -75,8 +75,8 @@ method wins by enough to repay its complexity"* — the bar was fixed in advance
 
 - **Primary.** The trained tensor policy wins **≥ 50%** vs `classic-godlike`
   on the held-out seeds — parity-or-better with the strongest hand-crafted bot,
-  earned through the fair seam. (Godlike beats Hard only ~50–59%, so parity with
-  Godlike is a real bar for a near-from-scratch generative policy.)
+  earned through the fair seam. This was a real bar for a near-from-scratch
+  generative policy, and became stricter after the later Classic balance pass.
 - **Novelty.** The learned opening is legibly *different* from Classic's script —
   evidence the network *found* something, not merely imitated.
 - **Efficiency.** Training in minutes on commodity cores; inference is one
@@ -84,6 +84,11 @@ method wins by enough to repay its complexity"* — the bar was fixed in advance
 - **Honesty.** Missing the bar is a *reported* result, not a hidden one.
 
 ## Result
+
+> **Baseline note (July 2026):** these percentages predate the production-line,
+> placement-locality and combined-arms refactor. The current Classic smoke gate
+> reached Godlike 6/6 over Hard; re-baselining the tensor model against that
+> stronger opponent is required before comparing current policies.
 
 **The bar was not cleared.** Measured on 24 held-out seeds (disjoint from every
 training seed) at the 25-minute decisive horizon, vs `classic-godlike`:

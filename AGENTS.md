@@ -204,19 +204,23 @@ hard placement pressure.
   `src/ai/` holds the headless agent (perception → strategy → tactics → actuation behind
   `AIController`; only `Game` reads + `GameCommand` writes, so the CPU cannot cheat),
   `src/data/aiProfiles.ts` the difficulty-persona knob table (Easy defensive & slow,
-  Hard defensive with a late big-wave breakout, Godlike early raids + walled buildup
-  + diverse late army — stances were removed), and `src/game/replay.ts`
+  Hard defensive with a late big-wave breakout, Godlike contested outposts + mounted
+  scouting raids + staged combined arms behind stone defences — stances were removed),
+  and `src/game/replay.ts`
   records every match as seed + command log with deterministic re-simulation. Matches run
   on the 1v1 **arena** (`skirmishLevels.ts`): players in opposite corners (`initCoOp`'s
   `diagonal` layout), each corner ore-provisioned with a contested cluster at map centre.
-  The Classic macro expands endlessly via a producer/consumer balance model (build more of
-  a miner while the buildings burning its output outnumber it) with serfs scaled to the
-  economy, paves roads after a quarry, and counters the rival's army mix. Tooling under
+  The Classic macro enforces supplier-first timber/coin/arms lines, preserves advanced-unit
+  quota slots, anchors foresters to uncovered woodcutters, spreads ordinary buildings with
+  broad lanes, scales serfs without starving army coin, paves roads after a quarry, and
+  counters the rival's field mix. Godlike reserves timber for trebuchets, guards remote
+  extractors, and stages mounted flankers plus rear siege/healers. Tooling under
   `tools/selfplay/`: `npm run selfplay` races profiles across seeds for win rates,
   `npm run campaign` fans a fixed ladder across cores into a reproducible win-rate matrix,
   and `npm run extract` (`src/ai/dataset.ts`) re-simulates replays into labelled JSONL
   (features → next macro action, the Phase 3 dataset). `docs/skirmish-ai-design.md` tracks
-  the phased plan, status, and the open production-line-balance problem.
+  the phased plan and current validation; the fixed six-seed smoke gates are Hard 6/6 over
+  Easy and Godlike 6/6 over Hard, with broad campaigns and playtesting still required.
 - **Fog of war** is an information-layer toggle (`Game.fogOfWar` + `game/VisionSystem.ts`):
   hostile units/buildings/sites are hidden from render, minimap, and AI perception outside
   the observer's own sight; the deterministic sim never reads it, so replays and
