@@ -52,17 +52,27 @@ describe('headless self-play', () => {
     expect(c.fingerprint).not.toBe(a.fingerprint);
   }, 120_000);
 
-  it('godlike opens with early raids while hard sits on its slow fuse', () => {
-    // This window crosses Godlike's deterministic first raid while remaining
-    // well short of Hard's late breakout, so the assertion stops at the
-    // behavior boundary instead of simulating both matches to completion.
-    const godlike = runSelfPlayMatch({ seed: 1000, p1: 'classic-godlike', p2: 'idle', maxSeconds: 420 });
-    const hard = runSelfPlayMatch({ seed: 1000, p1: 'classic-hard', p2: 'idle', maxSeconds: 420 });
-    // the pro persona's raids ARE its first aggression, and they come early
+  it('godlike waits for a siege-backed premium roster while hard fields a conventional wave', () => {
+    // Villagers and the common production opening now precede luxury military
+    // buildings. Against a passive seat, Godlike should therefore hold for its
+    // deliberately larger combined-arms force; reactive counterstrokes cover
+    // the early-aggression case when a real opponent attacks first.
+    const godlike = runSelfPlayMatch({ seed: 1000, p1: 'classic-godlike', p2: 'idle', maxSeconds: 900 });
+    const hard = runSelfPlayMatch({ seed: 1000, p1: 'classic-hard', p2: 'idle', maxSeconds: 900 });
     const firstGodlike = godlike.stats.p1.firstAttackAt;
     expect(firstGodlike).not.toBeNull();
-    // the fortress persona either hasn't marched yet, or marched later
     const firstHard = hard.stats.p1.firstAttackAt;
-    if (firstHard !== null) expect(firstGodlike!).toBeLessThan(firstHard);
+    expect(firstHard).not.toBeNull();
+    expect(firstGodlike!).toBeGreaterThan(firstHard!);
+
+    const trained = (result: typeof godlike): string[] => result.replay.commands.flatMap(entry =>
+      entry.playerId === 'p1' && entry.command.type === 'queueTraining' ? [entry.command.unit] : []);
+    const godlikeRoster = trained(godlike);
+    const hardRoster = trained(hard);
+    const mounted = new Set(['lancer', 'horsearcher', 'horseknight']);
+    const advancedSupport = new Set(['trebuchet', 'onager', 'priest']);
+    expect(godlikeRoster.filter(kind => kind === 'trebuchet')).toHaveLength(2);
+    expect(godlikeRoster.some(kind => mounted.has(kind))).toBe(true);
+    expect(hardRoster.some(kind => advancedSupport.has(kind))).toBe(false);
   }, 240_000);
 });

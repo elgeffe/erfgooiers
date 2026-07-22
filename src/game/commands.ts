@@ -28,8 +28,7 @@ export function applyGameCommand(game: Game, playerId: PlayerId, command: GameCo
   switch (command.type) {
     case 'placeBuilding': {
       if (!(command.key in DEFS)) return fail('unknown_building');
-      game.tryPlace(command.key, command.x, command.y, command.rot, playerId);
-      return ok;
+      return game.tryPlace(command.key, command.x, command.y, command.rot, playerId) ? ok : fail('cannot_place');
     }
     case 'paintRoad': {
       for (const c of command.cells) game.paintRoad(c.x, c.y, playerId);
@@ -57,8 +56,7 @@ export function applyGameCommand(game: Game, playerId: PlayerId, command: GameCo
     case 'queueTraining': {
       const b = buildingOwnedBy(game, command.buildingId, playerId);
       if (!b || !(b.def.military || b.def.trainer)) return fail('not_your_trainer');
-      game.trainUnit(b, command.unit);
-      return ok;
+      return game.trainUnit(b, command.unit) ? ok : fail('cannot_train');
     }
     case 'cancelTraining': {
       const b = buildingOwnedBy(game, command.buildingId, playerId);

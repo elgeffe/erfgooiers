@@ -1,8 +1,9 @@
 import { aiProfile } from '../data/aiProfiles';
+import { UNITS, type UnitKind } from '../data/units';
 import { applyGameCommand } from '../game/commands';
 import { gameplayFingerprintHash, makeSkirmishGame } from '../game/testHarness';
 import { ReplayRecorder, TICK_SECONDS, skirmishWinner, type Replay, type SkirmishOutcome } from '../game/replay';
-import { PLAYER_IDS, type PlayerId } from '../types';
+import { PLAYER_IDS, type BuildingKey, type PlayerId } from '../types';
 import { AIController, type AIEvent, type AIStats } from './AIController';
 
 /**
@@ -16,10 +17,26 @@ export interface MatchSeatSample {
   workers: number;
   buildings: number;
   sites: number;
+  /** Standing structures and unfinished sites, split by kind for build-order diagnosis. */
+  buildingsByKey: Partial<Record<BuildingKey, number>>;
+  sitesByKey: Partial<Record<BuildingKey, number>>;
+  /** The fighting roster and civilian workforce at this instant. */
+  armyByKind: Partial<Record<UnitKind, number>>;
+  workersByRole: Record<string, number>;
   coin: number;
   timber: number;
+  stone: number;
+  trunk: number;
+  goldore: number;
+  coal: number;
+  iron: number;
   weapon: number;
+  armor: number;
   bread: number;
+  castleHp: number;
+  castleMaxHp: number;
+  /** Mean empty-tile gap to each non-wall placement's nearest neighbour. */
+  meanNearestBuildingGap: number;
 }
 
 export interface MatchSample {
@@ -49,6 +66,8 @@ export interface SelfPlayResult {
   wallMs: number;
   stats: Record<PlayerId, AIStats>;
   samples: MatchSample[];
+  /** Exact end state; unlike periodic samples this is always taken on the final tick. */
+  final: MatchSample;
   replay: Replay;
 }
 
@@ -99,6 +118,7 @@ export function runSelfPlayMatch(options: SelfPlayOptions): SelfPlayResult {
     wallMs,
     stats: { p1: controllers[0].stats, p2: controllers[1].stats },
     samples,
+    final: sample(game),
     replay: recorder.finish(outcome),
   };
 }
@@ -107,18 +127,66 @@ function sample(game: Parameters<typeof gameplayFingerprintHash>[0]): MatchSampl
   const seats = {} as Record<PlayerId, MatchSeatSample>;
   for (const playerId of PLAYER_IDS) {
     let army = 0, workers = 0, buildings = 0, sites = 0;
+    const armyByKind: Partial<Record<UnitKind, number>> = {};
+    const workersByRole: Record<string, number> = {};
     for (const unit of game.units) {
       if (unit.dead || unit.owner !== playerId) continue;
-      if (unit.dmg > 0) army++; else workers++;
+      if (unit.role in UNITS) {
+        army++;
+        const kind = unit.role as UnitKind;
+        armyByKind[kind] = (armyByKind[kind] ?? 0) + 1;
+      } else {
+        workers++;
+        workersByRole[unit.role] = (workersByRole[unit.role] ?? 0) + 1;
+      }
     }
-    for (const building of game.buildings) if (!building.removed && building.owner === playerId) buildings++;
-    for (const site of game.sites) if (!site.removed && site.owner === playerId) sites++;
-    const stock = game.playerStores.get(playerId)?.stock ?? {};
+    const buildingsByKey: Partial<Record<BuildingKey, number>> = {};
+    const sitesByKey: Partial<Record<BuildingKey, number>> = {};
+    const placements: { x: number; y: number }[] = [];
+    for (const building of game.buildings) {
+      if (building.removed || building.owner !== playerId) continue;
+      buildings++;
+      buildingsByKey[building.key] = (buildingsByKey[building.key] ?? 0) + 1;
+      if (!building.def.bulwark) placements.push(building);
+    }
+    for (const site of game.sites) {
+      if (site.removed || site.owner !== playerId) continue;
+      sites++;
+      sitesByKey[site.key] = (sitesByKey[site.key] ?? 0) + 1;
+      if (!site.def.bulwark) placements.push(site);
+    }
+    const castle = game.playerStores.get(playerId);
+    const stock = castle?.stock ?? {};
     seats[playerId] = {
       army, workers, buildings, sites,
-      coin: stock.coin ?? 0, timber: stock.timber ?? 0,
-      weapon: stock.weapon ?? 0, bread: stock.bread ?? 0,
+      buildingsByKey, sitesByKey, armyByKind, workersByRole,
+      coin: stock.coin ?? 0, timber: stock.timber ?? 0, stone: stock.stone ?? 0,
+      trunk: stock.trunk ?? 0, goldore: stock.goldore ?? 0, coal: stock.coal ?? 0, iron: stock.iron ?? 0,
+      weapon: stock.weapon ?? 0, armor: stock.armor ?? 0, bread: stock.bread ?? 0,
+      castleHp: castle?.hp ?? 0, castleMaxHp: castle?.maxHp ?? 0,
+      meanNearestBuildingGap: meanNearestBuildingGap(placements),
     };
   }
   return { t: Math.round(game.elapsed), seats };
+}
+
+/** Placement density in open tiles between 2x2 footprints. Continuous wall and
+ * gate runs are deliberately excluded by the caller: zero-gap masonry is good,
+ * while zero-gap production buildings are the congestion this metric exposes. */
+function meanNearestBuildingGap(placements: { x: number; y: number }[]): number {
+  if (placements.length < 2) return 0;
+  let total = 0;
+  for (let i = 0; i < placements.length; i++) {
+    let nearest = Infinity;
+    for (let j = 0; j < placements.length; j++) {
+      if (i === j) continue;
+      const distance = Math.max(
+        Math.abs(placements[i].x - placements[j].x),
+        Math.abs(placements[i].y - placements[j].y),
+      );
+      nearest = Math.min(nearest, Math.max(0, distance - 2));
+    }
+    total += nearest;
+  }
+  return Math.round(total / placements.length * 100) / 100;
 }

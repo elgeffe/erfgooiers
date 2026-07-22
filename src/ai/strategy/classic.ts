@@ -3,10 +3,17 @@ import { UNITS, type UnitKind } from '../../data/units';
 import { findPath } from '../../engine/pathfinding';
 import { doorTile } from '../../game/util';
 import { planDefensiveLine } from '../../game/fortification';
-import type { BuildingKey, Building, Coord, ItemKey } from '../../types';
+import type { BuildingKey, Building, Coord } from '../../types';
 import type { GameCommand } from '../../net/protocol';
 import { findBuildingSpot, planPlots } from '../actuation';
 import { economyStock, have, storeStock } from '../perception';
+import {
+  nextArmsLineBuild,
+  nextCoinLineBuild,
+  nextOpeningDecision,
+  nextTimberLineBuild,
+  plannedBuildingCounts,
+} from './classicPlan';
 import type { MacroPolicy, PolicyContext } from './types';
 
 /** Expand a waypoint path (findPath returns smoothed corners) into the full
@@ -42,7 +49,16 @@ function unitCategory(kind: string): ArmyCategory {
 export function dominantEnemyCategory(byKind: Partial<Record<UnitKind, number>>): { cat: ArmyCategory; frac: number } | null {
   const cats: Record<ArmyCategory, number> = { mounted: 0, ranged: 0, melee: 0 };
   let total = 0;
-  for (const kind in byKind) { const n = byKind[kind as UnitKind] ?? 0; total += n; cats[unitCategory(kind)] += n; }
+  for (const kind in byKind) {
+    const def = UNITS[kind as UnitKind];
+    // Support and siege are strategic quotas, not a field-composition signal:
+    // treating priests as melee and trebuchets as ranged taught the counter
+    // system to suppress exactly the combined-arms tools Godlike needs.
+    if (def?.heal || def?.model === 'siege') continue;
+    const n = byKind[kind as UnitKind] ?? 0;
+    total += n;
+    cats[unitCategory(kind)] += n;
+  }
   if (total < 3) return null;
   let best: ArmyCategory = 'melee', bestN = -1;
   for (const c of ['mounted', 'ranged', 'melee'] as ArmyCategory[]) if (cats[c] > bestN) { bestN = cats[c]; best = c; }
@@ -60,6 +76,23 @@ export function counterMultiplier(myKind: string, enemyDom: ArmyCategory, gain: 
   return mine === 'ranged' ? 1 + 1.5 * gain : 1; // enemy melee-heavy → archers
 }
 
+/** Convert composition weights into exact standing-army slots. Largest-
+ * remainder allocation is deterministic and sums to the cap, so cheap units
+ * cannot consume slots reserved for cavalry, siege or priests. */
+export function allocateUnitQuotas(weights: Readonly<Record<string, number>>, cap: number): Record<string, number> {
+  const entries = Object.entries(weights).filter(([, weight]) => weight > 0);
+  const total = entries.reduce((sum, [, weight]) => sum + weight, 0);
+  if (!entries.length || total <= 0 || cap <= 0) return {};
+  const rows = entries.map(([kind, weight]) => {
+    const exact = weight / total * cap;
+    return { kind, quota: Math.floor(exact), remainder: exact - Math.floor(exact) };
+  });
+  let left = cap - rows.reduce((sum, row) => sum + row.quota, 0);
+  rows.sort((a, b) => b.remainder - a.remainder || a.kind.localeCompare(b.kind));
+  for (let i = 0; i < rows.length && left > 0; i++, left--) rows[i].quota++;
+  return Object.fromEntries(rows.map(row => [row.kind, row.quota]));
+}
+
 /**
  * The Classic baseline (Phase 1): a handwritten, layered, fair macro policy.
  * Build order is not a rigid list but a utility score over candidate goals —
@@ -70,6 +103,25 @@ export function counterMultiplier(myKind: string, enemyDom: ArmyCategory, gain: 
 
 type Category = 'economy' | 'food' | 'coin' | 'war' | 'fort';
 
+/** A new staffed site must not have to wait for its first worker—or gamble its
+ * hiring coin against the barracks. Two spare villagers also absorb a pair of
+ * specialist casualties without collapsing an entire production line. */
+const VILLAGER_RESERVE = 2;
+const EXTRACTORS = new Set<BuildingKey>(['quarry', 'goldmine', 'coalmine', 'ironmine']);
+const TIMBER_SUPPORT_RANGE = 9;
+
+/** A forester is useful only when its planting ground overlaps an uncovered
+ * woodcutter. Stable coordinate ordering preserves replay determinism. */
+export function selectUncoveredWoodcutter(
+  woodcutters: readonly Coord[], foresters: readonly Coord[], range = TIMBER_SUPPORT_RANGE,
+): Coord | null {
+  return [...woodcutters]
+    .sort((a, b) => a.y - b.y || a.x - b.x)
+    .find(woodcutter => !foresters.some(forester => Math.max(
+      Math.abs(forester.x - woodcutter.x), Math.abs(forester.y - woodcutter.y),
+    ) <= range)) ?? null;
+}
+
 interface BuildGoal {
   key: BuildingKey;
   target: number;
@@ -77,105 +129,72 @@ interface BuildGoal {
   category: Category;
   /** Chain gates: every requirement must already STAND (sites don't count). */
   requires?: BuildingKey[];
-  /** Deep-base tail entries only Godlike-scale economies reach for. */
-  minScale?: number;
   /** Endless-expansion goal (vs a fixed opening): its priority is decided by
    *  current scarcity of its output, not a fixed opening order. */
   expand?: boolean;
 }
 
-/** What a producer building outputs — drives scarcity-boosted expansion (build
- *  more of what the economy is short of). Raw gatherers and intermediates only;
- *  military/fort buildings expand on coin surplus, not an output. */
-const OUTPUT: Partial<Record<BuildingKey, ItemKey>> = {
-  woodcutter: 'trunk', sawmill: 'timber', quarry: 'stone', farm: 'wheat',
-  mill: 'flour', bakery: 'bread', goldmine: 'goldore', coalmine: 'coal',
-  ironmine: 'iron', mint: 'coin', smithy: 'weapon', armory: 'armor',
-};
+interface ExpansionTargets {
+  timberLines: number;
+  coinLines: number;
+  armsLines: number;
+  quarries: number;
+  foodLines: number;
+}
 
-function goals(towers: number, scale: number, expansion: number): BuildGoal[] {
-  // The owner-blessed opening: wood → timber → quarry → gold → coal → mint
-  // (villagers cost coin, the mint makes coin — the free starting villagers
-  // must staff that loop first or the economy deadlocks at zero coin), then
-  // the food chain through the tavern, then the barracks (archers train on
-  // timber alone), then iron + a second coalmine into the weapons chain.
-  const list: BuildGoal[] = [
-    // normally start-granted, so the deficit is zero — but a razed guild hall
-    // must be rebuilt at once or the settlement can never hire anyone again
-    { key: 'guildhall', target: 1, priority: 98, category: 'economy' },
-    { key: 'woodcutter', target: 1, priority: 100, category: 'economy' },
-    { key: 'sawmill', target: 1, priority: 96, category: 'economy', requires: ['woodcutter'] },
-    { key: 'quarry', target: 1, priority: 92, category: 'economy' },
-    { key: 'goldmine', target: 1, priority: 88, category: 'coin' },
-    { key: 'coalmine', target: 1, priority: 86, category: 'coin' },
-    { key: 'mint', target: 1, priority: 84, category: 'coin', requires: ['goldmine', 'coalmine'] },
-    // the forester joins the opening: a lone woodcutter strips its stand in
-    // minutes and a dead wood economy starves archers (1 timber) forever
-    { key: 'forester', target: 1, priority: 81, category: 'economy', requires: ['woodcutter'] },
-    { key: 'farm', target: 1, priority: 80, category: 'food' },
-    { key: 'mill', target: 1, priority: 78, category: 'food', requires: ['farm'] },
-    { key: 'bakery', target: 1, priority: 76, category: 'food', requires: ['mill'] },
-    { key: 'tavern', target: 1, priority: 74, category: 'food', requires: ['bakery'] },
-    { key: 'barracks', target: 1, priority: 72, category: 'war' },
-    { key: 'ironmine', target: 1, priority: 68, category: 'war' },
-    { key: 'coalmine', target: 2, priority: 66, category: 'war', minScale: 1 },
-    { key: 'smithy', target: 1, priority: 64, category: 'war', requires: ['ironmine', 'coalmine'] },
-    // NOTE: the market is intentionally OFF the build order for now — its export
-    // orders vacuum the very gold ore, stone, timber and bread the base needs to
-    // build and feed itself, doing more harm than the coin it earned.
-    { key: 'watchtower', target: towers, priority: 54, category: 'fort' },
-  ];
+/** Difficulty changes depth and tempo, never the production-line rules. */
+function expansionTargets(depth: number): ExpansionTargets {
+  const godlike = depth >= 3;
+  return {
+    // The common opening already owns one complete timber line, two coin
+    // lines, one arms line and two quarries. Mid-game growth is deliberate,
+    // not an exponential copy of every chain: Hard adds the requested second
+    // timber pair, while Godlike spends its extra footprint on stone and a
+    // deeper coin/arms backbone.
+    timberLines: 2,
+    coinLines: godlike ? 3 : 2,
+    armsLines: godlike ? 2 : 1,
+    quarries: godlike ? 4 : 2,
+    foodLines: 2,
+  };
+}
 
-  // ---- endless, tier-scaled expansion ----
-  // Fixed caps make a strong economy plateau (measured: Godlike froze at 25
-  // buildings with 280 coin idle and an all-archer army it couldn't diversify).
-  // Instead the higher tiers keep compounding producers and open the full
-  // military spread, so surplus coin becomes a bigger, more varied army. The
-  // scorer (planBuild) decides WHICH to build from current scarcity; these just
-  // set how deep each tier may go. Easy (expansion 0) never reaches this — it
-  // stays a small, beatable settlement.
+/** Mid-game ceilings. The line planners below decide the supplier-first next
+ * step, so these are capacity limits rather than independently competing asks. */
+function goals(towers: number, expansion: number, stoneTowers: boolean): BuildGoal[] {
   const E = expansion;
-  if (E > 0) {
-    const cap = (n: number): number => Math.max(0, Math.round(n));
-    const req = (...keys: BuildingKey[]): BuildingKey[] => keys;
-    // Caps are generous CEILINGS, not targets — scarcity scoring (planBuild)
-    // stops building a producer the moment its output is plentiful, so extra
-    // headroom just lets the bot chase a real bottleneck instead of stalling.
-    // Coal is the sharpest one: it feeds the mint AND every smithy AND every
-    // armory, so weapons and armour (and thus soldiers/knights/cavalry) all
-    // starve behind it — hence the deepest coal ceiling.
-    // The mid-game boom (learned from a winning human replay): the settlement
-    // multiplies its COIN ENGINE — many mints, and the gold + coal to feed
-    // them — so coin compounds into a continuous, diverse late-game army. Caps
-    // are generous CEILINGS; the compounding scorer (expansionValue) decides
-    // how far each actually goes from the chain's real bottleneck.
-    const grow: [BuildingKey, number, Category, BuildingKey[]?][] = [
-      ['woodcutter', 3 + 2 * E, 'economy'],
-      ['sawmill', 2 + E, 'economy', req('woodcutter')],
-      ['forester', 1 + Math.floor(E / 2), 'economy', req('woodcutter')],
-      ['quarry', 3 + 2 * E, 'economy'],
-      ['farm', 1 + E, 'food'],
-      ['mill', E, 'food', req('farm')],
-      ['bakery', E, 'food', req('mill')],
-      ['tavern', E >= 2 ? 1 : 0, 'food', req('bakery')],
-      ['goldmine', 2 + 2 * E, 'coin'],         // gold ore is the mints' fuel
-      ['coalmine', 3 + 3 * E, 'coin'],         // feeds the mints AND smithies AND armories
-      ['mint', E >= 2 ? 1 + E : 0, 'coin', req('goldmine', 'coalmine')], // the coin engine, multiplied
-      ['market', E >= 3 ? 1 : 0, 'coin', req('quarry')], // late surplus → coin (godlike only)
-      ['ironmine', 2 + E, 'war'],
-      ['smithy', 1 + E, 'war', req('ironmine', 'coalmine')],
-      ['armory', E >= 2 ? 1 + E : 0, 'war', req('smithy')],  // armour → knights (the diverse line)
-      ['barracks', 1 + E, 'war'],
-      // NO stable — cavalry is deliberately off the AI roster for now
-      ['engineer', E >= 2 ? 1 + Math.floor(E / 2) : 0, 'war'], // SIEGE: onagers/trebuchets — the wall & castle breaker
-      ['monastery', E >= 2 ? 1 : 0, 'war'],    // priests to heal the line
-    ];
-    for (const [key, base, category, requires] of grow) {
-      const target = cap(base);
-      if (target > 0) list.push({ key, target, priority: 30, category, requires, expand: true });
-    }
-  }
-  return list.filter(goal => (goal.minScale ?? 0) <= scale && goal.target > 0);
+  const target = expansionTargets(E);
+  const secondaryFoodLines = E >= 3 ? 2 : 1;
+  const req = (...keys: BuildingKey[]): BuildingKey[] => keys;
+  const towerKey: BuildingKey = stoneTowers ? 'stonetower' : 'watchtower';
+  const list: BuildGoal[] = [
+    { key: 'guildhall', target: 1, priority: 100, category: 'economy' },
+    { key: 'woodcutter', target: target.timberLines, priority: 30, category: 'economy', expand: true },
+    { key: 'sawmill', target: target.timberLines, priority: 30, category: 'economy', requires: req('woodcutter'), expand: true },
+    { key: 'forester', target: target.timberLines, priority: 30, category: 'economy', requires: req('woodcutter'), expand: true },
+    { key: 'quarry', target: target.quarries, priority: 30, category: 'economy', expand: true },
+    { key: 'farm', target: target.foodLines, priority: 30, category: 'food', expand: true },
+    { key: 'mill', target: target.foodLines, priority: 30, category: 'food', requires: req('farm'), expand: true },
+    { key: 'bakery', target: target.foodLines, priority: 30, category: 'food', requires: req('mill'), expand: true },
+    { key: 'fishery', target: secondaryFoodLines, priority: 30, category: 'food', expand: true },
+    { key: 'vineyard', target: secondaryFoodLines, priority: 30, category: 'food', expand: true },
+    { key: 'winery', target: secondaryFoodLines, priority: 30, category: 'food', requires: req('vineyard'), expand: true },
+    { key: 'pigfarm', target: secondaryFoodLines, priority: 30, category: 'food', expand: true },
+    { key: 'butcher', target: secondaryFoodLines, priority: 30, category: 'food', requires: req('pigfarm'), expand: true },
+    { key: 'tavern', target: E >= 3 ? 2 : 1, priority: 30, category: 'food', requires: req('bakery'), expand: true },
+    { key: 'goldmine', target: target.coinLines, priority: 30, category: 'coin', expand: true },
+    { key: 'coalmine', target: target.coinLines + target.armsLines, priority: 30, category: 'coin', expand: true },
+    { key: 'mint', target: target.coinLines, priority: 30, category: 'coin', requires: req('goldmine', 'coalmine'), expand: true },
+    { key: 'ironmine', target: target.armsLines, priority: 30, category: 'war', expand: true },
+    { key: 'smithy', target: target.armsLines, priority: 30, category: 'war', requires: req('ironmine', 'coalmine'), expand: true },
+    { key: 'armory', target: target.armsLines, priority: 30, category: 'war', requires: req('smithy'), expand: true },
+    { key: 'barracks', target: E >= 3 ? 2 : 1, priority: 30, category: 'war', expand: true },
+    { key: 'stable', target: E >= 3 ? 2 : 0, priority: 30, category: 'war', requires: req('smithy'), expand: true },
+    { key: 'engineer', target: E >= 3 ? 2 : 0, priority: 30, category: 'war', expand: true },
+    { key: 'monastery', target: E >= 3 ? 1 : 0, priority: 30, category: 'war', expand: true },
+    { key: towerKey, target: towers, priority: 30, category: 'fort', expand: true },
+  ];
+  return list.filter(goal => goal.target > 0);
 }
 
 export class ClassicMacro implements MacroPolicy {
@@ -190,6 +209,7 @@ export class ClassicMacro implements MacroPolicy {
   private readonly roadedBuildings = new Set<number>();
   private lastThreatAt = -Infinity;
   private lastRoadAt = -Infinity;
+  private lastFortAt = -Infinity;
 
   plan(ctx: PolicyContext): GameCommand[] {
     const { view } = ctx;
@@ -200,17 +220,21 @@ export class ClassicMacro implements MacroPolicy {
     if (rescue) commands.push(rescue);
     const plots = this.planFieldPlots(ctx);
     if (plots) commands.push(plots);
-    // wall-building personas fortify first and expand second; the rest
-    // fortify with whatever build capacity the economy goals leave over
-    const fortFirst = ctx.profile.walls > 0;
-    const fort = fortFirst ? this.planFortification(ctx) : null;
-    if (fort) commands.push(fort);
-    const build = this.planBuild(ctx);
-    if (build) commands.push(build);
-    else if (!fortFirst) {
-      const spare = this.planFortification(ctx);
-      if (spare) commands.push(spare);
+    // One placement decision per state snapshot: never let a fort and an
+    // economy site jointly exceed capacity or promise the same stock. The
+    // shared opening always finishes first; thereafter wall pieces alternate
+    // with economy growth on a slow cadence.
+    const openingDone = nextOpeningDecision(view.built, view.pending).kind === 'complete';
+    let construction: GameCommand | null = null;
+    if (openingDone && view.elapsed - this.lastFortAt >= 12) {
+      construction = this.planForwardOutpost(ctx);
+      const homeTowerKey: BuildingKey = ctx.profile.wallMaterial === 'stone' ? 'stonetower' : 'watchtower';
+      const homeTowersReady = (view.built[homeTowerKey] ?? 0) >= ctx.profile.towers;
+      if (!construction && homeTowersReady && ctx.profile.walls > 0) construction = this.planFortification(ctx);
+      if (construction) this.lastFortAt = view.elapsed;
     }
+    construction ??= this.planBuild(ctx);
+    if (construction) commands.push(construction);
     commands.push(...this.planTraining(ctx));
     const road = this.planRoad(ctx);
     if (road) commands.push(road);
@@ -255,7 +279,6 @@ export class ClassicMacro implements MacroPolicy {
       if (distance > 4 && distance < bestDistance) { bestDistance = distance; target = building; }
     }
     if (!target) return null;
-    this.roadedBuildings.add(target.id);
     const door = doorTile(target);
     const path = findPath(world, from.x, from.y, door.x, door.y, view.owner);
     if (!path) return null;
@@ -267,8 +290,10 @@ export class ClassicMacro implements MacroPolicy {
       if (cells.length >= budget) break;
       if (game.canPaintRoadAt(tile.x, tile.y)) cells.push(tile);
     }
-    // a link too long to even start now waits; don't burn the cooldown on nothing
-    if (!cells.length) { this.roadedBuildings.delete(target.id); return null; }
+    // No missing paintable cells means the route is complete. Partial links stay
+    // eligible and resume on the next surplus-stone pass instead of being
+    // blacklisted after their first twelve tiles.
+    if (!cells.length) { this.roadedBuildings.add(target.id); return null; }
     this.lastRoadAt = view.elapsed;
     return { type: 'paintRoad', cells };
   }
@@ -297,20 +322,70 @@ export class ClassicMacro implements MacroPolicy {
       return !tile || tile.type === 'water' || tile.type === 'rock'; // off-map, lake or ridge
     };
     for (let line = 0; line < profile.walls; line++) {
-      const distance = 11 - line * 4;   // outer line first, then a closer fallback
-      for (const piece of planDefensiveLine(center, enemy, distance, 6)) {
+      const preferred = 11 - line * 4;   // outer line first, then a closer fallback
+      // A spread-out settlement can occupy the preferred gate slot. Try a
+      // slightly wider/closer curtain, but never raise the wall pieces unless a
+      // real friendly gate already stands at its centre.
+      for (const distance of [preferred, preferred + 2, preferred - 2]) {
+        const pieces = planDefensiveLine(center, enemy, distance, 6);
+        const gate = pieces[0];
+        const gateTile = world.T(gate.x, gate.y);
+        const gateKey: BuildingKey = profile.wallMaterial === 'wood' ? 'woodgate' : 'gate';
+        const standingGate = gateTile?.b;
+        const pendingGate = gateTile?.site;
+        // A site is still a solid obstacle. Wait for the actual gate before
+        // closing wall segments around it, or the builder and army can be
+        // sealed behind an unfinished centrepiece.
+        if (pendingGate?.owner === view.owner && pendingGate.key === gateKey) return null;
+        const gateReady = standingGate?.owner === view.owner && standingGate.key === gateKey;
+        if (!gateReady) {
+          if (naturalBarrier(gate.x, gate.y) || !this.affordable(ctx, gateKey)
+            || !game.canPlace(gateKey, gate.x, gate.y, gate.rot)) continue;
+          return { type: 'placeBuilding', key: gateKey, x: gate.x, y: gate.y, rot: gate.rot };
+        }
+        for (const piece of pieces.slice(1)) {
         // a segment already backed by terrain needs no wall — that is the point
-        if (naturalBarrier(piece.x, piece.y) || naturalBarrier(piece.x + 1, piece.y + 1)) continue;
-        const tile = world.T(piece.x, piece.y);
-        if (!tile || tile.b || tile.site) continue;           // held or hopeless slot
-        const key: BuildingKey = piece.kind === 'gate' ? 'gate' : 'wall';
-        if (!this.affordable(ctx, key)) return null;          // wait for the stone
-        if (!game.canPlace(key, piece.x, piece.y, piece.rot)) continue;
-        return { type: 'placeBuilding', key, x: piece.x, y: piece.y, rot: piece.rot };
+          if (naturalBarrier(piece.x, piece.y) || naturalBarrier(piece.x + 1, piece.y + 1)) continue;
+          const tile = world.T(piece.x, piece.y);
+          if (!tile || tile.b || tile.site) continue;         // held or hopeless slot
+          const key: BuildingKey = profile.wallMaterial === 'wood' ? 'woodwall' : 'wall';
+          if (!this.affordable(ctx, key)) return null;
+          if (!game.canPlace(key, piece.x, piece.y, piece.rot)) continue;
+          return { type: 'placeBuilding', key, x: piece.x, y: piece.y, rot: piece.rot };
+        }
+        // This distance is complete; don't start a second alternative curtain.
+        break;
       }
       // this line is as finished as the ground allows — add the closer fallback
     }
     return null;
+  }
+
+  /** Fortify distinct contested extractors after the home towers stand. The
+   *  mine itself is the anchor, while the shared placement search still owns
+   *  safety, spacing, reachability and exact legality. */
+  private planForwardOutpost(ctx: PolicyContext): GameCommand | null {
+    const { game, world, view, profile, rng } = ctx;
+    if (profile.forwardTowers <= 0 || profile.wallMaterial !== 'stone' || !view.store) return null;
+    if ((view.built.stonetower ?? 0) < profile.towers || view.sites.length >= profile.maxPendingSites) return null;
+
+    const home = { x: view.store.x, y: view.store.y };
+    const center = { x: Math.floor(world.W / 2), y: Math.floor(world.H / 2) };
+    const distance = (a: Coord, b: Coord): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+    const towers = [...view.buildings, ...view.sites].filter(entity => entity.key === 'stonetower');
+    const forward = towers.filter(tower => distance(tower, home) >= 16);
+    if (forward.length >= profile.forwardTowers || !this.affordable(ctx, 'stonetower')) return null;
+
+    const mines = view.buildings
+      .filter(building => EXTRACTORS.has(building.key) && !!building.worker && distance(building, home) >= 18)
+      .sort((a, b) => distance(a, center) - distance(b, center)
+        || distance(b, home) - distance(a, home)
+        || a.id - b.id);
+    const anchor = mines.find(mine => !forward.some(tower => distance(tower, mine) <= 11));
+    if (!anchor) return null;
+    const reach = 22 + profile.expansion * 8;
+    const spot = findBuildingSpot(game, world, view, 'stonetower', rng, ctx.approach, reach, anchor);
+    return spot ? { type: 'placeBuilding', key: 'stonetower', x: spot.x, y: spot.y, rot: spot.rot } : null;
   }
 
   // ---- stalled construction ----
@@ -350,8 +425,17 @@ export class ClassicMacro implements MacroPolicy {
 
   // ---- construction ----
   private planBuild(ctx: PolicyContext): GameCommand | null {
-    const { game, world, view, profile, rng } = ctx;
+    const { game, view, profile } = ctx;
     if (view.sites.length >= profile.maxPendingSites) return null;
+
+    // Every persona follows the same real opening, one completed stage at a
+    // time. A site is a WAIT state, not permission to leapfrog seven more sites
+    // onto the starting builder. Rebuild the Guild Hall first if it was razed.
+    if (have(view, 'guildhall') < 1) return this.placeGoal(ctx, 'guildhall');
+    const opening = nextOpeningDecision(view.built, view.pending);
+    if (opening.kind === 'wait') return null;
+    if (opening.kind === 'build') return this.placeGoal(ctx, opening.key);
+
     const hungry = view.averageWorkerHunger < 45 || economyStock(game, view.owner, 'bread') < 2;
     const outgunned = view.enemyArmySize > view.armySize + 3;
     const broke = storeStock(game, view.owner, 'coin') < profile.workerReserveCoin + 2;
@@ -359,58 +443,25 @@ export class ClassicMacro implements MacroPolicy {
 
     const coin = storeStock(game, view.owner, 'coin');
     const armyRoom = view.armySize < profile.armyCap;
-    // The endless mid-game expansion waits for the COIN ENGINE to run: a mint
-    // built AND staffed, earning. Booming before that (a 2nd barracks, deep
-    // mines) drains the opening's finite timber/stone and deadlocks the base at
-    // zero coin — it can never afford the mint that would restart the economy
-    // (measured: godlike froze at 8 buildings, 0 timber). The opening builds
-    // straight through; only the `expand` goals hold for the mint.
-    const coinEngineRunning = view.buildings.some(b => b.key === 'mint' && b.worker);
-    // COIN ENGINE FIRST: until a mint STANDS, build only the chain that leads to
-    // it (wood→timber, stone, gold, coal, mint). The mint's requirements aren't
-    // met until the goldmine & coalmine finish CONSTRUCTING, and while the bot
-    // waits it would otherwise spend its finite starting timber on a barracks /
-    // ironmine / farm and never afford the mint — the coin deadlock. A 2-minute
-    // fallback lets a mint-less map (no gold vein) proceed anyway.
-    const preMint: BuildingKey[] = ['guildhall', 'woodcutter', 'sawmill', 'quarry', 'goldmine', 'coalmine', 'mint', 'forester'];
-    const coinFirst = (view.built.mint ?? 0) === 0 && view.elapsed < 120;
-    // The boom must not outrun its STAFFING: every RAW/food producer needs a
-    // villager, and villagers cost coin, so sprawling those while posts sit
-    // empty spends every coin on hiring and fields no army (measured: 76
-    // buildings, coin 0, army 0). Pausing them while >2 posts are unstaffed
-    // self-throttles the sprawl to what coin income can staff. EXEMPT: the coin
-    // chain (mint + its gold/coal feed) — it GROWS income and takes control of
-    // the map's central ore, the pro's edge — and war/fort (they unlock the
-    // army). This is what compounds coin into the ever bigger, diverse army.
-    const staffed = view.workers.unstaffed <= 2;
-    const grows = (c: Category): boolean => c === 'war' || c === 'fort' || c === 'coin';
-    // ANTI-GRIDLOCK: construction is timber+stone, so starting sites the base
-    // can't supply spreads a trickle of materials across many half-built sites
-    // and NONE finish (measured: timber/stone pinned at 0, goldmines stuck as
-    // sites, the cheap mint never affordable). So while materials are starved,
-    // only the MATERIAL PRODUCERS themselves (which end the starvation) may
-    // start — everything else waits for a small buffer to build up.
+    // The boom must not outrun its specialists. Coin and military capacity may
+    // still grow because they fund/field the recovery; routine food and material
+    // sprawl waits until almost every standing post has a villager.
+    const pendingWorkerPosts = view.sites.filter(site => !!site.def.worker).length;
+    const workforceReady = view.workers.unstaffed === 0
+      && pendingWorkerPosts === 0
+      && view.workers.freeVillagers >= VILLAGER_RESERVE;
     const timber = economyStock(game, view.owner, 'timber'), stone = economyStock(game, view.owner, 'stone');
     const materialProducer: BuildingKey[] = ['woodcutter', 'sawmill', 'quarry', 'forester'];
-    // SIEGE RESERVE: siege (the castle-cracker) is timber-only, but routine
-    // construction spends timber the instant it lands, so the engineer stands
-    // idle and the demolition army has no siege (measured: 0 onagers built).
-    // Once an engineer stands and the army is short of siege, hold a TIMBER
-    // buffer — pause non-material construction until timber builds up — so the
-    // surplus flows to the siege line. Timber is non-depletable, so the boosted
-    // woodcutter/forester economy refills it fast.
     const wantsSiege = (view.built.engineer ?? 0) > 0
       && view.army.filter(u => u.role === 'onager' || u.role === 'trebuchet' || u.role === 'ballista').length < 3;
     const timberBuffer = wantsSiege ? 12 : 3; // one siege = 10 timber, plus a little slack
     const starved = timber < timberBuffer || stone < 3;
-    const candidates = goals(profile.towers, profile.econScale, profile.expansion)
+    const candidates = goals(profile.towers, profile.expansion, profile.wallMaterial === 'stone')
       .filter(goal => have(view, goal.key) < goal.target)
-      .filter(goal => coinEngineRunning || !goal.expand)
-      .filter(goal => !coinFirst || preMint.includes(goal.key))
-      .filter(goal => !goal.expand || grows(goal.category) || staffed)
-      // the anti-gridlock hold spares the material producers AND the coin chain:
-      // goldmines/mints are cheap (2 timber) and are the win-condition income, so
-      // they must keep scaling early even while timber is tight for construction
+      // Expansion is earned by staffing the settlement already on the map.
+      // Letting coin/war goals bypass this gate produced impressive-looking
+      // rows of empty mines and mints, then a permanent zero-coin deadlock.
+      .filter(goal => !goal.expand || workforceReady)
       .filter(goal => !goal.expand || !starved || materialProducer.includes(goal.key) || goal.category === 'coin')
       .filter(goal => (goal.requires ?? []).every(key => (view.built[key] ?? 0) > 0))
       .filter(goal => (this.blockedUntil.get(goal.key) ?? 0) <= view.elapsed)
@@ -441,107 +492,131 @@ export class ClassicMacro implements MacroPolicy {
         continue;
       }
       this.savingSince.delete(goal.key);
-      // how far the profile pushes its economy out: low tiers hug home, higher
-      // tiers reach for the contested central deposits (never past midfield —
-      // findBuildingSpot's safeGround still bars the enemy half)
-      const reach = 22 + profile.expansion * 8;
-      const spot = findBuildingSpot(game, world, view, goal.key, rng, ctx.approach, reach);
-      if (spot) return { type: 'placeBuilding', key: goal.key, x: spot.x, y: spot.y, rot: spot.rot };
-      this.blockedUntil.set(goal.key, view.elapsed + 45);
+      const command = this.placeGoal(ctx, goal.key);
+      if (command) return command;
     }
     return null;
   }
 
-  /** Score an endless-expansion goal by what the economy actually needs now.
-   *  Multi-stage chains defeat a stock snapshot: an intermediate like iron or
-   *  coal reads ~0 whether it flows healthily or starves three smithies, so a
-   *  RAW producer is instead valued by producer/consumer BALANCE — build one
-   *  more while it is outnumbered by the buildings that burn its output. Final
-   *  goods (timber, stone, weapons, bread) keep the stock-scarcity signal;
-   *  military buildings spend surplus coin and open new unit types. */
+  /** Place one validated site. The shared helper keeps opening, recovery and
+   * expansion on the exact same reach/cooldown policy. */
+  private placeGoal(ctx: PolicyContext, key: BuildingKey): GameCommand | null {
+    const { game, world, view, profile, rng } = ctx;
+    if ((this.blockedUntil.get(key) ?? 0) > view.elapsed || !this.affordable(ctx, key)) return null;
+    const reach = 22 + profile.expansion * 8;
+    const timberAnchor = key === 'forester' ? this.uncoveredWoodcutter(view) : null;
+    // Never scatter a forester beyond the nine-tile timber ecosystem it serves.
+    // If every cutter is already covered, another lodge adds no capacity.
+    if (key === 'forester' && !timberAnchor) return null;
+    const spot = findBuildingSpot(
+      game, world, view, key, rng, ctx.approach, reach,
+      timberAnchor ?? undefined, timberAnchor ? TIMBER_SUPPORT_RANGE : Infinity,
+    );
+    if (spot) return { type: 'placeBuilding', key, x: spot.x, y: spot.y, rot: spot.rot };
+    this.blockedUntil.set(key, view.elapsed + 45);
+    return null;
+  }
+
+  private uncoveredWoodcutter(view: PolicyContext['view']): Coord | null {
+    const owned = [...view.buildings, ...view.sites];
+    return selectUncoveredWoodcutter(
+      owned.filter(entity => entity.key === 'woodcutter'),
+      owned.filter(entity => entity.key === 'forester'),
+    );
+  }
+
+  /** Score the one supplier-first step each production line is allowed to take.
+   * Standing + pending counts prevent rapid passes from duplicating sites, and
+   * an in-flight stage pauses its own line until that stage actually stands. */
   private expansionValue(ctx: PolicyContext, goal: BuildGoal, coin: number, armyRoom: boolean): number {
     const { game, view } = ctx;
-    const b = (key: BuildingKey): number => view.built[key] ?? 0;
+    const planned = plannedBuildingCounts(view.built, view.pending);
+    const p = (key: BuildingKey): number => planned[key] ?? 0;
     const stock = (item: string): number => economyStock(game, view.owner, item);
-    // one more producer while consumers outnumber it (× a headroom factor): the
-    // chain-balance signal. Headroom > 1 OVER-provisions a shared input so a
-    // greedy consumer can't starve the others — the mint, left 1:1, drinks all
-    // the coal and leaves every smithy dry (measured: 140 coin, 0 weapons).
-    const feed = (producers: number, consumers: number, headroom = 1): number => {
-      const want = Math.ceil(consumers * headroom);
-      return want > 0 && producers < want ? 40 + (want - producers) * 14 : 0;
+    const pendingAny = (...keys: BuildingKey[]): boolean => keys.some(key => (view.pending[key] ?? 0) > 0);
+    const targets = expansionTargets(ctx.profile.expansion);
+
+    const timberNext = pendingAny('woodcutter', 'sawmill')
+      ? null : nextTimberLineBuild(planned, targets.timberLines);
+    const coinNext = pendingAny('goldmine', 'coalmine', 'mint')
+      ? null : nextCoinLineBuild(planned, targets.coinLines);
+    const armsNext = pendingAny('ironmine', 'coalmine', 'smithy', 'armory')
+      ? null : nextArmsLineBuild(planned, targets.armsLines);
+
+    const lineValue = (next: BuildingKey | null, value: number): number => goal.key === next ? value : 0;
+    const pairedNext = (
+      source: BuildingKey, sink: BuildingKey, target: number,
+    ): BuildingKey | null => {
+      if (pendingAny(source, sink)) return null;
+      if (p(sink) < p(source)) return sink;
+      return p(source) < target ? source : null;
     };
 
-    const armySpace = view.armySize < ctx.profile.armyCap;
     switch (goal.key) {
-      // ---- the coin engine (the mid-game boom's heart) ----
-      // A winning human multiplies MINTS and feeds them: more mints = more
-      // coin = a bigger, more diverse standing army. Keep opening mints while
-      // gold+coal supply can feed them and there's still an army to pay for.
-      // The COIN ENGINE, decoupled so it actually compounds (a mint-per-goldmine
-      // vs goldmine-per-mint loop kept both pinned at one, starving the army of
-      // the coin that buys knights, cavalry and priests — the all-archer
-      // plateau). A pro instead SEIZES the map's gold: goldmines grow whenever
-      // coin is short (which is most of the game — the army spends it), claiming
-      // veins out to the contested centre; mints then follow the gold, and coal
-      // is over-provisioned to feed the mints and the weapon chain both.
-      case 'mint': {
-        if (b('mint') === 0) return 60;
-        const supply = Math.min(b('goldmine'), b('coalmine')); // one mint per gold+coal feed
-        return b('mint') < supply ? 62 + (supply - b('mint')) * 8 : (coin < 12 ? 40 : 0);
+      // Timber capacity is an invariant, not a scarcity contest: a pair always
+      // grows woodcutter first, then sawmill, and no pass can stack duplicates.
+      case 'woodcutter': case 'sawmill':
+        return lineValue(timberNext, 62 + Math.max(0, 14 - stock('timber')) * 3);
+      case 'quarry':
+        return pendingAny('quarry') ? 0 : (stock('stone') < 20 ? 54 + (20 - stock('stone')) * 2 : 24);
+      case 'forester':
+        return pendingAny('forester') ? 0 : (this.uncoveredWoodcutter(view) ? 78 : 0);
+
+      // A mint is always the third step of gold → dedicated coal → mint. Arms
+      // consume a separate coal allowance, so neither line steals the other's.
+      case 'goldmine': case 'mint':
+        return lineValue(coinNext, 58 + Math.max(0, 18 - coin) * 2);
+      case 'coalmine': {
+        const coinValue = coinNext === 'coalmine' ? 58 + Math.max(0, 18 - coin) * 2 : 0;
+        const armsValue = armsNext === 'coalmine' ? 72 + Math.max(0, 8 - stock('weapon') - stock('armor')) * 2 : 0;
+        return Math.max(coinValue, armsValue);
       }
-      case 'goldmine':
-        // grab gold while coin is short (claim the map's veins), but keep only a
-        // small lead on the mints so goldmine sites don't gridlock construction
-        // while the mint they feed waits for materials
-        return b('goldmine') < b('mint') + 1 ? 56 : (coin < 25 && b('goldmine') < 5 ? 46 : 0);
-      case 'coalmine': return feed(b('coalmine'), b('mint') + b('smithy') + b('armory') + b('goldmine'), 1.4);
-      case 'ironmine': return feed(b('ironmine'), b('smithy') + b('armory'), 1.5);
-      // ---- the timber & stone chain: it MUST keep construction supplied, so it
-      // is valued by its good's scarcity and outbids other producers when the
-      // base runs dry (an empty materials pile gridlocks every other site) ----
-      // TIMBER scarcity drives the SAWMILL (the converter trunk→timber), NOT the
-      // woodcutter — a low-timber base that keeps planting woodcutters just piles
-      // up raw trunk one lone sawmill can't process (the measured many-woodcutter/
-      // one-sawmill bug). Woodcutters then match the sawmills 1:1 to feed them.
-      case 'sawmill': return stock('timber') < 12 ? 46 + (12 - stock('timber')) * 6 : (b('sawmill') < b('woodcutter') ? 26 : 0);
-      case 'woodcutter': return Math.max(feed(b('woodcutter'), b('sawmill')), stock('trunk') < 4 ? 38 : 0);
-      case 'quarry': return stock('stone') < 14 ? 44 + (14 - stock('stone')) * 6 : 0;
-      case 'forester': return b('forester') < 1 ? 42 : (b('forester') < b('woodcutter') / 3 ? 30 : 0);
-      case 'farm': return feed(b('farm'), b('mill')) || (stock('wheat') < 3 ? 35 : 0);
-      // ---- crafters & final goods: stock scarcity (what's actually short) ----
-      case 'mill': return b('mill') < b('farm') ? 30 : 0;
-      case 'bakery': return stock('bread') < 6 ? 30 : 0;
-      case 'market': return b('market') === 0 && coin < 20 && stock('stone') > 12 ? 26 : 0;
-      // weapons & armour gate the whole DIVERSE army — short of them the bot can
-      // only field timber-only archers (the measured all-archer plateau), so
-      // these crafters outbid a cheaper producer whenever they run dry
-      case 'smithy': return b('smithy') === 0 ? 62 : (feed(b('smithy'), b('barracks') + b('stable') + 1) || (stock('weapon') < 8 ? 42 : 0));
-      // the first armory unlocks armour → knights & horse knights (a big slice
-      // of the diverse mix); further ones only while armour is short
-      case 'armory': return b('armory') === 0 ? 58 : (stock('armor') < 8 ? 36 : 0);
+      case 'ironmine': case 'smithy': case 'armory':
+        return lineValue(armsNext, 72 + Math.max(0, 8 - stock('weapon') - stock('armor')) * 2);
+
+      // Bread remains the staple. Extra wine/meat/fish chains broaden tavern
+      // buffs but do not outrank a missing weapon, coin or material stage.
+      case 'farm': case 'mill': case 'bakery': {
+        const next = p('mill') < p('farm') ? 'mill'
+          : p('bakery') < p('mill') ? 'bakery'
+            : p('farm') < targets.foodLines ? 'farm' : null;
+        return pendingAny('farm', 'mill', 'bakery') ? 0
+          : lineValue(next, stock('bread') < 8 ? 56 : 28);
+      }
+      case 'vineyard': case 'winery':
+        return lineValue(pairedNext('vineyard', 'winery', Math.max(1, ctx.profile.expansion)), stock('wine') < 4 ? 36 : 18);
+      case 'pigfarm': case 'butcher':
+        return lineValue(pairedNext('pigfarm', 'butcher', Math.max(1, ctx.profile.expansion)), stock('sausage') < 4 ? 38 : 18);
+      case 'fishery': return pendingAny('fishery') ? 0 : (stock('fish') < 4 ? 34 : 16);
+      case 'tavern': return pendingAny('tavern') ? 0 : (view.averageWorkerHunger < 75 ? 42 : 18);
     }
 
-    // ---- military / production-enabling buildings ----
-    // Opening the FIRST of a kind unlocks a whole unit type (stable → cavalry,
-    // engineer → siege, monastery → priests, extra barracks → throughput), and
-    // it must happen EARLY — before the army fills with soldiers/archers and
-    // leaves no room for the fancy units — so first-of-kind outbids another
-    // producer. Further copies just spend surplus coin.
-    const first = b(goal.key) === 0;
+    // Unlock the advanced roster before cheap units can consume its quota. Only
+    // Godlike has these goals; Hard intentionally stays a barracks army.
+    const first = p(goal.key) === 0;
     if (goal.category === 'war') {
-      if (first) return 72;
+      if (first) return 86;
       if (!armyRoom || coin < 10) return 0;
-      return 28 + Math.min(40, coin);                 // richer → keener to add production
+      return 38 + Math.min(30, coin);
     }
-    if (goal.key === 'tavern') return view.averageWorkerHunger < 70 ? 45 : 0;
+    if (goal.category === 'fort') {
+      if (p(goal.key) === 0) return 82;
+      return view.threats.length ? 76 : 56;
+    }
     return first ? 35 : 0;
   }
 
   private affordable(ctx: PolicyContext, key: BuildingKey): boolean {
     const cost = ctx.game.modsFor(ctx.view.owner).buildingCost(DEFS[key]) as Record<string, number>;
     for (const item in cost) {
-      if (economyStock(ctx.game, ctx.view.owner, item) < cost[item]) return false;
+      // `countItem` includes goods already carried toward a site. Reserve every
+      // outstanding site need so a new command cannot promise the same timber or
+      // stone twice and recreate the many-half-built-site gridlock.
+      let committed = 0;
+      for (const site of ctx.view.sites) {
+        committed += Math.max(0, (site.needs[item] ?? 0) - (site.delivered[item] ?? 0));
+      }
+      if (economyStock(ctx.game, ctx.view.owner, item) - committed < cost[item]) return false;
     }
     return true;
   }
@@ -551,7 +626,10 @@ export class ClassicMacro implements MacroPolicy {
     const commands: GameCommand[] = [];
     const civilian = this.planCivilian(ctx);
     if (civilian) commands.push(civilian);
-    const fighter = this.planFighter(ctx);
+    // The Guild Hall command executes first and spends one coin. Reserve it in
+    // the parallel military decision so both commands are valid against the
+    // same snapshot instead of silently overcommitting the last coin.
+    const fighter = this.planFighter(ctx, civilian ? 1 : 0);
     if (fighter) commands.push(fighter);
     return commands;
   }
@@ -569,87 +647,128 @@ export class ClassicMacro implements MacroPolicy {
     // back into coin (they staff the mint) — hire down to the last coin
     const villagersWanted = view.workers.unstaffed
       + view.sites.filter(site => site.def.worker).length
-      - view.workers.freeVillagers - queuedOf('villager');
+      + VILLAGER_RESERVE - view.workers.freeVillagers - queuedOf('villager');
     if (villagersWanted > 0 && coin >= 1) {
       return { type: 'queueTraining', buildingId: guild.id, unit: 'villager' };
     }
     if (coin <= profile.workerReserveCoin) return null;
-    // builders are a luxury: the kit's single builder carries the opening, and
-    // a second is only hired once the coin engine runs and sites still queue
-    const coinEngineRunning = view.buildings.some(b => b.key === 'mint' && b.worker);
-    const laborerTarget = coinEngineRunning ? Math.min(2, Math.max(1, view.sites.length)) : 1;
-    if (view.workers.laborers + queuedOf('laborer') < laborerTarget) {
-      return { type: 'queueTraining', buildingId: guild.id, unit: 'laborer' };
-    }
-    // Haulers scale with the economy: a sprawling base with mines scattered to
-    // their ore veins needs FAR more serfs than a compact opening, or the ore
-    // piles at the mines and the weapon chain starves downstream (measured: 7
-    // coalmines yet 0 coal reaching the smithies). A capped 10 throttled the
-    // whole logistics economy of the expanding tiers.
+    // Haulers scale with the economy, but one-per-building overstaffs a town:
+    // serfs spend most of their time idle while consuming every new coin ahead
+    // of the army. The deeper profiles get a modest distance allowance for
+    // their remote mines; the cap remains high enough for the largest planned
+    // Godlike settlement without recreating the old ten-serf bottleneck.
     const production = view.buildings.filter(b => b.def.recipe || b.def.gather || b.def.tavern).length;
-    const serfTarget = Math.min(6 + Math.ceil(production * (0.7 + profile.expansion * 0.35)), 44);
+    const mobilising = profile.attackEnabled && view.armySize < profile.attackArmy;
+    const serfScale = mobilising ? 0.4 : 0.5 + profile.expansion * 0.1;
+    const serfTarget = Math.min(6 + Math.ceil(production * serfScale), mobilising ? 24 : 36);
     if (view.workers.serfs + queuedOf('serf') < serfTarget) {
       return { type: 'queueTraining', buildingId: guild.id, unit: 'serf' };
+    }
+    // Builders are deliberately last: the starting builder carries the whole
+    // opening; extra construction throughput is a late-game luxury only after
+    // every job is staffed and the logistics target is met.
+    const coinEngineRunning = view.buildings.some(b => b.key === 'mint' && b.worker);
+    const laborerTarget = coinEngineRunning && view.elapsed > 360 ? Math.min(3, Math.max(1, view.sites.length)) : 1;
+    if (view.workers.laborers + queuedOf('laborer') < laborerTarget) {
+      return { type: 'queueTraining', buildingId: guild.id, unit: 'laborer' };
     }
     return null;
   }
 
-  private planFighter(ctx: PolicyContext): GameCommand | null {
+  private planFighter(ctx: PolicyContext, civilianCoinReserve = 0): GameCommand | null {
     const { game, view, profile, rng } = ctx;
+    // Specialists come first. A queued barracks fighter must never spend the
+    // coin that turns a completed production building (or imminent site) into
+    // a working one. This is deliberately stronger than the ordinary reserve:
+    // once every post is covered, civilian and military queues may run in
+    // parallel again.
+    if (view.workers.unstaffed > 0) return null;
     let queuedTotal = 0;
+    const queuedByKind: Record<string, number> = {};
     const trainers: Building[] = [];
     for (const building of view.buildings) {
       if (!building.def.military || !building.active) continue;
-      queuedTotal += building.trainQ?.length ?? 0;
+      for (const kind of building.trainQ ?? []) {
+        queuedTotal++;
+        queuedByKind[kind] = (queuedByKind[kind] ?? 0) + 1;
+      }
       if ((building.trainQ?.length ?? 0) < 2) trainers.push(building);
     }
     if (!trainers.length || view.armySize + queuedTotal >= profile.armyCap) return null;
 
-    // Until the mint is staffed and earning, the last coins are earmarked for
-    // the minters — an army with no income behind it is a one-shot gamble that
-    // deadlocks the whole economy at zero coin.
-    const coinEngineRunning = view.buildings.some(b => b.key === 'mint' && b.worker);
-    const coinReserve = coinEngineRunning ? 0 : profile.workerReserveCoin;
+    // Worker coins are permanent working capital. A staffed mint can still run
+    // dry when its first ore vein exhausts or a miner dies; spending the final
+    // coins on fighters at that moment makes the whole economy unrecoverable.
+    const coinReserve = profile.workerReserveCoin + civilianCoinReserve;
 
     // A better player scouts the rival army and trains counters: the target
     // mix is reweighted toward what beats the enemy's dominant category (graded
     // by profile.counter). Full visibility, so it's the same read a human gets.
     const enemyDom = profile.counter > 0 ? dominantEnemyCategory(view.enemyArmyByKind) : null;
 
-    // Build the effective TARGET SHARE of each kind (unitMix × counter), then
-    // train toward it by picking the offered+affordable kind furthest BELOW its
-    // target. A weighted-random pick let the cheapest unit (soldier/archer) win
-    // by sheer affordability and flood the army — the measured 62-soldier
-    // plateau. Composition targeting instead fills out the roster: once the
-    // army is soldier-heavy, soldiers are over-target so knights, priests and
-    // SIEGE (the demolition core) are chosen the moment their inputs arrive.
+    // Allocate the final cap into exact per-kind slots. When all affordable
+    // kinds have filled their quotas, WAIT for the missing premium resource or
+    // trainer; never fill its reserved slots with another cheap archer.
     const target: Record<string, number> = {};
-    let targetSum = 0;
     for (const kind in profile.unitMix) {
       let w = profile.unitMix[kind as keyof typeof profile.unitMix] ?? 0;
-      if (enemyDom) w *= counterMultiplier(kind, enemyDom.cat, profile.counter * enemyDom.frac);
-      if (w > 0) { target[kind] = w; targetSum += w; }
+      const def = UNITS[kind as UnitKind];
+      if (enemyDom && !def?.heal && def?.model !== 'siege') {
+        w *= counterMultiplier(kind, enemyDom.cat, profile.counter * enemyDom.frac);
+      }
+      if (w > 0) target[kind] = w;
     }
-    const armyN = Math.max(1, view.armySize);
-    const have: Record<string, number> = {};
-    for (const unit of view.army) have[unit.role] = (have[unit.role] ?? 0) + 1;
+    const fullQuotas = allocateUnitQuotas(target, profile.armyCap);
+    const projected: Record<string, number> = { ...queuedByKind };
+    for (const unit of view.army) projected[unit.role] = (projected[unit.role] ?? 0) + 1;
+    const projectedTotal = Object.values(projected).reduce((sum, count) => sum + count, 0);
+    const availableKinds = new Set<string>();
+    for (const building of trainers) for (const training of building.def.military!.units) {
+      if ((target[training.kind] ?? 0) > 0) availableKinds.add(training.kind);
+    }
+    const availableFullSlots = [...availableKinds].reduce((sum, kind) => sum + (fullQuotas[kind] ?? 0), 0);
+    // Before the Stable/Engineer/Monastery stand, reserved premium slots must
+    // not leave the town defended by half an army. Reallocate only the first
+    // wave floor over the trainers that exist; once that defensive core stands,
+    // switch back to the exact final cap so every remaining slot is premium.
+    const quotas = projectedTotal < profile.attackArmy && availableFullSlots < profile.attackArmy
+      ? allocateUnitQuotas(Object.fromEntries([...availableKinds].map(kind => [kind, target[kind]])), profile.attackArmy)
+      : fullQuotas;
+    let structuralSiege = 0, priests = 0;
+    for (const kind in projected) {
+      const count = projected[kind] ?? 0;
+      const def = UNITS[kind as UnitKind];
+      if ((def?.structureMult ?? 1) > 1) structuralSiege += count;
+      if (def?.heal) priests += count;
+    }
+    const hasEngineer = trainers.some(trainer => trainer.key === 'engineer');
 
     let best: { building: Building; kind: string } | null = null;
     let bestDeficit = -Infinity;
     for (const building of trainers) {
       for (const training of building.def.military!.units) {
         const kind = training.kind;
-        if (!target[kind]) continue;
+        const quota = quotas[kind] ?? 0;
+        if (quota <= 0 || (projected[kind] ?? 0) >= quota) continue;
         const cost = game.modsFor(view.owner).unitCost(kind, training.cost) as Record<string, number>;
+        const def = UNITS[kind as UnitKind];
+        const structural = (def?.structureMult ?? 1) > 1;
+        // A one-timber horse archer must not consume every trickle forever
+        // while the Engineer waits for the ten-timber trebuchet lump. Reserve
+        // one missing engine at a time; the engine itself may spend the fund.
+        const siegeTimberReserve = !structural && structuralSiege < profile.minSiege
+          && hasEngineer ? 10 : 0;
         let ok = true;
         for (const item in cost) {
-          const reserve = item === 'coin' ? coinReserve : 0;
+          const reserve = item === 'coin' ? coinReserve : item === 'timber' ? siegeTimberReserve : 0;
           if (storeStock(game, view.owner, item) < cost[item] + reserve) { ok = false; break; }
         }
         if (!ok) continue;
-        // how far below its target share this kind sits (+ tiny rng jitter so
-        // ties vary between matches, deterministic per seed)
-        const deficit = target[kind] / targetSum - (have[kind] ?? 0) / armyN + rng.next() * 0.02;
+        // Normalized missing quota, plus tiny deterministic jitter for ties.
+        const essential = (def?.structureMult ?? 1) > 1 && structuralSiege < profile.minSiege
+          ? 20
+          : def?.heal && priests < profile.minPriests ? 15 : 0;
+        const deficit = essential + (quota - (projected[kind] ?? 0)) / quota + rng.next() * 0.002;
         if (deficit > bestDeficit) { bestDeficit = deficit; best = { building, kind }; }
       }
     }

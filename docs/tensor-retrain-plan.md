@@ -7,10 +7,12 @@ new baseline (fog of war, physical repair, three difficulty personas)._
 
 Two things changed under the committed model's feet:
 
-1. **The baseline moved.** `classic-godlike` is now the pro persona (early
-   6-fighter raids every 90 s + walls + late diverse army), all matches run
-   under **fog of war** (perception filtered per seat; raids double as
-   scouting), and both seats can **repair** (castle first). Every number in
+1. **The baseline moved.** `classic-godlike` is now the pro persona (four-rider
+   scouting raids after its stable comes online, stone walls/outposts, exact
+   production lines, and staged cavalry + siege + healer attacks), all matches
+   run under **fog of war** (perception filtered per seat; raids double as
+   scouting), and both seats can **repair** (castle first). The fixed convergence
+   smoke now has Godlike 6/6 over Hard. Every number in
    [tensor-strategy-poc.md](tensor-strategy-poc.md) was measured against the
    old stance-era Godlike with full visibility — the committed model's ~25%
    held-out win rate is stale and must be re-measured before anything else.

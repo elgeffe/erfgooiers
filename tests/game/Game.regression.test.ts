@@ -7,7 +7,7 @@ describe('Game deterministic regression guardrails', () => {
     const p1 = game.storeFor('p1');
     const p2 = game.storeFor('p2');
 
-    expect(gameplayFingerprintHash(game)).toBe('bd4b69a7');
+    expect(gameplayFingerprintHash(game)).toBe('86146d23');
 
     game.setEnemies({
       waves: [
@@ -20,15 +20,15 @@ describe('Game deterministic regression guardrails', () => {
     expect(game.trainUnit(game.guild, 'serf')).toBe(true);
     game.setBell('p1', true);
 
-    expect(gameplayFingerprintHash(game)).toBe('a1bb1489');
+    expect(gameplayFingerprintHash(game)).toBe('b659ca79');
     tick(game, 2);
-    expect(gameplayFingerprintHash(game)).toBe('042c4374');
+    expect(gameplayFingerprintHash(game)).toBe('ba693ab8');
 
     game.setBell('p1', false);
     tick(game, 18);
-    // golden regenerated 2026-07: the castle's raised HP (750 → 2500) shifts the
-    // building-HP terms of the fingerprint from the opening tick onward
-    expect(gameplayFingerprintHash(game)).toBe('e38e7c85');
+    // Golden regenerated 2026-07 after castle HP was tuned from 2500 to 2000;
+    // building HP participates in the deterministic fingerprint from tick zero.
+    expect(gameplayFingerprintHash(game)).toBe('2776d10e');
   });
 
   it('launches a timed wave on its exact fixed-step boundary', () => {

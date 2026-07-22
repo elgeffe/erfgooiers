@@ -65,6 +65,20 @@ export interface AIControllerOptions {
   macro?: MacroPolicy;
 }
 
+/** CPU time is the meaningful headless budget: wall-clock `performance.now()`
+ *  includes time a Vitest/campaign worker was descheduled by another match and
+ *  made the efficiency regression nondeterministically fail under load. */
+function cpuClockMs(): number {
+  const proc = (globalThis as typeof globalThis & {
+    process?: { cpuUsage: () => { user: number; system: number } };
+  }).process;
+  if (proc?.cpuUsage) {
+    const usage = proc.cpuUsage();
+    return (usage.user + usage.system) / 1000;
+  }
+  return performance.now();
+}
+
 export class AIController {
   readonly playerId: PlayerId;
   readonly profile: AIProfile;
@@ -121,7 +135,7 @@ export class AIController {
     const runTactics = this.tactics && this.tacticsT >= this.profile.tacticsPeriod;
     if (!runMacro && !runTactics) return;
 
-    const t0 = performance.now();
+    const t0 = cpuClockMs();
     this.view = perceive(this.game, this.world, this.playerId);
     if (this.view.eliminated || (!this.view.store && this.view.elapsed > 1)) { this.done = true; return; }
     const ctx: PolicyContext = {
@@ -144,7 +158,7 @@ export class AIController {
         this.dispatch(this.macro!.plan(ctx));
       }
     }
-    const cost = performance.now() - t0;
+    const cost = cpuClockMs() - t0;
     this.stats.cpuMsTotal += cost;
     if (cost > this.stats.cpuMsMax) this.stats.cpuMsMax = cost;
   }

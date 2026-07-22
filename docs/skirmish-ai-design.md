@@ -1,6 +1,8 @@
 # Skirmish AI — solo vs CPU, difficulty ladder, and experimental agents
 
-Status: **Phases 0–2 implemented; the balance pass is the open work** (July 2026).
+Status: **Phases 0–2 implemented; the July 2026 Classic baseline balance pass is
+complete**. Human playtesting and a broad 100+ seed campaign remain before the
+difficulty ladder is treated as final.
 The `src/ai/` layer (perception → classic strategy → tactics → actuation behind
 `AIController`), the `idle`/`random` seam-provers, `src/data/aiProfiles.ts`,
 replay record/re-simulate (`src/game/replay.ts`), the browser **Skirmish vs CPU**
@@ -18,16 +20,15 @@ against the Godlike baseline — the `tensor` policy/profile, `src/ai/tensor/`,
 [tensor-strategy-poc.md](tensor-strategy-poc.md). The rest of Phases 3+
 (state-conditioned learned/adaptive AI, online seats) remain unimplemented.
 
-**Baseline update (July 2026, post-balance-pass).** Three changes reshaped the
+**Baseline update (July 2026, post-balance-pass).** Four changes reshaped the
 scripted baseline and its training conditions:
 1. **Stances are gone.** The difficulty × stance matrix (nine Classic profiles)
    collapsed into three difficulty PERSONAS (`classic-easy`/`-hard`/`-godlike`)
    to shrink the training/evaluation permutations. Easy is a slow defensive
    homesteader; Hard is a defensive fortress with a slow fuse that breaks out
    late with one big wave (high `attackArmy`, long `minAttackInterval`);
-   Godlike is the pro — an early raid party pesters the rival's economy (and
-   scouts) from the opening while walls rise and a large diverse late-game
-   army compounds behind them.
+   Godlike is the pro — mounted raids scout and harass once its stable is online,
+   while stone defences rise and a large diverse army compounds behind them.
 2. **Fog of war shipped**, default ON in skirmish. Perception filters hostile
    fighters and bulwarks by the seat's own sight (the fairness boundary works
    as designed); the rival castle's corner and map resources stay known (map
@@ -36,6 +37,14 @@ scripted baseline and its training conditions:
 3. **Repair is a physical action** (serfs haul half the build cost, a builder
    mends over ~30 s/full HP) and the shared Tactics layer orders it: the
    castle at the first real dent (< 80%), lesser buildings below half.
+4. **Classic now plans complete production lines and combined arms.** Every
+   woodcutter has a matching sawmill; every mint adds dedicated gold and coal;
+   every smithy/armory pair adds dedicated iron and coal. Foresters are placed
+   inside an uncovered woodcutter's working radius, and Godlike reserves timber
+   for trebuchets instead of spending every trickle on horse archers. Scheduled
+   attacks preserve siege/healer slots, stage a cavalry flank and rear support,
+   clear field defenders and towers before the castle, and do not count a small
+   reactive counterstroke as a full escalating wave.
 Self-play, the campaign ladder and dataset extraction all run under this
 baseline (fog on), which is what the tensor track retrains against next.
 
@@ -45,43 +54,45 @@ ore spread (coal deepest — it feeds the mint AND every smithy AND armory) plus
 a contested gold-and-ore cluster at map centre. `src/game/fortification.ts` is
 the shared curtain-wall planner (gates keep baileys working; sieges breach the
 nearest gate); walls cost 2 stone so layers are affordable, and the Classic bot
-rings its castle on the wall-building personas (Hard and Godlike). The Classic macro no longer
-plateaus: a tier-scaled `expansion` knob (Easy 0 / Hard 1 / Godlike 2) keeps
-compounding producers, chosen by a **producer/consumer balance** model (build
+raises wooden defences for Hard and stone defences plus guarded forward resource
+outposts for Godlike. Fortification curtains snap to a cardinal two-tile stride,
+so diagonal approaches no longer produce overlapping 2×2 wall footprints. The
+Classic macro no longer plateaus: a tier-scaled `expansion` knob (Easy 1 / Hard 2 /
+Godlike 3) keeps compounding producers, chosen by a **producer/consumer balance** model (build
 more of a raw miner while the buildings burning its output outnumber it — a
 stock snapshot can't tell a healthy ~0 intermediate from a starved one), and
-serfs scale with the economy so a sprawling base actually hauls its ore. The
-bot also paves roads (after a quarry, funded by a second) and reactively
-counters the rival's army composition (graded by tier).
+serfs scale with the economy while leaving coin capacity for mobilization. Broad
+placement search leaves three-tile lanes around ordinary 2×2 buildings, but
+dependency anchors keep resource infrastructure functionally local. The bot also
+paves roads (after a quarry, funded by a second) and reactively counters the
+rival's field composition without letting visible siege/healers distort that mix.
 
-**Known limitation → next session's work.** Godlike now expands endlessly, hauls
-its ore, fields a big army (to its cap) with cavalry, and beats Hard — but the
-*full* unit roster (knights, siege, priests) stays out of reach, and the ≥80%
-tier separation is not met (6-seed and 100-seed campaigns put Hard-vs-Easy
-~64–71% and Godlike-vs-Hard ~49–59%). Both trace to the same unsolved problem:
-**production-line balance and its backward chain to unit composition.** See
-[Backward planning: the open balance problem](#backward-planning-the-open-balance-problem).
-Tuning lessons the tournaments established and that the next pass should respect:
-tempo beats greed at every tier; construction parallelism beyond the builder
-count delays everything; raids into stronger garrisons invite base-razing
-counter-chases; the defensive stance sweep stops pursuit suicide; a hidden serf
-cap silently starves a big economy's whole weapon chain.
+**Current validation.** The deliberately sequential 20-minute convergence smoke
+passed on fixed, seat-alternating seeds: Hard beat Easy 6/6 on seeds 6200–6205;
+after that gate passed, Godlike beat Hard 6/6 on seeds 7200–7205. Both runs had
+zero rejected commands; the Godlike run also had zero throttled commands and all
+six replay re-simulations matched. These are strong regression fixtures, not a
+substitute for the Phase 2 ≥100-seed acceptance campaign or human playtesting.
+The exact commands and results are recorded in
+[the Classic baseline convergence note](ai-experiments/2026-07-classic-baseline-convergence.md).
+
+The tuning lessons remain: tempo beats greed at every tier; construction
+parallelism beyond the builder count delays everything; raids into stronger
+garrisons invite base-razing counter-chases; defensive stances stop pursuit
+suicide; spreading a settlement must preserve local production dependencies;
+and aggregate "first attack" telemetry must distinguish raids, defensive orders,
+counterstrokes and scheduled waves.
 
 Companion documents: [skirmish-design.md](skirmish-design.md) (the PvP mode this AI
 plays), [tensor-networks-for-logistics.md](tensor-networks-for-logistics.md) (the
 prior reality check whose fail-fast discipline the research track inherits).
 
-## Backward planning: the open balance problem
+## Backward planning in the Classic baseline
 
-The unit-diversity and ladder-separation work left for the next session is one
-problem, and it is best attacked **backwards, from the goal**, not forwards from
-the economy. The forward approach — "build producers, then see what army falls
-out" — is what this pass did, and it kept hitting a moving bottleneck (caps →
-coal → iron → hauling → armour), because each fix exposed the next starved
-stage. The insight to carry in: **it is a two-way street. The army composition
-we want dictates the production lines that must run, which dictate the resources
-that must flow and how, which dictates what the map and the economy must
-provide.** So plan the chain in reverse:
+The balance pass implements the economy **backwards, from the target army**, not
+by building arbitrary producers and accepting whatever army falls out. The army
+composition dictates the production lines that must run, which dictate the
+resources and logistics the town must supply:
 
 1. **Target army** — the diverse force each tier should field (e.g. Godlike:
    soldiers + pikemen + archers + knights + cavalry + a little siege + a priest).
@@ -100,12 +111,14 @@ provide.** So plan the chain in reverse:
    (`src/world/World.ts`), and unit costs/recipes (`src/data/*`). All four
    layers exist to serve the target army; tune them together, backwards from it.
 
-Concrete next steps: (a) a target-composition-driven training/build planner that
-reserves armour throughput for knights before the army fills with soldiers;
-(b) a second guild hall for the expanding tiers so civilian training keeps pace;
-(c) re-run `npm run campaign` at 100+ seeds after each change and commit the
-matrix to `docs/ai-experiments/`; (d) only then judge whether the ≥80% ladder
-separation is reachable by hand-tuning or needs the Phase 3 learned policy.
+The implementation uses exact cap quotas so cheap barracks units cannot consume
+slots reserved for cavalry, siege or priests. Before the advanced trainers stand,
+the available roster temporarily owns enough slots to form the first defensive
+army; afterwards the final diverse quotas take over. Supplier-first line planners
+enforce the timber, coin and arms invariants, while a timber reserve lets the
+Engineer accumulate each ten-timber trebuchet purchase. The next measurement
+step is the broad campaign and playtest, followed by retraining every experimental
+policy against this materially stronger baseline.
 
 ## The epic
 
@@ -162,10 +175,10 @@ The hard parts of an RTS bot substrate already exist in this codebase:
   already runs the full simulation with no renderer and no DOM. The self-play
   pipeline is a Node loop around what the test suite does today, at far faster than
   real time.
-- **Symmetric information.** Skirmish currently has no fog of war, so "the AI sees
-  everything" is not an advantage — the human sees everything too. If fog ever
-  ships, AI perception must be filtered through the same visibility rules as the
-  local player's view (see Risks).
+- **Symmetric information.** Fog of war is on by default in skirmish. AI
+  perception filters hostile fighters, walls and towers through the same
+  owner-scoped visibility used by the human view; known spawn corners and map
+  resource nodes remain shared arena knowledge.
 
 ## Agent architecture
 
@@ -221,7 +234,7 @@ skill ladder AND the temperament, keeping the training matrix small.)
 
 | Axis | Values | What it changes |
 |---|---|---|
-| Difficulty persona | Easy (slow defensive homesteader), Hard (defensive fortress, late big-wave breakout), Godlike (pro: early raids + walled buildup + diverse late army) | Reaction latency, action budget (commands/min), planning quality, expansion depth, tower/wall appetite, attack threshold & cadence, raid pattern, deliberate error rate on Easy |
+| Difficulty persona | Easy (slow defensive homesteader), Hard (defensive fortress, late big-wave breakout), Godlike (pro: remote outposts + mounted scouting + stone defence + staged combined arms) | Reaction latency, action budget (commands/min), planning quality, expansion depth, tower/wall appetite, attack threshold & cadence, raid pattern, deliberate error rate on Easy |
 | Policy | Classic, Adaptive (learned), Experimental (research winners) | Which strategy implementation drives the macro layer |
 
 "Exponentially increasing" difficulty is defined *empirically*, not by adjectives:

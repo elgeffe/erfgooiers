@@ -97,17 +97,40 @@ function marketBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
 function woodenWall(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   const timber = mkMat(def.wall, ghost), dark = mkMat(def.accent ?? 0x4b3222, ghost);
-  for (let x = -0.82; x <= 0.82; x += 0.205) {
+  const centre = new THREE.Group();
+  const addPost = (parent: THREE.Group, x: number, z: number): void => {
     const post = new THREE.Mesh(cyl(0.12, 0.12, 1.35, 7), timber);
-    post.position.set(x, 0.68, 0); post.castShadow = !ghost; g.add(post);
+    post.position.set(x, 0.68, z); post.castShadow = !ghost; parent.add(post);
     const point = new THREE.Mesh(cone(0.13, 0.3, 7), timber);
-    point.position.set(x, 1.5, 0); g.add(point);
-  }
-  for (const y of [0.42, 1.02]) {
-    const rail = new THREE.Mesh(box(1.9, 0.16, 0.2), dark);
-    rail.position.set(0, y, -0.13); g.add(rail);
+    point.position.set(x, 1.5, z); parent.add(point);
+  };
+  addPost(centre, 0, 0); g.add(centre);
+  for (const [name, dx, dz] of [['north', 0, -1], ['east', 1, 0], ['south', 0, 1], ['west', -1, 0]] as const) {
+    const arm = new THREE.Group(); arm.name = `wall-${name}`;
+    for (const distance of [0.205, 0.41, 0.615, 0.82]) addPost(arm, dx * distance, dz * distance);
+    for (const y of [0.42, 1.02]) {
+      const rail = new THREE.Mesh(box(dx ? 0.95 : 0.2, 0.16, dz ? 0.95 : 0.2), dark);
+      rail.position.set(dx * 0.47, y, dz * 0.47); arm.add(rail);
+    }
+    arm.visible = name === 'east' || name === 'west'; g.add(arm);
   }
   return g;
+}
+
+/** Select the arms of a wooden palisade segment from its cardinal neighbours.
+ *  Corners, T-junctions and crossings are all the same composable model. */
+export function configureWoodenWall(mesh: THREE.Group, neighbours: { north: boolean; east: boolean; south: boolean; west: boolean }): void {
+  const connected = Object.values(neighbours).filter(Boolean).length;
+  // A new isolated segment keeps the placement rotation's traditional line;
+  // once connected, every real neighbour gets an arm from the centre post.
+  const fallback = Math.abs(Math.sin(mesh.rotation.y)) > 0.5
+    ? { north: true, east: false, south: true, west: false }
+    : { north: false, east: true, south: false, west: true };
+  for (const name of ['north', 'east', 'south', 'west'] as const) {
+    const arm = mesh.getObjectByName(`wall-${name}`);
+    if (arm) arm.visible = connected ? neighbours[name] : fallback[name];
+  }
+  mesh.rotation.y = 0;
 }
 
 function woodenGate(def: BuildingDef, ghost: boolean): THREE.Group {

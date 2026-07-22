@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { AI_PROFILES } from '../../src/data/aiProfiles';
-import { runSelfPlayMatch, type SelfPlayResult } from '../../src/ai/selfplay';
+import { runSelfPlayMatch, type MatchSeatSample, type SelfPlayResult } from '../../src/ai/selfplay';
 import { resimulateReplay, serializeReplay } from '../../src/game/replay';
 import { SKIRMISH_LEVEL } from '../../src/data/skirmishLevels';
 import type { PlayerId } from '../../src/types';
@@ -115,6 +115,19 @@ function accumulate(tally: PairTally, result: SelfPlayResult, aSeat: PlayerId): 
 const mean = (values: number[]): number => values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0;
 const pct = (n: number, of: number): string => of ? `${Math.round(100 * n / of)}%` : '—';
 const minutes = (seconds: number): string => `${(seconds / 60).toFixed(1)}m`;
+const mix = (counts: Record<string, number | undefined>): string => Object.entries(counts)
+  .filter(([, count]) => !!count)
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([key, count]) => `${key}:${count}`)
+  .join(',') || '—';
+
+function finalSummary(profile: string, sample: MatchSeatSample): string {
+  const castle = sample.castleMaxHp > 0 ? `${Math.round(100 * sample.castleHp / sample.castleMaxHp)}%` : '—';
+  return `${profile} · army ${sample.army} [${mix(sample.armyByKind)}] · workers ${sample.workers} [${mix(sample.workersByRole)}] `
+    + `· buildings ${sample.buildings} [${mix(sample.buildingsByKey)}] · sites ${sample.sites} [${mix(sample.sitesByKey)}] `
+    + `· stock c${sample.coin}/t${sample.timber}/s${sample.stone}/tr${sample.trunk}/g${sample.goldore}/co${sample.coal}/i${sample.iron}/w${sample.weapon}/a${sample.armor}/b${sample.bread} `
+    + `· castle ${castle} · gap ${sample.meanNearestBuildingGap.toFixed(2)}`;
+}
 
 function main(): void {
   const options = parseArgs(process.argv.slice(2));
@@ -148,6 +161,8 @@ function main(): void {
         `  ${matchId}  →  ${winnerName.padEnd(24)} (${result.outcome.reason}, ${minutes(result.outcome.ticks / 20)} sim, `
         + `${(result.wallMs / 1000).toFixed(1)}s wall, ${speed.toFixed(0)}× realtime, `
         + `cmd ${result.stats.p1.commands}/${result.stats.p2.commands}, rej ${result.stats.p1.rejected + result.stats.p2.rejected})`);
+      console.log(`     p1 ${finalSummary(p1, result.final.seats.p1)}`);
+      console.log(`     p2 ${finalSummary(p2, result.final.seats.p2)}`);
       if (options.replays) writeFileSync(join(options.out, `${matchId}.replay.json`), serializeReplay(result.replay));
       if (options.checkReplays) {
         const check = resimulateReplay(result.replay);
@@ -158,7 +173,7 @@ function main(): void {
       reportMatches.push({
         matchId, seed, p1, p2, outcome: result.outcome,
         fingerprint: result.fingerprint, wallMs: Math.round(result.wallMs),
-        stats: result.stats, samples: result.samples,
+        stats: result.stats, samples: result.samples, final: result.final,
       });
     }
   }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { dominantEnemyCategory, counterMultiplier } from '../../src/ai/strategy/classic';
+import {
+  allocateUnitQuotas,
+  counterMultiplier,
+  dominantEnemyCategory,
+  selectUncoveredWoodcutter,
+} from '../../src/ai/strategy/classic';
 
 describe('reactive counter-composition', () => {
   it('reads the rival army\'s dominant category, ignoring trivial forces', () => {
@@ -8,6 +13,9 @@ describe('reactive counter-composition', () => {
     expect(dominantEnemyCategory({ archer: 6, soldier: 2 })).toMatchObject({ cat: 'ranged' });
     expect(dominantEnemyCategory({ soldier: 5, knight: 3 })).toMatchObject({ cat: 'melee' });
     expect(dominantEnemyCategory({ lancer: 4, horseknight: 3, soldier: 1 })).toMatchObject({ cat: 'mounted' });
+    expect(dominantEnemyCategory({ priest: 5, trebuchet: 5 })).toBeNull();
+    expect(dominantEnemyCategory({ priest: 5, trebuchet: 5, archer: 4, soldier: 1 }))
+      .toMatchObject({ cat: 'ranged', frac: 0.8 });
     const lopsided = dominantEnemyCategory({ archer: 9, soldier: 1 })!;
     expect(lopsided.cat).toBe('ranged');
     expect(lopsided.frac).toBeCloseTo(0.9, 5);
@@ -27,5 +35,37 @@ describe('reactive counter-composition', () => {
     for (const kind of ['pikeman', 'archer', 'knight', 'soldier']) {
       expect(counterMultiplier(kind, 'mounted', 0)).toBe(1);
     }
+  });
+});
+
+describe('target army quotas', () => {
+  it('fills the exact cap while reserving slots for every weighted premium role', () => {
+    const quotas = allocateUnitQuotas({
+      soldier: 4, archer: 4, pikeman: 1, knight: 2,
+      lancer: 2, onager: 2, trebuchet: 3, priest: 2,
+    }, 75);
+
+    expect(Object.values(quotas).reduce((sum, count) => sum + count, 0)).toBe(75);
+    for (const kind of ['knight', 'lancer', 'onager', 'trebuchet', 'priest']) {
+      expect(quotas[kind], `${kind} lost its reserved cap slots`).toBeGreaterThan(0);
+    }
+  });
+
+  it('is deterministic at tied remainders', () => {
+    const weights = { soldier: 1, archer: 1, pikeman: 1 };
+    expect(allocateUnitQuotas(weights, 5)).toEqual(allocateUnitQuotas(weights, 5));
+    expect(allocateUnitQuotas(weights, 5)).toEqual({ archer: 2, pikeman: 2, soldier: 1 });
+  });
+});
+
+describe('timber ecosystem coverage', () => {
+  it('selects only woodcutters outside every forester working radius', () => {
+    const woodcutters = [{ x: 10, y: 10 }, { x: 30, y: 10 }];
+    expect(selectUncoveredWoodcutter(woodcutters, [{ x: 15, y: 10 }])).toEqual({ x: 30, y: 10 });
+    expect(selectUncoveredWoodcutter(woodcutters, [{ x: 15, y: 10 }, { x: 24, y: 10 }])).toBeNull();
+  });
+
+  it('uses coordinate order rather than input order for deterministic selection', () => {
+    expect(selectUncoveredWoodcutter([{ x: 30, y: 20 }, { x: 10, y: 10 }], [])).toEqual({ x: 10, y: 10 });
   });
 });

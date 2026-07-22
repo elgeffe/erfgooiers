@@ -19,7 +19,7 @@ export {
   makeUnit, makeUnitCorpse,
 } from './unitModels';
 
-export { makeBuilding, makeScaffold } from './buildingModels';
+export { configureWoodenWall, makeBuilding, makeScaffold } from './buildingModels';
 
 export {
   CRITTER_KINDS, makeCritter, makeFish, makePig, makeSkyBird,

@@ -80,6 +80,7 @@ export class PlacementSystem {
       if (tile.deco) this.removeDecoration(x, y);
     }
     this.buildings.push(building);
+    this.refreshWoodenWallsAround(building);
     if (instant) building.active = true;
     // The "wants plots" crystal is a prompt to its owner, so only the player who
     // placed the building sees it — in co-op the ally's fields carry no marker.
@@ -318,23 +319,23 @@ export class PlacementSystem {
     return banned;
   }
 
-  tryPlace(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId): void {
+  tryPlace(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId): boolean {
     if (this.disabledBuildings().includes(key)) {
       this.ports.sfx('error');
       this.ports.toast(`No ${DEFS[key].name.toLowerCase()} can be raised in ${this.world.biome.name}`, 'err', owner);
-      return;
+      return false;
     }
     if (!this.canPlace(key, tx, ty, rot)) {
-      this.ports.sfx('error'); this.ports.toast("Cannot build here — don't cover or seal off another building's doorway", 'err', owner); return;
+      this.ports.sfx('error'); this.ports.toast("Cannot build here — don't cover or seal off another building's doorway", 'err', owner); return false;
     }
     const def = DEFS[key];
     // Mines and quarries must stand within reach of live deposits — their
     // miners gather from those tiles, so a site out of range could never work.
-    if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.ports.toast('No stone deposits in range — build near the grey rocks', 'err', owner); return; }
-    if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.ports.toast('No gold deposits in range', 'err', owner); return; }
-    if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.ports.toast('No coal deposits in range', 'err', owner); return; }
-    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.ports.toast('No iron deposits in range — build near the rusty rocks', 'err', owner); return; }
-    if (def.gather?.node === 'fish' && !this.fishingSpotInRange(tx, ty, def.gather.range)) { this.ports.toast('No open water in range — build on the shore', 'err', owner); return; }
+    if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.ports.toast('No stone deposits in range — build near the grey rocks', 'err', owner); return false; }
+    if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.ports.toast('No gold deposits in range', 'err', owner); return false; }
+    if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.ports.toast('No coal deposits in range', 'err', owner); return false; }
+    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.ports.toast('No iron deposits in range — build near the rusty rocks', 'err', owner); return false; }
+    if (def.gather?.node === 'fish' && !this.fishingSpotInRange(tx, ty, def.gather.range)) { this.ports.toast('No open water in range — build on the shore', 'err', owner); return false; }
     if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.ports.toast('Warning: few trees nearby', 'err', owner);
     const cost = this.modsFor(owner).buildingCost(def) as Record<string, number>;
     for (const item in cost) {
@@ -346,6 +347,7 @@ export class PlacementSystem {
     this.placeSite(key, tx, ty, rot, owner);
     this.ports.sfx('place');
     this.ports.toast(`${def.name} site placed — serfs will deliver materials`, undefined, owner);
+    return true;
   }
 
   paintRoad(tx: number, ty: number, owner: PlayerId): void {
@@ -446,7 +448,28 @@ export class PlacementSystem {
     this.markets.removeBuilding(building);
     this.view.remove(building.mesh);
     this.buildings.splice(this.buildings.indexOf(building), 1);
+    this.refreshWoodenWallsAround(building);
     if (this.ports.selected() === building) this.ports.select(null);
+  }
+
+  /** Re-resolve neighbouring palisade arms after construction or demolition.
+   *  Buildings occupy 2×2 tiles, hence cardinal neighbours are two tiles away. */
+  private refreshWoodenWallsAround(changed: Building): void {
+    const fortification = (building: Building | null | undefined): building is Building =>
+      !!building && !building.removed && building.owner === changed.owner
+      && (building.key === 'woodwall' || building.key === 'woodgate');
+    const at = (x: number, y: number): Building | null => this.world.T(x, y)?.b ?? null;
+    const candidates = new Set<Building>();
+    for (const [dx, dy] of [[0, 0], [0, -2], [2, 0], [0, 2], [-2, 0]]) {
+      const building = at(changed.x + dx, changed.y + dy);
+      if (building?.key === 'woodwall') candidates.add(building);
+    }
+    for (const wall of candidates) this.view.configureWoodenWall?.(wall.mesh, {
+      north: fortification(at(wall.x, wall.y - 2)),
+      east: fortification(at(wall.x + 2, wall.y)),
+      south: fortification(at(wall.x, wall.y + 2)),
+      west: fortification(at(wall.x - 2, wall.y)),
+    });
   }
 
   private openGround(tx: number, ty: number): boolean {
