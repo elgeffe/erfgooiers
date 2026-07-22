@@ -2,11 +2,11 @@ import type { BuildingDef, BuildingKey, ItemKey } from '../types';
 import type { ObjectiveDef } from '../game/Objectives';
 
 export const DEFS: Record<BuildingKey, BuildingDef> = {
-  storehouse: { name: 'Castle', desc: 'A fortified depot: stores every good and looses arrows at raiders. Build more to shorten haul routes', model: 'castle',
+  storehouse: { name: 'Castle', desc: 'A fortified depot: stores every good and shoots arrows at enemies', model: 'castle',
     cost: { timber: 12, stone: 16 }, roof: 0x9a3b2e, wall: 0xb3aea2, store: true, hp: 2500,
     tower: { range: 7, dmg: 8, rate: 1.6 } },
 
-  guildhall: { name: 'Guild Hall', desc: 'Trains villagers who staff your buildings (also serfs & builders)', model: 'guildhall',
+  guildhall: { name: 'Guild Hall', desc: 'Trains villagers, serfs and builders', model: 'guildhall',
     cost: { timber: 4, stone: 3 }, roof: 0x46606e, wall: 0x9a5a40, accent: 0xffd24a, hp: 250,
     trainer: { units: [
       { kind: 'villager', cost: { coin: 1 }, time: 5,
@@ -18,19 +18,19 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     ] } },
 
   woodcutter: { name: "Woodcutter's Hut", desc: 'Chops nearby trees → trunks', model: 'cottage',
-    cost: { timber: 2, stone: 1 }, roof: 0x6b4a2f, wall: 0xa07850,
+    cost: { timber: 2, stone: 0 }, roof: 0x6b4a2f, wall: 0xa07850,
     gather: { node: 'tree', out: 'trunk', time: 3.5, range: 9 }, worker: 'Woodcutter', wcolor: 0x6b8e4e },
 
   forester: { name: "Forester's Lodge", desc: 'Plants new trees nearby', model: 'cottage',
     cost: { timber: 2, stone: 1 }, roof: 0x3f6d3a, wall: 0xa07850,
-    gather: { node: 'plant', out: null, time: 2.5, range: 7 }, worker: 'Forester', wcolor: 0x3f6d3a },
+    gather: { node: 'plant', out: null, time: 2.5, range: 9 }, worker: 'Forester', wcolor: 0x3f6d3a },
 
   sawmill: { name: 'Sawmill', desc: 'Trunks → timber', model: 'cottage',
-    cost: { timber: 3, stone: 2 }, roof: 0xa0662d, wall: 0xb08a5c, accent: 0x8a5a2b,
+    cost: { timber: 2, stone: 1 }, roof: 0xa0662d, wall: 0xb08a5c, accent: 0x8a5a2b,
     recipe: { inp: { trunk: 1 }, out: 'timber', time: 5 }, worker: 'Carpenter', wcolor: 0xb08a5c },
 
   quarry: { name: 'Quarry', desc: 'Mines stone deposits', model: 'mine',
-    cost: { timber: 1, stone: 0 }, roof: 0x777d82, wall: 0x9aa0a3, accent: 0xc4cace,
+    cost: { timber: 2, stone: 0 }, roof: 0x777d82, wall: 0x9aa0a3, accent: 0xc4cace,
     gather: { node: 'stone', out: 'stone', time: 4.5, range: 9 }, worker: 'Stonemason', wcolor: 0x9aa0a3 },
 
   farm: { name: 'Farm', desc: 'Grows & harvests wheat on its plots', model: 'farm',
@@ -47,48 +47,46 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
 
   goldmine: { name: 'Gold Mine', desc: 'Mines gold ore deposits', model: 'mine',
     cost: { timber: 2, stone: 1 }, roof: 0xb8912e, wall: 0x8f8a80, accent: 0xffd24a,
-    gather: { node: 'gold', out: 'goldore', time: 5.5, range: 9 }, worker: 'Miner', wcolor: 0xc9a94e },
+    gather: { node: 'gold', out: 'goldore', time: 5, range: 9 }, worker: 'Miner', wcolor: 0xc9a94e },
 
   coalmine: { name: 'Coal Mine', desc: 'Mines coal deposits', model: 'mine',
     cost: { timber: 2, stone: 1 }, roof: 0x3a3a40, wall: 0x8f8a80, accent: 0x2a2a30,
-    gather: { node: 'coal', out: 'coal', time: 5.5, range: 9 }, worker: 'Collier', wcolor: 0x44444c },
+    gather: { node: 'coal', out: 'coal', time: 5, range: 9 }, worker: 'Collier', wcolor: 0x44444c },
 
   mint: { name: 'Mint', desc: 'Gold ore + coal → coins deposited directly into global stock', model: 'cottage',
     cost: { timber: 2, stone: 3 }, roof: 0xd9a441, wall: 0x9c8a6a, accent: 0xffd24a,
-    recipe: { inp: { goldore: 1, coal: 1 }, out: 'coin', time: 6, globalOutput: true }, worker: 'Minter', wcolor: 0xd4af37 },
+    recipe: { inp: { goldore: 1, coal: 1 }, out: 'coin', time: 5, globalOutput: true }, worker: 'Minter', wcolor: 0xd4af37 },
 
-  market: { name: 'Market', desc: 'Assign surplus goods to export; invulnerable horse traders arrive automatically and pay in coin', model: 'cottage',
-    cost: { timber: 4, stone: 2 }, roof: 0xb54f38, wall: 0xc8aa78, accent: 0xffd24a, hp: 180 },
+  market: { name: 'Market', desc: 'Assign surplus goods to export for coin', model: 'cottage',
+    cost: { timber: 4, stone: 3 }, roof: 0xb54f38, wall: 0xc8aa78, accent: 0xffd24a, hp: 180 },
 
   vineyard: { name: 'Vineyard', desc: 'Grows & harvests grapes on its plots', model: 'farm',
     cost: { timber: 3, stone: 1 }, roof: 0x6a3d6e, wall: 0xb08a5c,
-    gather: { node: 'field', out: 'grape', time: 2.5, range: 0 }, worker: 'Vintner', wcolor: 0x7a4b8a, fields: true, plots: 6 },
+    gather: { node: 'field', out: 'grape', time: 5, range: 0 }, worker: 'Vintner', wcolor: 0x7a4b8a, fields: true, plots: 6 },
 
   winery: { name: 'Winery', desc: 'Grapes → wine', model: 'cottage',
-    cost: { timber: 2, stone: 2 }, roof: 0x5c1f2b, wall: 0xc4a075, accent: 0x7b2233,
-    recipe: { inp: { grape: 1 }, out: 'wine', time: 6 }, worker: 'Winemaker', wcolor: 0x7b2233 },
+    cost: { timber: 2, stone: 3 }, roof: 0x5c1f2b, wall: 0xc4a075, accent: 0x7b2233,
+    recipe: { inp: { grape: 1 }, out: 'wine', time: 5 }, worker: 'Winemaker', wcolor: 0x7b2233 },
 
   pigfarm: { name: 'Pig Farm', desc: 'Pigs graze pasture plots → meat', model: 'farm',
-    cost: { timber: 3, stone: 2 }, roof: 0xb56a6a, wall: 0xb08a5c, accent: 0xc96b6b,
-    gather: { node: 'field', out: 'meat', time: 3, range: 0 }, worker: 'Swineherd', wcolor: 0xc96b6b, fields: true, plots: 6 },
+    cost: { timber: 2, stone: 1 }, roof: 0xb56a6a, wall: 0xb08a5c, accent: 0xc96b6b,
+    gather: { node: 'field', out: 'meat', time: 5, range: 0 }, worker: 'Swineherd', wcolor: 0xc96b6b, fields: true, plots: 6 },
 
   butcher: { name: 'Butchery', desc: 'Meat → sausages', model: 'cottage',
-    cost: { timber: 2, stone: 2 }, roof: 0x7a3320, wall: 0xc4a075, accent: 0x9c4a2f,
-    recipe: { inp: { meat: 1 }, out: 'sausage', time: 6 }, worker: 'Butcher', wcolor: 0x9c4a2f },
+    cost: { timber: 2, stone: 3 }, roof: 0x7a3320, wall: 0xc4a075, accent: 0x9c4a2f,
+    recipe: { inp: { meat: 1 }, out: 'sausage', time: 5 }, worker: 'Butcher', wcolor: 0x9c4a2f },
 
   tavern: { name: 'Tavern', desc: 'Stock it for worker buffs: bread speeds serfs, fish/clams speed gathering, sausage speeds building, wine slows hunger', model: 'tavern',
     cost: { timber: 4, stone: 3 }, roof: 0x8a5a2b, wall: 0xcaa46e, accent: 0xffb060,
-    tavern: { foods: ['bread', 'sausage', 'wine', 'fish', 'clam'], capacity: 6, time: 4 }, worker: 'Taverner', wcolor: 0xb5763a },
+    tavern: { foods: ['bread', 'sausage', 'wine', 'fish', 'clam'], capacity: 8, time: 4 }, worker: 'Taverner', wcolor: 0xb5763a },
 
   fishery: { name: 'Fishery', desc: 'Nets fish from the lake — build on the shore', model: 'cottage',
-    cost: { timber: 3, stone: 1 }, roof: 0x3f6f7a, wall: 0xbfae8e, accent: 0x7fb0c4,
-    gather: { node: 'fish', out: 'fish', time: 4, range: 6 }, worker: 'Fisher', wcolor: 0x4f93a8 },
+    cost: { timber: 2, stone: 0 }, roof: 0x3f6f7a, wall: 0xbfae8e, accent: 0x7fb0c4,
+    gather: { node: 'fish', out: 'fish', time: 5, range: 6 }, worker: 'Fisher', wcolor: 0x4f93a8 },
 
-  // Coastal lands only (the Zeeland Delta, Texel): the tidal flats are a food
-  // chain that asks for no farmland, no plots and no second building.
-  clamdigger: { name: 'Clam Digger', desc: 'Rakes clams from the tidal flats — build on the sea shore (coastal lands only)', model: 'cottage',
-    cost: { timber: 2, stone: 1 }, roof: 0x8a7c5e, wall: 0xcbbd97, accent: 0xd8bb8c, coastal: true,
-    gather: { node: 'fish', out: 'clam', time: 3.2, range: 6 }, worker: 'Clam raker', wcolor: 0xb9a97e },
+  clamdigger: { name: 'Clam Digger', desc: 'Rakes clams from the tidal flats — build on the sea shore', model: 'cottage',
+    cost: { timber: 2, stone: 0 }, roof: 0x8a7c5e, wall: 0xcbbd97, accent: 0xd8bb8c, coastal: true,
+    gather: { node: 'fish', out: 'clam', time: 5, range: 6 }, worker: 'Clam raker', wcolor: 0xb9a97e },
 
   ironmine: { name: 'Iron Mine', desc: 'Mines iron deposits — the raw metal for weapons & armor', model: 'mine',
     cost: { timber: 2, stone: 1 }, roof: 0x8a4a30, wall: 0x8f8a80, accent: 0xa86a4a,
@@ -96,16 +94,14 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
 
   smithy: { name: 'Weaponsmith', desc: 'Iron + coal → weapons for training infantry & knights', model: 'cottage',
     cost: { timber: 3, stone: 3 }, roof: 0x4a4a52, wall: 0x9c8a6a, accent: 0xd8dde2,
-    // slower than the mines that feed it: coal is the shared bottleneck (mint +
-    // smithy + armory), so crafting must not outpace collection
-    recipe: { inp: { iron: 1, coal: 1 }, out: 'weapon', time: 12 }, worker: 'Smith', wcolor: 0x5a5f66 },
+    recipe: { inp: { iron: 1, coal: 1 }, out: 'weapon', time: 10 }, worker: 'Smith', wcolor: 0x5a5f66 },
 
   armory: { name: 'Armorer', desc: 'Iron + coal → armor for training knights', model: 'cottage',
     cost: { timber: 3, stone: 3 }, roof: 0x5a6470, wall: 0x9c8a6a, accent: 0x7d8794,
-    recipe: { inp: { iron: 1, coal: 1 }, out: 'armor', time: 14 }, worker: 'Armorer', wcolor: 0x7d8794 },
+    recipe: { inp: { iron: 1, coal: 1 }, out: 'armor', time: 10 }, worker: 'Armorer', wcolor: 0x7d8794 },
 
-  barracks: { name: 'Barracks', desc: 'Trains soldiers, pikemen, archers & knights — weapons come from the smithy', model: 'barn',
-    cost: { timber: 4, stone: 3 }, roof: 0x5a4a6a, wall: 0xb0a48c, accent: 0x8a5a2b, hp: 200,
+  barracks: { name: 'Barracks', desc: 'Trains soldiers, pikemen, archers & knights', model: 'barn',
+    cost: { timber: 3, stone: 5 }, roof: 0x5a4a6a, wall: 0xb0a48c, accent: 0x8a5a2b, hp: 200,
     military: { units: [
       { kind: 'soldier', cost: { weapon: 1, coin: 1 }, time: 6,
         desc: 'Steady melee line fighter — the backbone of any warband' },
@@ -129,19 +125,10 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     ] } },
 
   engineer: { name: 'Engineer\u2019s Workshop', desc: 'Builds siege engines — ballistas, onagers & trebuchets', model: 'cottage',
-    cost: { timber: 5, stone: 4 }, roof: 0x5a5346, wall: 0x9c8a6a, accent: 0xc9a94e, hp: 240,
-    // Siege is TIMBER-ONLY: the war machines are built of wood, and timber is
-    // the one non-depletable resource (foresters replant), so a settlement that
-    // scales its timber economy can field siege in numbers — the intended path
-    // to the wall/castle-breaker, rather than gating it behind scarce stone/coin.
-    // All siege cost the SAME 10 timber — the roles differ by what they hit
-    // (ballista spikes single tough units, onager splashes anti-personnel,
-    // trebuchet breaks walls & structures), not by price, so the AI and player
-    // pick by tactical need rather than affordability. Timber is non-depletable
-    // (foresters replant), so a scaled wood economy fields siege in numbers.
+    cost: { timber: 5, stone: 3 }, roof: 0x5a5346, wall: 0x9c8a6a, accent: 0xc9a94e, hp: 240,
     military: { units: [
       { kind: 'ballista', cost: { timber: 10 }, time: 10,
-        desc: 'Giant crossbow on wheels — long-ranged bolts that spike one tough target' },
+        desc: 'Giant crossbow on wheels — long-ranged bolts that spikes tough targets' },
       { kind: 'onager', cost: { timber: 10 }, time: 11,
         desc: 'Rock-lobbing catapult — splashes damage across a cluster of foes' },
       { kind: 'trebuchet', cost: { timber: 10 }, time: 14,
@@ -156,14 +143,12 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     ] } },
 
   watchtower: { name: 'Watchtower', desc: 'A wooden arrow tower — looses arrows at raiders in range', model: 'mine',
-    // all-timber: the early tower stands before any quarry does; stone defence
-    // is the stonetower/wall tier's job
-    cost: { timber: 6 }, roof: 0x6a7076, wall: 0x9aa0a3, accent: 0x3f5aa0, hp: 320,
+    cost: { timber: 5 }, roof: 0x6a7076, wall: 0x9aa0a3, accent: 0x3f5aa0, hp: 320,
     tower: { range: 7, dmg: 9, rate: 1.4 } },
 
   stonetower: { name: 'Stone Watchtower', desc: 'A tall stone tower — tougher and further-seeing than the wooden one', model: 'mine',
     cost: { timber: 1, stone: 8 }, roof: 0x565c62, wall: 0x8f959a, accent: 0x3f5aa0, hp: 520,
-    tower: { range: 8, dmg: 11, rate: 1.5 } },
+    tower: { range: 9, dmg: 11, rate: 1.5 } },
 
   woodwall: { name: 'Wooden Wall', desc: 'A quick timber palisade — cheap to raise, but less durable than stone', model: 'mine',
     cost: { timber: 2 }, roof: 0x8a603c, wall: 0x6b472d, accent: 0x4b3222, hp: 300, bulwark: true, entrance: 'none' },
@@ -172,25 +157,23 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: { timber: 2 }, roof: 0x8a603c, wall: 0x6b472d, accent: 0x4b3222, hp: 250, bulwark: true, gate: true, entrance: 'through' },
 
   wall: { name: 'Stone Wall', desc: 'A solid stretch of rampart — raiders must batter it down to pass', model: 'mine',
-    // cheap enough to layer: proper defence wants concentric curtains, and at
-    // four stone a segment nobody (human or CPU) could afford a second ring
-    cost: { stone: 2 }, roof: 0x8a9095, wall: 0x9aa0a3, accent: 0x6a7076, hp: 600, bulwark: true, entrance: 'none' },
+    cost: { stone: 3 }, roof: 0x8a9095, wall: 0x9aa0a3, accent: 0x6a7076, hp: 600, bulwark: true, entrance: 'none' },
 
   gate: { name: 'Gate', desc: 'A fortified archway: your own units pass freely, enemies must break it down', model: 'mine',
     cost: { timber: 2, stone: 3 }, roof: 0x77593a, wall: 0x9aa0a3, accent: 0x6b4a2f, hp: 450, bulwark: true, gate: true, entrance: 'through' },
 
   banditcamp: { name: 'Bandit Camp', desc: 'A den of raiders', model: 'barn',
-    cost: {}, roof: 0x4a2e20, wall: 0x6b4a34, accent: 0x3a2a20, hp: 400 },
+    cost: {}, roof: 0x4a2e20, wall: 0x6b4a34, accent: 0x3a2a20, hp: 500 },
 
   enemywatchtower: { name: 'Watchtower', desc: 'A fortified enemy archer tower', model: 'mine',
-    cost: {}, roof: 0x4a5056, wall: 0x777d82, accent: 0x9c3b3b, hp: 260,
-    tower: { range: 6.5, dmg: 9, rate: 1.6 } },
+    cost: {}, roof: 0x4a5056, wall: 0x777d82, accent: 0x9c3b3b, hp: 300,
+    tower: { range: 7, dmg: 9, rate: 1.6 } },
 
   enemycastle: { name: 'Enemy Keep', desc: 'The enemy stronghold', model: 'castle',
-    cost: {}, roof: 0x3a2a3a, wall: 0x8a8078, accent: 0x5a1a26, hp: 2600,
+    cost: {}, roof: 0x3a2a3a, wall: 0x8a8078, accent: 0x5a1a26, hp: 2500,
     tower: { range: 7, dmg: 11, rate: 2.2 } },
 
-  enemywall: { name: 'Stronghold Wall', desc: 'The stronghold’s rampart — batter it down or find the gate', model: 'mine',
+  enemywall: { name: 'Stronghold Wall', desc: 'The stronghold’s rampart — batter it down', model: 'mine',
     cost: {}, roof: 0x5a5560, wall: 0x777d82, accent: 0x4a5056, hp: 500, bulwark: true, entrance: 'none' },
 
   enemygate: { name: 'Stronghold Gate', desc: 'The stronghold’s barred gate — its defenders pass, you don’t', model: 'mine',

@@ -271,7 +271,8 @@ export class AudioEngine {
   private pendingHarmonyIndex = -1;       // rerolls land cleanly on the next bar boundary
 
   constructor() {
-    this.muted = typeof localStorage !== 'undefined' && localStorage.getItem(MUTE_KEY) === '1';
+    this.muted = typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function'
+      && localStorage.getItem(MUTE_KEY) === '1';
   }
 
   get isMuted(): boolean { return this.muted; }
@@ -338,7 +339,9 @@ export class AudioEngine {
   /** Toggle sound; returns the new muted state. Persists the choice. */
   toggleMute(): boolean {
     this.muted = !this.muted;
-    if (typeof localStorage !== 'undefined') localStorage.setItem(MUTE_KEY, this.muted ? '1' : '0');
+    if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
+      localStorage.setItem(MUTE_KEY, this.muted ? '1' : '0');
+    }
     if (this.muted) this.stopMusic();
     else { this.unlock(); this.startMusic(); }
     if (this.master) this.master.gain.value = this.muted ? 0 : 0.9;

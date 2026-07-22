@@ -36,10 +36,16 @@ npm run dev
 Vite prints the local URL. Other useful commands:
 
 ```bash
-npm test       # Vitest unit tests
-npm run build  # TypeScript typecheck, then production bundle
+npm run test:fast  # Quick unit/integration feedback; skips *.slow.test.ts
+npm test           # Full suite, including deterministic simulation/stress tests
+npm run test:slow  # Slow simulation/stress tests only
+npm run build      # TypeScript typecheck, then production bundle
 npm run preview
 ```
+
+Use `npm run test:fast` while iterating. Before handing work off, run the full
+`npm test` and `npm run build`. Pull requests use those same full checks; the fast
+lane is intentionally not the merge gate.
 
 ## Deploy to itch.io
 

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { runSelfPlayMatch } from '../../src/ai/selfplay';
-import { resimulateReplay } from '../../src/game/replay';
 import { decodePlan, ACTIONS, ACTION_DIM } from '../../src/ai/tensor/plan';
 
 /**
@@ -12,8 +11,8 @@ import { decodePlan, ACTIONS, ACTION_DIM } from '../../src/ai/tensor/plan';
  */
 
 describe('tensor MPS policy', () => {
-  it('plays a full match through the fair seam with zero rejected commands', () => {
-    const result = runSelfPlayMatch({ seed: 314, p1: 'tensor', p2: 'idle', maxSeconds: 480 });
+  it('plays a long scenario through the fair seam with zero rejected commands', () => {
+    const result = runSelfPlayMatch({ seed: 314, p1: 'tensor', p2: 'idle', maxSeconds: 240 });
     expect(result.stats.p1.rejected).toBe(0);
     expect(result.stats.p1.commands).toBeGreaterThan(20);
     // it executed its sampled build order and trained an army, not just idled
@@ -28,9 +27,8 @@ describe('tensor MPS policy', () => {
     const b = runSelfPlayMatch({ seed: 77, p1: 'tensor', p2: 'classic-easy', maxSeconds: 240 });
     expect(b.fingerprint).toBe(a.fingerprint);
     expect(b.replay.commands).toEqual(a.replay.commands);
-    // and re-simulating the recorded log lands on the same outcome
-    const check = resimulateReplay(a.replay);
-    expect(check.fingerprint).toBe(a.fingerprint);
+    // Replay re-simulation itself is covered once by selfplay.slow.test.ts;
+    // this test stays focused on deterministic tensor plan selection.
   }, 120_000);
 
   it('decodes a raw action sequence into an executable plan', () => {

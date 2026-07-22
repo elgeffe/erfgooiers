@@ -16,7 +16,9 @@ within a run; Heritage unlocks and Ascension progress persist between runs.
 ```bash
 npm install
 npm run dev      # Vite development server
-npm test         # Vitest unit suite
+npm run test:fast # Quick suite; excludes tests named *.slow.test.ts
+npm test         # Full Vitest suite, including simulation/stress tests
+npm run test:slow # Simulation/stress tests only
 npm run build    # tsc --noEmit, then Vite production bundle
 npm run preview
 ```
@@ -24,6 +26,11 @@ npm run preview
 After code changes, run both `npm test` and `npm run build`. A passing test suite plus a
 clean production build is the completion bar. Vite's current large-chunk advisory is a
 non-failing warning, not permission to skip validation.
+
+Use `*.slow.test.ts` for deterministic full-simulation, broad procedural sampling, or
+large-entity stress coverage that materially slows the edit loop. `npm run test:fast` is
+for iteration only. Pull requests and final hand-offs always run `npm test`; do not move
+ordinary tests into the slow lane merely to make the fast number smaller.
 
 ## Architecture
 

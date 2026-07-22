@@ -28,5 +28,7 @@ jobs:
       - name: Typecheck + build
         run: npm run build
 
-      - name: Tests
+      # Pull requests always run both fast and slow simulation/stress tests.
+      # `npm run test:fast` is only the local feedback loop.
+      - name: Full test suite
         run: npm test

@@ -13,10 +13,10 @@ import type { UnitKind } from './units';
  * - EASY: a defensive, slow homesteader. Guards its patch behind towers,
  *   blunders often, and only rarely wanders over to bother you.
  * - HARD: a defensive fortress-builder with a slow fuse. Quicker hands than
- *   Easy, walls and towers early, sits on its hoard building a real military
+ *   Easy, towers built early, sits on its hoard building a real military
  *   through the midgame — then breaks out late with one big combined wave.
- * - GODLIKE: the pro. Fields a fast raid party that pesters your
- *   infrastructure from the opening, walls up and counters what it scouts
+ * - GODLIKE: the pro. Fields a fast raid party that defends expansion into  
+ *   the contested area, walls up and counters what it scouts
  *   meanwhile, and plans a large, diverse late-game army for the kill.
  */
 export type AIDifficulty = 'easy' | 'hard' | 'godlike';
@@ -146,8 +146,8 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
 const DIFFICULTY_NAME: Record<AIDifficulty, string> = { easy: 'Easy', hard: 'Hard', godlike: 'Godlike' };
 const DIFFICULTY_DESC: Record<AIDifficulty, string> = {
   easy: 'A slow, defensive homesteader — guards its towers and rarely marches.',
-  hard: 'A defensive fortress with a slow fuse — builds up, then hits hard late.',
-  godlike: 'The pro — early raids pester your economy while a walled, diverse late-game army grows.',
+  hard: 'A defensive tower stronghold with a slow fuse — builds up, then hits hard late.',
+  godlike: 'The pro — early raids into the contested area while a walled, diverse late-game army grows.',
 };
 
 function classic(difficulty: AIDifficulty): AIProfile {
@@ -189,7 +189,7 @@ const RANDOM: AIProfile = {
  * See docs/tensor-strategy-poc.md.
  */
 const TENSOR: AIProfile = {
-  id: 'tensor', name: 'Tensor (MPS)', desc: 'Strategy sampled from a matrix-product-state generator — research spike.',
+  id: 'tensor', name: 'Tensor (MPS)', desc: 'Experimental research model for AI based on tensor networks.',
   policy: 'tensor', difficulty: 'godlike',
   macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 60, errorRate: 0,
   econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 1, walls: 0,
