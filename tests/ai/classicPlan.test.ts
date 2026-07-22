@@ -19,7 +19,7 @@ describe('Classic common opening', () => {
       'woodcutter:1', 'sawmill:1', 'quarry:1',
       'goldmine:1', 'coalmine:1', 'mint:1', 'forester:1',
       'farm:1', 'mill:1', 'bakery:1', 'tavern:1',
-      'barracks:1', 'watchtower:1',
+      'barracks:1',
       'ironmine:1', 'coalmine:2', 'smithy:1', 'armory:1',
       'fishery:1', 'vineyard:1', 'winery:1', 'pigfarm:1', 'butcher:1',
       'goldmine:2', 'coalmine:3', 'mint:2', 'quarry:2',
@@ -38,7 +38,8 @@ describe('Classic common opening', () => {
   });
 
   it('uses cumulative counts for the second coal, mint, and quarry stages', () => {
-    const built = Object.fromEntries(COMMON_OPENING.slice(0, 22).map(step => [step.key, step.target])) as Partial<Record<BuildingKey, number>>;
+    const secondGold = COMMON_OPENING.findIndex(step => step.key === 'goldmine' && step.target === 2);
+    const built = Object.fromEntries(COMMON_OPENING.slice(0, secondGold).map(step => [step.key, step.target])) as Partial<Record<BuildingKey, number>>;
     expect(nextOpeningDecision(counts(built), counts())).toMatchObject({ kind: 'build', key: 'goldmine', target: 2 });
     built.goldmine = 2;
     expect(nextOpeningDecision(counts(built), counts({ coalmine: 1 }))).toMatchObject({ kind: 'wait', key: 'coalmine', target: 3 });

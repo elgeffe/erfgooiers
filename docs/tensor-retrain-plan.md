@@ -8,7 +8,7 @@ new baseline (fog of war, physical repair, three difficulty personas)._
 Two things changed under the committed model's feet:
 
 1. **The baseline moved.** `classic-godlike` is now the pro persona (four-rider
-   scouting raids after its stable comes online, stone walls/outposts, exact
+   scouting raids after its stable comes online, stone perimeter towers/outposts, exact
    production lines, and staged cavalry + siege + healer attacks), all matches
    run under **fog of war** (perception filtered per seat; raids double as
    scouting), and both seats can **repair** (castle first). The fixed convergence

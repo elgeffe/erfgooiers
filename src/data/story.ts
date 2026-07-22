@@ -87,7 +87,7 @@ export const LEVEL_STORY: Record<number, LevelStory> = {
   },
   8: {
     title: 'The Undead Village',
-    story: 'Deeper south the dead keep watch. A village long dead.. — skeletons on the battlefield, more stirring behind the horizon. Koenraad spits. “I will break their bones and crush their skulls!”',
+    story: 'Deeper south the dead keep watch. A village long dead.. skeletons on the battlefield, more stirring behind the horizon. Koenraad spits. “I will break their bones and crush their skulls!”',
     how: [
       'Your goal: raze the village’s structures. Bring courage and numbers.',
     ],
@@ -168,6 +168,6 @@ export const VICTORY_IMAGE = `
  *  reward for the whole first-ascension journey, and the doorway to Hard. */
 export const VICTORY_STORY = {
   title: 'Het Gooi Stands',
-  story: 'The dragon falls, and the fires with it. In the grey dawn the erfgooiers walk their scorched heath and begin, as they always have, to rebuild — free commoners on their own free land. Bards will sing of Henk the Brave and the army that chased a dragon to the world’s edge and dragged it home to die. Your first watch is ended. But the old songs warn that a beast slain is not a beast gone forever, and harder roads wait for those bold enough to walk them.',
+  story: 'The dragon falls, and the fires with it. In the grey dawn the erfgooiers walk their scorched heath and begin, as they always have, to rebuild — free commoners on their own free land. Bards will sing of Henk the Brave and the army that chased a dragon to the world’s edge and dragged it home to die. Your first watch has ended. But the old songs warn that a beast slain is not a beast gone forever, and harder roads wait for those bold enough to walk them.',
   cta: 'You have completed the Normal campaign. The Hard ascension is now open from the main menu — thinner armies, a longer march into stranger lands, and no more stories to hold your hand. Ready when you are.',
 };

@@ -383,7 +383,7 @@ function showVictoryModal(opts: { ascensionNote?: string; higher?: boolean; tier
   $('storyImage').innerHTML = VICTORY_IMAGE;
   $('storyChapter').textContent = higher
     ? `${tierName || 'Ascension'} cleared · Het Gooi`
-    : 'The Hunt is Ended';
+    : 'The Hunt has Ended';
   $('storyTitle').textContent = higher ? 'The Dragon Falls Again' : VICTORY_STORY.title;
   $('storyText').textContent = higher
     ? 'The beast is slain once more, on a harder road than the last. Het Gooi stands, its people free, and the songs grow longer with every dragon dragged home to die.'

@@ -697,6 +697,10 @@ export class Game {
     return this.placementSystem.canPlace(key, tx, ty, rot);
   }
 
+  canWorkBuildingAt(key: BuildingKey, tx: number, ty: number): boolean {
+    return this.placementSystem.canWorkBuildingAt(key, tx, ty);
+  }
+
   disabledBuildings(): BuildingKey[] {
     return this.placementSystem.disabledBuildings();
   }

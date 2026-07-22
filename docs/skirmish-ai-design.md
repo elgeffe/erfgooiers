@@ -52,11 +52,11 @@ The **1v1 arena** is a 100×88 map with the two players in opposite corners
 (`initCoOp`'s `diagonal` layout), each corner worldgen-provisioned with a full
 ore spread (coal deepest — it feeds the mint AND every smithy AND armory) plus
 a contested gold-and-ore cluster at map centre. `src/game/fortification.ts` is
-the shared curtain-wall planner (gates keep baileys working; sieges breach the
-nearest gate); walls cost 2 stone so layers are affordable, and the Classic bot
-raises wooden defences for Hard and stone defences plus guarded forward resource
-outposts for Godlike. Fortification curtains snap to a cardinal two-tile stride,
-so diagonal approaches no longer produce overlapping 2×2 wall footprints. The
+the shared curtain-wall planner for authored/generated strongholds (gates keep
+baileys working; sieges breach the nearest gate). Classic no longer attempts
+procedural walls: Hard covers its home perimeter with wooden watchtowers, while
+Godlike uses stone watchtowers plus guarded forward resource outposts. This
+avoids fragile wall placement while preserving defensive map control. The
 Classic macro no longer plateaus: a tier-scaled `expansion` knob (Easy 1 / Hard 2 /
 Godlike 3) keeps compounding producers, chosen by a **producer/consumer balance** model (build
 more of a raw miner while the buildings burning its output outnumber it — a
@@ -234,7 +234,7 @@ skill ladder AND the temperament, keeping the training matrix small.)
 
 | Axis | Values | What it changes |
 |---|---|---|
-| Difficulty persona | Easy (slow defensive homesteader), Hard (defensive fortress, late big-wave breakout), Godlike (pro: remote outposts + mounted scouting + stone defence + staged combined arms) | Reaction latency, action budget (commands/min), planning quality, expansion depth, tower/wall appetite, attack threshold & cadence, raid pattern, deliberate error rate on Easy |
+| Difficulty persona | Easy (slow defensive homesteader), Hard (defensive fortress, late big-wave breakout), Godlike (pro: remote outposts + mounted scouting + stone defence + staged combined arms) | Reaction latency, action budget (commands/min), planning quality, expansion depth, tower appetite, attack threshold & cadence, raid pattern, deliberate error rate on Easy |
 | Policy | Classic, Adaptive (learned), Experimental (research winners) | Which strategy implementation drives the macro layer |
 
 "Exponentially increasing" difficulty is defined *empirically*, not by adjectives:

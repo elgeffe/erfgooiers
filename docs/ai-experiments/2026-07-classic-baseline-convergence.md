@@ -40,9 +40,9 @@ npm run selfplay -- --pair classic-godlike:classic-hard --seeds 6 --base-seed 72
 - Godlike reserves a ten-timber purchase while required trebuchets are missing,
   then prioritizes structural siege and priests. Siege/support no longer distort
   counter-composition reads.
-- Hard uses wooden fortifications; Godlike builds a cardinal, non-overlapping
-  stone curtain. A pending gate must finish before adjoining walls can seal the
-  line.
+- Superseded by the tower calibration: Classic no longer places walls or gates.
+  Hard covers its home perimeter with wooden watchtowers; Godlike uses stone
+  watchtowers and adds two remote resource outposts.
 - Attack waves clear visible defenders and arrow towers before focusing the
   castle. Godlike stages mounted flankers off-axis and holds siege/healers behind
   the main line until contact. An undersized counterattack does not consume the

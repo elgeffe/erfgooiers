@@ -2,7 +2,6 @@ import { DEFS } from '../../data/buildings';
 import { UNITS, type UnitKind } from '../../data/units';
 import { findPath } from '../../engine/pathfinding';
 import { doorTile } from '../../game/util';
-import { planDefensiveLine } from '../../game/fortification';
 import type { BuildingKey, Building, Coord } from '../../types';
 import type { GameCommand } from '../../net/protocol';
 import { findBuildingSpot, planPlots } from '../actuation';
@@ -101,7 +100,7 @@ export function allocateUnitQuotas(weights: Readonly<Record<string, number>>, ca
  * themselves differ only in profile knobs (docs/skirmish-ai-design.md).
  */
 
-type Category = 'economy' | 'food' | 'coin' | 'war' | 'fort';
+type Category = 'economy' | 'food' | 'coin' | 'war';
 
 /** A new staffed site must not have to wait for its first worker—or gamble its
  * hiring coin against the barracks. Two spare villagers also absorb a pair of
@@ -120,6 +119,31 @@ export function selectUncoveredWoodcutter(
     .find(woodcutter => !foresters.some(forester => Math.max(
       Math.abs(forester.x - woodcutter.x), Math.abs(forester.y - woodcutter.y),
     ) <= range)) ?? null;
+}
+
+/** Rank eight perimeter sectors so successive home towers cover the widest
+ * unguarded arc. The first tower faces the enemy approach; later towers spread
+ * around the full ring before filling nearby gaps. */
+export function rankPerimeterTowerAnchors(
+  home: Coord, approach: Coord, existing: readonly Coord[], radius = 11,
+): Coord[] {
+  const directions = [
+    { x: 0, y: -1 }, { x: 1, y: -1 }, { x: 1, y: 0 }, { x: 1, y: 1 },
+    { x: 0, y: 1 }, { x: -1, y: 1 }, { x: -1, y: 0 }, { x: -1, y: -1 },
+  ];
+  return directions
+    .map(direction => ({ x: home.x + direction.x * radius, y: home.y + direction.y * radius }))
+    .sort((a, b) => {
+      const coverageA = existing.length
+        ? Math.min(...existing.map(tower => Math.max(Math.abs(a.x - tower.x), Math.abs(a.y - tower.y))))
+        : 0;
+      const coverageB = existing.length
+        ? Math.min(...existing.map(tower => Math.max(Math.abs(b.x - tower.x), Math.abs(b.y - tower.y))))
+        : 0;
+      const approachA = Math.max(Math.abs(a.x - approach.x), Math.abs(a.y - approach.y));
+      const approachB = Math.max(Math.abs(b.x - approach.x), Math.abs(b.y - approach.y));
+      return coverageB - coverageA || approachA - approachB || a.y - b.y || a.x - b.x;
+    });
 }
 
 interface BuildGoal {
@@ -161,12 +185,11 @@ function expansionTargets(depth: number): ExpansionTargets {
 
 /** Mid-game ceilings. The line planners below decide the supplier-first next
  * step, so these are capacity limits rather than independently competing asks. */
-function goals(towers: number, expansion: number, stoneTowers: boolean): BuildGoal[] {
+function goals(expansion: number): BuildGoal[] {
   const E = expansion;
   const target = expansionTargets(E);
   const secondaryFoodLines = E >= 3 ? 2 : 1;
   const req = (...keys: BuildingKey[]): BuildingKey[] => keys;
-  const towerKey: BuildingKey = stoneTowers ? 'stonetower' : 'watchtower';
   const list: BuildGoal[] = [
     { key: 'guildhall', target: 1, priority: 100, category: 'economy' },
     { key: 'woodcutter', target: target.timberLines, priority: 30, category: 'economy', expand: true },
@@ -192,7 +215,6 @@ function goals(towers: number, expansion: number, stoneTowers: boolean): BuildGo
     { key: 'stable', target: E >= 3 ? 2 : 0, priority: 30, category: 'war', requires: req('smithy'), expand: true },
     { key: 'engineer', target: E >= 3 ? 2 : 0, priority: 30, category: 'war', expand: true },
     { key: 'monastery', target: E >= 3 ? 1 : 0, priority: 30, category: 'war', expand: true },
-    { key: towerKey, target: towers, priority: 30, category: 'fort', expand: true },
   ];
   return list.filter(goal => goal.target > 0);
 }
@@ -209,7 +231,7 @@ export class ClassicMacro implements MacroPolicy {
   private readonly roadedBuildings = new Set<number>();
   private lastThreatAt = -Infinity;
   private lastRoadAt = -Infinity;
-  private lastFortAt = -Infinity;
+  private lastOutpostAt = -Infinity;
 
   plan(ctx: PolicyContext): GameCommand[] {
     const { view } = ctx;
@@ -220,18 +242,15 @@ export class ClassicMacro implements MacroPolicy {
     if (rescue) commands.push(rescue);
     const plots = this.planFieldPlots(ctx);
     if (plots) commands.push(plots);
-    // One placement decision per state snapshot: never let a fort and an
-    // economy site jointly exceed capacity or promise the same stock. The
-    // shared opening always finishes first; thereafter wall pieces alternate
-    // with economy growth on a slow cadence.
+    // One placement decision per state snapshot: never let an outpost and an
+    // economy site jointly exceed capacity or promise the same stock. Paced
+    // home towers may pre-empt an opening step; remote towers wait until the
+    // shared opening is complete.
     const openingDone = nextOpeningDecision(view.built, view.pending).kind === 'complete';
-    let construction: GameCommand | null = null;
-    if (openingDone && view.elapsed - this.lastFortAt >= 12) {
+    let construction = this.planHomeTower(ctx);
+    if (!construction && openingDone && view.elapsed - this.lastOutpostAt >= 12) {
       construction = this.planForwardOutpost(ctx);
-      const homeTowerKey: BuildingKey = ctx.profile.wallMaterial === 'stone' ? 'stonetower' : 'watchtower';
-      const homeTowersReady = (view.built[homeTowerKey] ?? 0) >= ctx.profile.towers;
-      if (!construction && homeTowersReady && ctx.profile.walls > 0) construction = this.planFortification(ctx);
-      if (construction) this.lastFortAt = view.elapsed;
+      if (construction) this.lastOutpostAt = view.elapsed;
     }
     construction ??= this.planBuild(ctx);
     if (construction) commands.push(construction);
@@ -239,6 +258,22 @@ export class ClassicMacro implements MacroPolicy {
     const road = this.planRoad(ctx);
     if (road) commands.push(road);
     return commands;
+  }
+
+  /** Build the profile's defensive tower on a paced schedule independent of
+   * the economy expansion gate. One tower comes online after the barracks;
+   * another perimeter sector unlocks every ninety seconds thereafter. */
+  private planHomeTower(ctx: PolicyContext): GameCommand | null {
+    const { view, profile } = ctx;
+    if (profile.towers <= 0 || (view.built.barracks ?? 0) < 1
+      || view.sites.length >= profile.maxPendingSites) return null;
+    const home = { x: view.store!.x + 1, y: view.store!.y + 1 };
+    const homeTowerCount = [...view.buildings, ...view.sites]
+      .filter(entity => entity.key === profile.towerKey
+        && Math.max(Math.abs(entity.x - home.x), Math.abs(entity.y - home.y)) <= 18)
+      .length;
+    const scheduled = Math.min(profile.towers, 1 + Math.floor(Math.max(0, view.elapsed - 360) / 90));
+    return homeTowerCount < scheduled ? this.placeGoal(ctx, profile.towerKey) : null;
   }
 
   // ---- roads ----
@@ -254,14 +289,14 @@ export class ClassicMacro implements MacroPolicy {
     if (!store || profile.econScale <= 0) return null;
     // the user-requested gate: a quarry (= stone income) must exist first
     if ((view.built.quarry ?? 0) < 1) return null;
-    // never pave under attack — stone then belongs to walls and defence
+    // never pave under attack — stone then belongs to towers and defence
     if (view.threats.length || view.elapsed - this.lastThreatAt < 45) return null;
     // one link every so often, so roads trickle out instead of eating the quarry
     if (view.elapsed - this.lastRoadAt < 20) return null;
     // construction has first claim on stone: reserve what every pending site
     // still needs (plus a small buffer for the next building), and pave only
     // the SURPLUS beyond it. A second quarry's extra income is what turns that
-    // surplus from rare to steady — the pro road/wall bankroll.
+    // surplus from rare to steady — the pro road/tower bankroll.
     const roadCost = game.modsFor(view.owner).roadCost();
     const stone = storeStock(game, view.owner, 'stone');
     const siteStoneNeed = view.sites.reduce((sum, s) => sum + Math.max(0, (s.needs.stone ?? 0) - (s.delivered.stone ?? 0) - (s.incoming.stone ?? 0)), 0);
@@ -298,75 +333,12 @@ export class ClassicMacro implements MacroPolicy {
     return { type: 'paintRoad', cells };
   }
 
-  // ---- defensive lines ----
-  /** Wall the ENEMY APPROACH, not the whole castle: a straight curtain with a
-   *  central sortie gate, thrown across the open ground the rival must cross,
-   *  and anchored to the map's natural barriers — segments whose ground is
-   *  already water or rock are skipped (terrain IS the wall there), so the
-   *  masonry only closes the gaps between them. Higher `walls` add a second,
-   *  closer line as a fallback. Army before masonry; one piece per pass. */
-  private planFortification(ctx: PolicyContext): GameCommand | null {
-    const { game, world, view, profile } = ctx;
-    if (profile.walls <= 0 || !view.store) return null;
-    // army before masonry, strictly: every stone laid before a fighting force
-    // stands is measured tempo handed to a rushing rival
-    if ((view.built.barracks ?? 0) < 1 || view.armySize < profile.attackArmy * 0.5) return null;
-    if (view.sites.length >= profile.maxPendingSites) return null;
-    const center = { x: view.store.x + 1, y: view.store.y + 1 };
-    // face the rival; with none in view, wall the open map centre (the way in)
-    const enemy = view.enemyStore
-      ? { x: view.enemyStore.x, y: view.enemyStore.y }
-      : { x: Math.round(world.W / 2), y: Math.round(world.H / 2) };
-    const naturalBarrier = (x: number, y: number): boolean => {
-      const tile = world.T(x, y);
-      return !tile || tile.type === 'water' || tile.type === 'rock'; // off-map, lake or ridge
-    };
-    for (let line = 0; line < profile.walls; line++) {
-      const preferred = 11 - line * 4;   // outer line first, then a closer fallback
-      // A spread-out settlement can occupy the preferred gate slot. Try a
-      // slightly wider/closer curtain, but never raise the wall pieces unless a
-      // real friendly gate already stands at its centre.
-      for (const distance of [preferred, preferred + 2, preferred - 2]) {
-        const pieces = planDefensiveLine(center, enemy, distance, 6);
-        const gate = pieces[0];
-        const gateTile = world.T(gate.x, gate.y);
-        const gateKey: BuildingKey = profile.wallMaterial === 'wood' ? 'woodgate' : 'gate';
-        const standingGate = gateTile?.b;
-        const pendingGate = gateTile?.site;
-        // A site is still a solid obstacle. Wait for the actual gate before
-        // closing wall segments around it, or the builder and army can be
-        // sealed behind an unfinished centrepiece.
-        if (pendingGate?.owner === view.owner && pendingGate.key === gateKey) return null;
-        const gateReady = standingGate?.owner === view.owner && standingGate.key === gateKey;
-        if (!gateReady) {
-          if (naturalBarrier(gate.x, gate.y) || !this.affordable(ctx, gateKey)
-            || !game.canPlace(gateKey, gate.x, gate.y, gate.rot)) continue;
-          return { type: 'placeBuilding', key: gateKey, x: gate.x, y: gate.y, rot: gate.rot };
-        }
-        for (const piece of pieces.slice(1)) {
-        // a segment already backed by terrain needs no wall — that is the point
-          if (naturalBarrier(piece.x, piece.y) || naturalBarrier(piece.x + 1, piece.y + 1)) continue;
-          const tile = world.T(piece.x, piece.y);
-          if (!tile || tile.b || tile.site) continue;         // held or hopeless slot
-          const key: BuildingKey = profile.wallMaterial === 'wood' ? 'woodwall' : 'wall';
-          if (!this.affordable(ctx, key)) return null;
-          if (!game.canPlace(key, piece.x, piece.y, piece.rot)) continue;
-          return { type: 'placeBuilding', key, x: piece.x, y: piece.y, rot: piece.rot };
-        }
-        // This distance is complete; don't start a second alternative curtain.
-        break;
-      }
-      // this line is as finished as the ground allows — add the closer fallback
-    }
-    return null;
-  }
-
   /** Fortify distinct contested extractors after the home towers stand. The
    *  mine itself is the anchor, while the shared placement search still owns
    *  safety, spacing, reachability and exact legality. */
   private planForwardOutpost(ctx: PolicyContext): GameCommand | null {
     const { game, world, view, profile, rng } = ctx;
-    if (profile.forwardTowers <= 0 || profile.wallMaterial !== 'stone' || !view.store) return null;
+    if (profile.forwardTowers <= 0 || profile.towerKey !== 'stonetower' || !view.store) return null;
     if ((view.built.stonetower ?? 0) < profile.towers || view.sites.length >= profile.maxPendingSites) return null;
 
     const home = { x: view.store.x, y: view.store.y };
@@ -456,7 +428,7 @@ export class ClassicMacro implements MacroPolicy {
       && view.army.filter(u => u.role === 'onager' || u.role === 'trebuchet' || u.role === 'ballista').length < 3;
     const timberBuffer = wantsSiege ? 12 : 3; // one siege = 10 timber, plus a little slack
     const starved = timber < timberBuffer || stone < 3;
-    const candidates = goals(profile.towers, profile.expansion, profile.wallMaterial === 'stone')
+    const candidates = goals(profile.expansion)
       .filter(goal => have(view, goal.key) < goal.target)
       // Expansion is earned by staffing the settlement already on the map.
       // Letting coin/war goals bypass this gate produced impressive-looking
@@ -470,7 +442,6 @@ export class ClassicMacro implements MacroPolicy {
         if (goal.category === 'food' && hungry) value *= 1.6;
         if (goal.category === 'war' && (outgunned || threatened)) value *= 1.5;
         if (goal.category === 'coin' && broke) value *= 1.7;
-        if (goal.category === 'fort' && threatened) value *= 1.6;
         if (goal.expand) value = this.expansionValue(ctx, goal, coin, armyRoom);
         return { goal, value };
       })
@@ -508,10 +479,22 @@ export class ClassicMacro implements MacroPolicy {
     // Never scatter a forester beyond the nine-tile timber ecosystem it serves.
     // If every cutter is already covered, another lodge adds no capacity.
     if (key === 'forester' && !timberAnchor) return null;
-    const spot = findBuildingSpot(
-      game, world, view, key, rng, ctx.approach, reach,
-      timberAnchor ?? undefined, timberAnchor ? TIMBER_SUPPORT_RANGE : Infinity,
-    );
+    let spot = null;
+    if (key === 'watchtower' || key === 'stonetower') {
+      const home = { x: view.store!.x + 1, y: view.store!.y + 1 };
+      const homeTowers = [...view.buildings, ...view.sites]
+        .filter(entity => (entity.key === 'watchtower' || entity.key === 'stonetower')
+          && Math.max(Math.abs(entity.x - home.x), Math.abs(entity.y - home.y)) <= 18);
+      for (const anchor of rankPerimeterTowerAnchors(home, ctx.approach, homeTowers)) {
+        spot = findBuildingSpot(game, world, view, key, rng, ctx.approach, reach, anchor, 4);
+        if (spot) break;
+      }
+    } else {
+      spot = findBuildingSpot(
+        game, world, view, key, rng, ctx.approach, reach,
+        timberAnchor ?? undefined, timberAnchor ? TIMBER_SUPPORT_RANGE : Infinity,
+      );
+    }
     if (spot) return { type: 'placeBuilding', key, x: spot.x, y: spot.y, rot: spot.rot };
     this.blockedUntil.set(key, view.elapsed + 45);
     return null;
@@ -599,15 +582,24 @@ export class ClassicMacro implements MacroPolicy {
       if (!armyRoom || coin < 10) return 0;
       return 38 + Math.min(30, coin);
     }
-    if (goal.category === 'fort') {
-      if (p(goal.key) === 0) return 82;
-      return view.threats.length ? 76 : 56;
-    }
     return first ? 35 : 0;
   }
 
   private affordable(ctx: PolicyContext, key: BuildingKey): boolean {
     const cost = ctx.game.modsFor(ctx.view.owner).buildingCost(DEFS[key]) as Record<string, number>;
+    let structuralSiege = 0;
+    const engineerReady = ctx.view.buildings.some(building => building.key === 'engineer' && building.active);
+    if (engineerReady && ctx.profile.minSiege > 0) {
+      for (const unit of ctx.view.army) {
+        if ((UNITS[unit.role as UnitKind]?.structureMult ?? 1) > 1) structuralSiege++;
+      }
+      for (const building of ctx.view.buildings) for (const kind of building.trainQ ?? []) {
+        if ((UNITS[kind as UnitKind]?.structureMult ?? 1) > 1) structuralSiege++;
+      }
+    }
+    const siegeTimberReserve = engineerReady
+      ? Math.max(0, ctx.profile.minSiege - structuralSiege) * 10
+      : 0;
     for (const item in cost) {
       // `countItem` includes goods already carried toward a site. Reserve every
       // outstanding site need so a new command cannot promise the same timber or
@@ -616,7 +608,8 @@ export class ClassicMacro implements MacroPolicy {
       for (const site of ctx.view.sites) {
         committed += Math.max(0, (site.needs[item] ?? 0) - (site.delivered[item] ?? 0));
       }
-      if (economyStock(ctx.game, ctx.view.owner, item) - committed < cost[item]) return false;
+      const strategicReserve = item === 'timber' ? siegeTimberReserve : 0;
+      if (economyStock(ctx.game, ctx.view.owner, item) - committed - strategicReserve < cost[item]) return false;
     }
     return true;
   }

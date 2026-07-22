@@ -319,6 +319,19 @@ export class PlacementSystem {
     return banned;
   }
 
+  /** Exact non-geometric workability gate shared by placement execution and AI
+   * validation. Resource caches may suggest a mine after its last node is
+   * exhausted; this always reads live world state. */
+  canWorkBuildingAt(key: BuildingKey, tx: number, ty: number): boolean {
+    if (key === 'quarry') return this.depositInRange('stone', tx, ty, 9);
+    if (key === 'goldmine') return this.depositInRange('gold', tx, ty, 9);
+    if (key === 'coalmine') return this.depositInRange('coal', tx, ty, 9);
+    if (key === 'ironmine') return this.depositInRange('iron', tx, ty, 9);
+    const def = DEFS[key];
+    if (def.gather?.node === 'fish') return this.fishingSpotInRange(tx, ty, def.gather.range);
+    return true;
+  }
+
   tryPlace(key: BuildingKey, tx: number, ty: number, rot: number, owner: PlayerId): boolean {
     if (this.disabledBuildings().includes(key)) {
       this.ports.sfx('error');
@@ -331,11 +344,15 @@ export class PlacementSystem {
     const def = DEFS[key];
     // Mines and quarries must stand within reach of live deposits — their
     // miners gather from those tiles, so a site out of range could never work.
-    if (key === 'quarry' && !this.depositInRange('stone', tx, ty, 9)) { this.ports.toast('No stone deposits in range — build near the grey rocks', 'err', owner); return false; }
-    if (key === 'goldmine' && !this.depositInRange('gold', tx, ty, 9)) { this.ports.toast('No gold deposits in range', 'err', owner); return false; }
-    if (key === 'coalmine' && !this.depositInRange('coal', tx, ty, 9)) { this.ports.toast('No coal deposits in range', 'err', owner); return false; }
-    if (key === 'ironmine' && !this.depositInRange('iron', tx, ty, 9)) { this.ports.toast('No iron deposits in range — build near the rusty rocks', 'err', owner); return false; }
-    if (def.gather?.node === 'fish' && !this.fishingSpotInRange(tx, ty, def.gather.range)) { this.ports.toast('No open water in range — build on the shore', 'err', owner); return false; }
+    if (!this.canWorkBuildingAt(key, tx, ty)) {
+      const message = key === 'quarry' ? 'No stone deposits in range — build near the grey rocks'
+        : key === 'goldmine' ? 'No gold deposits in range'
+          : key === 'coalmine' ? 'No coal deposits in range'
+            : key === 'ironmine' ? 'No iron deposits in range — build near the rusty rocks'
+              : 'No open water in range — build on the shore';
+      this.ports.toast(message, 'err', owner);
+      return false;
+    }
     if (key === 'woodcutter' && !this.nearTree(tx, ty, 9)) this.ports.toast('Warning: few trees nearby', 'err', owner);
     const cost = this.modsFor(owner).buildingCost(def) as Record<string, number>;
     for (const item in cost) {

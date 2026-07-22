@@ -194,12 +194,14 @@ export class Tactics {
     this.allIn = profile.attackEnabled
       && view.armySize >= Math.max(needed, Math.round(profile.armyCap * 0.85));
     // A WALLED rival is never assaulted piecemeal: a periodic mid-size wave just
-    // bleeds out on the curtain and its towers while the turtle masses behind it
-    // (measured: Godlike fed 30-fighter waves into Hard's walls and lost the
-    // army it needed). Against fortifications, hold for the full siege-backed
+    // bleeds out on the curtain and its towers while the turtle masses behind it.
+    // Against fortifications, hold for the full siege-backed
     // FINISHER — the trebuchets that actually break the wall — and commit once.
     const siege = view.army.filter(unit => (UNITS[unit.role as keyof typeof UNITS]?.structureMult ?? 1) > 1).length;
-    const counterCompositionReady = this.counterattackReady
+    // A reactive conventional army may exploit a won defence, but a profile
+    // explicitly built around siege does not abandon that identity after one
+    // skirmish. Godlike still waits for its structural core before marching.
+    const counterCompositionReady = profile.minSiege === 0 && this.counterattackReady
       && view.armySize >= Math.ceil(profile.attackArmy * 0.75);
     const compositionReady = siege >= profile.minSiege || counterCompositionReady;
     const canLaunch = compositionReady

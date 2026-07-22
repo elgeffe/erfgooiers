@@ -55,10 +55,10 @@ describe('headless self-play', () => {
   it('godlike waits for a siege-backed premium roster while hard fields a conventional wave', () => {
     // Villagers and the common production opening now precede luxury military
     // buildings. Against a passive seat, Godlike should therefore hold for its
-    // deliberately larger combined-arms force; reactive counterstrokes cover
-    // the early-aggression case when a real opponent attacks first.
-    const godlike = runSelfPlayMatch({ seed: 1000, p1: 'classic-godlike', p2: 'idle', maxSeconds: 900 });
-    const hard = runSelfPlayMatch({ seed: 1000, p1: 'classic-hard', p2: 'idle', maxSeconds: 900 });
+    // deliberately larger combined-arms force. The 18-minute horizon includes
+    // its paced fourth perimeter tower and second trebuchet.
+    const godlike = runSelfPlayMatch({ seed: 1000, p1: 'classic-godlike', p2: 'idle', maxSeconds: 1080 });
+    const hard = runSelfPlayMatch({ seed: 1000, p1: 'classic-hard', p2: 'idle', maxSeconds: 1080 });
     const firstGodlike = godlike.stats.p1.firstAttackAt;
     expect(firstGodlike).not.toBeNull();
     const firstHard = hard.stats.p1.firstAttackAt;
@@ -74,5 +74,13 @@ describe('headless self-play', () => {
     expect(godlikeRoster.filter(kind => kind === 'trebuchet')).toHaveLength(2);
     expect(godlikeRoster.some(kind => mounted.has(kind))).toBe(true);
     expect(hardRoster.some(kind => advancedSupport.has(kind))).toBe(false);
+
+    const placed = (result: typeof godlike): string[] => result.replay.commands.flatMap(entry =>
+      entry.playerId === 'p1' && entry.command.type === 'placeBuilding' ? [entry.command.key] : []);
+    const wallKeys = new Set(['woodwall', 'woodgate', 'wall', 'gate']);
+    expect(placed(godlike).some(key => wallKeys.has(key))).toBe(false);
+    expect(placed(hard).some(key => wallKeys.has(key))).toBe(false);
+    expect(placed(godlike).filter(key => key === 'stonetower').length).toBeGreaterThanOrEqual(4);
+    expect(placed(hard).filter(key => key === 'watchtower').length).toBeGreaterThanOrEqual(3);
   }, 240_000);
 });
