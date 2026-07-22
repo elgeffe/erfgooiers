@@ -12,7 +12,7 @@ export type BuildingKey =
   | 'farm' | 'mill' | 'bakery' | 'goldmine' | 'coalmine' | 'mint'
   | 'vineyard' | 'winery' | 'pigfarm' | 'butcher' | 'tavern' | 'fishery' | 'clamdigger'
   | 'barracks' | 'stable' | 'engineer' | 'ironmine' | 'smithy' | 'armory' | 'watchtower'
-  | 'stonetower' | 'wall' | 'gate' | 'monastery'
+  | 'stonetower' | 'woodwall' | 'woodgate' | 'wall' | 'gate' | 'monastery'
   | 'market'
   | 'banditcamp' | 'enemywatchtower' | 'enemycastle' | 'enemywall' | 'enemygate';
 

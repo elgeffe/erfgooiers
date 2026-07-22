@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { MENU_KEYS, lockedBuildingsAt, objectiveBuildings, productionChain, unlockedBuildingsAt, unlockedResourcesAt } from '../../src/data/buildings';
+import { DEFS, MENU_CATEGORIES, MENU_KEYS, lockedBuildingsAt, objectiveBuildings, productionChain, unlockedBuildingsAt, unlockedResourcesAt } from '../../src/data/buildings';
 import { LEVELS } from '../../src/data/levels';
 
 describe('first-ascension building onboarding', () => {
+  it('offers all-timber wooden fortifications', () => {
+    expect(DEFS.woodwall.cost).toEqual({ timber: 2 });
+    expect(DEFS.woodgate.cost).toEqual({ timber: 2 });
+    expect(MENU_CATEGORIES.find(category => category.id === 'fortifications')?.keys)
+      .toEqual(expect.arrayContaining(['woodwall', 'woodgate']));
+  });
   it('unlocks a growing, cumulative subset each level', () => {
     const sizes = [1, 2, 3, 4, 5].map(l => unlockedBuildingsAt(l).size);
     for (let i = 1; i < sizes.length; i++) expect(sizes[i]).toBeGreaterThan(sizes[i - 1]);

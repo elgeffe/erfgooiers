@@ -41,6 +41,8 @@ export function makeBuilding(key: BuildingKey, def: BuildingDef, ghost: boolean,
     case 'banditcamp': return banditCamp(def, ghost);
     case 'monastery': return monasteryBuilding(def, ghost);
     case 'market': return marketBuilding(def, ghost);
+    case 'woodwall': return woodenWall(def, ghost);
+    case 'woodgate': return woodenGate(def, ghost);
     case 'wall': case 'enemywall': return wallSegment(def, ghost);
     case 'gate': case 'enemygate': return gateArch(def, ghost);
   }
@@ -92,6 +94,40 @@ function marketBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
 }
 
 // ---------- fortifications: a crenellated rampart block and a barred gate ----------
+function woodenWall(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const timber = mkMat(def.wall, ghost), dark = mkMat(def.accent ?? 0x4b3222, ghost);
+  for (let x = -0.82; x <= 0.82; x += 0.205) {
+    const post = new THREE.Mesh(cyl(0.12, 0.12, 1.35, 7), timber);
+    post.position.set(x, 0.68, 0); post.castShadow = !ghost; g.add(post);
+    const point = new THREE.Mesh(cone(0.13, 0.3, 7), timber);
+    point.position.set(x, 1.5, 0); g.add(point);
+  }
+  for (const y of [0.42, 1.02]) {
+    const rail = new THREE.Mesh(box(1.9, 0.16, 0.2), dark);
+    rail.position.set(0, y, -0.13); g.add(rail);
+  }
+  return g;
+}
+
+function woodenGate(def: BuildingDef, ghost: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const timber = mkMat(def.wall, ghost), dark = mkMat(def.accent ?? 0x4b3222, ghost);
+  for (const x of [-0.82, 0.82]) {
+    const post = new THREE.Mesh(box(0.24, 1.75, 0.3), timber);
+    post.position.set(x, 0.88, 0); post.castShadow = !ghost; g.add(post);
+    const point = new THREE.Mesh(cone(0.19, 0.38, 4), timber);
+    point.position.set(x, 1.94, 0); point.rotation.y = Math.PI / 4; g.add(point);
+  }
+  const beam = new THREE.Mesh(box(1.9, 0.25, 0.34), dark);
+  beam.position.set(0, 1.55, 0); g.add(beam);
+  for (const x of [-0.48, -0.24, 0, 0.24, 0.48]) {
+    const bar = new THREE.Mesh(box(0.1, 1.25, 0.1), timber);
+    bar.position.set(x, 0.65, 0); bar.userData.marker = true; g.add(bar);
+  }
+  return g;
+}
+
 function wallSegment(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   const stone = mkMat(def.wall, ghost), cap = mkMat(def.roof, ghost);

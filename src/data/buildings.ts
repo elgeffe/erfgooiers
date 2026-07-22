@@ -76,7 +76,7 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: { timber: 2, stone: 2 }, roof: 0x7a3320, wall: 0xc4a075, accent: 0x9c4a2f,
     recipe: { inp: { meat: 1 }, out: 'sausage', time: 6 }, worker: 'Butcher', wcolor: 0x9c4a2f },
 
-  tavern: { name: 'Tavern', desc: 'Feeds workers — and a stocked larder pays: fish/clams speed gathering, sausage speeds building, wine quickens every step', model: 'tavern',
+  tavern: { name: 'Tavern', desc: 'Stock it for worker buffs: bread speeds serfs, fish/clams speed gathering, sausage speeds building, wine slows hunger', model: 'tavern',
     cost: { timber: 4, stone: 3 }, roof: 0x8a5a2b, wall: 0xcaa46e, accent: 0xffb060,
     tavern: { foods: ['bread', 'sausage', 'wine', 'fish', 'clam'], capacity: 6, time: 4 }, worker: 'Taverner', wcolor: 0xb5763a },
 
@@ -165,6 +165,12 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
     cost: { timber: 1, stone: 8 }, roof: 0x565c62, wall: 0x8f959a, accent: 0x3f5aa0, hp: 520,
     tower: { range: 8, dmg: 11, rate: 1.5 } },
 
+  woodwall: { name: 'Wooden Wall', desc: 'A quick timber palisade — cheap to raise, but less durable than stone', model: 'mine',
+    cost: { timber: 2 }, roof: 0x8a603c, wall: 0x6b472d, accent: 0x4b3222, hp: 300, bulwark: true, entrance: 'none' },
+
+  woodgate: { name: 'Wooden Gate', desc: 'A timber gateway: friendly units pass freely, enemies must break it down', model: 'mine',
+    cost: { timber: 2 }, roof: 0x8a603c, wall: 0x6b472d, accent: 0x4b3222, hp: 250, bulwark: true, gate: true, entrance: 'through' },
+
   wall: { name: 'Stone Wall', desc: 'A solid stretch of rampart — raiders must batter it down to pass', model: 'mine',
     // cheap enough to layer: proper defence wants concentric curtains, and at
     // four stone a segment nobody (human or CPU) could afford a second ring
@@ -199,7 +205,7 @@ export const MENU_CATEGORIES: BuildCategory[] = [
   { id: 'food', name: 'Food', keys: ['farm', 'mill', 'bakery', 'pigfarm', 'butcher', 'vineyard', 'winery', 'fishery', 'clamdigger', 'tavern'] },
   { id: 'coin', name: 'Coin', keys: ['goldmine', 'coalmine', 'mint', 'market'] },
   { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'monastery', 'ironmine', 'smithy', 'armory'] },
-  { id: 'fortifications', name: 'Fortifications', keys: ['watchtower', 'stonetower', 'wall', 'gate'] },
+  { id: 'fortifications', name: 'Fortifications', keys: ['watchtower', 'woodwall', 'woodgate', 'stonetower', 'wall', 'gate'] },
 ];
 
 /** Every player-buildable key, in menu order (the onboarding's whole universe). */
@@ -227,7 +233,7 @@ export const TUTORIAL_UNLOCKS: Record<number, BuildingKey[]> = {
   // smithy → barracks) the level's train goal demands.
   4: ['vineyard', 'winery', 'pigfarm', 'butcher', 'ironmine', 'smithy', 'barracks'],
   // Raiders at the Gate onward — the whole menu: heavy military and fortifications.
-  5: ['clamdigger', 'armory', 'stable', 'engineer', 'monastery', 'watchtower', 'stonetower', 'wall', 'gate'],
+  5: ['clamdigger', 'armory', 'stable', 'engineer', 'monastery', 'watchtower', 'woodwall', 'woodgate', 'stonetower', 'wall', 'gate'],
 };
 
 /** The last level the unlock schedule names; everything past it is fully open. */
