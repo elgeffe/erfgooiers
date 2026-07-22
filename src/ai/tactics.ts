@@ -21,12 +21,28 @@ const REORDER_INTERVAL = 10;
 /** Switch from the marching wave to an explicit castle siege this close. */
 const SIEGE_RANGE = 12;
 
+/** A reactive force smaller than the scheduled wave seizes an opening; it does
+ * not consume that wave's escalation step. Otherwise one successful defence
+ * could turn a 33-unit counterstroke into a demand for a 52-unit second wave. */
+export function advancesScheduledWave(
+  wasCounterattack: boolean, launchSize: number, scheduledTarget: number,
+): boolean {
+  return !wasCounterattack || launchSize >= scheduledTarget;
+}
+
 type Mode = 'muster' | 'defend' | 'attack';
 
 export class Tactics {
   private mode: Mode = 'muster';
   private squad = new Set<number>();
   private raiders = new Set<number>();
+  /** Persistent fair equivalents of Shift+number control groups. */
+  private flankers = new Set<number>();
+  private support = new Set<number>();
+  private flankPoint: Coord | null = null;
+  private mainEngagedAt: number | null = null;
+  private lastGroupOrderAt = -Infinity;
+  private counterattackReady = false;
   private launchSize = 0;
   private wavesLaunched = 0;
   private lastAttackAt = -Infinity;
@@ -48,6 +64,8 @@ export class Tactics {
     const alive = new Set(view.army.map(unit => unit.id));
     for (const id of this.squad) if (!alive.has(id)) this.squad.delete(id);
     for (const id of this.raiders) if (!alive.has(id)) this.raiders.delete(id);
+    for (const id of this.flankers) if (!alive.has(id)) this.flankers.delete(id);
+    for (const id of this.support) if (!alive.has(id)) this.support.delete(id);
 
     // Every fighter stands defensive: fight around the post, then WALK BACK.
     // Auto-stance pursuit is the classic suicide — chase a beaten rush across
@@ -67,6 +85,8 @@ export class Tactics {
         // Resume a still-live expedition after a local probe is cleared. Only a
         // serious recall clears `squad`; smaller attacks should not erase the
         // committed offensive plan.
+        if (!this.squad.size && profile.attackEnabled
+          && view.armySize >= Math.ceil(profile.attackArmy * 0.65)) this.counterattackReady = true;
         this.mode = this.squad.size ? 'attack' : 'muster';
         this.lastOrderAt = -Infinity;
       }
@@ -85,17 +105,14 @@ export class Tactics {
     if (repair) commands.push(repair);
 
     if (reacting && view.threatCentroid) {
-      commands.push(...this.defend(ctx));
-      return commands;
+      return [...this.defend(ctx), ...commands];
     }
 
     if (this.mode === 'attack') {
-      commands.push(...this.pressAttack(ctx));
-      return commands;
+      return [...this.pressAttack(ctx), ...commands];
     }
 
-    commands.push(...this.muster(ctx));
-    return commands;
+    return [...this.muster(ctx), ...commands];
   }
 
   // ---- repairs: a battered base is mended, not abandoned ----
@@ -135,7 +152,7 @@ export class Tactics {
     if (this.mode !== 'defend') { this.mode = 'defend'; this.lastOrderAt = -Infinity; }
     if (!moved && !due) return [];
     const defenders = view.army.filter(unit => recall || !this.squad.has(unit.id));
-    if (recall) { this.squad.clear(); this.raiders.clear(); }
+    if (recall) { this.squad.clear(); this.raiders.clear(); this.clearWaveGroups(); }
     if (!defenders.length) return [];
     this.lastDefendTarget = { ...target };
     this.lastOrderAt = view.elapsed;
@@ -161,9 +178,14 @@ export class Tactics {
     // suicide-rush at the 4-fighter floor against a rival it never scouted.
     const enemyKnown = !ctx.game.fogOfWar || view.enemyArmySize > 0;
     const waveTarget = Math.min(profile.armyCap, profile.attackArmy + this.wavesLaunched * profile.waveGrowth);
-    const needed = Math.max(4, enemyKnown
+    const normalNeeded = Math.max(4, enemyKnown
       ? Math.min(waveTarget, Math.max(profile.attackArmy, Math.ceil(view.enemyArmySize * 1.5) + 4))
       : waveTarget);
+    // A force that just broke an assault already has initiative and local
+    // information. Convert that won field into a counterstroke instead of
+    // walking home to wait for the pristine peacetime composition again.
+    const counterNeeded = Math.max(12, Math.ceil(profile.attackArmy * 0.65), Math.ceil(view.enemyArmySize * 1.4) + 3);
+    const needed = this.counterattackReady ? Math.min(normalNeeded, counterNeeded) : normalNeeded;
     // THE FINISHER: once the army fills the cap the economy has nothing bigger
     // to build toward, so massing further is wasted time — commit EVERYTHING
     // (no home guard) to a decisive assault, and (in pressAttack) fight it to
@@ -177,13 +199,18 @@ export class Tactics {
     // army it needed). Against fortifications, hold for the full siege-backed
     // FINISHER — the trebuchets that actually break the wall — and commit once.
     const siege = view.army.filter(unit => (UNITS[unit.role as keyof typeof UNITS]?.structureMult ?? 1) > 1).length;
-    const canLaunch = view.enemyBulwarks.length === 0 || siege >= 2 || this.allIn;
+    const counterCompositionReady = this.counterattackReady
+      && view.armySize >= Math.ceil(profile.attackArmy * 0.75);
+    const compositionReady = siege >= profile.minSiege || counterCompositionReady;
+    const canLaunch = compositionReady
+      && (view.enemyBulwarks.length === 0 || siege >= Math.max(2, profile.minSiege) || this.allIn);
     // the garrison is best-effort surplus, never a reason to delay the launch:
     // demanding wave + full guard before marching left Godlike massing forever
     const guard = this.allIn ? 0 : Math.min(Math.ceil(view.armySize * profile.homeGuard), Math.max(0, view.armySize - needed));
     if (profile.attackEnabled && canLaunch && view.armySize - guard >= needed
       && view.elapsed - this.lastAttackAt >= profile.minAttackInterval
       && view.enemyStore) {
+      const wasCounterattack = this.counterattackReady;
       // Premium combined-arms units belong in the wave, not accidentally in the
       // home guard merely because they were trained most recently.
       const wave = [...view.army]
@@ -192,16 +219,20 @@ export class Tactics {
       this.squad = new Set(wave.map(unit => unit.id));
       for (const id of this.squad) this.raiders.delete(id);
       this.launchSize = this.squad.size;
-      this.wavesLaunched++;
+      if (advancesScheduledWave(wasCounterattack, this.launchSize, waveTarget)) this.wavesLaunched++;
+      this.counterattackReady = false;
       this.lastAttackAt = view.elapsed;
       this.firstAttackAt ??= view.elapsed;
       this.mode = 'attack';
       this.sieging = false;
       this.lastOrderAt = view.elapsed;
       const store = view.enemyStore;
+      this.prepareWaveGroups(wave, profile.flankSize);
+      const main = wave.filter(unit => !this.flankers.has(unit.id) && !this.support.has(unit.id));
+      const vanguard = main.length ? main : wave;
       return [{
-        type: 'orderUnits', unitIds: [...this.squad],
-        order: { type: 'attackMove', x: store.x, y: store.y + 2 }, formation: 'box',
+        type: 'orderUnits', unitIds: vanguard.map(unit => unit.id),
+        order: { type: 'attackMove', x: store.x, y: store.y + 2 }, formation: 'line',
       }];
     }
 
@@ -285,6 +316,33 @@ export class Tactics {
     return 50;
   }
 
+  private prepareWaveGroups(wave: Unit[], flankSize: number): void {
+    this.clearWaveGroups();
+    if (flankSize <= 0) return;
+    const mounted = wave
+      .filter(unit => UNITS[unit.role as keyof typeof UNITS]?.tags?.includes('mounted'))
+      .sort((a, b) => a.id - b.id)
+      .slice(0, flankSize);
+    // A pair is a patrol, not an envelopment. Fall back to the proven single
+    // formation until a real mounted wing exists.
+    if (mounted.length < 3) return;
+    this.flankers = new Set(mounted.map(unit => unit.id));
+    this.support = new Set(wave
+      .filter(unit => {
+        const def = UNITS[unit.role as keyof typeof UNITS];
+        return def?.model === 'siege' || !!def?.heal;
+      })
+      .map(unit => unit.id));
+  }
+
+  private clearWaveGroups(): void {
+    this.flankers.clear();
+    this.support.clear();
+    this.flankPoint = null;
+    this.mainEngagedAt = null;
+    this.lastGroupOrderAt = -Infinity;
+  }
+
   // ---- the launched attack: march, then siege, or cut losses ----
   private pressAttack(ctx: PolicyContext): GameCommand[] {
     const { view, profile } = ctx;
@@ -292,6 +350,7 @@ export class Tactics {
     const store = view.enemyStore;
     if (!store || !squadUnits.length) {
       this.squad.clear();
+      this.clearWaveGroups();
       this.mode = 'muster';
       this.lastOrderAt = -Infinity;
       return [];
@@ -307,6 +366,7 @@ export class Tactics {
     const fieldWon = view.enemyArmySize <= Math.max(3, Math.floor(squadUnits.length * 0.4));
     if (squadUnits.length < Math.ceil(this.launchSize * retreatRatio) && !fieldWon) {
       this.squad.clear();
+      this.clearWaveGroups();
       this.mode = 'muster';
       this.lastOrderAt = view.elapsed;
       return [{
@@ -314,6 +374,8 @@ export class Tactics {
         order: { type: 'move', x: ctx.approach.x, y: ctx.approach.y }, formation: 'box',
       }];
     }
+    const groups = this.coordinateCombinedArms(ctx, squadUnits, store);
+    if (groups.waiting) return groups.command ? [groups.command] : [];
     if (view.elapsed - this.lastOrderAt < REORDER_INTERVAL) return [];
     // A walled rival is breached, not wandered around: when no ground route
     // to the castle door exists, the wave focuses the nearest curtain piece —
@@ -359,6 +421,103 @@ export class Tactics {
       }];
     }
     return this.pressStragglers(ctx, squadUnits, store);
+  }
+
+  /** Stage cavalry off-axis while the foot line advances, then release the
+   *  mounted wing and finally the slow siege/healer column once contact is
+   *  real. Every phase is inferred from observed unit orders/positions, so an
+   *  APM-throttled command is retried instead of silently advancing state. */
+  private coordinateCombinedArms(
+    ctx: PolicyContext, squadUnits: Unit[], store: Building,
+  ): { waiting: boolean; command: GameCommand | null } {
+    if (!this.flankers.size) return { waiting: false, command: null };
+    const { view } = ctx;
+    const flankers = squadUnits.filter(unit => this.flankers.has(unit.id));
+    const support = squadUnits.filter(unit => this.support.has(unit.id));
+    const main = squadUnits.filter(unit => !this.flankers.has(unit.id) && !this.support.has(unit.id));
+    if (!flankers.length) { this.clearWaveGroups(); return { waiting: false, command: null }; }
+
+    this.flankPoint ??= this.chooseFlankPoint(ctx, flankers, store);
+    const mainEngaged = !main.length || main.some(unit => !!unit.foe || !!unit.foeB
+      || Math.max(Math.abs(unit.tx - store.x), Math.abs(unit.ty - store.y)) <= 20);
+    if (mainEngaged) this.mainEngagedAt ??= view.elapsed;
+    const due = view.elapsed - this.lastGroupOrderAt >= 3;
+
+    if (!mainEngaged && this.flankPoint) {
+      const staged = this.groupNear(flankers, this.flankPoint, 5);
+      const headingThere = flankers.some(unit => this.orderNear(unit, this.flankPoint!, 4));
+      if (!staged && !headingThere && due) {
+        this.lastGroupOrderAt = view.elapsed;
+        return { waiting: true, command: {
+          type: 'orderUnits', unitIds: flankers.map(unit => unit.id),
+          order: { type: 'move', x: this.flankPoint.x, y: this.flankPoint.y }, formation: 'column',
+        } };
+      }
+      return { waiting: true, command: null };
+    }
+
+    const flankReleased = flankers.some(unit => !!unit.foe || this.orderNear(unit, store, 5));
+    if (!flankReleased && due) {
+      this.lastGroupOrderAt = view.elapsed;
+      return { waiting: true, command: {
+        type: 'orderUnits', unitIds: flankers.map(unit => unit.id),
+        order: { type: 'attackMove', x: store.x, y: store.y + 2 }, formation: 'column',
+      } };
+    }
+
+    const supportReleased = !support.length || support.some(unit => !!unit.foe || !!unit.foeB || this.orderNear(unit, store, 5));
+    if (!supportReleased && this.mainEngagedAt !== null && view.elapsed - this.mainEngagedAt >= 2 && due) {
+      this.lastGroupOrderAt = view.elapsed;
+      return { waiting: true, command: {
+        type: 'orderUnits', unitIds: support.map(unit => unit.id),
+        order: { type: 'attackMove', x: store.x, y: store.y + 2 }, formation: 'column',
+      } };
+    }
+    return { waiting: !flankReleased || !supportReleased, command: null };
+  }
+
+  private chooseFlankPoint(ctx: PolicyContext, units: Unit[], store: Building): Coord | null {
+    const home = ctx.view.store!;
+    const dx = store.x - home.x, dy = store.y - home.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const fx = dx / length, fy = dy / length;
+    const side = this.wavesLaunched % 2 === 0 ? -1 : 1;
+    let sx = 0, sy = 0;
+    for (const unit of units) { sx += unit.tx; sy += unit.ty; }
+    sx = Math.round(sx / units.length); sy = Math.round(sy / units.length);
+    for (const progress of [0.58, 0.68, 0.48]) for (const offset of [14, 10, 6]) {
+      const base = {
+        x: Math.round(home.x + dx * progress - fy * offset * side),
+        y: Math.round(home.y + dy * progress + fx * offset * side),
+      };
+      const point = this.walkableNear(ctx, base);
+      if (point && findPath(ctx.world, sx, sy, point.x, point.y, ctx.view.owner)) return point;
+    }
+    return null;
+  }
+
+  private walkableNear(ctx: PolicyContext, base: Coord): Coord | null {
+    for (let radius = 0; radius <= 3; radius++) {
+      for (let oy = -radius; oy <= radius; oy++) for (let ox = -radius; ox <= radius; ox++) {
+        if (radius > 0 && Math.abs(ox) !== radius && Math.abs(oy) !== radius) continue;
+        const x = base.x + ox, y = base.y + oy;
+        if (x > 0 && y > 0 && x < ctx.world.W - 1 && y < ctx.world.H - 1
+          && ctx.world.passable(x, y, ctx.view.owner)) return { x, y };
+      }
+    }
+    return null;
+  }
+
+  private groupNear(units: Unit[], target: Coord, range: number): boolean {
+    let x = 0, y = 0;
+    for (const unit of units) { x += unit.tx; y += unit.ty; }
+    x /= units.length; y /= units.length;
+    return Math.max(Math.abs(x - target.x), Math.abs(y - target.y)) <= range;
+  }
+
+  private orderNear(unit: Unit, target: Coord, range: number): boolean {
+    const order = unit.order;
+    return !!order && Math.max(Math.abs(order.x - target.x), Math.abs(order.y - target.y)) <= range;
   }
 
   /** The wall/gate the wave should batter, or null when a ground route to the
