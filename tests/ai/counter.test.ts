@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dominantEnemyCategory, counterMultiplier } from '../../src/ai/strategy/classic';
+import { allocateUnitQuotas, dominantEnemyCategory, counterMultiplier } from '../../src/ai/strategy/classic';
 
 describe('reactive counter-composition', () => {
   it('reads the rival army\'s dominant category, ignoring trivial forces', () => {
@@ -27,5 +27,25 @@ describe('reactive counter-composition', () => {
     for (const kind of ['pikeman', 'archer', 'knight', 'soldier']) {
       expect(counterMultiplier(kind, 'mounted', 0)).toBe(1);
     }
+  });
+});
+
+describe('target army quotas', () => {
+  it('fills the exact cap while reserving slots for every weighted premium role', () => {
+    const quotas = allocateUnitQuotas({
+      soldier: 4, archer: 4, pikeman: 1, knight: 2,
+      lancer: 2, onager: 2, trebuchet: 3, priest: 2,
+    }, 75);
+
+    expect(Object.values(quotas).reduce((sum, count) => sum + count, 0)).toBe(75);
+    for (const kind of ['knight', 'lancer', 'onager', 'trebuchet', 'priest']) {
+      expect(quotas[kind], `${kind} lost its reserved cap slots`).toBeGreaterThan(0);
+    }
+  });
+
+  it('is deterministic at tied remainders', () => {
+    const weights = { soldier: 1, archer: 1, pikeman: 1 };
+    expect(allocateUnitQuotas(weights, 5)).toEqual(allocateUnitQuotas(weights, 5));
+    expect(allocateUnitQuotas(weights, 5)).toEqual({ archer: 2, pikeman: 2, soldier: 1 });
   });
 });

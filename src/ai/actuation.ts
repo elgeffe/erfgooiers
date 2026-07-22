@@ -112,14 +112,16 @@ function anchorFor(
     let best: Coord | null = null, bestScore = Infinity;
     for (const deposit of view.resources[node]) {
       if (chebyshev(deposit, home) >= maxDistance || !safeGround(deposit, home, enemyStore)) continue;
-      let taken = false;
+      let coverage = 0;
       for (const building of extractors) {
-        if (chebyshev(deposit, building) <= GATHER_RANGE + 1) { taken = true; break; }
+        if (chebyshev(deposit, building) <= GATHER_RANGE + 1) coverage++;
       }
-      if (taken) continue;
       // opening mines score by nearness to home; expansion mines by nearness to
-      // the contested centre, so the base reaches out instead of hugging home
-      const score = contestCentre ? chebyshev(deposit, center) : chebyshev(deposit, home);
+      // the contested centre. Existing coverage is a preference penalty, not a
+      // veto: a provisioned corner may expose one broad vein, and several mines
+      // must be allowed to work different live nodes in that same cluster.
+      const distance = contestCentre ? chebyshev(deposit, center) : chebyshev(deposit, home);
+      const score = distance + coverage * 12;
       if (score < bestScore) { bestScore = score; best = deposit; }
     }
     return best;

@@ -73,6 +73,8 @@ export interface AIProfile {
   /** Launch an attack once this many fighters stand mustered. Under fog this
    *  is the whole story — an unscouted rival never lowers the bar. */
   attackArmy: number;
+  /** Whether this persona ever launches raids or attack waves. */
+  attackEnabled: boolean;
   /** Extra fighters required for every successive full attack wave. */
   waveGrowth: number;
   /** Commitment: minimum seconds between launched attacks (no plan-flapping).
@@ -102,9 +104,9 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
   // Blunders one pass in five.
   easy: {
     macroPeriod: 6, tacticsPeriod: 2, reactionDelay: 5, apm: 10, errorRate: 0.2,
-    econScale: 0.85, expansion: 0, maxPendingSites: 2, workerReserveCoin: 2, towers: 4, walls: 0, wallMaterial: 'wood',
+    econScale: 0.85, expansion: 1, maxPendingSites: 2, workerReserveCoin: 2, towers: 4, walls: 0, wallMaterial: 'wood',
     armyCap: 18, unitMix: { soldier: 3, pikeman: 2, archer: 3 },
-    attackArmy: 1e9, waveGrowth: 0, minAttackInterval: 1e9, retreatRatio: 0.3, useBell: true,
+    attackArmy: 18, attackEnabled: false, waveGrowth: 0, minAttackInterval: 1e9, retreatRatio: 0.3, useBell: true,
     counter: 0, homeGuard: 0.35, raidSize: 0, raidInterval: 1e9,
   },
   // The defensive-but-mobile tier with a slow fuse: quicker cadence and cleaner
@@ -114,9 +116,9 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
   // walls and towers, then breaks out late in increasingly large waves.
   hard: {
     macroPeriod: 2.5, tacticsPeriod: 1, reactionDelay: 2, apm: 40, errorRate: 0.03,
-    econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 3, walls: 1, wallMaterial: 'wood',
-    armyCap: 54, unitMix: { soldier: 4, archer: 4, pikeman: 1, knight: 1, trebuchet: 1, priest: 1 },
-    attackArmy: 30, waveGrowth: 6, minAttackInterval: 190, retreatRatio: 0.5, useBell: true,
+    econScale: 1, expansion: 2, maxPendingSites: 3, workerReserveCoin: 3, towers: 3, walls: 1, wallMaterial: 'wood',
+    armyCap: 48, unitMix: { soldier: 4, archer: 4, pikeman: 1, knight: 1 },
+    attackArmy: 36, attackEnabled: true, waveGrowth: 6, minAttackInterval: 190, retreatRatio: 0.5, useBell: true,
     counter: 0.6, homeGuard: 0.3, raidSize: 0, raidInterval: 1e9,
   },
   // The pro: a fast raid party pesters the rival's infrastructure (and
@@ -132,16 +134,16 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
     // ore and never stops compounding producers. It edges Hard on execution
     // (cadence, APM, reactions, counter, early raids) and army cap; towers 3
     // gives defensive parity while a stone curtain protects the deeper base.
-    econScale: 1, expansion: 3, maxPendingSites: 7, workerReserveCoin: 3, towers: 3, walls: 1, wallMaterial: 'stone',
+    econScale: 1, expansion: 3, maxPendingSites: 4, workerReserveCoin: 3, towers: 3, walls: 1, wallMaterial: 'stone',
     // onagers wreck the enemy line in the field clash (anti-personnel splash),
     // trebuchets (structureMult 4) then break the walls and storehouse — the
     // demolition core, so they're weighted highest of the siege pair
-    armyCap: 75, unitMix: {
-      soldier: 4, archer: 4, pikeman: 1, knight: 2,
+    armyCap: 72, unitMix: {
+      soldier: 5, archer: 5, pikeman: 1, knight: 2,
       lancer: 2, horsearcher: 2, horseknight: 1,
-      onager: 2, trebuchet: 3, priest: 2,
+      onager: 1, trebuchet: 2, priest: 1,
     },
-    attackArmy: 34, waveGrowth: 8, minAttackInterval: 150, retreatRatio: 0.55, useBell: true,
+    attackArmy: 44, attackEnabled: true, waveGrowth: 8, minAttackInterval: 150, retreatRatio: 0.55, useBell: true,
     counter: 1, homeGuard: 0.25, raidSize: 6, raidInterval: 90,
   },
 };
@@ -170,7 +172,7 @@ const IDLE: AIProfile = {
   macroPeriod: 3600, tacticsPeriod: 3600, reactionDelay: 3600, apm: 0, errorRate: 0,
   econScale: 0, expansion: 0, maxPendingSites: 0, workerReserveCoin: 0, towers: 0, walls: 0, wallMaterial: 'wood',
   armyCap: 0, unitMix: {},
-  attackArmy: 1e9, waveGrowth: 0, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
+  attackArmy: 1e9, attackEnabled: false, waveGrowth: 0, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
   counter: 0, homeGuard: 0, raidSize: 0, raidInterval: 1e9,
 };
 
@@ -180,7 +182,7 @@ const RANDOM: AIProfile = {
   macroPeriod: 5, tacticsPeriod: 5, reactionDelay: 5, apm: 12, errorRate: 0,
   econScale: 1, expansion: 0, maxPendingSites: 3, workerReserveCoin: 0, towers: 0, walls: 0, wallMaterial: 'wood',
   armyCap: 12, unitMix: { soldier: 1, archer: 1 },
-  attackArmy: 1e9, waveGrowth: 0, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
+  attackArmy: 1e9, attackEnabled: false, waveGrowth: 0, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
   counter: 0, homeGuard: 0, raidSize: 0, raidInterval: 1e9,
 };
 
@@ -197,7 +199,7 @@ const TENSOR: AIProfile = {
   macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 60, errorRate: 0,
   econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 1, walls: 0, wallMaterial: 'stone',
   armyCap: 55, unitMix: {}, // the mix comes from the sampled plan, not this table
-  attackArmy: 16, waveGrowth: 4, minAttackInterval: 80, retreatRatio: 0.55, useBell: true,
+  attackArmy: 16, attackEnabled: true, waveGrowth: 4, minAttackInterval: 80, retreatRatio: 0.55, useBell: true,
   counter: 1, homeGuard: 0.2, raidSize: 5, raidInterval: 150,
 };
 
