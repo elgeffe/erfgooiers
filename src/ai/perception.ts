@@ -67,6 +67,9 @@ export interface AIView {
   enemyArmyByKind: Partial<Record<UnitKind, number>>;
   /** The rival's standing curtain (walls + gates) — what a siege must breach. */
   enemyBulwarks: Building[];
+  /** Visible hostile arrow towers that an assault should dismantle before it
+   *  turns every weapon on the castle. */
+  enemyTowers: Building[];
 
   /** Hostile fighters standing near own buildings, and their mass centre. */
   threats: Unit[];
@@ -97,12 +100,15 @@ export function perceive(game: Game, world: World, owner: PlayerId): AIView {
   const buildings: Building[] = [];
   const built: Partial<Record<BuildingKey, number>> = {};
   const enemyBulwarks: Building[] = [];
+  const enemyTowers: Building[] = [];
   let store: Building | null = null;
   for (const building of game.buildings) {
     if (building.removed) continue;
     if (building.owner !== owner) {
-      if (building.def.bulwark && enemySeats.includes(building.owner as PlayerId)
-        && game.visibleTo(owner, building.x + 1, building.y + 1)) enemyBulwarks.push(building);
+      const visibleEnemy = enemySeats.includes(building.owner as PlayerId)
+        && game.visibleTo(owner, building.x + 1, building.y + 1);
+      if (visibleEnemy && building.def.bulwark) enemyBulwarks.push(building);
+      if (visibleEnemy && building.def.tower && !building.def.store) enemyTowers.push(building);
       continue;
     }
     buildings.push(building);
@@ -171,7 +177,7 @@ export function perceive(game: Game, world: World, owner: PlayerId): AIView {
     workers: { serfs, laborers, villagers, freeVillagers, unstaffed },
     averageWorkerHunger: workerCount ? workerHunger / workerCount : 100,
     army, armySize: army.length,
-    enemyStore, enemyArmySize, enemyArmyByKind, enemyBulwarks,
+    enemyStore, enemyArmySize, enemyArmyByKind, enemyBulwarks, enemyTowers,
     threats, threatCentroid,
     resources: cachedResources(world, game.elapsed),
   };

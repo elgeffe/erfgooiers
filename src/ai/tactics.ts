@@ -1,4 +1,5 @@
 import { findPath } from '../engine/pathfinding';
+import { UNITS } from '../data/units';
 import { doorTile } from '../game/util';
 import type { Building, Coord, Unit } from '../types';
 import type { GameCommand } from '../net/protocol';
@@ -62,7 +63,13 @@ export class Tactics {
       this.threatSince ??= view.elapsed;
     } else {
       this.threatSince = null;
-      if (this.mode === 'defend') { this.mode = 'muster'; this.lastOrderAt = -Infinity; }
+      if (this.mode === 'defend') {
+        // Resume a still-live expedition after a local probe is cleared. Only a
+        // serious recall clears `squad`; smaller attacks should not erase the
+        // committed offensive plan.
+        this.mode = this.squad.size ? 'attack' : 'muster';
+        this.lastOrderAt = -Infinity;
+      }
     }
     const reacting = this.threatSince !== null && view.elapsed - this.threatSince >= profile.reactionDelay;
 
@@ -162,20 +169,26 @@ export class Tactics {
     // (no home guard) to a decisive assault, and (in pressAttack) fight it to
     // the death instead of retreating. This is what converts the deep economy
     // and its siege into an actual win rather than a timeout draw.
-    this.allIn = view.armySize >= Math.max(needed, Math.round(profile.armyCap * 0.85));
+    this.allIn = profile.attackEnabled
+      && view.armySize >= Math.max(needed, Math.round(profile.armyCap * 0.85));
     // A WALLED rival is never assaulted piecemeal: a periodic mid-size wave just
     // bleeds out on the curtain and its towers while the turtle masses behind it
     // (measured: Godlike fed 30-fighter waves into Hard's walls and lost the
     // army it needed). Against fortifications, hold for the full siege-backed
     // FINISHER — the trebuchets that actually break the wall — and commit once.
-    const canLaunch = view.enemyBulwarks.length === 0 || this.allIn;
+    const siege = view.army.filter(unit => (UNITS[unit.role as keyof typeof UNITS]?.structureMult ?? 1) > 1).length;
+    const canLaunch = view.enemyBulwarks.length === 0 || siege >= 2 || this.allIn;
     // the garrison is best-effort surplus, never a reason to delay the launch:
     // demanding wave + full guard before marching left Godlike massing forever
     const guard = this.allIn ? 0 : Math.min(Math.ceil(view.armySize * profile.homeGuard), Math.max(0, view.armySize - needed));
-    if (canLaunch && view.armySize - guard >= needed
+    if (profile.attackEnabled && canLaunch && view.armySize - guard >= needed
       && view.elapsed - this.lastAttackAt >= profile.minAttackInterval
       && view.enemyStore) {
-      const wave = view.army.slice(0, view.armySize - guard);
+      // Premium combined-arms units belong in the wave, not accidentally in the
+      // home guard merely because they were trained most recently.
+      const wave = [...view.army]
+        .sort((a, b) => this.attackPriority(b) - this.attackPriority(a) || a.id - b.id)
+        .slice(0, view.armySize - guard);
       this.squad = new Set(wave.map(unit => unit.id));
       for (const id of this.squad) this.raiders.delete(id);
       this.launchSize = this.squad.size;
@@ -199,12 +212,17 @@ export class Tactics {
     // has WALLED UP: a light raid party just dies on the curtain and its
     // towers, feeding the turtle instead of pestering it. Raids harass an open
     // economy; a fortified one is cracked by the main wave and its siege.
-    if (profile.raidSize > 0 && view.enemyStore && !this.raiders.size
+    if (profile.attackEnabled && profile.raidSize > 0 && view.enemyStore && !this.raiders.size
       && view.enemyArmySize < profile.raidSize
       && view.enemyBulwarks.length === 0
       && view.elapsed - this.lastRaidAt >= profile.raidInterval
       && view.armySize - guard >= profile.raidSize + 4) {
-      const party = view.army.filter(unit => !this.squad.has(unit.id)).slice(0, profile.raidSize);
+      // The harassment group is the fast mounted wing. Sending the six oldest
+      // starting footmen into castle arrows was neither scouting nor flanking.
+      const party = view.army.filter(unit => !this.squad.has(unit.id)
+        && UNITS[unit.role as keyof typeof UNITS]?.tags?.includes('mounted'))
+        .sort((a, b) => a.id - b.id)
+        .slice(0, profile.raidSize);
       if (party.length === profile.raidSize) {
         this.raiders = new Set(party.map(unit => unit.id));
         this.lastRaidAt = view.elapsed;
@@ -256,6 +274,17 @@ export class Tactics {
     return commands;
   }
 
+  private attackPriority(unit: Unit): number {
+    const def = UNITS[unit.role as keyof typeof UNITS];
+    if (!def) return 0;
+    if ((def.structureMult ?? 1) > 1) return 100;
+    if (def.heal) return 90;
+    if (def.tags?.includes('mounted')) return 80;
+    if (unit.role === 'knight') return 70;
+    if (def.range > 1.6) return 60;
+    return 50;
+  }
+
   // ---- the launched attack: march, then siege, or cut losses ----
   private pressAttack(ctx: PolicyContext): GameCommand[] {
     const { view, profile } = ctx;
@@ -271,8 +300,12 @@ export class Tactics {
     // — but an ALL-IN finisher fights to the death (a low floor), because
     // there is no bigger army to re-mass into and a razed enemy storehouse ends
     // the match outright
-    const retreatRatio = this.allIn ? 0.12 : profile.retreatRatio;
-    if (squadUnits.length < Math.ceil(this.launchSize * retreatRatio)) {
+    // Marching losses are a reason to disengage; a breach already converted
+    // into a focused castle siege is not. Leaving at 49% while the keep was
+    // actively falling let its repair crew erase every wave's progress.
+    const retreatRatio = this.allIn || this.sieging ? 0.12 : profile.retreatRatio;
+    const fieldWon = view.enemyArmySize <= Math.max(3, Math.floor(squadUnits.length * 0.4));
+    if (squadUnits.length < Math.ceil(this.launchSize * retreatRatio) && !fieldWon) {
       this.squad.clear();
       this.mode = 'muster';
       this.lastOrderAt = view.elapsed;
@@ -295,12 +328,29 @@ export class Tactics {
         }];
       }
     }
+    // Once the local defenders are broken, remove the arrow towers before
+    // committing to the keep. Attack-move is good at winning the field but can
+    // drift past static emplacements; focusing the castle first makes the
+    // whole wave ignore both towers and surviving defenders.
+    if (!this.sieging && fieldWon && view.enemyTowers.length) {
+      const tower = this.nearestBuilding(squadUnits, view.enemyTowers);
+      this.lastOrderAt = view.elapsed;
+      return [{
+        type: 'orderUnits', unitIds: squadUnits.map(unit => unit.id),
+        order: { type: 'attackBuilding', targetId: tower.id }, formation: 'box',
+      }];
+    }
     // close enough: focus the castle itself instead of drifting through the base
     let near = 0;
     for (const unit of squadUnits) {
       if (Math.max(Math.abs(unit.tx - store.x), Math.abs(unit.ty - store.y)) <= SIEGE_RANGE) near++;
     }
-    if (!this.sieging && near >= squadUnits.length * 0.5) {
+    // Do not tell the whole line to stare at masonry while an intact garrison
+    // is cutting it down. `attackBuilding` intentionally suppresses unit
+    // targeting, so the field army must first win the local fight; only the
+    // surviving demolition force then focuses the keep.
+    const defendersBroken = view.enemyArmySize <= Math.max(2, Math.floor(squadUnits.length * 0.2));
+    if (!this.sieging && defendersBroken && near >= squadUnits.length * 0.5) {
       this.sieging = true;
       this.lastOrderAt = view.elapsed;
       return [{
@@ -328,6 +378,17 @@ export class Tactics {
       if (score < bestScore) { bestScore = score; best = bulwark; }
     }
     return best;
+  }
+
+  private nearestBuilding(units: Unit[], buildings: Building[]): Building {
+    let cx = 0, cy = 0;
+    for (const unit of units) { cx += unit.tx; cy += unit.ty; }
+    cx /= units.length; cy /= units.length;
+    return [...buildings].sort((a, b) => {
+      const ad = Math.max(Math.abs(a.x - cx), Math.abs(a.y - cy));
+      const bd = Math.max(Math.abs(b.x - cx), Math.abs(b.y - cy));
+      return ad - bd || a.id - b.id;
+    })[0];
   }
 
   private pressStragglers(ctx: PolicyContext, squadUnits: Unit[], store: Building): GameCommand[] {
