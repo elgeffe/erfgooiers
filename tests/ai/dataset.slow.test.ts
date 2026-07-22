@@ -1,12 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { runSelfPlayMatch } from '../../src/ai/selfplay';
-import { extractDataset, datasetToJsonl, macroLabel, FEATURE_NAMES } from '../../src/ai/dataset';
+import { extractDataset, datasetToJsonl, macroLabel, FEATURE_NAMES, type DatasetRow } from '../../src/ai/dataset';
+import type { Replay } from '../../src/game/replay';
 
 describe('replay dataset extraction', () => {
-  it('emits labelled feature rows per seat per snapshot, deterministically', () => {
-    const match = runSelfPlayMatch({ seed: 8000, p1: 'classic-hard', p2: 'classic-easy', maxSeconds: 240 });
-    const rows = extractDataset(match.replay, { everySeconds: 20, horizonSeconds: 60 });
+  let replay: Replay;
+  let rows: DatasetRow[];
 
+  beforeAll(() => {
+    const match = runSelfPlayMatch({ seed: 8000, p1: 'classic-hard', p2: 'classic-easy', maxSeconds: 120 });
+    replay = match.replay;
+    rows = extractDataset(replay, { everySeconds: 20, horizonSeconds: 60 });
+  });
+
+  it('emits labelled feature rows per seat per snapshot, deterministically', () => {
     expect(rows.length).toBeGreaterThan(10);
     // every row carries the full, fixed feature space
     for (const row of rows) {
@@ -22,7 +29,7 @@ describe('replay dataset extraction', () => {
     expect(opening.label).toBe('build:woodcutter');
 
     // re-simulation is pure: identical seed + replay → identical rows
-    const again = extractDataset(match.replay, { everySeconds: 20, horizonSeconds: 60 });
+    const again = extractDataset(replay, { everySeconds: 20, horizonSeconds: 60 });
     expect(again).toEqual(rows);
   }, 120_000);
 
@@ -34,8 +41,6 @@ describe('replay dataset extraction', () => {
   });
 
   it('serializes to flat JSONL that parses back to the same feature values', () => {
-    const match = runSelfPlayMatch({ seed: 8001, p1: 'classic-easy', p2: 'idle', maxSeconds: 120 });
-    const rows = extractDataset(match.replay, { everySeconds: 30 });
     const jsonl = datasetToJsonl(rows);
     const lines = jsonl.trim().split('\n');
     expect(lines.length).toBe(rows.length);

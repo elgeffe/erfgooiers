@@ -14,14 +14,24 @@ import { PLAYER_IDS, type Building, type PlayerId, type Unit, type UnitOrder } f
  * create/remove meshes, so plain THREE objects with no renderer are enough.
  * Unit groups must sit at real world coordinates — movement math reads them.
  */
-export function stubView(world: World): View {
+export interface StubViewOptions {
+  caravan?: { created: number; removed: number };
+}
+
+const headlessItemGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+
+export function stubView(world: World, options: StubViewOptions = {}): View {
   const unit = () => ({
     group: new THREE.Group(),
-    itemMesh: new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshLambertMaterial()),
+    itemMesh: new THREE.Mesh(headlessItemGeometry, new THREE.MeshLambertMaterial()),
   });
   const at = (g: THREE.Object3D, x: number, y: number) => { g.position.set(world.wx(x), 0, world.wz(y)); return g; };
   const view = {
-    add() {}, remove() {}, removeMeshes() {},
+    add() {},
+    remove(mesh: THREE.Object3D) {
+      if (mesh.userData.traderCaravan && options.caravan) options.caravan.removed++;
+    },
+    removeMeshes() {},
     setFogHidden() {}, isFogHidden: () => false,
     updateFogOverlay() {}, hideFogOverlay() {},
     roadMeshAt: () => null,
@@ -29,7 +39,12 @@ export function stubView(world: World): View {
     addRoad() {}, removeRoad() {},
     addFieldCrop() {}, scaleFieldCrop() {}, treeMatured() {}, addTree() {},
     createBuildingMesh: () => new THREE.Group(),
-    createTraderCaravan: () => new THREE.Group(),
+    createTraderCaravan: () => {
+      if (options.caravan) options.caravan.created++;
+      const group = new THREE.Group();
+      group.userData.traderCaravan = true;
+      return group;
+    },
     createScaffold: () => ({ group: new THREE.Group(), frame: new THREE.Group() }),
     createPlotMarker: () => new THREE.Group(),
     createFlag: () => new THREE.Group(),

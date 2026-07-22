@@ -17,7 +17,9 @@
     "tensor:pretrain": "tsx tools/selfplay/tensor.ts pretrain",
     "tensor:train": "tsx tools/selfplay/tensor.ts train",
     "tensor:eval": "tsx tools/selfplay/tensor.ts eval",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:fast": "vitest run --exclude \"tests/**/*.slow.test.ts\"",
+    "test:slow": "vitest run .slow.test.ts"
   },
   "dependencies": {
     "three": "^0.185.1",
