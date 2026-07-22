@@ -67,22 +67,31 @@ function openPlotGround(world: World, at: Coord): number {
  *  left (e.g. every iron deposit mined out) — the caller skips the goal then.
  *  `reach` is how far from home the profile will expand: low tiers hug the
  *  base, higher tiers push mines out toward the CONTESTED CENTRE deposits. */
-function anchorFor(view: AIView, key: BuildingKey, home: Coord, approach: Coord, reach: number): Coord | null {
+function anchorFor(view: AIView, key: BuildingKey, home: Coord, approach: Coord, reach: number, center: Coord): Coord | null {
   const node = MINE_NODE[key];
   const enemyStore = view.enemyStore ? { x: view.enemyStore.x, y: view.enemyStore.y } : null;
   if (node) {
-    // gold is the army's fuel — worth a longer walk than any other deposit,
-    // and a follow-up mine must sit at a vein the standing mines don't work
-    let best: Coord | null = null, bestDistance = node === 'gold' ? reach + 4 : reach;
+    // The first couple of each mine sit near home for a short, safe haul; BEYOND
+    // that the pro CONTESTS THE CENTRE — planting mines on the shared central
+    // gold/coal/iron veins to deny the rival and fuel an ever bigger army (the
+    // win condition the human plays for). safeGround still bars the enemy half,
+    // so "toward centre" means up to midfield, never into their base.
+    let owned = 0;
+    for (const building of view.buildings) if (MINE_NODE[building.key] === node) owned++;
+    const contestCentre = owned >= 2;
+    const maxDistance = node === 'gold' ? reach + 4 : reach;
+    let best: Coord | null = null, bestScore = Infinity;
     for (const deposit of view.resources[node]) {
-      const distance = chebyshev(deposit, home);
-      if (distance >= bestDistance || !safeGround(deposit, home, enemyStore)) continue;
+      if (chebyshev(deposit, home) >= maxDistance || !safeGround(deposit, home, enemyStore)) continue;
       let taken = false;
       for (const building of view.buildings) {
         if (MINE_NODE[building.key] === node && chebyshev(deposit, building) <= GATHER_RANGE) { taken = true; break; }
       }
       if (taken) continue;
-      bestDistance = distance; best = deposit;
+      // opening mines score by nearness to home; expansion mines by nearness to
+      // the contested centre, so the base reaches out instead of hugging home
+      const score = contestCentre ? chebyshev(deposit, center) : chebyshev(deposit, home);
+      if (score < bestScore) { bestScore = score; best = deposit; }
     }
     return best;
   }
@@ -153,7 +162,8 @@ export function findBuildingSpot(
   const store = view.store;
   if (!store) return null;
   const home = { x: store.x, y: store.y };
-  const anchor = anchorFor(view, key, home, approach, reach);
+  const center = { x: Math.floor(world.W / 2), y: Math.floor(world.H / 2) };
+  const anchor = anchorFor(view, key, home, approach, reach, center);
   if (!anchor) return null;
 
   const candidates: (PlacementPlan & { value: number })[] = [];

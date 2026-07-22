@@ -131,7 +131,9 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
     // gives defensive parity. NOTE: vs Hard's turtle this is still a close,
     // slightly-losing matchup in self-play — an aggressive-vs-turtle archetype
     // clash left as a known playtest/balance item, not a regression.
-    econScale: 1, expansion: 3, maxPendingSites: 7, workerReserveCoin: 3, towers: 3, walls: 1,
+    // walls 0 for now — the AI's wall line was weak and gateless; disabled
+    // until the fortification planner is reworked (tracked as a follow-up)
+    econScale: 1, expansion: 3, maxPendingSites: 7, workerReserveCoin: 3, towers: 3, walls: 0,
     // onagers wreck the enemy line in the field clash (anti-personnel splash),
     // trebuchets (structureMult 4) then break the walls and storehouse — the
     // demolition core, so they're weighted highest of the siege pair

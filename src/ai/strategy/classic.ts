@@ -408,7 +408,10 @@ export class ClassicMacro implements MacroPolicy {
       .filter(goal => coinEngineRunning || !goal.expand)
       .filter(goal => !coinFirst || preMint.includes(goal.key))
       .filter(goal => !goal.expand || grows(goal.category) || staffed)
-      .filter(goal => !goal.expand || !starved || materialProducer.includes(goal.key))
+      // the anti-gridlock hold spares the material producers AND the coin chain:
+      // goldmines/mints are cheap (2 timber) and are the win-condition income, so
+      // they must keep scaling early even while timber is tight for construction
+      .filter(goal => !goal.expand || !starved || materialProducer.includes(goal.key) || goal.category === 'coin')
       .filter(goal => (goal.requires ?? []).every(key => (view.built[key] ?? 0) > 0))
       .filter(goal => (this.blockedUntil.get(goal.key) ?? 0) <= view.elapsed)
       .map(goal => {
@@ -497,8 +500,12 @@ export class ClassicMacro implements MacroPolicy {
       // ---- the timber & stone chain: it MUST keep construction supplied, so it
       // is valued by its good's scarcity and outbids other producers when the
       // base runs dry (an empty materials pile gridlocks every other site) ----
-      case 'woodcutter': return stock('timber') < 12 ? 44 + (12 - stock('timber')) * 6 : feed(b('woodcutter'), b('sawmill'));
-      case 'sawmill': return b('sawmill') < b('woodcutter') ? 48 : (stock('timber') < 10 ? 30 : 0);
+      // TIMBER scarcity drives the SAWMILL (the converter trunk→timber), NOT the
+      // woodcutter — a low-timber base that keeps planting woodcutters just piles
+      // up raw trunk one lone sawmill can't process (the measured many-woodcutter/
+      // one-sawmill bug). Woodcutters then match the sawmills 1:1 to feed them.
+      case 'sawmill': return stock('timber') < 12 ? 46 + (12 - stock('timber')) * 6 : (b('sawmill') < b('woodcutter') ? 26 : 0);
+      case 'woodcutter': return Math.max(feed(b('woodcutter'), b('sawmill')), stock('trunk') < 4 ? 38 : 0);
       case 'quarry': return stock('stone') < 14 ? 44 + (14 - stock('stone')) * 6 : 0;
       case 'forester': return b('forester') < 1 ? 42 : (b('forester') < b('woodcutter') / 3 ? 30 : 0);
       case 'farm': return feed(b('farm'), b('mill')) || (stock('wheat') < 3 ? 35 : 0);
