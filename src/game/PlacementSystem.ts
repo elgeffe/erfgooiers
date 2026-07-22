@@ -80,6 +80,7 @@ export class PlacementSystem {
       if (tile.deco) this.removeDecoration(x, y);
     }
     this.buildings.push(building);
+    this.refreshWoodenWallsAround(building);
     if (instant) building.active = true;
     // The "wants plots" crystal is a prompt to its owner, so only the player who
     // placed the building sees it — in co-op the ally's fields carry no marker.
@@ -446,7 +447,28 @@ export class PlacementSystem {
     this.markets.removeBuilding(building);
     this.view.remove(building.mesh);
     this.buildings.splice(this.buildings.indexOf(building), 1);
+    this.refreshWoodenWallsAround(building);
     if (this.ports.selected() === building) this.ports.select(null);
+  }
+
+  /** Re-resolve neighbouring palisade arms after construction or demolition.
+   *  Buildings occupy 2×2 tiles, hence cardinal neighbours are two tiles away. */
+  private refreshWoodenWallsAround(changed: Building): void {
+    const fortification = (building: Building | null | undefined): building is Building =>
+      !!building && !building.removed && building.owner === changed.owner
+      && (building.key === 'woodwall' || building.key === 'woodgate');
+    const at = (x: number, y: number): Building | null => this.world.T(x, y)?.b ?? null;
+    const candidates = new Set<Building>();
+    for (const [dx, dy] of [[0, 0], [0, -2], [2, 0], [0, 2], [-2, 0]]) {
+      const building = at(changed.x + dx, changed.y + dy);
+      if (building?.key === 'woodwall') candidates.add(building);
+    }
+    for (const wall of candidates) this.view.configureWoodenWall?.(wall.mesh, {
+      north: fortification(at(wall.x, wall.y - 2)),
+      east: fortification(at(wall.x + 2, wall.y)),
+      south: fortification(at(wall.x, wall.y + 2)),
+      west: fortification(at(wall.x - 2, wall.y)),
+    });
   }
 
   private openGround(tx: number, ty: number): boolean {

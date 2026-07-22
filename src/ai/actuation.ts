@@ -26,7 +26,7 @@ const MINE_NODE: Partial<Record<BuildingKey, 'stone' | 'gold' | 'coal' | 'iron'>
 /** Miners/woodcutters work nodes within this box range (mirrors data/buildings). */
 const GATHER_RANGE = 9;
 /** Search rings around the anchor, and a cap on scored legal candidates. */
-const MIN_RADIUS = 2, MAX_RADIUS = 16, MAX_CANDIDATES = 40;
+const MIN_RADIUS = 2, MAX_RADIUS = 16, MAX_CANDIDATES = 20;
 
 const chebyshev = (a: Coord, b: Coord): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 
@@ -184,7 +184,7 @@ export function findBuildingSpot(
       if (!workable(view, world, key, at)) continue;
       const preferred = rotFacing(at, home);
       let rot = -1;
-      for (const r of [preferred, 0, 1, 2, 3]) {
+      for (const r of new Set([preferred, 0, 1, 2, 3])) {
         if (game.canPlace(key, at.x, at.y, r)) { rot = r; break; }
       }
       if (rot < 0) continue;
@@ -193,7 +193,7 @@ export function findBuildingSpot(
     }
     // keep collecting a few rings past the first legal spot so the crowding
     // score has room to spread the base out rather than pack the first ring
-    if (candidates.length && radius >= MIN_RADIUS + 6) break;
+    if (candidates.length && radius >= MIN_RADIUS + 5) break;
   }
   // A legal tile is not always a REACHABLE tile — a spot behind water or rock
   // starves its site forever and (worse) strands every serf sent to feed it.
@@ -201,7 +201,7 @@ export function findBuildingSpot(
   // is the signal, not its length) before committing to one.
   candidates.sort((a, b) => b.value - a.value);
   const from = doorTile(store);
-  for (const candidate of candidates.slice(0, 6)) {
+  for (const candidate of candidates.slice(0, 3)) {
     if (chebyshev(candidate, home) > reach + 8) continue;
     const door = doorTile(candidate);
     if (findPath(world, from.x, from.y, door.x, door.y, view.owner)) return candidate;

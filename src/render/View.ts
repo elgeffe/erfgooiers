@@ -4,7 +4,7 @@ import { uiRng } from '../engine/rng';
 import { GRAPHICS } from '../constants';
 import type { World } from '../world/World';
 import type { Building, BuildingDef, BuildingKey, Coord, Faction, Field, Pickup, Tree, Unit } from '../types';
-import { circle, cone, makeArrow, makeBuilding, makeUnitCorpse, makeFireball, makeFlag, makeFlame, makeHealGlow, makeHero, makeRock, makePlotMarker, makeScaffold, makeTraderCaravan, makeUnit, noOutline, setActiveBiome, stdMat } from './models';
+import { circle, cone, configureWoodenWall, makeArrow, makeBuilding, makeUnitCorpse, makeFireball, makeFlag, makeFlame, makeHealGlow, makeHero, makeRock, makePlotMarker, makeScaffold, makeTraderCaravan, makeUnit, noOutline, setActiveBiome, stdMat } from './models';
 import { Ambience } from './Ambience';
 import { TerrainRenderer } from './TerrainRenderer';
 
@@ -528,6 +528,9 @@ export class View {
   }
 
   createBuildingMesh(key: BuildingKey, def: BuildingDef, playerColor?: number): THREE.Group { return makeBuilding(key, def, false, playerColor); }
+  configureWoodenWall(mesh: THREE.Group, neighbours: { north: boolean; east: boolean; south: boolean; west: boolean }): void {
+    configureWoodenWall(mesh, neighbours);
+  }
   createScaffold(key: BuildingKey, def: BuildingDef, playerColor?: number) { return makeScaffold(key, def, playerColor); }
 
   createUnit(colorHex: number, role: string, tileX: number, tileY: number, faction: Faction = 'player', teamHex?: number): { group: THREE.Group; itemMesh: THREE.Mesh } {

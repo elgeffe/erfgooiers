@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DEFS } from '../../src/data/buildings';
-import { makeBuilding } from '../../src/render/buildingModels';
+import { configureWoodenWall, makeBuilding } from '../../src/render/buildingModels';
 
 /** True when any mesh in the group carries a material of the given colour. */
 function hasColor(group: THREE.Object3D, hex: number): boolean {
@@ -31,5 +31,18 @@ describe('co-op player building colour', () => {
     const tinted = makeBuilding('quarry', DEFS.quarry, false, CO_OP);
     expect(hasColor(tinted, CO_OP)).toBe(true);
     expect(hasColor(tinted, DEFS.quarry.wall)).toBe(true);
+  });
+});
+
+describe('wooden wall joins', () => {
+  it('shows the correct arms for corners, T-junctions and intersections', () => {
+    const wall = makeBuilding('woodwall', DEFS.woodwall, false);
+    const visible = () => ['north', 'east', 'south', 'west'].filter(side => wall.getObjectByName(`wall-${side}`)?.visible);
+    configureWoodenWall(wall, { north: true, east: true, south: false, west: false });
+    expect(visible()).toEqual(['north', 'east']);
+    configureWoodenWall(wall, { north: true, east: true, south: true, west: false });
+    expect(visible()).toEqual(['north', 'east', 'south']);
+    configureWoodenWall(wall, { north: true, east: true, south: true, west: true });
+    expect(visible()).toEqual(['north', 'east', 'south', 'west']);
   });
 });

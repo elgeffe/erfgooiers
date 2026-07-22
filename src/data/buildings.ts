@@ -187,12 +187,12 @@ export const MENU_CATEGORIES: BuildCategory[] = [
   { id: 'materials', name: 'Materials', keys: ['woodcutter', 'sawmill', 'forester', 'quarry', 'guildhall', 'storehouse'] },
   { id: 'food', name: 'Food', keys: ['farm', 'mill', 'bakery', 'pigfarm', 'butcher', 'vineyard', 'winery', 'fishery', 'clamdigger', 'tavern'] },
   { id: 'coin', name: 'Coin', keys: ['goldmine', 'coalmine', 'mint', 'market'] },
-  { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'monastery', 'ironmine', 'smithy', 'armory'] },
+  { id: 'military', name: 'Military', keys: ['barracks', 'stable', 'engineer', 'monastery', 'ironmine', 'coalmine', 'smithy', 'armory'] },
   { id: 'fortifications', name: 'Fortifications', keys: ['watchtower', 'woodwall', 'woodgate', 'stonetower', 'wall', 'gate'] },
 ];
 
 /** Every player-buildable key, in menu order (the onboarding's whole universe). */
-export const MENU_KEYS: BuildingKey[] = MENU_CATEGORIES.flatMap(c => c.keys);
+export const MENU_KEYS: BuildingKey[] = [...new Set(MENU_CATEGORIES.flatMap(c => c.keys))];
 
 // =====================================================================
 //  First-ascension onboarding — the build menu unlocks a handful of

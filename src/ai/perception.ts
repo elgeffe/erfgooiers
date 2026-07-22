@@ -27,6 +27,13 @@ export interface ResourceMap {
   iron: Coord[];
 }
 
+/** Terrain resources change slowly compared with the tactics cadence. Scanning
+ *  every tile twice a second dominated the Classic controller's CPU budget on
+ *  huge arenas, so share a deterministic twenty-second snapshot per World.
+ *  Placement still validates every selected node, making a recently exhausted
+ *  cached deposit harmless. */
+const resourceCache = new WeakMap<World, { at: number; map: ResourceMap }>();
+
 export interface AIView {
   elapsed: number;
   owner: PlayerId;
@@ -166,8 +173,16 @@ export function perceive(game: Game, world: World, owner: PlayerId): AIView {
     army, armySize: army.length,
     enemyStore, enemyArmySize, enemyArmyByKind, enemyBulwarks,
     threats, threatCentroid,
-    resources: scanResources(world),
+    resources: cachedResources(world, game.elapsed),
   };
+}
+
+function cachedResources(world: World, elapsed: number): ResourceMap {
+  const cached = resourceCache.get(world);
+  if (cached && elapsed - cached.at < 20) return cached.map;
+  const map = scanResources(world);
+  resourceCache.set(world, { at: elapsed, map });
+  return map;
 }
 
 /** Live map resource nodes. Terrain is not shrouded under fog — deposits are

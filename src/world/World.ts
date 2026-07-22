@@ -655,10 +655,10 @@ export class World {
           }
         return n;
       };
-      const provision = (cx: number, cy: number, kind: DepositKind, n: number): void => {
+      const provision = (cx: number, cy: number, kind: DepositKind, n: number, minRadius = 6, maxRadius = 14): void => {
         let placed = 0, guard = 0;
         while (placed < n && guard++ < 400) {
-          const angle = rnd() * Math.PI * 2, radius = 6 + rnd() * 8; // ring 6–14 tiles out
+          const angle = rnd() * Math.PI * 2, radius = minRadius + rnd() * (maxRadius - minRadius);
           const x = Math.round(cx + Math.cos(angle) * radius), y = Math.round(cy + Math.sin(angle) * radius);
           const t = this.T(x, y);
           if (t && t.type === 'grass' && !t.dep && !t.tree && !t.deco && !t.pickup && reachable[y * W + x]) {
@@ -669,9 +669,18 @@ export class World {
         }
       };
       for (const corner of diagonalSpawns(W, H)) {
+        // Keep a broad, uncluttered castle green. Stone is the nearby starter
+        // resource; the industrial ores sit in four compact, separated pools
+        // farther out so mines form readable production districts instead of
+        // a random ore carpet around the storehouse.
+        const sectors: Record<DepositKind, number> = { stone: 0.15, coal: 1.65, gold: 3.25, iron: 4.8 };
         for (const kind of ['stone', 'gold', 'coal', 'iron'] as const) {
           const short = ARENA_MIN[kind] - countOre(corner.x, corner.y, kind, 15);
-          if (short > 0) provision(corner.x, corner.y, kind, short);
+          if (short <= 0) continue;
+          const distance = kind === 'stone' ? 9 : 14;
+          const poolX = corner.x + Math.cos(sectors[kind]) * distance;
+          const poolY = corner.y + Math.sin(sectors[kind]) * distance;
+          provision(poolX, poolY, kind, short, 0, kind === 'stone' ? 3.5 : 4.5);
         }
       }
       // A rich contested prize in no-man's-land between the corners: a dense
@@ -708,6 +717,14 @@ export class World {
     let treeCount = 0;
     for (let i = 0; i < this.p.treeStands; i++) {
       treeCount += forest(5 + Math.floor(rnd() * (W - 10)), 5 + Math.floor(rnd() * (H - 10)), 4 + Math.floor(rnd() * 3), 12 + Math.floor(rnd() * 16));
+    }
+    if (this.p.arena) {
+      for (const corner of diagonalSpawns(W, H)) {
+        // Two deliberate timber stands flank each castle while the centre of
+        // the starting green stays open for the opening build order and army.
+        treeCount += forest(corner.x + 9, corner.y, 3, 18);
+        treeCount += forest(corner.x, corner.y + 9, 3, 18);
+      }
     }
     // guarantee a minimum stock of trees so the timber chain is always viable
     let tguard = 0;
@@ -765,6 +782,20 @@ export class World {
         t.pickup = { gold: 3 + Math.floor(rnd() * 5), reserved: false, meshes: [] };
         piles++;
       }
+    }
+
+    // Run this after every decoration and pickup pass: the arena opens on a
+    // calm, legible castle green rather than hiding the first build sites in
+    // bushes, loose gold, trees and industrial ore.
+    if (this.p.arena) for (const corner of diagonalSpawns(W, H)) {
+      for (let y = Math.max(0, corner.y - 8); y <= Math.min(H - 1, corner.y + 8); y++)
+        for (let x = Math.max(0, corner.x - 8); x <= Math.min(W - 1, corner.x + 8); x++) {
+          const distance = Math.hypot(x - corner.x, y - corner.y);
+          if (distance > 8) continue;
+          const tile = this.tiles[y][x];
+          if (distance <= 6) { tile.tree = null; tile.deco = null; tile.pickup = null; }
+          if (tile.dep?.kind !== 'stone') tile.dep = null;
+        }
     }
 
     // Hostile maps open with the town in the corner opposite the enemy route.

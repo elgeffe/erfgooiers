@@ -117,13 +117,20 @@ function goals(towers: number, scale: number, expansion: number): BuildGoal[] {
     { key: 'bakery', target: 1, priority: 76, category: 'food', requires: ['mill'] },
     { key: 'tavern', target: 1, priority: 74, category: 'food', requires: ['bakery'] },
     { key: 'barracks', target: 1, priority: 72, category: 'war' },
+    { key: 'watchtower', target: Math.min(1, towers), priority: 70, category: 'fort' },
     { key: 'ironmine', target: 1, priority: 68, category: 'war' },
     { key: 'coalmine', target: 2, priority: 66, category: 'war', minScale: 1 },
     { key: 'smithy', target: 1, priority: 64, category: 'war', requires: ['ironmine', 'coalmine'] },
+    { key: 'armory', target: 1, priority: 62, category: 'war', requires: ['ironmine', 'coalmine'] },
+    { key: 'fishery', target: 1, priority: 60, category: 'food' },
+    { key: 'vineyard', target: 1, priority: 58, category: 'food' },
+    { key: 'winery', target: 1, priority: 56, category: 'food', requires: ['vineyard'] },
+    { key: 'pigfarm', target: 1, priority: 54, category: 'food' },
+    { key: 'butcher', target: 1, priority: 52, category: 'food', requires: ['pigfarm'] },
     // NOTE: the market is intentionally OFF the build order for now — its export
     // orders vacuum the very gold ore, stone, timber and bread the base needs to
     // build and feed itself, doing more harm than the coin it earned.
-    { key: 'watchtower', target: towers, priority: 54, category: 'fort' },
+    { key: 'watchtower', target: towers, priority: 50, category: 'fort' },
   ];
 
   // ---- endless, tier-scaled expansion ----
@@ -150,7 +157,7 @@ function goals(towers: number, scale: number, expansion: number): BuildGoal[] {
     // are generous CEILINGS; the compounding scorer (expansionValue) decides
     // how far each actually goes from the chain's real bottleneck.
     const grow: [BuildingKey, number, Category, BuildingKey[]?][] = [
-      ['woodcutter', 3 + 2 * E, 'economy'],
+      ['woodcutter', 2 + E, 'economy'],
       ['sawmill', 2 + E, 'economy', req('woodcutter')],
       ['forester', 1 + Math.floor(E / 2), 'economy', req('woodcutter')],
       ['quarry', 3 + 2 * E, 'economy'],
@@ -166,7 +173,7 @@ function goals(towers: number, scale: number, expansion: number): BuildGoal[] {
       ['smithy', 1 + E, 'war', req('ironmine', 'coalmine')],
       ['armory', E >= 2 ? 1 + E : 0, 'war', req('smithy')],  // armour → knights (the diverse line)
       ['barracks', 1 + E, 'war'],
-      // NO stable — cavalry is deliberately off the AI roster for now
+      ['stable', E >= 3 ? 2 : 0, 'war', req('smithy')],
       ['engineer', E >= 2 ? 1 + Math.floor(E / 2) : 0, 'war'], // SIEGE: onagers/trebuchets — the wall & castle breaker
       ['monastery', E >= 2 ? 1 : 0, 'war'],    // priests to heal the line
     ];
@@ -303,7 +310,9 @@ export class ClassicMacro implements MacroPolicy {
         if (naturalBarrier(piece.x, piece.y) || naturalBarrier(piece.x + 1, piece.y + 1)) continue;
         const tile = world.T(piece.x, piece.y);
         if (!tile || tile.b || tile.site) continue;           // held or hopeless slot
-        const key: BuildingKey = piece.kind === 'gate' ? 'gate' : 'wall';
+        const key: BuildingKey = profile.wallMaterial === 'wood'
+          ? (piece.kind === 'gate' ? 'woodgate' : 'woodwall')
+          : (piece.kind === 'gate' ? 'gate' : 'wall');
         if (!this.affordable(ctx, key)) return null;          // wait for the stone
         if (!game.canPlace(key, piece.x, piece.y, piece.rot)) continue;
         return { type: 'placeBuilding', key, x: piece.x, y: piece.y, rot: piece.rot };
@@ -504,8 +513,8 @@ export class ClassicMacro implements MacroPolicy {
       // woodcutter — a low-timber base that keeps planting woodcutters just piles
       // up raw trunk one lone sawmill can't process (the measured many-woodcutter/
       // one-sawmill bug). Woodcutters then match the sawmills 1:1 to feed them.
-      case 'sawmill': return stock('timber') < 12 ? 46 + (12 - stock('timber')) * 6 : (b('sawmill') < b('woodcutter') ? 26 : 0);
-      case 'woodcutter': return Math.max(feed(b('woodcutter'), b('sawmill')), stock('trunk') < 4 ? 38 : 0);
+      case 'sawmill': return b('sawmill') < b('woodcutter') ? 70 : (stock('timber') < 12 ? 46 + (12 - stock('timber')) * 6 : 0);
+      case 'woodcutter': return b('woodcutter') < b('sawmill') ? 70 : (stock('trunk') < 4 ? 38 : 0);
       case 'quarry': return stock('stone') < 14 ? 44 + (14 - stock('stone')) * 6 : 0;
       case 'forester': return b('forester') < 1 ? 42 : (b('forester') < b('woodcutter') / 3 ? 30 : 0);
       case 'farm': return feed(b('farm'), b('mill')) || (stock('wheat') < 3 ? 35 : 0);
@@ -574,13 +583,6 @@ export class ClassicMacro implements MacroPolicy {
       return { type: 'queueTraining', buildingId: guild.id, unit: 'villager' };
     }
     if (coin <= profile.workerReserveCoin) return null;
-    // builders are a luxury: the kit's single builder carries the opening, and
-    // a second is only hired once the coin engine runs and sites still queue
-    const coinEngineRunning = view.buildings.some(b => b.key === 'mint' && b.worker);
-    const laborerTarget = coinEngineRunning ? Math.min(2, Math.max(1, view.sites.length)) : 1;
-    if (view.workers.laborers + queuedOf('laborer') < laborerTarget) {
-      return { type: 'queueTraining', buildingId: guild.id, unit: 'laborer' };
-    }
     // Haulers scale with the economy: a sprawling base with mines scattered to
     // their ore veins needs FAR more serfs than a compact opening, or the ore
     // piles at the mines and the weapon chain starves downstream (measured: 7
@@ -590,6 +592,14 @@ export class ClassicMacro implements MacroPolicy {
     const serfTarget = Math.min(6 + Math.ceil(production * (0.7 + profile.expansion * 0.35)), 44);
     if (view.workers.serfs + queuedOf('serf') < serfTarget) {
       return { type: 'queueTraining', buildingId: guild.id, unit: 'serf' };
+    }
+    // Builders are deliberately last: the starting builder carries the whole
+    // opening; extra construction throughput is a late-game luxury only after
+    // every job is staffed and the logistics target is met.
+    const coinEngineRunning = view.buildings.some(b => b.key === 'mint' && b.worker);
+    const laborerTarget = coinEngineRunning && view.elapsed > 360 ? Math.min(3, Math.max(1, view.sites.length)) : 1;
+    if (view.workers.laborers + queuedOf('laborer') < laborerTarget) {
+      return { type: 'queueTraining', buildingId: guild.id, unit: 'laborer' };
     }
     return null;
   }

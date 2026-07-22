@@ -27,6 +27,7 @@ export class Tactics {
   private squad = new Set<number>();
   private raiders = new Set<number>();
   private launchSize = 0;
+  private wavesLaunched = 0;
   private lastAttackAt = -Infinity;
   private lastRaidAt = -Infinity;
   private lastOrderAt = -Infinity;
@@ -152,9 +153,10 @@ export class Tactics {
     // the count is trustworthy (full visibility), or every profile would
     // suicide-rush at the 4-fighter floor against a rival it never scouted.
     const enemyKnown = !ctx.game.fogOfWar || view.enemyArmySize > 0;
+    const waveTarget = Math.min(profile.armyCap, profile.attackArmy + this.wavesLaunched * profile.waveGrowth);
     const needed = Math.max(4, enemyKnown
-      ? Math.min(profile.attackArmy, Math.ceil(view.enemyArmySize * 1.5) + 4)
-      : profile.attackArmy);
+      ? Math.min(waveTarget, Math.max(profile.attackArmy, Math.ceil(view.enemyArmySize * 1.5) + 4))
+      : waveTarget);
     // THE FINISHER: once the army fills the cap the economy has nothing bigger
     // to build toward, so massing further is wasted time — commit EVERYTHING
     // (no home guard) to a decisive assault, and (in pressAttack) fight it to
@@ -177,6 +179,7 @@ export class Tactics {
       this.squad = new Set(wave.map(unit => unit.id));
       for (const id of this.squad) this.raiders.delete(id);
       this.launchSize = this.squad.size;
+      this.wavesLaunched++;
       this.lastAttackAt = view.elapsed;
       this.firstAttackAt ??= view.elapsed;
       this.mode = 'attack';

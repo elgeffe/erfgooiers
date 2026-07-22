@@ -60,6 +60,8 @@ export interface AIProfile {
    *  fortification planner. Gates keep the owner's serfs and armies flowing,
    *  so the baileys between rings stay working ground. */
   walls: number;
+  /** Material used by the defensive-line planner. */
+  wallMaterial: 'wood' | 'stone';
 
   // ---- army shape ----
   /** Stop training fighters beyond this standing-army size. */
@@ -71,6 +73,8 @@ export interface AIProfile {
   /** Launch an attack once this many fighters stand mustered. Under fog this
    *  is the whole story — an unscouted rival never lowers the bar. */
   attackArmy: number;
+  /** Extra fighters required for every successive full attack wave. */
+  waveGrowth: number;
   /** Commitment: minimum seconds between launched attacks (no plan-flapping).
    *  The late-game personas keep this LONG: fewer, bigger, better waves. */
   minAttackInterval: number;
@@ -98,22 +102,21 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
   // Blunders one pass in five.
   easy: {
     macroPeriod: 6, tacticsPeriod: 2, reactionDelay: 5, apm: 10, errorRate: 0.2,
-    econScale: 0.85, expansion: 0, maxPendingSites: 2, workerReserveCoin: 2, towers: 4, walls: 0,
+    econScale: 0.85, expansion: 0, maxPendingSites: 2, workerReserveCoin: 2, towers: 4, walls: 0, wallMaterial: 'wood',
     armyCap: 18, unitMix: { soldier: 3, pikeman: 2, archer: 3 },
-    attackArmy: 14, minAttackInterval: 240, retreatRatio: 0.3, useBell: true,
+    attackArmy: 1e9, waveGrowth: 0, minAttackInterval: 1e9, retreatRatio: 0.3, useBell: true,
     counter: 0, homeGuard: 0.35, raidSize: 0, raidInterval: 1e9,
   },
   // The defensive-but-mobile tier with a slow fuse: quicker cadence and cleaner
   // play than Easy. It runs the mid-game resource BOOM (expansion 2 opens the
   // weapons + armour + priest spread and keeps multiplying the coin engine),
-  // hoards a big army of infantry + archers + knights + priests behind a ring
-  // of TOWERS (no walls — the impregnable curtain is Godlike's alone), then
-  // breaks out LATE with one hard wave. (No cavalry — a simpler roster.)
+  // hoards a big army of infantry + archers + knights + priests behind wooden
+  // walls and towers, then breaks out late in increasingly large waves.
   hard: {
     macroPeriod: 2.5, tacticsPeriod: 1, reactionDelay: 2, apm: 40, errorRate: 0.03,
-    econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 3, walls: 0,
-    armyCap: 50, unitMix: { soldier: 3, archer: 2, pikeman: 1, knight: 2, trebuchet: 1, priest: 1 },
-    attackArmy: 30, minAttackInterval: 190, retreatRatio: 0.5, useBell: true,
+    econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 3, walls: 1, wallMaterial: 'wood',
+    armyCap: 54, unitMix: { soldier: 4, archer: 4, pikeman: 1, knight: 1, trebuchet: 1, priest: 1 },
+    attackArmy: 30, waveGrowth: 6, minAttackInterval: 190, retreatRatio: 0.5, useBell: true,
     counter: 0.6, homeGuard: 0.3, raidSize: 0, raidInterval: 1e9,
   },
   // The pro: a fast raid party pesters the rival's infrastructure (and
@@ -121,24 +124,24 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
   // meanwhile, the deepest economy compounds (expansion 3 — it contests the
   // map's central resources and never stops multiplying producers), and the
   // kill arrives late as a large, counter-picked DEMOLITION army: infantry +
-  // knights + archers + priests, spearheaded by SIEGE that out-ranges the
-  // rival's towers and cracks its storehouse. (No cavalry — simpler roster.)
+  // knights, cavalry, archers and priests, spearheaded by SIEGE that out-ranges
+  // the rival's towers and cracks its storehouse.
   godlike: {
     macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 66, errorRate: 0,
     // expansion 3 is the deepest economy — the pro contests the map's central
     // ore and never stops compounding producers. It edges Hard on execution
     // (cadence, APM, reactions, counter, early raids) and army cap; towers 3
-    // gives defensive parity. NOTE: vs Hard's turtle this is still a close,
-    // slightly-losing matchup in self-play — an aggressive-vs-turtle archetype
-    // clash left as a known playtest/balance item, not a regression.
-    // walls 0 for now — the AI's wall line was weak and gateless; disabled
-    // until the fortification planner is reworked (tracked as a follow-up)
-    econScale: 1, expansion: 3, maxPendingSites: 7, workerReserveCoin: 3, towers: 3, walls: 0,
+    // gives defensive parity while a stone curtain protects the deeper base.
+    econScale: 1, expansion: 3, maxPendingSites: 7, workerReserveCoin: 3, towers: 3, walls: 1, wallMaterial: 'stone',
     // onagers wreck the enemy line in the field clash (anti-personnel splash),
     // trebuchets (structureMult 4) then break the walls and storehouse — the
     // demolition core, so they're weighted highest of the siege pair
-    armyCap: 75, unitMix: { soldier: 3, archer: 3, pikeman: 2, knight: 3, onager: 2, trebuchet: 3, priest: 1 },
-    attackArmy: 30, minAttackInterval: 150, retreatRatio: 0.55, useBell: true,
+    armyCap: 75, unitMix: {
+      soldier: 4, archer: 4, pikeman: 1, knight: 2,
+      lancer: 2, horsearcher: 2, horseknight: 1,
+      onager: 2, trebuchet: 3, priest: 2,
+    },
+    attackArmy: 34, waveGrowth: 8, minAttackInterval: 150, retreatRatio: 0.55, useBell: true,
     counter: 1, homeGuard: 0.25, raidSize: 6, raidInterval: 90,
   },
 };
@@ -165,9 +168,9 @@ const IDLE: AIProfile = {
   id: 'idle', name: 'Idle', desc: 'Does nothing — proves the seat plumbing.',
   policy: 'idle', difficulty: 'easy',
   macroPeriod: 3600, tacticsPeriod: 3600, reactionDelay: 3600, apm: 0, errorRate: 0,
-  econScale: 0, expansion: 0, maxPendingSites: 0, workerReserveCoin: 0, towers: 0, walls: 0,
+  econScale: 0, expansion: 0, maxPendingSites: 0, workerReserveCoin: 0, towers: 0, walls: 0, wallMaterial: 'wood',
   armyCap: 0, unitMix: {},
-  attackArmy: 1e9, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
+  attackArmy: 1e9, waveGrowth: 0, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
   counter: 0, homeGuard: 0, raidSize: 0, raidInterval: 1e9,
 };
 
@@ -175,9 +178,9 @@ const RANDOM: AIProfile = {
   id: 'random', name: 'Random', desc: 'Legal random commands on a slow cadence.',
   policy: 'random', difficulty: 'easy',
   macroPeriod: 5, tacticsPeriod: 5, reactionDelay: 5, apm: 12, errorRate: 0,
-  econScale: 1, expansion: 0, maxPendingSites: 3, workerReserveCoin: 0, towers: 0, walls: 0,
+  econScale: 1, expansion: 0, maxPendingSites: 3, workerReserveCoin: 0, towers: 0, walls: 0, wallMaterial: 'wood',
   armyCap: 12, unitMix: { soldier: 1, archer: 1 },
-  attackArmy: 1e9, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
+  attackArmy: 1e9, waveGrowth: 0, minAttackInterval: 1e9, retreatRatio: 0, useBell: false,
   counter: 0, homeGuard: 0, raidSize: 0, raidInterval: 1e9,
 };
 
@@ -192,9 +195,9 @@ const TENSOR: AIProfile = {
   id: 'tensor', name: 'Tensor (MPS)', desc: 'Experimental research model for AI based on tensor networks.',
   policy: 'tensor', difficulty: 'godlike',
   macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 60, errorRate: 0,
-  econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 1, walls: 0,
+  econScale: 1, expansion: 2, maxPendingSites: 5, workerReserveCoin: 3, towers: 1, walls: 0, wallMaterial: 'stone',
   armyCap: 55, unitMix: {}, // the mix comes from the sampled plan, not this table
-  attackArmy: 16, minAttackInterval: 80, retreatRatio: 0.55, useBell: true,
+  attackArmy: 16, waveGrowth: 4, minAttackInterval: 80, retreatRatio: 0.55, useBell: true,
   counter: 1, homeGuard: 0.2, raidSize: 5, raidInterval: 150,
 };
 
