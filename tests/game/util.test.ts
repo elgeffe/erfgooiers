@@ -13,10 +13,13 @@ describe('buildingEntranceTiles', () => {
       { x: 5, y: 4 }, { x: 6, y: 4 }, { x: 5, y: 7 }, { x: 6, y: 7 },
     ]);
     expect(buildingEntranceTiles({ x: 5, y: 5, rot: 0, def: DEFS.woodgate })).toEqual([
-      { x: 5, y: 4 }, { x: 6, y: 4 }, { x: 5, y: 7 }, { x: 6, y: 7 },
+      { x: 5, y: 4 }, { x: 6, y: 4 }, { x: 5, y: 6 }, { x: 6, y: 6 },
     ]);
     expect(buildingEntranceTiles({ x: 5, y: 5, rot: 1, def: DEFS.gate })).toEqual([
       { x: 4, y: 5 }, { x: 4, y: 6 }, { x: 7, y: 5 }, { x: 7, y: 6 },
+    ]);
+    expect(buildingEntranceTiles({ x: 5, y: 5, rot: 1, def: DEFS.woodgate })).toEqual([
+      { x: 4, y: 5 }, { x: 4, y: 6 }, { x: 6, y: 5 }, { x: 6, y: 6 },
     ]);
   });
   it('keeps a normal building single-fronted', () => {

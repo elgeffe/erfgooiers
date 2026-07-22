@@ -1,5 +1,6 @@
 import type { Building, Coord, OwnerId, Unit } from '../types';
 import type { World } from '../world/World';
+import { buildingFootprint, buildingFootprintCenter } from '../engine/buildingFootprint';
 import { doorTile } from './util';
 
 interface CombatTargetingPorts {
@@ -54,12 +55,14 @@ export class CombatTargeting {
   siegeTile(unit: Unit, building: Building): Coord {
     let best: Coord | null = null;
     let bestDistance = 1e9;
+    const size = buildingFootprint(building.def, building.rot);
+    const center = buildingFootprintCenter(building);
     const unitSideDistance = building.def.bulwark
-      ? Math.hypot(building.x + 0.5 - unit.tx, building.y + 0.5 - unit.ty)
+      ? Math.hypot(center.x - unit.tx, center.y - unit.ty)
       : Infinity;
-    for (let y = building.y - 1; y <= building.y + 2; y++) {
-      for (let x = building.x - 1; x <= building.x + 2; x++) {
-        if (x >= building.x && x <= building.x + 1 && y >= building.y && y <= building.y + 1) continue;
+    for (let y = building.y - 1; y <= building.y + size.height; y++) {
+      for (let x = building.x - 1; x <= building.x + size.width; x++) {
+        if (x >= building.x && x < building.x + size.width && y >= building.y && y < building.y + size.height) continue;
         if (!this.world.passable(x, y)) continue;
         if (Math.hypot(x - unit.tx, y - unit.ty) > unitSideDistance) continue;
         const salt = ((x * 31 + y * 17 + unit.tx * 7 + unit.ty * 3) % 5) * 0.8;

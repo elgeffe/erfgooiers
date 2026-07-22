@@ -610,7 +610,7 @@ function onCoopLevelClear(): void {
 // ---------- skirmish vs CPU (local, no lobby) ----------
 /** Biome & map-density pickers, shared verbatim by the sandbox and skirmish
  *  setup screens (the arena reuses the sandbox's world knobs). */
-const BIOME_OPTS: [string, string][] = [['gooi', 'Het Gooi'], ['ardennes', 'The Ardennes'], ['blackforest', 'The Black Forest'], ['alps', 'The Alps'], ['winter', 'Winter'], ['polder', 'The Polder'], ['seaside', 'Zeeland Delta'], ['island', 'Texel'], ['hell', 'Hell']];
+const BIOME_OPTS: [string, string][] = [['gooi', 'Het Gooi']];
 const MAP_RES_OPTS: [string, string][] = [['sparse', 'Sparse'], ['normal', 'Normal'], ['rich', 'Rich']];
 const SKIRMISH_SIZE_OPTS: [string, string][] = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large'], ['huge', 'Huge']];
 

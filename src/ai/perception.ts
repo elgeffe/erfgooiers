@@ -3,6 +3,7 @@ import { PLAYER_IDS, type Building, type BuildingKey, type Coord, type Site, typ
 import type { PlayerId } from '../types';
 import type { Game } from '../game/Game';
 import type { World } from '../world/World';
+import { buildingFootprintAnchor } from '../engine/buildingFootprint';
 
 /**
  * Pure feature extraction from the simulation — the ONLY ai/ module that reads
@@ -105,8 +106,9 @@ export function perceive(game: Game, world: World, owner: PlayerId): AIView {
   for (const building of game.buildings) {
     if (building.removed) continue;
     if (building.owner !== owner) {
+      const center = buildingFootprintAnchor(building);
       const visibleEnemy = enemySeats.includes(building.owner as PlayerId)
-        && game.visibleTo(owner, building.x + 1, building.y + 1);
+        && game.visibleTo(owner, center.x, center.y);
       if (visibleEnemy && building.def.bulwark) enemyBulwarks.push(building);
       if (visibleEnemy && building.def.tower && !building.def.store) enemyTowers.push(building);
       continue;

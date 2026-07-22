@@ -3,6 +3,7 @@ import { ITEMS } from '../data/items';
 import { UNITS, type UnitKind } from '../data/units';
 import type { EnemySetup } from '../data/levels';
 import { findPath } from '../engine/pathfinding';
+import { buildingFootprintAnchor, buildingFootprintCenter } from '../engine/buildingFootprint';
 import type { FlowField } from '../engine/flowfield';
 import { diagonalSpawns, type World } from '../world/World';
 import type { View } from '../render/View';
@@ -784,7 +785,8 @@ export class Game {
   }
 
   private buildingCenter(b: Building): { x: number; z: number } {
-    return { x: this.world.wx(b.x) + 0.5, z: this.world.wz(b.y) + 0.5 };
+    const center = buildingFootprintCenter(b);
+    return { x: this.world.wx(center.x), z: this.world.wz(center.y) };
   }
 
   private fireArrow(shooter: Unit | null, from: OwnerId, x: number, y: number, z: number, target: Unit, damage: number): void {
@@ -1178,13 +1180,15 @@ export class Game {
     }
     for (const b of this.buildings) {
       if (b.removed || !this.hostileOwners(seat, b.owner)) continue;
-      const hidden = !this.visibleTo(seat, b.x + 1, b.y + 1);
+      const center = buildingFootprintAnchor(b);
+      const hidden = !this.visibleTo(seat, center.x, center.y);
       this.view.setFogHidden(b.mesh, hidden);
       if (b.rallyMesh) this.view.setFogHidden(b.rallyMesh, hidden);
     }
     for (const s of this.sites) {
       if (s.removed || !this.hostileOwners(seat, s.owner)) continue;
-      const hidden = !this.visibleTo(seat, s.x + 1, s.y + 1);
+      const center = buildingFootprintAnchor(s);
+      const hidden = !this.visibleTo(seat, center.x, center.y);
       this.view.setFogHidden(s.mesh, hidden);
       this.view.setFogHidden(s.frame, hidden);
       if (s.rallyMesh) this.view.setFogHidden(s.rallyMesh, hidden);

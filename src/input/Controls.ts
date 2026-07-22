@@ -174,7 +174,7 @@ export class Controls {
       if (hint.textContent !== idle) hint.textContent = idle;
       return;
     }
-    this.view.showDemolishTarget(target.x, target.y);
+    this.view.showDemolishTarget(target.x, target.y, target.def, target.rot);
     const refund = this.game!.demolishRefund(target);
     const parts = Object.entries(refund).map(([item, n]) => `${n} ${ITEMS[item as ItemKey]?.name.toLowerCase() ?? item}`);
     hint.textContent = parts.length

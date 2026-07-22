@@ -1,5 +1,6 @@
 import type { Building, PlayerId, Site, Unit } from '../types';
 import type { World } from '../world/World';
+import { buildingFootprintAnchor } from '../engine/buildingFootprint';
 
 /** Tiles a unit reveals around itself. */
 const UNIT_SIGHT = 7;
@@ -87,11 +88,13 @@ export class VisionSystem {
     }
     for (const building of this.ports.buildings()) {
       if (building.removed || building.owner !== owner) continue;
-      this.stamp(grid, building.x + 1, building.y + 1, building.def.tower ? TOWER_SIGHT : BUILDING_SIGHT);
+      const center = buildingFootprintAnchor(building);
+      this.stamp(grid, center.x, center.y, building.def.tower ? TOWER_SIGHT : BUILDING_SIGHT);
     }
     for (const site of this.ports.sites()) {
       if (site.removed || site.owner !== owner) continue;
-      this.stamp(grid, site.x + 1, site.y + 1, BUILDING_SIGHT);
+      const center = buildingFootprintAnchor(site);
+      this.stamp(grid, center.x, center.y, BUILDING_SIGHT);
     }
     for (let i = 0; i < grid.length; i++) if (grid[i]) explored[i] = 1;
     this.freshAt.set(owner, now);
