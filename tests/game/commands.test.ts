@@ -65,6 +65,19 @@ describe('command application and ownership boundaries', () => {
     expect(guild.trainQ).toEqual(['serf']);
   });
 
+  it('reports a training command that cannot pay its cost', () => {
+    const { game } = makeTestGame();
+    const guild = game.playerGuilds.get('p1')!;
+    game.storeFor('p1').stock!.coin = 0;
+
+    const result = applyGameCommand(game, 'p1', {
+      type: 'queueTraining', buildingId: guild.id, unit: 'serf',
+    });
+
+    expect(result).toEqual({ ok: false, reason: 'cannot_train' });
+    expect(guild.trainQ ?? []).toEqual([]);
+  });
+
   it('retains a military site rally point through completion and training', () => {
     const { game } = makeTestGame();
     const store = game.storeFor('p1');
