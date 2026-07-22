@@ -79,9 +79,16 @@ export function planDefensiveLine(center: Coord, enemy: Coord, distance: number,
   const dx = enemy.x - center.x, dy = enemy.y - center.y;
   const len = Math.hypot(dx, dy) || 1;
   const fx = dx / len, fy = dy / len;             // unit vector toward the enemy
-  const px = -fy, py = fx;                          // perpendicular (the wall's run)
   const side: FortSide = Math.abs(fx) > Math.abs(fy) ? (fx > 0 ? 'e' : 'w') : (fy > 0 ? 's' : 'n');
-  const lineX = center.x + fx * distance, lineY = center.y + fy * distance;
+  // Project the gate onto the actual enemy approach, but snap the curtain's
+  // run to a cardinal axis. Rounding every point along a diagonal run makes
+  // successive 2x2 pieces move by only one tile on one or both axes, causing
+  // their footprints to overlap. A cardinal two-tile stride stays contiguous
+  // and overlap-free for every approach angle.
+  const gateX = Math.round(center.x + fx * distance);
+  const gateY = Math.round(center.y + fy * distance);
+  const runX = side === 'n' ? 1 : side === 's' ? -1 : 0;
+  const runY = side === 'e' ? 1 : side === 'w' ? -1 : 0;
   // gate archway runs along the enemy axis: a mostly-vertical approach (n/s)
   // wants a north–south gate (rot 0), an east–west approach an e–w gate (rot 1)
   const gateRot = side === 'e' || side === 'w' ? 1 : 0;
@@ -89,8 +96,8 @@ export function planDefensiveLine(center: Coord, enemy: Coord, distance: number,
   for (let k = 1; k <= halfSpan; k++) order.push(k, -k);
   const pieces: FortificationPiece[] = [];
   for (const k of order) {
-    const x = Math.round(lineX + px * k * 2);
-    const y = Math.round(lineY + py * k * 2);
+    const x = gateX + runX * k * 2;
+    const y = gateY + runY * k * 2;
     pieces.push({ kind: k === 0 ? 'gate' : 'wall', x, y, rot: k === 0 ? gateRot : 0, side });
   }
   return pieces;

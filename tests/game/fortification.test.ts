@@ -28,6 +28,40 @@ describe('defensive line planner', () => {
     const ysSame = new Set(north.map(p => p.y));
     expect(ysSame.size).toBe(1);       // a horizontal line north of centre
   });
+
+  it('snaps an arena-diagonal curtain to non-overlapping 2x2 pieces', () => {
+    const center = { x: 12, y: 12 };
+    const enemy = { x: 84, y: 84 };
+    const pieces = planDefensiveLine(center, enemy, 12, 5);
+
+    // A diagonal tie faces south, while the gate remains projected along the
+    // true south-east approach rather than falling directly south of centre.
+    expect(pieces[0]).toMatchObject({ kind: 'gate', x: 20, y: 20, rot: 0, side: 's' });
+    expect(new Set(pieces.map(piece => piece.y))).toEqual(new Set([20]));
+
+    // Top-left coordinates stride by exactly the two-tile footprint width,
+    // producing one contiguous cardinal curtain with no occupied-tile overlap.
+    const xs = [...new Set(pieces.map(piece => piece.x))].sort((a, b) => a - b);
+    expect(xs).toHaveLength(pieces.length);
+    expect(xs.slice(1).map((x, index) => x - xs[index])).toEqual(Array(xs.length - 1).fill(2));
+    const occupied = new Set<string>();
+    for (const piece of pieces) for (let oy = 0; oy < 2; oy++) for (let ox = 0; ox < 2; ox++) {
+      occupied.add(`${piece.x + ox},${piece.y + oy}`);
+    }
+    expect(occupied.size).toBe(pieces.length * 4);
+  });
+
+  it('keeps an oblique gate on the enemy projection while the wall stays cardinal', () => {
+    const center = { x: 10, y: 20 };
+    const enemy = { x: 62, y: 60 };
+    const pieces = planDefensiveLine(center, enemy, 14, 3);
+    const gate = pieces[0];
+
+    expect(gate).toMatchObject({ kind: 'gate', x: 21, y: 29, rot: 1, side: 'e' });
+    expect(new Set(pieces.map(piece => piece.x))).toEqual(new Set([gate.x]));
+    const ys = [...pieces.map(piece => piece.y)].sort((a, b) => a - b);
+    expect(ys.slice(1).map((y, index) => y - ys[index])).toEqual(Array(ys.length - 1).fill(2));
+  });
 });
 
 describe('fortification planner', () => {
