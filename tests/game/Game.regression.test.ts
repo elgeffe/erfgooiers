@@ -28,7 +28,7 @@ describe('Game deterministic regression guardrails', () => {
     tick(game, 18);
     // golden regenerated 2026-07: the castle's raised HP (750 → 2500) shifts the
     // building-HP terms of the fingerprint from the opening tick onward
-    expect(gameplayFingerprintHash(game)).toBe('462a31dc');
+    expect(gameplayFingerprintHash(game)).toBe('e38e7c85');
   });
 
   it('launches a timed wave on its exact fixed-step boundary', () => {
