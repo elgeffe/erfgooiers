@@ -9,6 +9,7 @@ import { applyGameCommand } from '../../src/game/commands';
 import type { Coord } from '../../src/types';
 
 const footprintGap = (a: Coord, b: Coord): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) - 2;
+const chebyshev = (a: Coord, b: Coord): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 
 describe('AI placement search', () => {
   it('finds legal, reachable, own-half spots the validator accepts', () => {
@@ -56,6 +57,41 @@ describe('AI placement search', () => {
     // the starting castle requires looking at least one ring farther out.
     expect(Math.max(Math.abs(spot!.x - home.x), Math.abs(spot!.y - home.y))).toBeGreaterThanOrEqual(4);
     expect(exactCalls).toBeLessThanOrEqual(112); // (20 + 6 + 2) candidates x four rotations
+  });
+
+  it('honours an explicit anchor for a forward defensive building', () => {
+    const { game, world } = makeSkirmishGame(1000);
+    const view = perceive(game, world, 'p1');
+    const home = game.storeFor('p1');
+    const approach = { x: home.x + 7, y: home.y };
+    const override = {
+      x: Math.round(home.x + (Math.floor(world.W / 2) - home.x) * 0.55),
+      y: Math.round(home.y + (Math.floor(world.H / 2) - home.y) * 0.55),
+    };
+
+    const spot = findBuildingSpot(game, world, view, 'stonetower', new Rng(81), approach, 46, override);
+
+    expect(spot).not.toBeNull();
+    expect(game.canPlace('stonetower', spot!.x, spot!.y, spot!.rot)).toBe(true);
+    expect(chebyshev(spot!, override)).toBeLessThanOrEqual(8);
+    expect(chebyshev(spot!, override)).toBeLessThan(chebyshev(spot!, home));
+    expect(chebyshev(spot!, override)).toBeLessThan(chebyshev(spot!, approach));
+    expect(findPath(world, doorTile(home).x, doorTile(home).y, doorTile(spot!).x, doorTile(spot!).y, 'p1')).not.toBeNull();
+  });
+
+  it('can constrain a dependent building to its producer working radius', () => {
+    const { game, world } = makeSkirmishGame(1000);
+    const view = perceive(game, world, 'p1');
+    const home = game.storeFor('p1');
+    const woodcutter = { x: home.x + 12, y: home.y + 5 };
+    const spot = findBuildingSpot(
+      game, world, view, 'forester', new Rng(19),
+      { x: home.x + 7, y: home.y }, 46, woodcutter, 9,
+    );
+
+    expect(spot).not.toBeNull();
+    expect(chebyshev(spot!, woodcutter)).toBeLessThanOrEqual(9);
+    expect(game.canPlace('forester', spot!.x, spot!.y, spot!.rot)).toBe(true);
   });
 
   it('keeps broad lanes through a growing ordinary settlement', () => {

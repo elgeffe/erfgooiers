@@ -269,12 +269,13 @@ function sampledRing(anchor: Coord, radius: number, phase: number): Coord[] {
  */
 export function findBuildingSpot(
   game: Game, world: World, view: AIView, key: BuildingKey, rng: Rng, approach: Coord, reach = 26,
+  anchorOverride?: Coord, maxAnchorDistance = Infinity,
 ): PlacementPlan | null {
   const store = view.store;
   if (!store) return null;
   const home = { x: store.x, y: store.y };
   const center = { x: Math.floor(world.W / 2), y: Math.floor(world.H / 2) };
-  const anchor = anchorFor(view, world, key, home, approach, reach, center);
+  const anchor = anchorOverride ?? anchorFor(view, world, key, home, approach, reach, center);
   if (!anchor) return null;
 
   const candidates: ScoredCandidate[] = [];
@@ -287,6 +288,7 @@ export function findBuildingSpot(
   for (let radius = MIN_RADIUS; radius <= maxRadius; radius++) {
     for (const at of sampledRing(anchor, radius, phase)) {
       if (at.x < 1 || at.y < 1 || at.x >= world.W - 2 || at.y >= world.H - 2) continue;
+      if (chebyshev(at, anchor) > maxAnchorDistance) continue;
       if (!safeGround(at, home, enemyStore)) continue;
       if (chebyshev(at, home) > reach + 8) continue;
       if (!footprintOpen(world, at)) continue;

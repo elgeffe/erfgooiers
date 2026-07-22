@@ -49,7 +49,16 @@ function unitCategory(kind: string): ArmyCategory {
 export function dominantEnemyCategory(byKind: Partial<Record<UnitKind, number>>): { cat: ArmyCategory; frac: number } | null {
   const cats: Record<ArmyCategory, number> = { mounted: 0, ranged: 0, melee: 0 };
   let total = 0;
-  for (const kind in byKind) { const n = byKind[kind as UnitKind] ?? 0; total += n; cats[unitCategory(kind)] += n; }
+  for (const kind in byKind) {
+    const def = UNITS[kind as UnitKind];
+    // Support and siege are strategic quotas, not a field-composition signal:
+    // treating priests as melee and trebuchets as ranged taught the counter
+    // system to suppress exactly the combined-arms tools Godlike needs.
+    if (def?.heal || def?.model === 'siege') continue;
+    const n = byKind[kind as UnitKind] ?? 0;
+    total += n;
+    cats[unitCategory(kind)] += n;
+  }
   if (total < 3) return null;
   let best: ArmyCategory = 'melee', bestN = -1;
   for (const c of ['mounted', 'ranged', 'melee'] as ArmyCategory[]) if (cats[c] > bestN) { bestN = cats[c]; best = c; }
@@ -98,6 +107,20 @@ type Category = 'economy' | 'food' | 'coin' | 'war' | 'fort';
  * hiring coin against the barracks. Two spare villagers also absorb a pair of
  * specialist casualties without collapsing an entire production line. */
 const VILLAGER_RESERVE = 2;
+const EXTRACTORS = new Set<BuildingKey>(['quarry', 'goldmine', 'coalmine', 'ironmine']);
+const TIMBER_SUPPORT_RANGE = 9;
+
+/** A forester is useful only when its planting ground overlaps an uncovered
+ * woodcutter. Stable coordinate ordering preserves replay determinism. */
+export function selectUncoveredWoodcutter(
+  woodcutters: readonly Coord[], foresters: readonly Coord[], range = TIMBER_SUPPORT_RANGE,
+): Coord | null {
+  return [...woodcutters]
+    .sort((a, b) => a.y - b.y || a.x - b.x)
+    .find(woodcutter => !foresters.some(forester => Math.max(
+      Math.abs(forester.x - woodcutter.x), Math.abs(forester.y - woodcutter.y),
+    ) <= range)) ?? null;
+}
 
 interface BuildGoal {
   key: BuildingKey;
@@ -148,7 +171,7 @@ function goals(towers: number, expansion: number, stoneTowers: boolean): BuildGo
     { key: 'guildhall', target: 1, priority: 100, category: 'economy' },
     { key: 'woodcutter', target: target.timberLines, priority: 30, category: 'economy', expand: true },
     { key: 'sawmill', target: target.timberLines, priority: 30, category: 'economy', requires: req('woodcutter'), expand: true },
-    { key: 'forester', target: Math.max(1, Math.ceil(target.timberLines / 2)), priority: 30, category: 'economy', requires: req('woodcutter'), expand: true },
+    { key: 'forester', target: target.timberLines, priority: 30, category: 'economy', requires: req('woodcutter'), expand: true },
     { key: 'quarry', target: target.quarries, priority: 30, category: 'economy', expand: true },
     { key: 'farm', target: target.foodLines, priority: 30, category: 'food', expand: true },
     { key: 'mill', target: target.foodLines, priority: 30, category: 'food', requires: req('farm'), expand: true },
@@ -203,8 +226,11 @@ export class ClassicMacro implements MacroPolicy {
     // with economy growth on a slow cadence.
     const openingDone = nextOpeningDecision(view.built, view.pending).kind === 'complete';
     let construction: GameCommand | null = null;
-    if (openingDone && ctx.profile.walls > 0 && view.elapsed - this.lastFortAt >= 12) {
-      construction = this.planFortification(ctx);
+    if (openingDone && view.elapsed - this.lastFortAt >= 12) {
+      construction = this.planForwardOutpost(ctx);
+      const homeTowerKey: BuildingKey = ctx.profile.wallMaterial === 'stone' ? 'stonetower' : 'watchtower';
+      const homeTowersReady = (view.built[homeTowerKey] ?? 0) >= ctx.profile.towers;
+      if (!construction && homeTowersReady && ctx.profile.walls > 0) construction = this.planFortification(ctx);
       if (construction) this.lastFortAt = view.elapsed;
     }
     construction ??= this.planBuild(ctx);
@@ -304,9 +330,14 @@ export class ClassicMacro implements MacroPolicy {
         const pieces = planDefensiveLine(center, enemy, distance, 6);
         const gate = pieces[0];
         const gateTile = world.T(gate.x, gate.y);
-        const occupant = gateTile?.b ?? gateTile?.site;
         const gateKey: BuildingKey = profile.wallMaterial === 'wood' ? 'woodgate' : 'gate';
-        const gateReady = occupant?.owner === view.owner && occupant.key === gateKey;
+        const standingGate = gateTile?.b;
+        const pendingGate = gateTile?.site;
+        // A site is still a solid obstacle. Wait for the actual gate before
+        // closing wall segments around it, or the builder and army can be
+        // sealed behind an unfinished centrepiece.
+        if (pendingGate?.owner === view.owner && pendingGate.key === gateKey) return null;
+        const gateReady = standingGate?.owner === view.owner && standingGate.key === gateKey;
         if (!gateReady) {
           if (naturalBarrier(gate.x, gate.y) || !this.affordable(ctx, gateKey)
             || !game.canPlace(gateKey, gate.x, gate.y, gate.rot)) continue;
@@ -328,6 +359,33 @@ export class ClassicMacro implements MacroPolicy {
       // this line is as finished as the ground allows — add the closer fallback
     }
     return null;
+  }
+
+  /** Fortify distinct contested extractors after the home towers stand. The
+   *  mine itself is the anchor, while the shared placement search still owns
+   *  safety, spacing, reachability and exact legality. */
+  private planForwardOutpost(ctx: PolicyContext): GameCommand | null {
+    const { game, world, view, profile, rng } = ctx;
+    if (profile.forwardTowers <= 0 || profile.wallMaterial !== 'stone' || !view.store) return null;
+    if ((view.built.stonetower ?? 0) < profile.towers || view.sites.length >= profile.maxPendingSites) return null;
+
+    const home = { x: view.store.x, y: view.store.y };
+    const center = { x: Math.floor(world.W / 2), y: Math.floor(world.H / 2) };
+    const distance = (a: Coord, b: Coord): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+    const towers = [...view.buildings, ...view.sites].filter(entity => entity.key === 'stonetower');
+    const forward = towers.filter(tower => distance(tower, home) >= 16);
+    if (forward.length >= profile.forwardTowers || !this.affordable(ctx, 'stonetower')) return null;
+
+    const mines = view.buildings
+      .filter(building => EXTRACTORS.has(building.key) && !!building.worker && distance(building, home) >= 18)
+      .sort((a, b) => distance(a, center) - distance(b, center)
+        || distance(b, home) - distance(a, home)
+        || a.id - b.id);
+    const anchor = mines.find(mine => !forward.some(tower => distance(tower, mine) <= 11));
+    if (!anchor) return null;
+    const reach = 22 + profile.expansion * 8;
+    const spot = findBuildingSpot(game, world, view, 'stonetower', rng, ctx.approach, reach, anchor);
+    return spot ? { type: 'placeBuilding', key: 'stonetower', x: spot.x, y: spot.y, rot: spot.rot } : null;
   }
 
   // ---- stalled construction ----
@@ -446,10 +504,25 @@ export class ClassicMacro implements MacroPolicy {
     const { game, world, view, profile, rng } = ctx;
     if ((this.blockedUntil.get(key) ?? 0) > view.elapsed || !this.affordable(ctx, key)) return null;
     const reach = 22 + profile.expansion * 8;
-    const spot = findBuildingSpot(game, world, view, key, rng, ctx.approach, reach);
+    const timberAnchor = key === 'forester' ? this.uncoveredWoodcutter(view) : null;
+    // Never scatter a forester beyond the nine-tile timber ecosystem it serves.
+    // If every cutter is already covered, another lodge adds no capacity.
+    if (key === 'forester' && !timberAnchor) return null;
+    const spot = findBuildingSpot(
+      game, world, view, key, rng, ctx.approach, reach,
+      timberAnchor ?? undefined, timberAnchor ? TIMBER_SUPPORT_RANGE : Infinity,
+    );
     if (spot) return { type: 'placeBuilding', key, x: spot.x, y: spot.y, rot: spot.rot };
     this.blockedUntil.set(key, view.elapsed + 45);
     return null;
+  }
+
+  private uncoveredWoodcutter(view: PolicyContext['view']): Coord | null {
+    const owned = [...view.buildings, ...view.sites];
+    return selectUncoveredWoodcutter(
+      owned.filter(entity => entity.key === 'woodcutter'),
+      owned.filter(entity => entity.key === 'forester'),
+    );
   }
 
   /** Score the one supplier-first step each production line is allowed to take.
@@ -487,7 +560,7 @@ export class ClassicMacro implements MacroPolicy {
       case 'quarry':
         return pendingAny('quarry') ? 0 : (stock('stone') < 20 ? 54 + (20 - stock('stone')) * 2 : 24);
       case 'forester':
-        return pendingAny('forester') ? 0 : (p('forester') < Math.ceil(p('woodcutter') / 2) ? 58 : 0);
+        return pendingAny('forester') ? 0 : (this.uncoveredWoodcutter(view) ? 78 : 0);
 
       // A mint is always the third step of gold → dedicated coal → mint. Arms
       // consume a separate coal allowance, so neither line steals the other's.
@@ -526,7 +599,10 @@ export class ClassicMacro implements MacroPolicy {
       if (!armyRoom || coin < 10) return 0;
       return 38 + Math.min(30, coin);
     }
-    if (goal.category === 'fort') return view.threats.length ? 70 : 38;
+    if (goal.category === 'fort') {
+      if (p(goal.key) === 0) return 82;
+      return view.threats.length ? 76 : 56;
+    }
     return first ? 35 : 0;
   }
 
@@ -582,7 +658,9 @@ export class ClassicMacro implements MacroPolicy {
     // their remote mines; the cap remains high enough for the largest planned
     // Godlike settlement without recreating the old ten-serf bottleneck.
     const production = view.buildings.filter(b => b.def.recipe || b.def.gather || b.def.tavern).length;
-    const serfTarget = Math.min(6 + Math.ceil(production * (0.5 + profile.expansion * 0.1)), 36);
+    const mobilising = profile.attackEnabled && view.armySize < profile.attackArmy;
+    const serfScale = mobilising ? 0.4 : 0.5 + profile.expansion * 0.1;
+    const serfTarget = Math.min(6 + Math.ceil(production * serfScale), mobilising ? 24 : 36);
     if (view.workers.serfs + queuedOf('serf') < serfTarget) {
       return { type: 'queueTraining', buildingId: guild.id, unit: 'serf' };
     }
@@ -634,12 +712,36 @@ export class ClassicMacro implements MacroPolicy {
     const target: Record<string, number> = {};
     for (const kind in profile.unitMix) {
       let w = profile.unitMix[kind as keyof typeof profile.unitMix] ?? 0;
-      if (enemyDom) w *= counterMultiplier(kind, enemyDom.cat, profile.counter * enemyDom.frac);
+      const def = UNITS[kind as UnitKind];
+      if (enemyDom && !def?.heal && def?.model !== 'siege') {
+        w *= counterMultiplier(kind, enemyDom.cat, profile.counter * enemyDom.frac);
+      }
       if (w > 0) target[kind] = w;
     }
-    const quotas = allocateUnitQuotas(target, profile.armyCap);
+    const fullQuotas = allocateUnitQuotas(target, profile.armyCap);
     const projected: Record<string, number> = { ...queuedByKind };
     for (const unit of view.army) projected[unit.role] = (projected[unit.role] ?? 0) + 1;
+    const projectedTotal = Object.values(projected).reduce((sum, count) => sum + count, 0);
+    const availableKinds = new Set<string>();
+    for (const building of trainers) for (const training of building.def.military!.units) {
+      if ((target[training.kind] ?? 0) > 0) availableKinds.add(training.kind);
+    }
+    const availableFullSlots = [...availableKinds].reduce((sum, kind) => sum + (fullQuotas[kind] ?? 0), 0);
+    // Before the Stable/Engineer/Monastery stand, reserved premium slots must
+    // not leave the town defended by half an army. Reallocate only the first
+    // wave floor over the trainers that exist; once that defensive core stands,
+    // switch back to the exact final cap so every remaining slot is premium.
+    const quotas = projectedTotal < profile.attackArmy && availableFullSlots < profile.attackArmy
+      ? allocateUnitQuotas(Object.fromEntries([...availableKinds].map(kind => [kind, target[kind]])), profile.attackArmy)
+      : fullQuotas;
+    let structuralSiege = 0, priests = 0;
+    for (const kind in projected) {
+      const count = projected[kind] ?? 0;
+      const def = UNITS[kind as UnitKind];
+      if ((def?.structureMult ?? 1) > 1) structuralSiege += count;
+      if (def?.heal) priests += count;
+    }
+    const hasEngineer = trainers.some(trainer => trainer.key === 'engineer');
 
     let best: { building: Building; kind: string } | null = null;
     let bestDeficit = -Infinity;
@@ -649,14 +751,24 @@ export class ClassicMacro implements MacroPolicy {
         const quota = quotas[kind] ?? 0;
         if (quota <= 0 || (projected[kind] ?? 0) >= quota) continue;
         const cost = game.modsFor(view.owner).unitCost(kind, training.cost) as Record<string, number>;
+        const def = UNITS[kind as UnitKind];
+        const structural = (def?.structureMult ?? 1) > 1;
+        // A one-timber horse archer must not consume every trickle forever
+        // while the Engineer waits for the ten-timber trebuchet lump. Reserve
+        // one missing engine at a time; the engine itself may spend the fund.
+        const siegeTimberReserve = !structural && structuralSiege < profile.minSiege
+          && hasEngineer ? 10 : 0;
         let ok = true;
         for (const item in cost) {
-          const reserve = item === 'coin' ? coinReserve : 0;
+          const reserve = item === 'coin' ? coinReserve : item === 'timber' ? siegeTimberReserve : 0;
           if (storeStock(game, view.owner, item) < cost[item] + reserve) { ok = false; break; }
         }
         if (!ok) continue;
         // Normalized missing quota, plus tiny deterministic jitter for ties.
-        const deficit = (quota - (projected[kind] ?? 0)) / quota + rng.next() * 0.002;
+        const essential = (def?.structureMult ?? 1) > 1 && structuralSiege < profile.minSiege
+          ? 20
+          : def?.heal && priests < profile.minPriests ? 15 : 0;
+        const deficit = essential + (quota - (projected[kind] ?? 0)) / quota + rng.next() * 0.002;
         if (deficit > bestDeficit) { bestDeficit = deficit; best = { building, kind }; }
       }
     }
