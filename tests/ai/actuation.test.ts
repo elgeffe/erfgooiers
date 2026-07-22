@@ -6,19 +6,27 @@ import { doorTile } from '../../src/game/util';
 import { perceive } from '../../src/ai/perception';
 import { findBuildingSpot, planPlots } from '../../src/ai/actuation';
 import { applyGameCommand } from '../../src/game/commands';
+import type { Coord } from '../../src/types';
+
+const footprintGap = (a: Coord, b: Coord): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) - 2;
 
 describe('AI placement search', () => {
   it('finds legal, reachable, own-half spots the validator accepts', () => {
     const { game, world } = makeSkirmishGame(1000);
     const rng = new Rng(1);
-    const view = perceive(game, world, 'p1');
     const enemy = game.storeFor('p2');
     const home = game.storeFor('p1');
     const homeDoor = doorTile(home);
     for (const key of ['woodcutter', 'quarry', 'goldmine', 'barracks', 'farm'] as const) {
+      // Sites placed earlier in this loop are part of the next decision. A stale
+      // view would hide them from the spacing and resource-reservation policy.
+      const view = perceive(game, world, 'p1');
       const spot = findBuildingSpot(game, world, view, key, rng, { x: home.x + 7, y: home.y });
       expect(spot, `no spot found for ${key}`).not.toBeNull();
       expect(game.canPlace(key, spot!.x, spot!.y, spot!.rot)).toBe(true);
+      const wantedGap = key === 'farm' ? 4 : key === 'quarry' || key === 'goldmine' ? 1 : 3;
+      const nearest = Math.min(...[...view.buildings, ...view.sites].map(building => footprintGap(spot!, building)));
+      expect(nearest, `${key} was packed too tightly`).toBeGreaterThanOrEqual(wantedGap);
       // the placement seam accepts it as a site
       const before = game.sites.length;
       const result = applyGameCommand(game, 'p1', { type: 'placeBuilding', key, x: spot!.x, y: spot!.y, rot: spot!.rot });
@@ -30,6 +38,69 @@ describe('AI placement search', () => {
       expect(own).toBeLessThanOrEqual(rival);
       expect(findPath(world, homeDoor.x, homeDoor.y, doorTile(spot!).x, doorTile(spot!).y, 'p1')).not.toBeNull();
     }
+  });
+
+  it('samples outer rings without exceeding the exact-placement budget', () => {
+    const { game, world } = makeSkirmishGame(1000);
+    const view = perceive(game, world, 'p1');
+    const home = game.storeFor('p1');
+    const originalCanPlace = game.canPlace.bind(game);
+    let exactCalls = 0;
+    game.canPlace = (key, x, y, rot) => { exactCalls++; return originalCanPlace(key, x, y, rot); };
+
+    const spot = findBuildingSpot(game, world, view, 'barracks', new Rng(1), { x: home.x + 7, y: home.y });
+    expect(spot).not.toBeNull();
+    const nearest = Math.min(...view.buildings.map(building => footprintGap(spot!, building)));
+    expect(nearest).toBeGreaterThanOrEqual(3);
+    // The old first-20 search stopped on radius three; a two-tile gap around
+    // the starting castle requires looking at least one ring farther out.
+    expect(Math.max(Math.abs(spot!.x - home.x), Math.abs(spot!.y - home.y))).toBeGreaterThanOrEqual(4);
+    expect(exactCalls).toBeLessThanOrEqual(112); // (20 + 6 + 2) candidates x four rotations
+  });
+
+  it('keeps broad lanes through a growing ordinary settlement', () => {
+    const { game, world } = makeSkirmishGame(1000);
+    const home = game.storeFor('p1');
+    const rng = new Rng(99);
+    for (const key of ['sawmill', 'mill', 'bakery', 'mint', 'barracks', 'stable', 'engineer', 'monastery'] as const) {
+      const view = perceive(game, world, 'p1');
+      const spot = findBuildingSpot(game, world, view, key, rng, { x: home.x + 7, y: home.y }, 46);
+      expect(spot, `no spot found for ${key}`).not.toBeNull();
+      const nearest = Math.min(...[...view.buildings, ...view.sites].map(building => footprintGap(spot!, building)));
+      expect(nearest, `${key} narrowed an existing lane`).toBeGreaterThanOrEqual(3);
+      expect(game.canPlace(key, spot!.x, spot!.y, spot!.rot)).toBe(true);
+      game.placeBuilding(key, spot!.x, spot!.y, true, spot!.rot, 'player', 'p1');
+    }
+  });
+
+  it('is deterministic across identical placement sequences', () => {
+    const sequence = (): { x: number; y: number; rot: number }[] => {
+      const { game, world } = makeSkirmishGame(1701);
+      const rng = new Rng(77);
+      const home = game.storeFor('p1');
+      const spots: { x: number; y: number; rot: number }[] = [];
+      for (const key of ['woodcutter', 'sawmill', 'quarry', 'farm', 'barracks'] as const) {
+        const view = perceive(game, world, 'p1');
+        const spot = findBuildingSpot(game, world, view, key, rng, { x: home.x + 7, y: home.y });
+        expect(spot).not.toBeNull();
+        spots.push(spot!);
+        game.placeBuilding(key, spot!.x, spot!.y, true, spot!.rot, 'player', 'p1');
+      }
+      return spots;
+    };
+    expect(sequence()).toEqual(sequence());
+  });
+
+  it('places a fishery only where a reachable open shore can be worked', () => {
+    const { game, world } = makeSkirmishGame(1000);
+    const view = perceive(game, world, 'p1');
+    const home = game.storeFor('p1');
+    const spot = findBuildingSpot(game, world, view, 'fishery', new Rng(9), { x: home.x + 7, y: home.y });
+    expect(spot).not.toBeNull();
+    const before = game.sites.length;
+    applyGameCommand(game, 'p1', { type: 'placeBuilding', key: 'fishery', x: spot!.x, y: spot!.y, rot: spot!.rot });
+    expect(game.sites.length).toBe(before + 1); // exact sim shore validator accepted it
+    expect(findPath(world, doorTile(home).x, doorTile(home).y, doorTile(spot!).x, doorTile(spot!).y, 'p1')).not.toBeNull();
   });
 
   it('plans only plot cells the sim itself accepts', () => {
