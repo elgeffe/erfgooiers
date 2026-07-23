@@ -224,7 +224,7 @@ hard placement pressure.
 - **Fog of war** is an information-layer toggle (`Game.fogOfWar` + `game/VisionSystem.ts`):
   hostile units/buildings/sites are hidden from render, minimap, and AI perception outside
   the observer's own sight; the deterministic sim never reads it, so replays and
-  fingerprints are fog-agnostic. Defaults: ON in skirmish (host/setup toggle) and sandbox;
+  fingerprints are fog-agnostic. Defaults: ON in skirmish (host/setup toggle), OFF in sandbox;
   solo runs are revealed on Normal and fogged from ascension 1 up. **Building repair** is a
   physical job through the `repair` command: serfs haul half the build cost to the damaged
   building, then a builder mends it at `Modifiers.repairTime()` (30 s base for a full heal);

@@ -161,7 +161,7 @@ export const DEFS: Record<BuildingKey, BuildingDef> = {
   wall: { name: 'Stone Wall', desc: 'A solid stretch of rampart — raiders must batter it down to pass', model: 'mine',
     cost: { stone: 3 }, roof: 0x8a9095, wall: 0x9aa0a3, accent: 0x6a7076, hp: 600, bulwark: true, entrance: 'none' },
 
-  gate: { name: 'Gate', desc: 'A fortified archway: your own units pass freely, enemies must break it down', model: 'mine',
+  gate: { name: 'Stone Gate', desc: 'A fortified archway: your own units pass freely, enemies must break it down', model: 'mine',
     cost: { timber: 2, stone: 3 }, roof: 0x77593a, wall: 0x9aa0a3, accent: 0x6b4a2f, hp: 450, bulwark: true, gate: true, entrance: 'through' },
 
   banditcamp: { name: 'Bandit Camp', desc: 'A den of raiders', model: 'barn',
