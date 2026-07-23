@@ -115,48 +115,44 @@ export class WorkerSystem {
       if (site.builder && (site.builder.dead || site.builder.target !== site)) site.builder = null;
       return !site.builder;
     };
-    let target: Site | null = null;
+    const claimSite = (site: Site): boolean => {
+      if (!claimable(site)) return false;
+      const door = doorTile(site);
+      // A funded site can become unreachable after it was placed (most often
+      // when a curtain wall closes before its gate). Do the route check before
+      // claiming it: otherwise every idle builder releases and reclaims the
+      // same impossible first site forever, starving all later reachable work.
+      if (!this.ports.sendTo(unit, door.x, door.y)) return false;
+      site.builder = unit;
+      unit.target = site;
+      unit.wstate = 'build';
+      unit.status = `Heading to ${site.def.name}`;
+      return true;
+    };
     for (const site of this.ports.sites()) {
-      if (claimable(site) && site.priority) {
-        target = site;
-        break;
-      }
+      if (site.priority && claimSite(site)) return;
     }
     // Repairs come after player-flagged priority sites but before routine
     // construction: mending what stands beats breaking new ground.
-    if (!target) {
-      const claimableRepair = (building: Building): boolean => {
-        const repair = building.repair;
-        if (!repair || building.removed || building.owner !== unit.owner || !repair.ready) return false;
-        if (repair.builder && (repair.builder.dead || repair.builder.target !== building)) repair.builder = null;
-        return !repair.builder;
-      };
-      for (const building of this.ports.buildings()) {
-        if (claimableRepair(building)) {
-          building.repair!.builder = unit;
-          unit.target = building;
-          unit.wstate = 'repair';
-          unit.path = null;
-          return;
-        }
+    const claimableRepair = (building: Building): boolean => {
+      const repair = building.repair;
+      if (!repair || building.removed || building.owner !== unit.owner || !repair.ready) return false;
+      if (repair.builder && (repair.builder.dead || repair.builder.target !== building)) repair.builder = null;
+      return !repair.builder;
+    };
+    for (const building of this.ports.buildings()) {
+      if (!claimableRepair(building)) continue;
+      const door = doorTile(building);
+      if (this.ports.sendTo(unit, door.x, door.y)) {
+        building.repair!.builder = unit;
+        unit.target = building;
+        unit.wstate = 'repair';
+        unit.status = `Heading to repair ${building.def.name}`;
+        return;
       }
     }
-    if (!target) {
-      for (const site of this.ports.sites()) {
-        if (claimable(site)) {
-          target = site;
-          break;
-        }
-      }
-    }
-    if (target) {
-      target.builder = unit;
-      unit.target = target;
-      unit.wstate = 'build';
-      unit.path = null;
-    } else {
-      this.ports.wander(unit, dt, 'Strolling', 'Idle');
-    }
+    for (const site of this.ports.sites()) if (claimSite(site)) return;
+    this.ports.wander(unit, dt, 'Strolling', 'Idle');
   }
 
   updateWorker(unit: Unit, dt: number): void {

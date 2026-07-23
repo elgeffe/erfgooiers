@@ -1,5 +1,5 @@
 import { ITEMS } from '../data/items';
-import { PLAYER_IDS, type Building, type OwnerId, type PlayerId, type Site, type Unit } from '../types';
+import { PLAYER_IDS, type Building, type Coord, type OwnerId, type PlayerId, type Site, type Unit } from '../types';
 import type { Modifiers } from './Modifiers';
 import { doorTile } from './util';
 
@@ -10,6 +10,7 @@ interface LogisticsPorts {
   nearestStore: (from: Building) => Building;
   storeFor: (owner: PlayerId) => Building;
   setCarrying: (unit: Unit, item: string | null) => void;
+  canReach: (from: Coord, to: Coord, owner: PlayerId) => boolean;
   sendTo: (unit: Unit, x: number, y: number) => boolean;
   moveUnit: (unit: Unit, dt: number) => boolean;
 }
@@ -169,41 +170,48 @@ export class LogisticsSystem {
     }
 
     demands.sort((left, right) => left.pri - right.pri);
+    const reachability = new Map<string, boolean>();
+    const canReach = (from: Coord, to: Coord, key: string): boolean => {
+      const cached = reachability.get(key);
+      if (cached !== undefined) return cached;
+      const reachable = this.ports.canReach(from, to, owner);
+      reachability.set(key, reachable);
+      return reachable;
+    };
     for (const demand of demands) {
       if (!idle.length) break;
       let from: Building | null = null;
-      if (demand.from) {
-        if (demand.from.out[demand.item] > 0) from = demand.from;
-      } else {
-        let best: Building | null = null;
-        let bestDistance = 1e9;
-        for (const building of this.ports.buildings()) {
-          // a repair may draw on the damaged building's own stock (castle
-          // stone mends the castle) — the serf just works at its door
-          if (building.owner !== owner || (building === demand.to && !demand.repair)) continue;
-          const available = building.def.store ? (building.stock![demand.item] || 0) : (building.out[demand.item] || 0);
-          if (available <= 0) continue;
-          const distance = this.buildingDistance(building, demand.to) + (building.def.store ? 0.5 : 0);
-          if (distance < bestDistance) {
-            bestDistance = distance;
-            best = building;
+      let serf: Unit | null = null;
+      let bestSourceDistance = 1e9;
+      let bestSerfDistance = 1e9;
+      const destinationDoor = doorTile(demand.to);
+      for (const building of this.ports.buildings()) {
+        if (demand.from ? building !== demand.from : building.owner !== owner || (building === demand.to && !demand.repair)) continue;
+        const available = building.def.store ? (building.stock![demand.item] || 0) : (building.out[demand.item] || 0);
+        if (available <= 0) continue;
+        const sourceDoor = doorTile(building);
+        if (!canReach(sourceDoor, destinationDoor, `route:${building.id}:${demand.to.id}`)) continue;
+        let candidateSerf: Unit | null = null;
+        let candidateSerfDistance = 1e9;
+        for (const unit of idle) {
+          if (!canReach({ x: unit.tx, y: unit.ty }, sourceDoor, `serf:${unit.id}:${building.id}`)) continue;
+          const distance = Math.abs(unit.tx - sourceDoor.x) + Math.abs(unit.ty - sourceDoor.y);
+          if (distance < candidateSerfDistance) {
+            candidateSerfDistance = distance;
+            candidateSerf = unit;
           }
         }
-        from = best;
-      }
-      if (!from) continue;
-
-      let serf: Unit | null = null;
-      let bestDistance = 1e9;
-      const door = doorTile(from);
-      for (const unit of idle) {
-        const distance = Math.abs(unit.tx - door.x) + Math.abs(unit.ty - door.y);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          serf = unit;
+        if (!candidateSerf) continue;
+        const sourceDistance = this.buildingDistance(building, demand.to) + (building.def.store ? 0.5 : 0);
+        if (sourceDistance < bestSourceDistance
+          || (sourceDistance === bestSourceDistance && candidateSerfDistance < bestSerfDistance)) {
+          from = building;
+          serf = candidateSerf;
+          bestSourceDistance = sourceDistance;
+          bestSerfDistance = candidateSerfDistance;
         }
       }
-      if (!serf) continue;
+      if (!from || !serf) continue;
       if (from.def.store) from.stock![demand.item]--;
       else from.out[demand.item]--;
       if (demand.repair && !demand.to.isSite) {

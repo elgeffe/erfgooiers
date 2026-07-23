@@ -1,13 +1,12 @@
 import type { Coord } from '../types';
 
 /**
- * The fortification planner: pure ring geometry shared by everything that
- * raises curtain walls — the skirmish AI (player walls/gates through the
- * command seam), the stronghold generator (enemy walls/gates placed directly),
- * and any future sandbox planning tools. A plan is geometry only; each caller
- * filters pieces through its own legality (canPlace for player builds,
- * areaClear for spawned strongholds), so refused segments leave the same
- * rough, honest gaps fortresses always had.
+ * The fortification planner: pure ring geometry for systems that raise curtain
+ * walls. The stronghold generator currently consumes it directly; a future
+ * skirmish-AI or sandbox caller can feed player walls/gates through the command
+ * seam. A plan is geometry only; each caller filters pieces through its own
+ * legality (canPlace for player builds, areaClear for spawned strongholds), so
+ * refused segments leave the same rough, honest gaps fortresses always had.
  *
  * Rings are square curtains of 2×2 blocks at a Chebyshev radius around a 2×2
  * anchor building, with gates mid-side. Gates are what make LAYERED defence

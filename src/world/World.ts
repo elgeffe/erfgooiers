@@ -141,7 +141,13 @@ export class World {
     if (!t) return false;
     if (t.type !== 'grass') return false; // water & rock both block
     if (t.b || t.site) {
-      const ownGate = mover !== undefined && !!t.b && !t.site && t.b.def.gate && this.gatePass(mover, t.b.owner);
+      // A gate serves as the curtain's passage from the moment its site is
+      // marked out. Otherwise completing the surrounding walls first can trap
+      // every worker on one side, leaving the gate itself impossible to haul
+      // to or build. Hostile owners still see both sites and standing gates as
+      // solid until they batter the completed structure down.
+      const obstacle = t.b ?? t.site!;
+      const ownGate = mover !== undefined && !!obstacle.def.gate && this.gatePass(mover, obstacle.owner);
       if (!ownGate) return false;
     }
     if (t.dep) return false;              // ore heaps are solid — mine from beside them

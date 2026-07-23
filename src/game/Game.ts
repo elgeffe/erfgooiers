@@ -382,6 +382,7 @@ export class Game {
       nearestStore: building => this.nearestStore(building),
       storeFor: owner => this.storeFor(owner),
       setCarrying: (unit, item) => this.unitMovement.setCarrying(unit, item),
+      canReach: (from, to, owner) => findPath(this.world, from.x, from.y, to.x, to.y, owner) !== null,
       sendTo: (unit, x, y) => this.unitMovement.sendTo(unit, x, y),
       moveUnit: (unit, dt) => this.unitMovement.moveGround(unit, dt),
     });
