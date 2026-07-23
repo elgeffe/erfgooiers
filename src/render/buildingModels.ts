@@ -97,19 +97,21 @@ function marketBuilding(def: BuildingDef, ghost: boolean): THREE.Group {
 function woodenWall(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   const timber = mkMat(def.wall, ghost), dark = mkMat(def.accent ?? 0x4b3222, ghost);
-  const addPost = (x: number, z: number): void => {
-    const post = new THREE.Mesh(cyl(0.12, 0.12, 1.35, 7), timber);
-    post.position.set(x, 0.68, z); post.castShadow = !ghost; g.add(post);
-    const point = new THREE.Mesh(cone(0.13, 0.3, 7), timber);
-    point.position.set(x, 1.5, z); g.add(point);
-  };
-  // One immutable palisade face along the south edge of its base 2x1 footprint.
-  // Placement rotation selects any of the four edges; neighbours never reshape it.
-  const posts = [-0.9, -0.675, -0.45, -0.225, 0, 0.225, 0.45, 0.675, 0.9];
-  for (const x of posts) addPost(x, 0.5);
-  for (const y of [0.42, 1.02]) {
-    const rail = new THREE.Mesh(box(2.04, 0.16, 0.2), dark);
-    rail.position.set(0, y, 0.5); g.add(rail);
+  // A centred, solid palisade block makes the model match the complete 2x1
+  // logical footprint. Rotation turns that whole block, so there is no edge
+  // alignment for the player to infer while placing it.
+  const body = new THREE.Mesh(box(1.9, 1.18, 0.9), timber);
+  body.position.y = 0.59; body.castShadow = !ghost; body.receiveShadow = !ghost; g.add(body);
+  for (const z of [-0.46, 0.46]) {
+    for (const y of [0.34, 0.88]) {
+      const rail = new THREE.Mesh(box(1.94, 0.13, 0.06), dark);
+      rail.position.set(0, y, z); g.add(rail);
+    }
+    // Slim battens keep the solid block reading as tightly joined timbers.
+    for (const x of [-0.76, -0.38, 0, 0.38, 0.76]) {
+      const batten = new THREE.Mesh(box(0.055, 1.12, 0.04), dark);
+      batten.position.set(x, 0.58, z); g.add(batten);
+    }
   }
   return g;
 }
@@ -117,17 +119,23 @@ function woodenWall(def: BuildingDef, ghost: boolean): THREE.Group {
 function woodenGate(def: BuildingDef, ghost: boolean): THREE.Group {
   const g = new THREE.Group();
   const timber = mkMat(def.wall, ghost), dark = mkMat(def.accent ?? 0x4b3222, ghost);
-  for (const x of [-0.82, 0.82]) {
-    const post = new THREE.Mesh(box(0.24, 1.75, 0.3), timber);
-    post.position.set(x, 0.88, 0.5); post.castShadow = !ghost; g.add(post);
-    const point = new THREE.Mesh(cone(0.19, 0.38, 4), timber);
-    point.position.set(x, 1.94, 0.5); point.rotation.y = Math.PI / 4; g.add(point);
+  // Deep piers and lintel occupy the full centred 2x1 footprint, while the
+  // paired doors make the pass-through direction legible from either side.
+  for (const x of [-0.78, 0.78]) {
+    const post = new THREE.Mesh(box(0.34, 1.75, 0.9), timber);
+    post.position.set(x, 0.88, 0); post.castShadow = !ghost; post.receiveShadow = !ghost; g.add(post);
+    const point = new THREE.Mesh(cone(0.13, 0.38, 4), timber);
+    point.position.set(x, 1.94, 0); point.rotation.y = Math.PI / 4; g.add(point);
   }
-  const beam = new THREE.Mesh(box(1.9, 0.25, 0.34), dark);
-  beam.position.set(0, 1.55, 0.5); g.add(beam);
-  for (const x of [-0.48, -0.24, 0, 0.24, 0.48]) {
-    const bar = new THREE.Mesh(box(0.1, 1.25, 0.1), timber);
-    bar.position.set(x, 0.65, 0.5); bar.userData.marker = true; g.add(bar);
+  const beam = new THREE.Mesh(box(1.9, 0.32, 0.9), dark);
+  beam.position.set(0, 1.48, 0); beam.castShadow = !ghost; g.add(beam);
+  for (const z of [-0.41, 0.41]) {
+    const doors = new THREE.Mesh(box(1.2, 1.2, 0.08), dark);
+    doors.position.set(0, 0.6, z); doors.userData.marker = true; g.add(doors);
+    for (const x of [-0.48, -0.24, 0, 0.24, 0.48]) {
+      const bar = new THREE.Mesh(box(0.07, 1.12, 0.04), timber);
+      bar.position.set(x, 0.6, z + Math.sign(z) * 0.06); bar.userData.marker = true; g.add(bar);
+    }
   }
   return g;
 }

@@ -35,15 +35,18 @@ describe('co-op player building colour', () => {
 });
 
 describe('wooden fortification segments', () => {
-  it('puts one thin wall or gate face along the edge of its base 2x1 footprint', () => {
+  it('centres the solid wall and gate across their complete 2x1 footprint', () => {
     for (const key of ['woodwall', 'woodgate'] as const) {
       const model = makeBuilding(key, DEFS[key], false);
       const box = new THREE.Box3().setFromObject(model);
       const bounds = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
-      expect(bounds.x).toBeGreaterThanOrEqual(2);
-      expect(bounds.z).toBeLessThan(0.6);
-      expect(center.z).toBeCloseTo(0.5, 1);
+      expect(bounds.x).toBeGreaterThanOrEqual(1.9);
+      expect(bounds.x).toBeLessThanOrEqual(2);
+      expect(bounds.z).toBeGreaterThanOrEqual(0.9);
+      expect(bounds.z).toBeLessThanOrEqual(1);
+      expect(center.x).toBeCloseTo(0, 5);
+      expect(center.z).toBeCloseTo(0, 5);
       for (const side of ['north', 'east', 'south', 'west']) {
         expect(model.getObjectByName(`wall-${side}`)).toBeUndefined();
       }
