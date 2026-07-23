@@ -449,6 +449,19 @@ describe('placement keeps doorways clear', () => {
     expect(game.canPlace('bakery', 9, 13, 2)).toBe(false);
   });
 
+  it('refuses a building whose empty doorway is sealed in by stone deposits', () => {
+    const { game, world } = openBattleGame();
+    const door = { x: 10, y: 12 }; // south door for a bakery at (10,10)
+
+    // The doorway itself is empty, but stone blocks every exit not occupied by
+    // the pending building. Diagonal movement cannot cut through the corners.
+    for (const [x, y] of [[9, 12], [10, 13], [11, 12]] as const) {
+      world.tiles[y][x].dep = { kind: 'stone', amt: 10, meshes: [] };
+    }
+    expect(world.passable(door.x, door.y)).toBe(true);
+    expect(game.canPlace('bakery', 10, 10, 0)).toBe(false);
+  });
+
   it('refuses a building set down sideways that walls off a doorway’s only corridor', () => {
     const { game } = openBattleGame();
     const bakery = game.placeBuilding('bakery', 10, 10, true);

@@ -245,6 +245,7 @@ export class PlacementSystem {
     const blockedEntrances = this.entranceTileKeys();
     const pending = { x: tx, y: ty, rot, def: DEFS[key] };
     const footprint = new Set<string>();
+    const center = buildingFootprintCenter(pending);
     for (const { x, y } of buildingFootprintTiles(pending)) {
       const tile = this.world.T(x, y);
       if (!tile || tile.type !== 'grass' || tile.b || tile.site || tile.dep || tile.road || tile.field || tile.tree?.dense) return false;
@@ -258,11 +259,14 @@ export class PlacementSystem {
     for (const tile of buildingEntranceTiles({ x: tx, y: ty, rot, def: DEFS[key] })) {
       if (!this.world.passable(tile.x, tile.y)) return false;
       if (blockedEntrances.has(`${tile.x},${tile.y}`)) return false;
+      // An empty door tile is not enough: ore, mountains or dense trees can
+      // surround it on the other three sides while the building closes the
+      // fourth. Such a site looks legal but no builder or worker can reach it.
+      if (!this.doorwayEscapes(tile, footprint, undefined, center.x, center.y)) return false;
     }
     // Covering a doorway is rejected above, but a building set down sideways can
     // still wall off the corridor a doorway opens onto without touching the door
     // tile itself. Reject placements that would seal any neighbouring doorway in.
-    const center = buildingFootprintCenter(pending);
     return !this.sealsNeighbourDoorway(footprint, center.x, center.y);
   }
 
@@ -287,7 +291,7 @@ export class PlacementSystem {
    *  box around the new footprint, or a large connected area — means the door
    *  still reaches the wider map. A flood that exhausts inside the pocket is
    *  sealed. */
-  private doorwayEscapes(start: Coord, footprint: Set<string>, mover: OwnerId, cx: number, cy: number): boolean {
+  private doorwayEscapes(start: Coord, footprint: Set<string>, mover: OwnerId | undefined, cx: number, cy: number): boolean {
     const walkable = (x: number, y: number) => !footprint.has(`${x},${y}`) && this.world.passable(x, y, mover);
     if (!walkable(start.x, start.y)) return true; // door already blocked — handled by other checks
     const seen = new Set<string>([`${start.x},${start.y}`]);
