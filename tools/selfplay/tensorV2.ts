@@ -439,6 +439,57 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'sweep') {
+    // A RESTART-SAFE campaign. The eval command holds every result in memory and
+    // prints once at the end, so a container reclaim mid-run loses the lot. This
+    // walks the held-out block in small chunks instead, appending each chunk's
+    // raw matches to a JSONL file and skipping chunks already recorded — so an
+    // interrupted campaign resumes exactly where it stopped.
+    const total = Number(process.argv[3] ?? 40);
+    const chunk = Number(process.argv[4] ?? 5);
+    const path = process.argv[5] ?? join(ARCHIVE, 'sweep.jsonl');
+    const checkpoint = process.argv[6];
+    const model = checkpoint ? loadCheckpoint(checkpoint) : priorV2Model();
+    mkdirSync(ARCHIVE, { recursive: true });
+
+    const done = new Set<string>();
+    if (existsSync(path)) {
+      for (const raw of readFileSync(path, 'utf8').split('\n')) {
+        if (!raw.trim()) continue;
+        const row = JSON.parse(raw) as MatchResult;
+        done.add(`${row.seed}|${row.opponent}|${row.seat}`);
+      }
+    }
+    process.stdout.write(`sweep [${model.origin}] → ${path}  (${done.size} matches already recorded)\n`);
+
+    for (let start = 0; start < total; start += chunk) {
+      const seeds = Array.from({ length: Math.min(chunk, total - start) }, (_, i) => SEEDS.test(start + i));
+      const jobs = jobsFor(OPPONENTS, seeds, EVAL_SECONDS)
+        .filter(job => !done.has(`${job.seed}|${job.opponent}|${job.seat}`));
+      if (!jobs.length) continue;
+      const t0 = Date.now();
+      const results = await playBatch(model, jobs, workers);
+      // Drop the bulky decision rows: the sweep file is an outcome record, and
+      // the rows would multiply its size for no analysis this stage needs.
+      const lines = results.map(r => JSON.stringify({ ...r, rows: undefined })).join('\n');
+      writeFileSync(path, (existsSync(path) ? readFileSync(path, 'utf8') : '') + lines + '\n');
+      const s = summarise(results);
+      process.stdout.write(
+        `  seeds ${start}-${start + seeds.length - 1}: score ${(s.score * 100).toFixed(1)}%  `
+        + `(W${s.wins}/D${s.draws}/L${s.losses})  [${((Date.now() - t0) / 1000).toFixed(0)}s]\n`);
+    }
+
+    // Final tally over everything recorded, including earlier interrupted runs.
+    const all: MatchResult[] = readFileSync(path, 'utf8').split('\n')
+      .filter(raw => raw.trim()).map(raw => JSON.parse(raw) as MatchResult);
+    process.stdout.write(`\nSWEEP COMPLETE [${model.origin}] — ${all.length} matches\n`);
+    for (const opponent of OPPONENTS) {
+      process.stdout.write(line(opponent, summarise(all.filter(r => r.opponent === opponent))) + '\n');
+    }
+    process.stdout.write(line('ALL', summarise(all)) + `  intent entropy ${intentEntropy(all).toFixed(2)} bits\n`);
+    return;
+  }
+
   if (command === 'eval') {
     const n = Number(process.argv[3] ?? 24);
     const path = process.argv[4];
