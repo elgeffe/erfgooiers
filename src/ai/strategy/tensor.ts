@@ -5,7 +5,7 @@ import { findBuildingSpot, planPlots } from '../actuation';
 import { economyStock, have, storeStock } from '../perception';
 import { deserializeMPS, sample, type MPS, type SerializedMPS } from '../tensor/mps';
 import { decodePlan, type DecodedPlan } from '../tensor/plan';
-import { dominantEnemyCategory, counterMultiplier } from './classic';
+import { dominantEnemyCategory, counterMultiplier } from './execution';
 import type { MacroPolicy, PolicyContext } from './types';
 
 /**

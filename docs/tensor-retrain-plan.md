@@ -1,6 +1,33 @@
 # Tensor v2 rebuild — phase-aware, probabilistic, adaptive strategy
 
-_Written July 2026. Status: design plan; implementation has not started._
+_Written July 2026. Status: stages 1 and 2 are implemented (phase/intent seams, conditional
+sampling, runtime adaptation); the model runs on an imitation PRIOR, not a trained
+checkpoint. Stages 3–5 — phase-labelled data, the training campaign, and promotion — are
+still open, and v1 remains the shipped `tensor` seat._
+
+## Implementation notes
+
+Two things were learned while building the seams that the design below did not anticipate:
+
+- **The context has to be short.** In an MPS the influence of a clamped slot travels along
+  the chain to the action block through one bond matrix per slot in between. Measured at the
+  bond dimension this project can afford, a slot three or more positions away barely moves
+  the sampled bundle; the nearest three condition it cleanly. The nine-slot observation
+  first written here was therefore reduced to four compressed slots (identity, development,
+  known enemy army, pressure) ordered with the most decision-relevant last. A longer context
+  does not describe the match in more detail — it silently discards most of the description.
+- **Fitting needs a trust region.** Fixed-rate gradient ascent (`fitStep`, fine for the short
+  v1 chain) stalls on v2's longer chains and collapses onto one dominant mode instead of
+  learning the conditional. `fitStepScaled` rescales the gradient so the largest core change
+  per step is fixed, which is what makes a small χ = 4 chain actually learn "this observation
+  implies that strategy".
+
+The core economy — paired timber, stone, the coin engine, a staple food chain WITH a tavern
+to serve it, and military production — is raised deterministically rather than sampled. A
+settlement with no sawmill cannot pursue any strategy at all, so leaving that to the sampler
+measures luck rather than strategy; the model still chooses the order and emphasis of
+everything beyond it.
+
 
 ## Decision
 

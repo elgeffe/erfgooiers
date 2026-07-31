@@ -20,7 +20,7 @@ import type { UnitKind } from './units';
  *   commits a large, staged combined-arms force for the kill.
  */
 export type AIDifficulty = 'easy' | 'hard' | 'godlike';
-export type AIPolicyKind = 'idle' | 'random' | 'classic' | 'tensor';
+export type AIPolicyKind = 'idle' | 'random' | 'classic' | 'tensor' | 'tensor2';
 
 export interface AIProfile {
   id: string;
@@ -212,8 +212,30 @@ const TENSOR: AIProfile = {
   counter: 1, homeGuard: 0.2, raidSize: 5, raidInterval: 150,
 };
 
+/**
+ * Tensor v2 (docs/tensor-retrain-plan.md): the phase-aware, adaptive policy.
+ *
+ * Its envelope is deliberately GODLIKE-EQUIVALENT — same cadence, action
+ * budget, reactions, army cap and rule access — because the plan forbids
+ * judging a strategy experiment through a weaker execution profile. The
+ * late-game posture fields below are only defaults: `TensorMacroV2` overrides
+ * army quotas, wave commitment, home guard and raid appetite through policy
+ * directives, so those choices are made by the model rather than this table.
+ */
+const TENSOR_V2: AIProfile = {
+  id: 'tensor2', name: 'Tensor v2 (phase MPS)',
+  desc: 'Experimental adaptive tensor policy — samples a fresh strategic plan per phase from what it can actually see.',
+  policy: 'tensor2', difficulty: 'godlike',
+  macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 66, errorRate: 0,
+  econScale: 1, expansion: 3, maxPendingSites: 4, workerReserveCoin: 3, towers: 4, towerKey: 'stonetower', forwardTowers: 2,
+  armyCap: 72, unitMix: {}, // the mix comes from the sampled bundle, not this table
+  minSiege: 0, minPriests: 0, flankSize: 0,
+  attackArmy: 44, attackEnabled: true, waveGrowth: 8, minAttackInterval: 150, retreatRatio: 0.42, useBell: true,
+  counter: 1, homeGuard: 0.2, raidSize: 4, raidInterval: 100,
+};
+
 export const AI_PROFILES: Record<string, AIProfile> = Object.fromEntries([
-  IDLE, RANDOM, TENSOR,
+  IDLE, RANDOM, TENSOR, TENSOR_V2,
   ...(['easy', 'hard', 'godlike'] as const).map(classic),
 ].map(profile => [profile.id, profile]));
 

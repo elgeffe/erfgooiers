@@ -27,4 +27,11 @@ export interface PolicyContext {
  */
 export interface MacroPolicy {
   plan(ctx: PolicyContext): GameCommand[];
+  /** Optional posture the policy wants the tactics layer to adopt — army cap,
+   *  siege/healer quotas, wave commitment, home guard, raid appetite. A policy
+   *  that chooses strategy must be able to choose its END-GAME too, rather than
+   *  inheriting fixed profile defaults it never picked. The controller merges
+   *  these over the profile for tactics only; the fairness budgets (cadence,
+   *  APM, reaction delay, visibility) are NOT overridable. */
+  readonly directives?: Partial<AIProfile>;
 }

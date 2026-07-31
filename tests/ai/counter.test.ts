@@ -5,7 +5,7 @@ import {
   dominantEnemyCategory,
   rankPerimeterTowerAnchors,
   selectUncoveredWoodcutter,
-} from '../../src/ai/strategy/classic';
+} from '../../src/ai/strategy/execution';
 
 describe('reactive counter-composition', () => {
   it('reads the rival army\'s dominant category, ignoring trivial forces', () => {
