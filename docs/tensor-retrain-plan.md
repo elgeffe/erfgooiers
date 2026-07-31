@@ -1,9 +1,10 @@
 # Tensor v2 rebuild — phase-aware, probabilistic, adaptive strategy
 
-_Written July 2026. Status: stages 1 and 2 are implemented (phase/intent seams, conditional
-sampling, runtime adaptation); the model runs on an imitation PRIOR, not a trained
-checkpoint. Stages 3–5 — phase-labelled data, the training campaign, and promotion — are
-still open, and v1 remains the shipped `tensor` seat._
+_Written July 2026. Status: all stages implemented and run. The training campaign produced
+a **negative result** — self-play refinement did not significantly improve the policy, and
+Tensor v2 did not clear the promotion bar. See
+[the experiment report](ai-experiments/2026-07-tensor-v2-campaign.md) for the 480-match
+paired evaluation. The shipped `tensor2` seat runs the imitation prior; v1 is untouched._
 
 ## Implementation notes
 
