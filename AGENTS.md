@@ -254,8 +254,14 @@ hard placement pressure.
   with a commitment window, deterministic recovery, policy directives for tactics). Two
   invariants: the v2 vocabulary is versioned and `loadV2Model` refuses a mismatched
   checkpoint, and the context stays SHORT — a clamped slot more than ~3 positions from the
-  action block barely conditions the sample at this bond dimension. It has not been trained
-  or promoted; the plan's held-out campaign decides that.
+  action block barely conditions the sample at this bond dimension.
+  `npm run tensor2:baseline | tensor2:train | tensor2:eval` (`tools/selfplay/tensorV2.ts`)
+  run the self-play loop: every seed is played from BOTH spawn corners against all three
+  Classic personas on a curriculum, the elite signal is the decisive outcome (never the
+  five-minute margin that misled v1), decision rows are credited to the phase that drew
+  them, and the imitation anchor plus a row-multiplicity cap keep the distribution from
+  collapsing. Training, tuning and campaign seeds come from disjoint ranges, so the reported
+  score is never the training score.
 - Macro policies actuate through ONE shared executor, `src/ai/strategy/execution.ts`:
   affordability with site reservations, legal placement (tower rings, forester coverage),
   civilian staffing, farm plots, stalled-site demolition, counter-composition and quota-based

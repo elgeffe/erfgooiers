@@ -225,3 +225,14 @@ export function buildPriorV2Model(): TensorV2Model {
 export function priorV2Model(): TensorV2Model {
   return PRIOR_V2_MODEL;
 }
+
+/**
+ * The demonstration rows for one phase — the IMITATION ANCHOR self-play mixes
+ * into every refit. The plan is explicit about why it has to stay in the batch:
+ * a winner-only loop forgets the supplier-first foundation and collapses onto a
+ * single line, and a policy with one line left has nothing to explore.
+ */
+export function anchorRows(phase: Phase, variants = 4, seed = PRIOR_SEED): number[][] {
+  const rng = new Rng(seed);
+  return DEMOS[phase].flatMap(demo => expandDemo(phase, demo, variants, rng));
+}

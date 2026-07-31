@@ -145,9 +145,15 @@ export class TensorMacroV2 implements MacroPolicy {
    *  be able to make a like-for-like end-game choice). */
   directives: Partial<AIProfile> = {};
 
-  /** Every bundle drawn this match, for the trainer's diagnostics and for the
-   *  entropy/diversity reporting the plan's promotion criteria require. */
-  readonly drawn: { at: number; phase: Phase; identity: StrategyIdentity; intents: IntentId[] }[] = [];
+  /**
+   * Every bundle drawn this match. `seq` is the RAW slot sequence — clamped
+   * context followed by sampled intents — which is exactly the training row the
+   * self-play trainer reinforces when this match is won, so the decision and the
+   * thing that gets learned from it are literally the same object.
+   */
+  readonly drawn: {
+    at: number; phase: Phase; identity: StrategyIdentity; intents: IntentId[]; seq: number[];
+  }[] = [];
 
   constructor(model: TensorV2Model = priorV2Model()) {
     this.model = loadV2Model(model);
@@ -274,7 +280,7 @@ export class TensorMacroV2 implements MacroPolicy {
     this.cursor = 0;
     this.plannedAt = view.elapsed;
     if (intents.includes('commit')) this.hasCommitted = true;
-    this.drawn.push({ at: view.elapsed, phase, identity: this.identity!, intents });
+    this.drawn.push({ at: view.elapsed, phase, identity: this.identity!, intents, seq: drawn });
   }
 
   /** How many lines of a kind this ask is for: one more than stands today,
