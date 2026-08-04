@@ -412,3 +412,27 @@ export function trainFighter(
   if (!best) return null;
   return { type: 'queueTraining', buildingId: best.building.id, unit: best.kind };
 }
+
+/**
+ * Raise the profile's defensive tower on a paced schedule, independent of
+ * whatever else the policy wants to build. One tower comes online after the
+ * barracks; another perimeter sector unlocks every ninety seconds thereafter.
+ *
+ * Shared because defence should not depend on a policy remembering to ask for
+ * it. Tensor v2 built towers only when its sampled bundle happened to contain
+ * `defend:home`, and fielded three or four against Godlike's six while its army
+ * was being ground down at home — the schedule is the mechanism that stops a
+ * perimeter from being a matter of luck.
+ */
+export function planHomeTower(ctx: PolicyContext, blockedUntil: Map<BuildingKey, number>): GameCommand | null {
+  const { view, profile } = ctx;
+  if (profile.towers <= 0 || (view.built.barracks ?? 0) < 1
+    || view.sites.length >= profile.maxPendingSites) return null;
+  const home = { x: view.store!.x + 1, y: view.store!.y + 1 };
+  const homeTowerCount = [...view.buildings, ...view.sites]
+    .filter(entity => entity.key === profile.towerKey
+      && Math.max(Math.abs(entity.x - home.x), Math.abs(entity.y - home.y)) <= 18)
+    .length;
+  const scheduled = Math.min(profile.towers, 1 + Math.floor(Math.max(0, view.elapsed - 360) / 90));
+  return homeTowerCount < scheduled ? placeBuilding(ctx, profile.towerKey, blockedUntil) : null;
+}

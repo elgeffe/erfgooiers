@@ -11,6 +11,7 @@ import {
   affordable,
   fieldPlots,
   placeBuilding,
+  planHomeTower,
   rankPerimeterTowerAnchors,
   selectUncoveredWoodcutter,
   staffEconomy,
@@ -175,20 +176,8 @@ export class ClassicMacro implements MacroPolicy {
     return commands;
   }
 
-  /** Build the profile's defensive tower on a paced schedule independent of
-   * the economy expansion gate. One tower comes online after the barracks;
-   * another perimeter sector unlocks every ninety seconds thereafter. */
   private planHomeTower(ctx: PolicyContext): GameCommand | null {
-    const { view, profile } = ctx;
-    if (profile.towers <= 0 || (view.built.barracks ?? 0) < 1
-      || view.sites.length >= profile.maxPendingSites) return null;
-    const home = { x: view.store!.x + 1, y: view.store!.y + 1 };
-    const homeTowerCount = [...view.buildings, ...view.sites]
-      .filter(entity => entity.key === profile.towerKey
-        && Math.max(Math.abs(entity.x - home.x), Math.abs(entity.y - home.y)) <= 18)
-      .length;
-    const scheduled = Math.min(profile.towers, 1 + Math.floor(Math.max(0, view.elapsed - 360) / 90));
-    return homeTowerCount < scheduled ? this.placeGoal(ctx, profile.towerKey) : null;
+    return planHomeTower(ctx, this.blockedUntil);
   }
 
   // ---- roads ----

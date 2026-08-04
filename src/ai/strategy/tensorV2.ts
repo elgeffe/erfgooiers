@@ -71,9 +71,16 @@ const LINE_OF: Partial<Record<IntentId, LineId>> = {
   'expand:food': 'food', 'expand:arms': 'arms',
 };
 
-/** Army composition asked for by each `army:*` intent. Several may be active at
- *  once, in which case their weights add — a bundle that votes twice for the
- *  same arm really does want twice as much of it. */
+/**
+ * Army composition asked for by each `army:*` intent. Several may be active at
+ * once, in which case their weights add — a bundle that votes twice for the
+ * same arm really does want twice as much of it.
+ *
+ * Measured worth keeping: substituting Godlike's own hand-tuned unit table for
+ * these sampled weights scored 10.0% ±17.3% WORSE over 40 paired matches
+ * against Godlike (6 better, 11 worse). Whatever else the model does, its
+ * adaptive composition is not the part that is losing.
+ */
 const COMPOSITIONS: Record<string, Record<string, number>> = {
   'army:ranged': { archer: 4, soldier: 3, knight: 1 },
   'army:anti-mounted': { pikeman: 5, soldier: 2, archer: 1 },
