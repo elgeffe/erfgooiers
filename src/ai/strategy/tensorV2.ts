@@ -113,6 +113,20 @@ function foundationKey(planned: ReturnType<typeof plannedBuildingCounts>): Build
     ?? ((planned.barracks ?? 0) < 1 ? 'barracks' : null);
 }
 
+/**
+ * Known defect, measured and left in place deliberately: `scout` and `raid` are
+ * INERT for this policy. The tactics layer drafts raiding parties only from
+ * units tagged 'mounted' and needs a full party of them, so a seat without a
+ * stable can never scout whatever its bundle asks for — forcing a shorter raid
+ * interval changed nothing in 40 of 40 matches. Godlike keeps cavalry in its
+ * fixed mix and so always has eyes.
+ *
+ * Fixing it by building a stable and horse archers when blind was tried and
+ * measured 10.0% ±18.3% WORSE over 40 paired matches against Godlike: the
+ * diverted resources cost more than the vision returned. Two of the five tempo
+ * intents therefore do nothing, and closing that gap needs a cheaper source of
+ * vision than cavalry rather than a bigger cavalry budget.
+ */
 const isComposition = (intent: IntentId): boolean => intent.startsWith('army:');
 const isTempo = (intent: IntentId): boolean =>
   intent === 'boom' || intent === 'scout' || intent === 'raid' || intent === 'commit' || intent === 'regroup';

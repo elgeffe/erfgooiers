@@ -118,7 +118,34 @@ In descending order of expected value:
   learned, they need a target that is actually a consequence of them — a
   learned economy/army strength at minute 12, say — with the caveat that
   optimising a proxy is exactly what made Tensor v1 prefer fast starts to wins.
-- **Scout harder.** The information limit is partly self-inflicted: a policy
-  that scouted earlier would have a state that encodes the opponent sooner, and
-  would both play better and be more learnable. That is a policy change with a
-  measurable prediction attached — early-game accuracy should rise.
+- **Scout harder — tried, and it is harder than it looks.** The information
+  limit looked self-inflicted, so two versions were measured. Forcing a shorter
+  raid interval changed nothing in 40 of 40 matches: the tactics layer drafts
+  raiding parties only from units tagged `mounted` and needs a full party, so a
+  seat without a stable cannot scout at all. Two of the five tempo intents
+  (`scout`, `raid`) are therefore inert for this policy, while Godlike keeps
+  cavalry in its fixed mix and always has eyes. Building a stable and horse
+  archers when blind then scored 10.0% ±18.3% WORSE — the diverted resources
+  cost more than the vision returned. Closing this gap needs a cheaper source of
+  vision than cavalry, not a bigger cavalry budget.
+
+## Track A scoreboard
+
+Every policy change in this session, paired over 40 held-out matches against
+Godlike, against the same reference:
+
+| change | delta | kept |
+|---|---|---|
+| siege-quota deadlock + recovery paralysis | **+5.0% ±9.8%** | yes |
+| `commit` no longer cheapens the wave | **+6.2% ±12.2%** | yes |
+| shorter raid interval when blind | +0.0% ±0.0% (inert) | no |
+| paced home towers | −7.5% ±18.1% | no |
+| Godlike's expert unit table | −10.0% ±17.3% | no |
+| build cavalry for vision when blind | −10.0% ±18.3% | no |
+
+Net 33.8% → 45.0% against Godlike. The pattern is the point: **both changes
+that helped were deadlock bugs — states where the policy could not act at all —
+and every change that was a strategic judgement failed.** That is what an
+information limit looks like from the inside. Where the outcome depends on the
+decision, fixing the decision helps; where it does not, tuning is a coin flip,
+and at ±15% resolution the coin flips are indistinguishable from insight.
