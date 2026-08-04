@@ -58,17 +58,11 @@ const INTENT_PATIENCE = 40;
 /** Per-phase ceilings on how deep each production line may grow. An `expand:X`
  *  intent asks for ONE more line, up to the ceiling for the current phase, so a
  *  bundle that repeats an intent compounds instead of no-opping. */
-/** Per-phase ceilings on how deep each production line may grow. An `expand:X`
- *  intent asks for ONE more line, up to the ceiling for the current phase, so a
- *  bundle that repeats an intent compounds instead of no-opping. The ceilings
- *  allow real growth beyond the shared opening, which is where the model's
- *  economic choices actually bite. */
 const CEILINGS: Record<Phase, Record<LineId, number>> = {
   opening: { timber: 1, stone: 1, coin: 1, food: 1, arms: 1 },
   midgame: { timber: 2, stone: 3, coin: 2, food: 2, arms: 1 },
   lategame: { timber: 2, stone: 4, coin: 3, food: 2, arms: 2 },
 };
-
 
 type LineId = 'timber' | 'stone' | 'coin' | 'food' | 'arms';
 
@@ -468,8 +462,13 @@ export class TensorMacroV2 implements MacroPolicy {
     if (has('defend:home')) directives.homeGuard = 0.35;
 
     if (has('commit')) {
+      // `commit` frees the army to march; it must NOT cheapen the wave. Lowering
+      // the threshold to 45% of the cap sent ~32 fighters into a base Godlike
+      // defends with 44 plus six towers, and the instrumented matches show
+      // exactly that shape: the army peaks near forty and is wiped to zero
+      // inside a minute. Commit now means "attack when the wave is ready and
+      // hold less at home", not "attack with fewer".
       directives.attackEnabled = true;
-      directives.attackArmy = Math.max(20, Math.round(profile.armyCap * 0.45));
       directives.homeGuard = has('defend:home') ? 0.25 : 0.15;
     } else if (has('regroup')) {
       // Hold: rebuild the wave rather than feed it in piecemeal.

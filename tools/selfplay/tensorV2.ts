@@ -448,7 +448,9 @@ async function main(): Promise<void> {
     const total = Number(process.argv[3] ?? 40);
     const chunk = Number(process.argv[4] ?? 5);
     const path = process.argv[5] ?? join(ARCHIVE, 'sweep.jsonl');
-    const checkpoint = process.argv[6];
+    const checkpoint = process.argv[6] && process.argv[6] !== '-' ? process.argv[6] : undefined;
+    const only = process.argv[7] as Opponent | undefined;
+    const field = only ? [only] : OPPONENTS;
     const model = checkpoint ? loadCheckpoint(checkpoint) : priorV2Model();
     mkdirSync(ARCHIVE, { recursive: true });
 
@@ -464,7 +466,7 @@ async function main(): Promise<void> {
 
     for (let start = 0; start < total; start += chunk) {
       const seeds = Array.from({ length: Math.min(chunk, total - start) }, (_, i) => SEEDS.test(start + i));
-      const jobs = jobsFor(OPPONENTS, seeds, EVAL_SECONDS)
+      const jobs = jobsFor(field, seeds, EVAL_SECONDS)
         .filter(job => !done.has(`${job.seed}|${job.opponent}|${job.seat}`));
       if (!jobs.length) continue;
       const t0 = Date.now();
@@ -483,7 +485,7 @@ async function main(): Promise<void> {
     const all: MatchResult[] = readFileSync(path, 'utf8').split('\n')
       .filter(raw => raw.trim()).map(raw => JSON.parse(raw) as MatchResult);
     process.stdout.write(`\nSWEEP COMPLETE [${model.origin}] — ${all.length} matches\n`);
-    for (const opponent of OPPONENTS) {
+    for (const opponent of field) {
       process.stdout.write(line(opponent, summarise(all.filter(r => r.opponent === opponent))) + '\n');
     }
     process.stdout.write(line('ALL', summarise(all)) + `  intent entropy ${intentEntropy(all).toFixed(2)} bits\n`);
