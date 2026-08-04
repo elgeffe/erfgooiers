@@ -250,6 +250,66 @@ function train(path: string): void {
   process.stdout.write(`value net → ${out}\n`);
 }
 
+/**
+ * Is the early game unpredictable because the FEATURES are too thin, or because
+ * the match genuinely is not decided yet? Train a model on early rows only and
+ * compare against a linear model on the same data. If a network with hidden
+ * layers, fitted only to early states, still cannot beat a linear fit, the
+ * information is not in the state — no architecture recovers it.
+ */
+function ablate(path: string): void {
+  const all = loadRows(path);
+  const { train: trainRows, test } = splitBySeed(all);
+  const fit = (rows: Row[], sizes: number[], epochs: number): MLP => {
+    const rng = new Rng(0xAB1A7E);
+    const net = randomMLP(sizes, rng, 'tanh', 'linear');
+    const state = adamState(net);
+    const order = rows.map((_, i) => i);
+    for (let epoch = 0; epoch < epochs; epoch++) {
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = rng.int(i + 1);
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+      for (let start = 0; start < order.length; start += 256) {
+        const batch = order.slice(start, start + 256);
+        const grad = zeroGrad(net);
+        for (const index of batch) {
+          const row = rows[index];
+          const acts = forwardAll(net, row.x);
+          backward(net, acts, [sigmoid(acts[acts.length - 1][0]) - row.y], grad);
+        }
+        for (const layer of grad) {
+          for (const w of layer.w) for (let i = 0; i < w.length; i++) w[i] /= batch.length;
+          for (let i = 0; i < layer.b.length; i++) layer.b[i] /= batch.length;
+        }
+        adamStep(net, grad, state, 0.004, 1e-5);
+      }
+    }
+    return net;
+  };
+
+  const early = (rows: Row[]): Row[] => rows.filter(row => row.t < 8);
+  process.stdout.write('ablation — held-out accuracy on EARLY states (< 8 min):\n');
+  const earlyTest = early(test);
+  const deep = fit(trainRows, [FEATURE_COUNT, 48, 24, 1], 60);
+  const linear = fit(trainRows, [FEATURE_COUNT, 1], 60);
+  const earlyOnly = fit(early(trainRows), [FEATURE_COUNT, 48, 24, 1], 120);
+  process.stdout.write(`  network, all states:     ${(evaluate(deep, earlyTest).acc * 100).toFixed(1)}%\n`);
+  process.stdout.write(`  LINEAR, all states:      ${(evaluate(linear, earlyTest).acc * 100).toFixed(1)}%\n`);
+  process.stdout.write(`  network, early only:     ${(evaluate(earlyOnly, earlyTest).acc * 100).toFixed(1)}%\n`);
+  const share = FEATURE_NAMES.indexOf('army_share');
+  let naive = 0, n = 0;
+  for (const row of earlyTest) {
+    if (row.y === 0.5) continue;
+    if ((row.x[share] >= 0.5 ? 1 : 0) === row.y) naive++;
+    n++;
+  }
+  process.stdout.write(`  army share alone:        ${(naive / Math.max(1, n) * 100).toFixed(1)}%\n`);
+  process.stdout.write(`  always-predict-majority: ${(Math.max(
+    earlyTest.filter(r => r.y === 1).length, earlyTest.filter(r => r.y === 0).length,
+  ) / Math.max(1, earlyTest.filter(r => r.y !== 0.5).length) * 100).toFixed(1)}%\n`);
+}
+
 // ---- CLI ----
 
 async function main(): Promise<void> {
@@ -268,6 +328,10 @@ async function main(): Promise<void> {
   }
   if (command === 'train') {
     train(process.argv[3] ?? join('target', 'selfplay', 'value-rows.jsonl'));
+    return;
+  }
+  if (command === 'ablate') {
+    ablate(process.argv[3] ?? join('target', 'selfplay', 'value-rows.jsonl'));
     return;
   }
   process.stderr.write(`unknown command '${command}' — use collect | train\n`);

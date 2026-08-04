@@ -465,6 +465,17 @@ export class TensorMacroV2 implements MacroPolicy {
     }
     if (has('army:mounted')) directives.flankSize = 6;
     if (has('scout')) { directives.raidSize = Math.max(2, profile.raidSize); directives.raidInterval = 70; }
+    // Being blind is not a strategy to sample — it is a state to fix. The value
+    // function shows why: for the first twelve minutes this seat's own base
+    // looks the same whether the rival is Easy or Godlike, so nothing it
+    // observes encodes the opponent, and the outcome is close to unpredictable.
+    // A stale memory therefore forces a scouting party regardless of what the
+    // bundle drew, which is both better play and a better-conditioned state.
+    const blind = ctx.view.elapsed - this.memory.seenAt;
+    if (blind > 120 && ctx.view.elapsed > 180) {
+      directives.raidSize = Math.max(2, directives.raidSize ?? profile.raidSize);
+      directives.raidInterval = Math.min(60, directives.raidInterval ?? profile.raidInterval);
+    }
     if (has('raid')) { directives.raidSize = Math.max(5, profile.raidSize); directives.raidInterval = 100; }
     if (has('defend:home')) directives.homeGuard = 0.35;
 
