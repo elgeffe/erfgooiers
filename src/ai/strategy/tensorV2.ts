@@ -58,11 +58,17 @@ const INTENT_PATIENCE = 40;
 /** Per-phase ceilings on how deep each production line may grow. An `expand:X`
  *  intent asks for ONE more line, up to the ceiling for the current phase, so a
  *  bundle that repeats an intent compounds instead of no-opping. */
+/** Per-phase ceilings on how deep each production line may grow. An `expand:X`
+ *  intent asks for ONE more line, up to the ceiling for the current phase, so a
+ *  bundle that repeats an intent compounds instead of no-opping. The ceilings
+ *  allow real growth beyond the shared opening, which is where the model's
+ *  economic choices actually bite. */
 const CEILINGS: Record<Phase, Record<LineId, number>> = {
   opening: { timber: 1, stone: 1, coin: 1, food: 1, arms: 1 },
   midgame: { timber: 2, stone: 3, coin: 2, food: 2, arms: 1 },
   lategame: { timber: 2, stone: 4, coin: 3, food: 2, arms: 2 },
 };
+
 
 type LineId = 'timber' | 'stone' | 'coin' | 'food' | 'arms';
 
@@ -92,10 +98,9 @@ const TRAINER_FOR: Record<string, BuildingKey> = {
 
 /**
  * The next step of the supplier-first core economy: paired timber, stone, the
- * coin engine, a staple food chain, and military production. These are exactly
- * the milestones `phase.ts` uses to decide the opening is over, raised through
- * the same shared line planners Classic uses — the "sound supplier-first
- * foundation" the plan says self-play must never be allowed to forget.
+ * coin engine, a staple food chain with a tavern to serve it, and military
+ * production. These are exactly the milestones `phase.ts` uses to decide the
+ * opening is over, raised through the same shared line planners Classic uses.
  */
 function foundationKey(planned: ReturnType<typeof plannedBuildingCounts>): BuildingKey | null {
   return nextTimberLineBuild(planned, 1)
@@ -310,12 +315,15 @@ export class TensorMacroV2 implements MacroPolicy {
     if (view.sites.length >= profile.maxPendingSites) return null;
     const planned = plannedBuildingCounts(view.built, view.pending);
 
-    // Repairing a broken economy, and raising the core chain the opening is
-    // FOR, are preconditions rather than strategic choices — a settlement with
-    // no sawmill cannot pursue any strategy at all, and a policy that could
-    // starve because the sampler happened not to name timber this window would
-    // be measuring luck, not strategy. The model still chooses the order and
-    // emphasis of everything beyond them.
+    // Repairing a broken economy, and raising the economic base itself, are
+    // preconditions rather than strategic choices.
+    //
+    // The base is the five milestones `phase.ts` reads, not Classic's full
+    // COMMON_OPENING. Adopting the latter was tried and MEASURED WORSE — about
+    // twenty points of match score on held-out seeds — because its twenty-five
+    // stages put the tavern eleventh and the barracks twelfth, so the seat lost
+    // the tempo to field an army even though its economy came out ahead. The
+    // model needs a base it can afford, not the deepest one available.
     if (this.phase.recovery) {
       const repair = this.tryBuild(ctx, this.recoveryKey(view, planned));
       if (repair) return repair;
@@ -443,7 +451,17 @@ export class TensorMacroV2 implements MacroPolicy {
     const has = (intent: IntentId): boolean => this.bundle.includes(intent);
     const directives: Partial<AIProfile> = {};
 
-    if (has('army:siege-support')) { directives.minSiege = 2; directives.minPriests = 1; }
+    // Only demand siege once a workshop actually STANDS. The tactics layer will
+    // not launch a wave until `minSiege` engines exist, so asking for siege the
+    // economy cannot build blocks every attack for the rest of the match — the
+    // exact deadlock that made this policy sit at home and lose to Godlike
+    // without ever attacking.
+    if (has('army:siege-support')) {
+      const engineer = ctx.view.buildings.some(b => b.key === 'engineer' && b.active);
+      const monastery = ctx.view.buildings.some(b => b.key === 'monastery' && b.active);
+      if (engineer) directives.minSiege = 2;
+      if (monastery) directives.minPriests = 1;
+    }
     if (has('army:mounted')) directives.flankSize = 6;
     if (has('scout')) { directives.raidSize = Math.max(2, profile.raidSize); directives.raidInterval = 70; }
     if (has('raid')) { directives.raidSize = Math.max(5, profile.raidSize); directives.raidInterval = 100; }
@@ -458,9 +476,13 @@ export class TensorMacroV2 implements MacroPolicy {
       directives.attackArmy = Math.round(profile.armyCap * 0.8);
       directives.homeGuard = 0.4;
     }
-    // A broken economy overrides every offensive ambition in the bundle.
+    // A broken economy tempers offensive ambition — but must not forbid it.
+    // Setting the threshold above the army cap made attacking arithmetically
+    // impossible, so a seat that latched into recovery late in a match simply
+    // stopped playing and waited to be killed. Raise the bar and hold more of
+    // the army home instead.
     if (this.phase.recovery) {
-      directives.attackArmy = profile.armyCap + 1;
+      directives.attackArmy = Math.round(profile.armyCap * 0.85);
       directives.homeGuard = 0.5;
       directives.raidSize = 0;
       directives.minSiege = 0;
