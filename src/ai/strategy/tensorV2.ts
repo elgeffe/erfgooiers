@@ -127,6 +127,33 @@ function foundationKey(planned: ReturnType<typeof plannedBuildingCounts>): Build
  * intents therefore do nothing, and closing that gap needs a cheaper source of
  * vision than cavalry rather than a bigger cavalry budget.
  */
+/**
+ * HYBRID ABLATION (docs/tensor-v3-hybrid-plan.md). Phases the model is allowed
+ * to sample in; every other phase executes a fixed plan instead.
+ *
+ * The premise is that early decisions have no creditable consequence — the
+ * value function scores below the majority-class floor before minute 8 in both
+ * the pre-hero and hero eras — so sampling them buys variance rather than
+ * strategy. 28.6% of all intents drawn are `expand:*`/`boom`, choices whose
+ * right answer does not depend on the rival at all.
+ *
+ * Set to every phase to restore v2 behaviour exactly.
+ */
+const SAMPLE_PHASES: readonly Phase[] = ['lategame'];
+
+/**
+ * What the seat pursues in a phase it no longer samples. These mirror what the
+ * prior draws most often (`expand:arms` 13.6%, `army:ranged` 11.8%,
+ * `defend:home` 8.1%, `expand:coin` 7.2%), so the ablation removes VARIANCE
+ * rather than substituting a different strategy — the distinction that made
+ * swapping in Classic's COMMON_OPENING cost twenty points.
+ */
+const FIXED_BUNDLE: Record<Phase, IntentId[]> = {
+  opening: ['expand:timber', 'expand:coin', 'expand:food', 'expand:arms', 'defend:home', 'army:ranged'],
+  midgame: ['expand:arms', 'expand:coin', 'army:ranged', 'defend:home', 'expand:stone', 'scout'],
+  lategame: ['army:ranged', 'army:siege-support', 'expand:arms', 'commit', 'defend:home', 'regroup'],
+};
+
 const isComposition = (intent: IntentId): boolean => intent.startsWith('army:');
 const isTempo = (intent: IntentId): boolean =>
   intent === 'boom' || intent === 'scout' || intent === 'raid' || intent === 'commit' || intent === 'regroup';
@@ -283,10 +310,14 @@ export class TensorMacroV2 implements MacroPolicy {
   private replan(ctx: PolicyContext): void {
     const { view, rng } = ctx;
     const phase = this.phase.phase;
+    const sampled = SAMPLE_PHASES.includes(phase);
     const observation = this.observe(view);
     const evidence = encodeEvidence(observation);
+    // A phase outside SAMPLE_PHASES still draws its slot sequence, so the
+    // trainer's row bookkeeping and the diagnostics stay identical — the draw
+    // is simply not what the seat executes.
     const drawn = sampleConditional(this.model.phases[phase], evidence, rng);
-    const intents = decodeBundle(phase, drawn);
+    const intents = sampled ? decodeBundle(phase, drawn) : [...FIXED_BUNDLE[phase]];
 
     this.bundle = intents;
     this.queue = [];
