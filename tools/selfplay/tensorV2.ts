@@ -286,6 +286,9 @@ function curriculum(generation: number, total: number): Record<Opponent, number>
  *  gradient and the distribution collapses onto it. */
 const ROW_MULTIPLICITY_CAP = 3;
 
+/** Phases whose decisions self-play may rewrite. Empty means all of them. */
+const LEARN_PHASES: readonly Phase[] = ['lategame'];
+
 function capRepeats(rows: number[][]): number[][] {
   const seen = new Map<string, number>();
   const out: number[][] = [];
@@ -362,6 +365,14 @@ async function train(start: TensorV2Model, options: TrainOptions): Promise<{
     }
 
     for (const phase of PHASES) {
+      // LEARN ONLY WHERE THE OUTCOME MEANS SOMETHING. The value function
+      // (docs/ai-experiments/2026-07-value-function.md) measures the winner as
+      // unpredictable before minute 12 — below the majority-class floor, in
+      // both the pre-hero and hero eras — and 86-96% predictable after it.
+      // Reinforcing opening and mid-game decisions with a match outcome that is
+      // nearly independent of them is how fourteen generations produced noise;
+      // those phases keep the imitation prior, which plays them competently.
+      if (LEARN_PHASES.length && !LEARN_PHASES.includes(phase)) continue;
       const won = capRepeats(elite.flatMap(r => r.rows[phase]));
       if (won.length < 3) continue;                       // nothing worth learning from
       const batch = [...won, ...anchors[phase]];
