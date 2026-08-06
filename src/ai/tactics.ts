@@ -47,6 +47,8 @@ export class Tactics {
   private wavesLaunched = 0;
   private lastAttackAt = -Infinity;
   private lastRaidAt = -Infinity;
+  /** Where the hero is currently riding, and when it was sent. */
+  private heroLeg: { x: number; y: number; since: number } | null = null;
   private lastOrderAt = -Infinity;
   private lastDefendTarget: Coord | null = null;
   private threatSince: number | null = null;
@@ -56,6 +58,58 @@ export class Tactics {
   private lastRepairAt = -Infinity;
   /** First launched attack (sim seconds) — the stance-separation metric. */
   firstAttackAt: number | null = null;
+
+  /**
+   * Ride the hero on a scouting circuit.
+   *
+   * This exists because of a measured information limit: for the first twelve
+   * minutes a seat's own base looks the same whether the rival is Easy or
+   * Godlike, so nothing it observes encodes the opponent — and the opponent is
+   * what decides the match (docs/ai-experiments/2026-07-value-function.md).
+   * Buying that vision with cavalry was tried and cost more than it returned;
+   * the hero is fast, mounted and already paid for.
+   *
+   * It is a SCOUT, not a duelist: it rides to a waypoint near the rival, then
+   * home to heal and report, and it runs the moment it is hurt or outnumbered.
+   * A dead hero sees nothing for the two minutes it takes to ride again.
+   */
+  private scoutWithHero(ctx: PolicyContext): GameCommand | null {
+    const { view } = ctx;
+    const hero = view.hero;
+    if (!hero || !view.store) return null;
+    const home = { x: view.store.x + 1, y: view.store.y + 1 };
+    const hurt = hero.hp < hero.maxHp * 0.55;
+    const chased = view.threats.length > 0
+      && Math.max(Math.abs(hero.tx - home.x), Math.abs(hero.ty - home.y)) > 20;
+
+    // Retreat overrides everything: losing the hero costs the vision entirely.
+    if (hurt || chased) {
+      if (this.heroLeg && this.heroLeg.x === home.x && this.heroLeg.y === home.y) return null;
+      this.heroLeg = { x: home.x, y: home.y, since: view.elapsed };
+      return { type: 'orderUnits', unitIds: [hero.id], order: { type: 'move', x: home.x, y: home.y }, formation: 'box' };
+    }
+    // Keep the current leg until it is reached or has plainly stalled.
+    if (this.heroLeg) {
+      const reached = Math.max(Math.abs(hero.tx - this.heroLeg.x), Math.abs(hero.ty - this.heroLeg.y)) <= 3;
+      if (!reached && view.elapsed - this.heroLeg.since < 45) return null;
+    }
+    // Alternate between the rival's approaches and home, so the picture stays
+    // fresh instead of the hero parking somewhere and dying to a tower.
+    const target = view.enemyStore
+      ? { x: view.enemyStore.x, y: view.enemyStore.y }
+      : ctx.approach;
+    const goingOut = !this.heroLeg || (this.heroLeg.x === home.x && this.heroLeg.y === home.y);
+    // Stop short of the rival castle — its arrows kill a lone rider — and look
+    // at the ground in front of it, which is where an army musters.
+    const scout = goingOut
+      ? {
+        x: Math.round(home.x + (target.x - home.x) * 0.72),
+        y: Math.round(home.y + (target.y - home.y) * 0.72),
+      }
+      : home;
+    this.heroLeg = { x: scout.x, y: scout.y, since: view.elapsed };
+    return { type: 'orderUnits', unitIds: [hero.id], order: { type: 'move', x: scout.x, y: scout.y }, formation: 'box' };
+  }
 
   step(ctx: PolicyContext): GameCommand[] {
     const { view, profile } = ctx;
@@ -75,6 +129,9 @@ export class Tactics {
     if (undisciplined.length) {
       commands.push({ type: 'setStance', unitIds: undisciplined.map(unit => unit.id), stance: 'defensive' });
     }
+
+    const heroOrder = this.scoutWithHero(ctx);
+    if (heroOrder) commands.push(heroOrder);
 
     // ---- reaction-delayed threat tracking ----
     if (view.threats.length) {

@@ -7,6 +7,7 @@ import { Objective } from './Objectives';
 import { SKIRMISH_LEVEL } from '../data/skirmishLevels';
 import type { LevelDef } from '../data/levels';
 import type { View } from '../render/View';
+import { AI_HERO } from '../data/heroes';
 import { PLAYER_IDS, type Building, type PlayerId, type Unit, type UnitOrder } from '../types';
 
 /**
@@ -27,6 +28,9 @@ export function stubView(world: World, options: StubViewOptions = {}): View {
   });
   const at = (g: THREE.Object3D, x: number, y: number) => { g.position.set(world.wx(x), 0, world.wz(y)); return g; };
   const view = {
+    // presentation passes cost real time in a 1 000-match campaign and hide
+    // nothing here: every setter below is a no-op
+    headless: true,
     add() {},
     remove(mesh: THREE.Object3D) {
       if (mesh.userData.traderCaravan && options.caravan) options.caravan.removed++;
@@ -102,9 +106,13 @@ export function makeSkirmishGame(seed: number, level: LevelDef = SKIRMISH_LEVEL,
   game.initCoOp(level.kit, level.kit, 'diagonal'); // skirmish rivals spawn in opposite corners
   game.setEnemies(level.enemies ?? null);
   for (const playerId of PLAYER_IDS) {
-    // same call as buildMultiplayerLevel (no heroes on either seat), so a
-    // browser match and its headless re-simulation spawn identical parades
+    // same call as buildMultiplayerLevel, so a browser match and its headless
+    // re-simulation spawn identical parades
     if (level.startArmy?.length) game.spawnStartArmy(level.startArmy, playerId);
+    // Both seats field the NEUTRAL hero (`erfgooier` applies no rule specs), so
+    // the arena stays symmetric while every seat gains the one thing the AI
+    // measurably lacked: a fast mounted scout it does not have to pay for.
+    game.spawnHero(AI_HERO.id, AI_HERO.name, playerId);
   }
   return { game, world, level };
 }

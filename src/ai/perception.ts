@@ -53,9 +53,13 @@ export interface AIView {
   workers: { serfs: number; laborers: number; villagers: number; freeVillagers: number; unstaffed: number };
   averageWorkerHunger: number;
 
-  /** Own live commandable fighters (heroes excluded — the CPU seats run none). */
+  /** Own live commandable fighters. The hero is EXCLUDED so army thresholds,
+   *  quotas and wave sizes keep counting trained soldiers only. */
   army: Unit[];
   armySize: number;
+  /** The seat's own hero, if it still rides. Fast, mounted and free — the
+   *  cheap source of early vision the army could not afford to buy. */
+  hero: Unit | null;
 
   /** The rival's castle. Kept through fog: on the fixed symmetric arena the
    *  spawn corners are map knowledge a human player has too. */
@@ -131,6 +135,7 @@ export function perceive(game: Game, world: World, owner: PlayerId): AIView {
   let serfs = 0, laborers = 0, villagers = 0, freeVillagers = 0, unstaffed = 0;
   let workerHunger = 0, workerCount = 0;
   const army: Unit[] = [];
+  let hero: Unit | null = null;
   let enemyArmySize = 0;
   const enemyArmyByKind: Partial<Record<UnitKind, number>> = {};
   const hostiles: Unit[] = [];
@@ -141,7 +146,8 @@ export function perceive(game: Game, world: World, owner: PlayerId): AIView {
       else if (unit.role === 'laborer') laborers++;
       else if (unit.role === 'villager') { villagers++; if (!unit.home) freeVillagers++; }
       if (unit.dmg === 0 && unit.faction === 'player') { workerHunger += unit.hunger; workerCount++; }
-      if (unit.role in UNITS && unit.role !== 'hero') army.push(unit);
+      if (unit.role === 'hero') hero = unit;
+      else if (unit.role in UNITS) army.push(unit);
       continue;
     }
     if (!game.hostileOwners(owner, unit.owner) || unit.dmg <= 0) continue;
@@ -178,7 +184,7 @@ export function perceive(game: Game, world: World, owner: PlayerId): AIView {
     store, buildings, sites, built, pending,
     workers: { serfs, laborers, villagers, freeVillagers, unstaffed },
     averageWorkerHunger: workerCount ? workerHunger / workerCount : 100,
-    army, armySize: army.length,
+    army, armySize: army.length, hero,
     enemyStore, enemyArmySize, enemyArmyByKind, enemyBulwarks, enemyTowers,
     threats, threatCentroid,
     resources: cachedResources(world, game.elapsed),

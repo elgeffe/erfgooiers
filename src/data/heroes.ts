@@ -27,6 +27,11 @@ export interface HeroDef {
   startArmy?: { kind: UnitKind; count: number }[];
 }
 
+/** The hero every CPU seat fields. `erfgooier` applies no rule specs at all, so
+ *  giving one to each side adds a scout and a duelist without tilting any
+ *  economy or combat rule — the arena stays symmetric. */
+export const AI_HERO = { id: 'erfgooier', name: 'The Erfgooier' };
+
 export const HEROES: HeroDef[] = [
   { id: 'erfgooier', name: 'The Erfgooier', title: 'A commoner of Het Gooi', icon: '🧑‍🌾',
     boon: 'Honest hands and no debts — the plain start every other hero is measured against.',

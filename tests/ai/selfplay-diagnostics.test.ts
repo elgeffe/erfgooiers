@@ -9,7 +9,9 @@ describe('self-play convergence diagnostics', () => {
     expect(result.final.t).toBe(0);
     expect(seat.buildingsByKey).toMatchObject({ storehouse: 1, guildhall: 1 });
     expect(seat.sitesByKey).toEqual({});
-    expect(seat.armyByKind).toEqual({ soldier: 4, archer: 2 });
+    // both CPU seats now field the neutral hero as a scout, so it parades with
+    // the starting warband (see src/data/heroes.ts, AI_HERO)
+    expect(seat.armyByKind).toEqual({ soldier: 4, archer: 2, hero: 1 });
     expect(seat.workersByRole).toMatchObject({ serf: 3, laborer: 1 });
     expect(seat).toMatchObject({
       timber: 16, stone: 12, coin: 8, bread: 10,

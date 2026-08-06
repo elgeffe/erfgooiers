@@ -493,6 +493,11 @@ export class View {
 
   /** Refresh the veil from the local seat's per-tile fog level. `rev` is a
    *  monotonic vision revision; an unchanged rev skips the texel re-upload. */
+  /** True when no meshes exist to hide — the headless self-play/test harness.
+   *  Presentation-only passes may skip their work entirely; the simulation
+   *  never reads any of it, so replays are unaffected. */
+  readonly headless: boolean = false;
+
   updateFogOverlay(rev: number, level: (tx: number, ty: number) => number): void {
     if (!this.world) return;
     this.ensureFogMesh(this.world.W, this.world.H);
