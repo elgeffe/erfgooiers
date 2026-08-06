@@ -125,7 +125,7 @@ function foundationKey(planned: ReturnType<typeof plannedBuildingCounts>): Build
  *
  * Set to every phase to restore v2 behaviour exactly.
  */
-const SAMPLE_PHASES: readonly Phase[] = [];
+const SAMPLE_PHASES: readonly Phase[] = ['opening', 'midgame', 'lategame'];
 
 /**
  * What the seat pursues in a phase it no longer samples. These mirror what the
