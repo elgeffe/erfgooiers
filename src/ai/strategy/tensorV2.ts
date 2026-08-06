@@ -114,20 +114,6 @@ function foundationKey(planned: ReturnType<typeof plannedBuildingCounts>): Build
 }
 
 /**
- * Known defect, measured and left in place deliberately: `scout` and `raid` are
- * INERT for this policy. The tactics layer drafts raiding parties only from
- * units tagged 'mounted' and needs a full party of them, so a seat without a
- * stable can never scout whatever its bundle asks for — forcing a shorter raid
- * interval changed nothing in 40 of 40 matches. Godlike keeps cavalry in its
- * fixed mix and so always has eyes.
- *
- * Fixing it by building a stable and horse archers when blind was tried and
- * measured 10.0% ±18.3% WORSE over 40 paired matches against Godlike: the
- * diverted resources cost more than the vision returned. Two of the five tempo
- * intents therefore do nothing, and closing that gap needs a cheaper source of
- * vision than cavalry rather than a bigger cavalry budget.
- */
-/**
  * HYBRID ABLATION (docs/tensor-v3-hybrid-plan.md). Phases the model is allowed
  * to sample in; every other phase executes a fixed plan instead.
  *
@@ -139,7 +125,7 @@ function foundationKey(planned: ReturnType<typeof plannedBuildingCounts>): Build
  *
  * Set to every phase to restore v2 behaviour exactly.
  */
-const SAMPLE_PHASES: readonly Phase[] = ['lategame'];
+const SAMPLE_PHASES: readonly Phase[] = [];
 
 /**
  * What the seat pursues in a phase it no longer samples. These mirror what the
@@ -155,6 +141,20 @@ const FIXED_BUNDLE: Record<Phase, IntentId[]> = {
 };
 
 const isComposition = (intent: IntentId): boolean => intent.startsWith('army:');
+
+/**
+ * Known defect, measured and left in place deliberately: of the five tempo
+ * intents, `scout` and `raid` are INERT for this policy. The tactics layer
+ * drafts raiding parties only from units tagged 'mounted' and needs a full
+ * party of them, so a seat without a stable can never scout whatever its bundle
+ * asks for — forcing a shorter raid interval changed nothing in 40 of 40
+ * matches. Godlike keeps cavalry in its fixed mix and so always has eyes.
+ *
+ * Fixing it by building a stable and horse archers when blind was tried and
+ * measured 10.0% ±18.3% WORSE over 40 paired matches against Godlike: the
+ * diverted resources cost more than the vision returned. Closing this gap needs
+ * a cheaper source of vision than cavalry, not a bigger cavalry budget.
+ */
 const isTempo = (intent: IntentId): boolean =>
   intent === 'boom' || intent === 'scout' || intent === 'raid' || intent === 'commit' || intent === 'regroup';
 
