@@ -20,7 +20,7 @@ import type { UnitKind } from './units';
  *   commits a large, staged combined-arms force for the kill.
  */
 export type AIDifficulty = 'easy' | 'hard' | 'godlike';
-export type AIPolicyKind = 'idle' | 'random' | 'classic' | 'tensor' | 'tensor2';
+export type AIPolicyKind = 'idle' | 'random' | 'classic' | 'tensor' | 'tensor2' | 'scripted';
 
 export interface AIProfile {
   id: string;
@@ -234,8 +234,26 @@ const TENSOR_V2: AIProfile = {
   counter: 1, homeGuard: 0.2, raidSize: 4, raidInterval: 100,
 };
 
+/**
+ * The same phase-aware machinery as Tensor v2 — shared executor, directives,
+ * hero scouting, recovery overlay — with the tensor network switched OFF: every
+ * phase runs the modal strategy instead of sampling one.
+ *
+ * This is the strongest seat measured in the project. Over two disjoint
+ * held-out blocks (240 paired matches) it beat the sampled policy by 10.8%
+ * ±8.7% and 13.3% ±8.5% overall, and by 26.2% ±17.5% against Godlike, scoring
+ * 56.3% against Godlike where no tensor configuration exceeded 45%.
+ * See docs/ai-experiments/2026-07-scripted-vs-sampled.md.
+ */
+const SCRIPTED: AIProfile = {
+  ...TENSOR_V2,
+  id: 'scripted', name: 'Strategist (scripted)',
+  desc: 'The phase-aware strategist with the tensor sampler off — the strongest CPU seat measured.',
+  policy: 'scripted',
+};
+
 export const AI_PROFILES: Record<string, AIProfile> = Object.fromEntries([
-  IDLE, RANDOM, TENSOR, TENSOR_V2,
+  IDLE, RANDOM, TENSOR, TENSOR_V2, SCRIPTED,
   ...(['easy', 'hard', 'godlike'] as const).map(classic),
 ].map(profile => [profile.id, profile]));
 

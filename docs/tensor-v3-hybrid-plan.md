@@ -1,7 +1,13 @@
 # Tensor v3 — a hybrid policy: deterministic where the answer is known, sampled where it is not
 
-_Plan, July 2026. Not started. Supersedes nothing; `tensor2` keeps running until
-v3 beats it on a paired held-out comparison._
+_Plan, July 2026. **Step one is done and it overturned the conclusion.** The
+ablation the plan opens with found that removing the model from the opening and
+mid-game costs nothing, and removing it ENTIRELY gains 11-13 points — so the
+premise (deterministic early, sampled late) is confirmed while the architecture
+below is the wrong shape. See
+[scripted versus sampled](ai-experiments/2026-07-scripted-vs-sampled.md). The
+remaining design question is not where to put the model, but whether strategic
+variety can be bought without a learned distribution's weak tail._
 
 ## The proposition
 

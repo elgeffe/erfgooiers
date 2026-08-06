@@ -113,19 +113,10 @@ function foundationKey(planned: ReturnType<typeof plannedBuildingCounts>): Build
     ?? ((planned.barracks ?? 0) < 1 ? 'barracks' : null);
 }
 
-/**
- * HYBRID ABLATION (docs/tensor-v3-hybrid-plan.md). Phases the model is allowed
- * to sample in; every other phase executes a fixed plan instead.
- *
- * The premise is that early decisions have no creditable consequence — the
- * value function scores below the majority-class floor before minute 8 in both
- * the pre-hero and hero eras — so sampling them buys variance rather than
- * strategy. 28.6% of all intents drawn are `expand:*`/`boom`, choices whose
- * right answer does not depend on the rival at all.
- *
- * Set to every phase to restore v2 behaviour exactly.
- */
-const SAMPLE_PHASES: readonly Phase[] = ['opening', 'midgame', 'lategame'];
+/** Sampling scopes for {@link TensorMacroV2}'s constructor. */
+export const SAMPLE_ALL: readonly Phase[] = ['opening', 'midgame', 'lategame'];
+/** Measured best: sampling nothing. See the constructor's note. */
+export const SAMPLE_NONE: readonly Phase[] = [];
 
 /**
  * What the seat pursues in a phase it no longer samples. These mirror what the
@@ -202,8 +193,25 @@ export class TensorMacroV2 implements MacroPolicy {
     at: number; phase: Phase; identity: StrategyIdentity; intents: IntentId[]; seq: number[];
   }[] = [];
 
-  constructor(model: TensorV2Model = priorV2Model()) {
+  private readonly samplePhases: readonly Phase[];
+
+  /**
+   * `samplePhases` decides how much of the policy the tensor network drives.
+   *
+   * It defaults to NONE because that is what measured best. Over two disjoint
+   * held-out seed blocks (240 paired matches), sampling cost 10.8% ±8.7% and
+   * 13.3% ±8.5% of match score, and 26.2% ±17.5% against Godlike alone — both
+   * overall figures significant. The mechanism: the fixed bundles are the
+   * prior's MODAL strategy, and a generative model necessarily draws from the
+   * whole distribution, so it plays the weaker tail about half the time.
+   *
+   * Pass `SAMPLE_ALL` to restore the sampled policy. It is worth having: it
+   * produces 25 distinct opening bundles against the script's 1, which is
+   * variety a repeated opponent wants even though it costs match score.
+   */
+  constructor(model: TensorV2Model = priorV2Model(), samplePhases: readonly Phase[] = SAMPLE_NONE) {
     this.model = loadV2Model(model);
+    this.samplePhases = samplePhases;
   }
 
   plan(ctx: PolicyContext): GameCommand[] {
@@ -310,7 +318,7 @@ export class TensorMacroV2 implements MacroPolicy {
   private replan(ctx: PolicyContext): void {
     const { view, rng } = ctx;
     const phase = this.phase.phase;
-    const sampled = SAMPLE_PHASES.includes(phase);
+    const sampled = this.samplePhases.includes(phase);
     const observation = this.observe(view);
     const evidence = encodeEvidence(observation);
     // A phase outside SAMPLE_PHASES still draws its slot sequence, so the
