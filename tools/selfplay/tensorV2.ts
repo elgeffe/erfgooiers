@@ -64,7 +64,7 @@ const EVAL_SECONDS = 2400;
 /** Seed ranges that never overlap: training draws far above tuning, and the
  *  final campaign owns a fixed block neither of them can reach. */
 const SEEDS = {
-  test: (i: number): number => 9_000 + i,          // 9 000 … 9 999   held out
+  test: (i: number): number => 9_000 + Number(process.env.TENSOR2_SEED_OFFSET ?? 0) + i,
   tune: (i: number): number => 50_000 + i,         // 50 000 … 59 999 checkpoint selection
   train: (rng: Rng): number => 200_000 + rng.int(1 << 28),
 };
