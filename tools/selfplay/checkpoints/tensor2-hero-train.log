@@ -1,0 +1,17 @@
+Tensor v2 self-play: 10 generations × ~32 matches (both seats, curriculum over the Classic ladder) · 4 workers
+  gen  1/10  train score 71.9%  (W8/D7/L1)  elite 8  entropy 3.73  [191s]
+  gen  2/10  train score 62.5%  (W6/D8/L2)  elite 6  entropy 3.72  [91s]
+  gen  3/10  train score 75.0%  (W9/D6/L1)  elite 9  entropy 3.78  [278s]
+      tune score 62.5%  ← new best
+  gen  4/10  train score 43.8%  (W5/D4/L7)  elite 5  entropy 3.72  [124s]
+  gen  5/10  train score 40.6%  (W4/D5/L7)  elite 4  entropy 3.66  [420s]
+  gen  6/10  train score 39.3%  (W4/D3/L7)  elite 4  entropy 3.67  [185s]
+      tune score 56.3%
+  gen  7/10  train score 46.4%  (W5/D3/L6)  elite 5  entropy 3.69  [133s]
+  gen  8/10  train score 42.9%  (W3/D6/L5)  elite 4  entropy 3.67  [146s]
+  gen  9/10  train score 42.9%  (W3/D6/L5)  elite 4  entropy 3.66  [115s]
+      tune score 56.3%
+  gen 10/10  train score 35.7%  (W2/D6/L6)  elite 4  entropy 3.64  [98s]
+      tune score 47.9%
+
+best checkpoint → target/selfplay/tensor2-checkpoint.json  [65.6 min]

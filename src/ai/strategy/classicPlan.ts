@@ -120,6 +120,34 @@ export function nextCoinLineBuild(
 }
 
 /**
+ * Add a bread line in supplier-first order: one farm feeds one mill feeds one
+ * bakery. Repairing a half-built chain always comes before starting another,
+ * so a settlement never ends up with three farms and nowhere to mill them.
+ */
+export function nextFoodLineBuild(planned: BuildingCounts, targetLines: number): BuildingKey | null {
+  const farms = count(planned, 'farm');
+  const mills = count(planned, 'mill');
+  const bakeries = count(planned, 'bakery');
+  const existingLines = Math.max(farms, mills, bakeries);
+
+  if (farms < existingLines) return 'farm';
+  if (mills < existingLines) return 'mill';
+  if (bakeries < existingLines) return 'bakery';
+  if (existingLines >= targetLines) return null;
+
+  const nextLine = existingLines + 1;
+  if (farms < nextLine) return 'farm';
+  if (mills < nextLine) return 'mill';
+  return 'bakery';
+}
+
+/** Stone has no chain — a quarry is the whole line — but keeping it in the same
+ *  shape lets a policy treat every economy intent through one seam. */
+export function nextStoneLineBuild(planned: BuildingCounts, targetQuarries: number): BuildingKey | null {
+  return count(planned, 'quarry') < targetQuarries ? 'quarry' : null;
+}
+
+/**
  * Add a weapons-and-armour line in supplier-first order. One iron mine and one
  * dedicated coal mine feed one smithy plus one armory because both crafters run
  * at half the rate of their raw-material mines. `coinLines` protects the coal

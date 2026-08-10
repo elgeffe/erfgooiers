@@ -16,6 +16,14 @@ export function installSettingsController(view: View, controls: Controls, onAuto
   view.setGorePrefs(settings.corpseCap, settings.corpseLife);
   controls.settings = settings;
 
+  /** The unfinished network modes are opt-in, so a first-time menu stays short.
+   *  A shared `?coop` invite link still opens the lobby directly — the flag hides
+   *  the entry points, it does not disable the mode. */
+  const applyBetaVisibility = (): void => {
+    for (const id of ['btnCoop', 'btnSkirmish']) $(id).style.display = settings.betaFeatures ? '' : 'none';
+  };
+  applyBetaVisibility();
+
   let returnTo: 'menu' | 'pause' = 'menu';
   const render = (): void => {
     ($('setMusic') as HTMLInputElement).value = String(Math.round(settings.musicVol * 100));
@@ -26,6 +34,7 @@ export function installSettingsController(view: View, controls: Controls, onAuto
     ($('setEdgePan') as HTMLInputElement).checked = settings.edgePan;
     ($('setAutoPause') as HTMLInputElement).checked = settings.autoPauseOnBlur;
     ($('setTutorials') as HTMLInputElement).checked = settings.tutorials;
+    ($('setBeta') as HTMLInputElement).checked = settings.betaFeatures;
     ($('setQuality') as HTMLSelectElement).value = settings.quality;
     ($('setUnitCap') as HTMLSelectElement).value = String(settings.unitCap);
     ($('setBodyCap') as HTMLSelectElement).value = String(settings.corpseCap);
@@ -84,6 +93,10 @@ export function installSettingsController(view: View, controls: Controls, onAuto
   ($('setEdgePan') as HTMLInputElement).onchange = e => { settings.edgePan = (e.target as HTMLInputElement).checked; saveSettings(settings); };
   ($('setAutoPause') as HTMLInputElement).onchange = e => { settings.autoPauseOnBlur = (e.target as HTMLInputElement).checked; saveSettings(settings); };
   ($('setTutorials') as HTMLInputElement).onchange = e => { settings.tutorials = (e.target as HTMLInputElement).checked; saveSettings(settings); };
+  ($('setBeta') as HTMLInputElement).onchange = e => {
+    settings.betaFeatures = (e.target as HTMLInputElement).checked;
+    applyBetaVisibility(); saveSettings(settings);
+  };
   ($('setQuality') as HTMLSelectElement).onchange = e => {
     settings.quality = (e.target as HTMLSelectElement).value as GameSettings['quality'];
     view.setQualityMode(settings.quality); saveSettings(settings);

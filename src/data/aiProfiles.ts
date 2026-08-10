@@ -20,7 +20,7 @@ import type { UnitKind } from './units';
  *   commits a large, staged combined-arms force for the kill.
  */
 export type AIDifficulty = 'easy' | 'hard' | 'godlike';
-export type AIPolicyKind = 'idle' | 'random' | 'classic' | 'tensor';
+export type AIPolicyKind = 'idle' | 'random' | 'classic' | 'tensor' | 'tensor2' | 'scripted';
 
 export interface AIProfile {
   id: string;
@@ -212,8 +212,48 @@ const TENSOR: AIProfile = {
   counter: 1, homeGuard: 0.2, raidSize: 5, raidInterval: 150,
 };
 
+/**
+ * Tensor v2 (docs/tensor-retrain-plan.md): the phase-aware, adaptive policy.
+ *
+ * Its envelope is deliberately GODLIKE-EQUIVALENT — same cadence, action
+ * budget, reactions, army cap and rule access — because the plan forbids
+ * judging a strategy experiment through a weaker execution profile. The
+ * late-game posture fields below are only defaults: `TensorMacroV2` overrides
+ * army quotas, wave commitment, home guard and raid appetite through policy
+ * directives, so those choices are made by the model rather than this table.
+ */
+const TENSOR_V2: AIProfile = {
+  id: 'tensor2', name: 'Tensor v2 (phase MPS)',
+  desc: 'Experimental adaptive tensor policy — samples a fresh strategic plan per phase from what it can actually see.',
+  policy: 'tensor2', difficulty: 'godlike',
+  macroPeriod: 1.2, tacticsPeriod: 0.5, reactionDelay: 0.6, apm: 66, errorRate: 0,
+  econScale: 1, expansion: 3, maxPendingSites: 4, workerReserveCoin: 3, towers: 4, towerKey: 'stonetower', forwardTowers: 2,
+  armyCap: 72, unitMix: {}, // the mix comes from the sampled bundle, not this table
+  minSiege: 0, minPriests: 0, flankSize: 0,
+  attackArmy: 44, attackEnabled: true, waveGrowth: 8, minAttackInterval: 150, retreatRatio: 0.42, useBell: true,
+  counter: 1, homeGuard: 0.2, raidSize: 4, raidInterval: 100,
+};
+
+/**
+ * The same phase-aware machinery as Tensor v2 — shared executor, directives,
+ * hero scouting, recovery overlay — with the tensor network switched OFF: every
+ * phase runs the modal strategy instead of sampling one.
+ *
+ * This is the strongest seat measured in the project. Over two disjoint
+ * held-out blocks (240 paired matches) it beat the sampled policy by 10.8%
+ * ±8.7% and 13.3% ±8.5% overall, and by 26.2% ±17.5% against Godlike, scoring
+ * 56.3% against Godlike where no tensor configuration exceeded 45%.
+ * See docs/ai-experiments/2026-07-scripted-vs-sampled.md.
+ */
+const SCRIPTED: AIProfile = {
+  ...TENSOR_V2,
+  id: 'scripted', name: 'Strategist (scripted)',
+  desc: 'The phase-aware strategist with the tensor sampler off — the strongest CPU seat measured.',
+  policy: 'scripted',
+};
+
 export const AI_PROFILES: Record<string, AIProfile> = Object.fromEntries([
-  IDLE, RANDOM, TENSOR,
+  IDLE, RANDOM, TENSOR, TENSOR_V2, SCRIPTED,
   ...(['easy', 'hard', 'godlike'] as const).map(classic),
 ].map(profile => [profile.id, profile]));
 

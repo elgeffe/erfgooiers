@@ -1173,6 +1173,10 @@ export class Game {
   private fogArtifactsRev = -1;
 
   private applyFogToView(): void {
+    // Nothing to hide when nothing renders. Computing per-unit and per-building
+    // visibility only to feed it to no-op stubs cost 3.3% of every headless
+    // match, which is pure waste across a training campaign.
+    if (this.view.headless) return;
     const seat = this.localPlayerId;
     this.view.updateFogOverlay(this.vision.revision(seat), (tx, ty) => this.vision.fogLevel(seat, tx, ty));
     for (const u of this.units) {

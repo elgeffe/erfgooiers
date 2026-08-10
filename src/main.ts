@@ -12,7 +12,7 @@ import { Objective, ascendObjective } from './game/Objectives';
 import { MAX_CARDS, UPGRADES, UPGRADE_BY_ID, cardUnlocked, specsFor } from './data/upgrades';
 import { MUTATOR_BY_ID, baseObjectiveIdx, contractsFor, mutatorRewardMult, mutatorSpecsFor, rollMutators, type Contract } from './data/mutators';
 import { META_UPGRADES, META_BY_ID, metaSpecsFor, metaSpecialValue } from './data/metaUpgrades';
-import { HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
+import { AI_HERO, HEROES, HERO_BY_ID, heroAvailable, heroSpecsFor, heroUnlockId } from './data/heroes';
 import { DEFAULT_SANDBOX, MAX_SANDBOX_STRONGHOLDS, biomeWater, levelFor, sandboxLevel, type LevelDef, type SandboxConfig } from './data/levels';
 import { lockedBuildingsAt, objectiveBuildings, unlockedResourcesAt } from './data/buildings';
 import { VICTORY_IMAGE, VICTORY_STORY, storyFor } from './data/story';
@@ -113,7 +113,10 @@ type MultiplayerMode = 'expedition' | 'skirmish';
 interface MultiplayerSeat {
   id: PlayerId;
   kind: 'local' | 'remote' | 'cpu';
-  /** Human seats may bring a hero (network lobbies); CPU seats never do. */
+  /** Human seats bring the hero they picked; CPU seats always bring the
+   *  NEUTRAL one (`AI_HERO`), never a special hero — a boon/bane hero would
+   *  tilt the rules for one side, and the CPU's hero exists to scout, not to
+   *  change the game. */
   hero?: string | null;
   /** Preset building paint for the seat. */
   colorHex?: number;
@@ -639,7 +642,7 @@ function renderSkirmishAISetup(): void {
     const cfg = skaiCfg[side];
     const classic = cfg.policy === 'classic';
     const groups: { key: keyof SkaiSeatCfg; label: string; opts: [string, string][]; hidden?: boolean }[] = [
-      { key: 'policy', label: `${title} — Classic is the benchmark; Tensor is the MPS research brain; Idle & Random are training dummies`, opts: [['classic', '⚔️ Classic'], ['tensor', '🧠 Tensor'], ['random', '🎲 Random'], ['idle', '💤 Idle']] },
+      { key: 'policy', label: `${title} — Classic is the benchmark; the Tensor brains are the MPS research models (v2 replans as the match changes); Idle & Random are training dummies`, opts: [['classic', '⚔️ Classic'], ['scripted', '🎯 Strategist'], ['tensor', '🧠 Tensor'], ['tensor2', '🧠 Tensor v2'], ['random', '🎲 Random'], ['idle', '💤 Idle']] },
       { key: 'difficulty', label: 'Difficulty — a better player, never a cheating one', hidden: !classic, opts: [['easy', '🌱 Easy'], ['hard', '⚔️ Hard'], ['godlike', '🔥 Godlike']] },
     ];
     let block = '';
@@ -710,9 +713,9 @@ function startSkirmishAI(): void {
   const spectate = skaiCfg.seat === 'spectate';
   const seats: MultiplayerSeat[] = [
     spectate
-      ? { id: 'p1', kind: 'cpu', profile: skaiProfileId(skaiCfg.west), colorHex: parseInt(PLAYER_COLOR_PRESETS[0].slice(1), 16) }
+      ? { id: 'p1', kind: 'cpu', hero: AI_HERO.id, profile: skaiProfileId(skaiCfg.west), colorHex: parseInt(PLAYER_COLOR_PRESETS[0].slice(1), 16) }
       : { id: 'p1', kind: 'local', colorHex: parseInt(PLAYER_COLOR_PRESETS[0].slice(1), 16) },
-    { id: 'p2', kind: 'cpu', profile: skaiProfileId(skaiCfg.east), colorHex: parseInt(PLAYER_COLOR_PRESETS[1].slice(1), 16) },
+    { id: 'p2', kind: 'cpu', hero: AI_HERO.id, profile: skaiProfileId(skaiCfg.east), colorHex: parseInt(PLAYER_COLOR_PRESETS[1].slice(1), 16) },
   ];
   multiplayer = {
     mode: 'skirmish', transport: 'local', seats, level: 1, difficulty: 'erfgooiers',

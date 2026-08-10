@@ -188,6 +188,11 @@ hard placement pressure.
   notifications route through `Game.emitToast(msg, cls, owner)`, which drops the *other*
   player's events so each seat sees only its own; global events (raids, level messages) carry
   no owner and show to both. Checkpoint/replay recovery and per-player shops are not built yet.
+- **Co-op Expedition** and **1v1 Skirmish** are hidden behind a beta toggle: they need a
+  running lobby server, so `GameSettings.betaFeatures` (off by default) decides whether their
+  main-menu buttons are shown, applied by `installSettingsController`. A shared `?coop`
+  invite link still opens the lobby regardless — the flag hides entry points, it does not
+  disable the modes. Skirmish vs CPU is local and stays on the menu unconditionally.
 - A beta **1v1 Skirmish** mode reuses the whole co-op stack as PvP: the host picks the mode
   in the host form (`RoomSettings.mode: 'skirmish'`), diplomacy is data on the simulation
   (`Game.setTeams`/`Game.hostileOwners`, keyed by entity `owner`), the single symmetric map
@@ -237,6 +242,32 @@ hard placement pressure.
   `src/ai/tensor/model.ts` (auto-generated). It is a bounded experiment with a
   pre-registered win bar — see `docs/tensor-strategy-poc.md`; the tensor family is
   deliberately NOT used for logistics (`docs/tensor-networks-for-logistics.md`).
+- **Tensor v2** (`tensor2` policy/profile, `docs/tensor-retrain-plan.md`) is the phase-aware
+  successor, developed alongside the FROZEN v1 rather than replacing it. It samples a short
+  bundle of strategic *intents* per decision window from a conditional MPS whose context
+  slots are clamped to a discretized fair observation, so the same model answers differently
+  as the match changes: `src/ai/tensor/phase.ts` (pure, monotonic phase + recovery detector),
+  `plan.ts` (v1 alphabet plus the versioned v2 intent/context vocabulary), `mps.ts`
+  (per-slot physical dimensions, evidence-clamped conditional sampling, trust-region
+  fitting), `modelV2.ts` + the generated `modelV2Data.ts` imitation prior
+  (`npm run tensor2:prior`), and `src/ai/strategy/tensorV2.ts` (memory, bounded replanning
+  with a commitment window, deterministic recovery, policy directives for tactics). Two
+  invariants: the v2 vocabulary is versioned and `loadV2Model` refuses a mismatched
+  checkpoint, and the context stays SHORT — a clamped slot more than ~3 positions from the
+  action block barely conditions the sample at this bond dimension.
+  `npm run tensor2:baseline | tensor2:train | tensor2:eval` (`tools/selfplay/tensorV2.ts`)
+  run the self-play loop: every seed is played from BOTH spawn corners against all three
+  Classic personas on a curriculum, the elite signal is the decisive outcome (never the
+  five-minute margin that misled v1), decision rows are credited to the phase that drew
+  them, and the imitation anchor plus a row-multiplicity cap keep the distribution from
+  collapsing. Training, tuning and campaign seeds come from disjoint ranges, so the reported
+  score is never the training score.
+- Macro policies actuate through ONE shared executor, `src/ai/strategy/execution.ts`:
+  affordability with site reservations, legal placement (tower rings, forester coverage),
+  civilian staffing, farm plots, stalled-site demolition, counter-composition and quota-based
+  fighter training. Classic and both Tensor policies call into it, so a policy comparison
+  measures strategy rather than one seat having clumsier hands. Supplier-first line planners
+  (timber/stone/coin/food/arms) live next to it in `classicPlan.ts` and are shared the same way.
 - The physical hero unit and functional equipment slots are not implemented yet.
 - Combat units include soldiers, archers, knights, and several enemy/wild archetypes.
 - Army controls include box/double-click selection, minimap highlighting, groups,

@@ -13,6 +13,7 @@ export interface GameSettings {
   autoPauseOnBlur: boolean;          // open the pause menu when the tab loses focus
   quality: 'auto' | 'high' | 'low';  // render pixel-ratio strategy
   tutorials: boolean;                // Normal-tier story briefings, build checklist & hints
+  betaFeatures: boolean;             // surface the unfinished network modes in the main menu
   unitCap: number;                   // performance ceiling on live units (godlike = MAX_UNITS)
   corpseCap: number;                 // battlefield bodies kept before the oldest is culled
   corpseLife: number;                // seconds a body lingers before fading away
@@ -21,7 +22,7 @@ export interface GameSettings {
 export const DEFAULT_SETTINGS: GameSettings = {
   musicVol: 1, sfxVol: 1, panSpeed: 1,
   invertZoom: false, extendedZoom: false, edgePan: false, autoPauseOnBlur: false,
-  quality: 'auto', tutorials: true,
+  quality: 'auto', tutorials: true, betaFeatures: false,
   unitCap: 4000, corpseCap: 2000, corpseLife: 300,
 };
 
@@ -44,6 +45,7 @@ export function loadSettings(): GameSettings {
       autoPauseOnBlur: !!s.autoPauseOnBlur,
       quality: s.quality === 'high' || s.quality === 'low' ? s.quality : 'auto',
       tutorials: s.tutorials !== false, // default on for anyone without the key set
+      betaFeatures: !!s.betaFeatures,   // opt-in: unfinished modes stay out of the way
       unitCap: num(s.unitCap, DEFAULT_SETTINGS.unitCap, 100, 11000),
       corpseCap: num(s.corpseCap, DEFAULT_SETTINGS.corpseCap, 0, 11000),
       corpseLife: num(s.corpseLife, DEFAULT_SETTINGS.corpseLife, 10, 3600),

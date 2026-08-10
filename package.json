@@ -17,6 +17,13 @@
     "tensor:pretrain": "tsx tools/selfplay/tensor.ts pretrain",
     "tensor:train": "tsx tools/selfplay/tensor.ts train",
     "tensor:eval": "tsx tools/selfplay/tensor.ts eval",
+    "tensor2:prior": "tsx tools/selfplay/tensorV2Prior.ts",
+    "tensor2:baseline": "tsx tools/selfplay/tensorV2.ts baseline",
+    "tensor2:train": "tsx tools/selfplay/tensorV2.ts train",
+    "tensor2:eval": "tsx tools/selfplay/tensorV2.ts eval",
+    "value:collect": "tsx tools/selfplay/valueNet.ts collect",
+    "value:train": "tsx tools/selfplay/valueNet.ts train",
+    "value:ablate": "tsx tools/selfplay/valueNet.ts ablate",
     "test": "vitest run",
     "test:fast": "vitest run --exclude \"tests/**/*.slow.test.ts\"",
     "test:slow": "vitest run .slow.test.ts"

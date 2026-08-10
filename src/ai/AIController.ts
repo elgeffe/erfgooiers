@@ -13,6 +13,7 @@ import { ClassicMacro } from './strategy/classic';
 import { IdleMacro } from './strategy/idle';
 import { RandomMacro } from './strategy/random';
 import { TensorMacro } from './strategy/tensor';
+import { SAMPLE_ALL, TensorMacroV2 } from './strategy/tensorV2';
 import { TENSOR_MODEL } from './tensor/model';
 import type { MacroPolicy, PolicyContext } from './strategy/types';
 
@@ -113,11 +114,14 @@ export class AIController {
     this.macro = options.macro
       ?? (policy === 'classic' ? new ClassicMacro()
         : policy === 'tensor' ? new TensorMacro(TENSOR_MODEL)
+        : policy === 'tensor2' ? new TensorMacroV2(undefined, SAMPLE_ALL)
+        : policy === 'scripted' ? new TensorMacroV2()
         : policy === 'random' ? new RandomMacro()
         : policy === 'idle' ? new IdleMacro() : null);
-    // the tensor seat fights with the same tactics layer as Classic — only the
+    // the tensor seats fight with the same tactics layer as Classic — only the
     // macro (build/train strategy) is under test, not the micro
-    this.tactics = policy === 'classic' || policy === 'tensor' ? new Tactics() : null;
+    this.tactics = policy === 'classic' || policy === 'tensor' || policy === 'tensor2' || policy === 'scripted'
+      ? new Tactics() : null;
     // start out of phase so two seats never think on the same tick, and the
     // opening varies between seeds — deterministically per seed
     this.macroT = -this.rng.range(0, this.profile.macroPeriod);
@@ -145,7 +149,14 @@ export class AIController {
     if (runTactics) {
       this.tacticsT = 0;
       this.stats.tacticsPasses++;
-      this.dispatch(this.tactics!.step(ctx));
+      // A policy may choose its own late-game posture (see MacroPolicy.directives).
+      // Only army-shape knobs are merged — never the fairness budgets, which
+      // stay exactly as the profile set them.
+      const directives = this.macro?.directives;
+      const tacticsCtx = directives && Object.keys(directives).length
+        ? { ...ctx, profile: { ...this.profile, ...directives } }
+        : ctx;
+      this.dispatch(this.tactics!.step(tacticsCtx));
       this.stats.firstAttackAt = this.tactics!.firstAttackAt;
     }
     if (runMacro) {
