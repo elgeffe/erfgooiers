@@ -28,6 +28,20 @@ import type { PolicyContext } from './types';
 export const VILLAGER_RESERVE = 2;
 /** A forester only serves the woodcutters inside its planting radius. */
 export const TIMBER_SUPPORT_RANGE = 9;
+/**
+ * Anchor bands tried in order when siting a forester on its woodcutter.
+ *
+ * Legality alone put lodges a median of 5 and as far as 15 tiles from the hut
+ * they serve, because `anchorDistance` is only the THIRD tiebreaker in the
+ * placement sort — open ground and clearance outrank it, and there is plenty
+ * of both further out. A lodge planting saplings at the edge of its radius
+ * replaces trees the cutter has to walk to; one planting inside the grove
+ * replaces them where they are being felled.
+ *
+ * Tried tight-first with the full radius as the fallback, so preferring a
+ * close site can never cost the lodge outright on cramped ground.
+ */
+const TIMBER_ANCHOR_BANDS = [4, TIMBER_SUPPORT_RANGE] as const;
 
 /** Rank eight perimeter sectors so successive home towers cover the widest
  * unguarded arc. The first tower faces the enemy approach; later towers spread
@@ -134,11 +148,13 @@ export function placeBuilding(
       spot = findBuildingSpot(game, world, view, key, rng, ctx.approach, reach, anchor, 4);
       if (spot) break;
     }
+  } else if (timberAnchor) {
+    for (const band of TIMBER_ANCHOR_BANDS) {
+      spot = findBuildingSpot(game, world, view, key, rng, ctx.approach, reach, timberAnchor, band);
+      if (spot) break;
+    }
   } else {
-    spot = findBuildingSpot(
-      game, world, view, key, rng, ctx.approach, reach,
-      timberAnchor ?? undefined, timberAnchor ? TIMBER_SUPPORT_RANGE : Infinity,
-    );
+    spot = findBuildingSpot(game, world, view, key, rng, ctx.approach, reach);
   }
   if (spot) return { type: 'placeBuilding', key, x: spot.x, y: spot.y, rot: spot.rot };
   blockedUntil.set(key, view.elapsed + 45);
