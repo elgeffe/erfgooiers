@@ -157,7 +157,12 @@ export const SAMPLE_NONE: readonly Phase[] = [];
  */
 const FIXED_BUNDLE: Record<Phase, IntentId[]> = {
   opening: ['expand:timber', 'expand:coin', 'expand:food', 'expand:arms', 'defend:home', 'army:ranged'],
-  midgame: ['expand:arms', 'expand:coin', 'army:ranged', 'defend:home', 'expand:stone', 'scout'],
+  // Leaner economy on purpose. Only build intents consume the queue; army and
+  // tempo intents are standing modifiers, so trading `expand:coin`/`expand:stone`
+  // for composition asks leaves the same passes spending on FIGHTERS instead of
+  // producers. Three separate economy expansions measured worse here, so this
+  // tests the inverse of the only consistent effect in the data.
+  midgame: ['expand:arms', 'army:ranged', 'army:siege-support', 'defend:home', 'army:anti-mounted', 'expand:coin'],
   lategame: ['army:ranged', 'army:siege-support', 'expand:arms', 'commit', 'defend:home', 'regroup'],
 };
 
