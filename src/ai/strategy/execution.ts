@@ -91,32 +91,16 @@ export function uncoveredWoodcutter(view: AIView): Coord | null {
 /**
  * Can this seat pay for `key` right now? Stock already promised to open sites
  * is reserved, so two commands in one pass cannot spend the same timber twice
- * and recreate the many-half-built-site gridlock. Timber owed to an unbuilt
- * siege quota is reserved too, so an engineer's workshop is never starved by
- * ordinary expansion.
+ * and recreate the many-half-built-site gridlock.
  */
 export function affordable(ctx: PolicyContext, key: BuildingKey): boolean {
   const cost = ctx.game.modsFor(ctx.view.owner).buildingCost(DEFS[key]) as Record<string, number>;
-  let structuralSiege = 0;
-  const engineerReady = ctx.view.buildings.some(building => building.key === 'engineer' && building.active);
-  if (engineerReady && ctx.profile.minSiege > 0) {
-    for (const unit of ctx.view.army) {
-      if ((UNITS[unit.role as UnitKind]?.structureMult ?? 1) > 1) structuralSiege++;
-    }
-    for (const building of ctx.view.buildings) for (const kind of building.trainQ ?? []) {
-      if ((UNITS[kind as UnitKind]?.structureMult ?? 1) > 1) structuralSiege++;
-    }
-  }
-  const siegeTimberReserve = engineerReady
-    ? Math.max(0, ctx.profile.minSiege - structuralSiege) * 10
-    : 0;
   for (const item in cost) {
     let committed = 0;
     for (const site of ctx.view.sites) {
       committed += Math.max(0, (site.needs[item] ?? 0) - (site.delivered[item] ?? 0));
     }
-    const strategicReserve = item === 'timber' ? siegeTimberReserve : 0;
-    if (economyStock(ctx.game, ctx.view.owner, item) - committed - strategicReserve < cost[item]) return false;
+    if (economyStock(ctx.game, ctx.view.owner, item) - committed < cost[item]) return false;
   }
   return true;
 }
@@ -387,14 +371,11 @@ export function trainFighter(
   const quotas = projectedTotal < profile.attackArmy && availableFullSlots < profile.attackArmy
     ? allocateUnitQuotas(Object.fromEntries([...availableKinds].map(kind => [kind, target[kind]])), profile.attackArmy)
     : fullQuotas;
-  let structuralSiege = 0, priests = 0;
+  let priests = 0;
   for (const kind in projected) {
-    const count = projected[kind] ?? 0;
     const def = UNITS[kind as UnitKind];
-    if ((def?.structureMult ?? 1) > 1) structuralSiege += count;
-    if (def?.heal) priests += count;
+    if (def?.heal) priests += projected[kind] ?? 0;
   }
-  const hasEngineer = trainers.some(trainer => trainer.key === 'engineer');
 
   let best: { building: Building; kind: string } | null = null;
   let bestDeficit = -Infinity;
@@ -405,22 +386,25 @@ export function trainFighter(
       if (quota <= 0 || (projected[kind] ?? 0) >= quota) continue;
       const cost = game.modsFor(view.owner).unitCost(kind, training.cost) as Record<string, number>;
       const def = UNITS[kind as UnitKind];
-      const structural = (def?.structureMult ?? 1) > 1;
-      // A one-timber horse archer must not consume every trickle forever
-      // while the Engineer waits for the ten-timber trebuchet lump. Reserve
-      // one missing engine at a time; the engine itself may spend the fund.
-      const siegeTimberReserve = !structural && structuralSiege < profile.minSiege
-        && hasEngineer ? 10 : 0;
+      // CONSTRUCTION MATERIALS COME FIRST. A reserve here used to be justified
+      // as holding the ten timber a siege engine costs, and it vanished when the
+      // engines did — but measurement says that was never the work it did. Its
+      // real effect was to throttle cheap-fighter training so timber kept
+      // reaching BUILDINGS. Deleting it alongside the siege cost Godlike most of
+      // its base by minute 18: one woodcutter instead of two, no stable, no
+      // monastery, two stone towers instead of five, no mounted arm at all, and
+      // 68.8% down to 59.4% against Hard. So the rule stays — honestly named,
+      // and keyed on how deep a persona means to expand rather than on engines
+      // it no longer builds.
+      const buildTimberReserve = profile.expansion >= 3 ? 10 : 0;
       let ok = true;
       for (const item in cost) {
-        const reserve = item === 'coin' ? coinReserve : item === 'timber' ? siegeTimberReserve : 0;
+        const reserve = item === 'coin' ? coinReserve : item === 'timber' ? buildTimberReserve : 0;
         if (storeStock(game, view.owner, item) < cost[item] + reserve) { ok = false; break; }
       }
       if (!ok) continue;
       // Normalized missing quota, plus tiny deterministic jitter for ties.
-      const essential = (def?.structureMult ?? 1) > 1 && structuralSiege < profile.minSiege
-        ? 20
-        : def?.heal && priests < profile.minPriests ? 15 : 0;
+      const essential = def?.heal && priests < profile.minPriests ? 15 : 0;
       const deficit = essential + (quota - (projected[kind] ?? 0)) / quota + rng.next() * 0.002;
       if (deficit > bestDeficit) { bestDeficit = deficit; best = { building, kind }; }
     }

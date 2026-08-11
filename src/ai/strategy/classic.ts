@@ -129,7 +129,9 @@ function goals(expansion: number): BuildGoal[] {
     { key: 'armory', target: target.armsLines, priority: 30, category: 'war', requires: req('smithy'), expand: true },
     { key: 'barracks', target: E >= 3 ? 2 : 1, priority: 30, category: 'war', expand: true },
     { key: 'stable', target: E >= 3 ? 2 : 0, priority: 30, category: 'war', requires: req('smithy'), expand: true },
-    { key: 'engineer', target: E >= 3 ? 2 : 0, priority: 30, category: 'war', expand: true },
+    // No Engineer's Workshop: nothing in the total strategy raises curtain
+    // walls, so its engines have nothing to break that the line cannot, and
+    // the timber and army slots they consumed go to the line instead.
     { key: 'monastery', target: E >= 3 ? 1 : 0, priority: 30, category: 'war', expand: true },
   ];
   return list.filter(goal => goal.target > 0);
@@ -306,9 +308,16 @@ export class ClassicMacro implements MacroPolicy {
       && view.workers.freeVillagers >= VILLAGER_RESERVE;
     const timber = economyStock(game, view.owner, 'timber'), stone = economyStock(game, view.owner, 'stone');
     const materialProducer: BuildingKey[] = ['woodcutter', 'sawmill', 'quarry', 'forester'];
-    const wantsSiege = (view.built.engineer ?? 0) > 0
-      && view.army.filter(u => u.role === 'onager' || u.role === 'trebuchet' || u.role === 'ballista').length < 3;
-    const timberBuffer = wantsSiege ? 12 : 3; // one siege = 10 timber, plus a little slack
+    // Hold a real timber float before luxury expansion. This buffer used to be
+    // justified as reserving the ten-timber lump for a siege engine, but that
+    // was never the work it did: `starved` restricts expansion to material
+    // producers and coin, so the reserve is what kept the seat raising a SECOND
+    // timber line and a third quarry instead of sprawling. Removing it with the
+    // siege cost Godlike its entire premium arm — measured at 18 minutes, the
+    // roster went from 8 lancers, 4 horse archers and 3 knights to no mounted
+    // units at all, with no stable, no monastery, two stone towers instead of
+    // five and one woodcutter instead of two.
+    const timberBuffer = (view.built.armory ?? 0) > 0 ? 12 : 3;
     const starved = timber < timberBuffer || stone < 3;
     const candidates = goals(profile.expansion)
       .filter(goal => have(view, goal.key) < goal.target)

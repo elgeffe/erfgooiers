@@ -85,7 +85,11 @@ const COMPOSITIONS: Record<string, Record<string, number>> = {
   'army:ranged': { archer: 4, soldier: 3, knight: 1 },
   'army:anti-mounted': { pikeman: 5, soldier: 2, archer: 1 },
   'army:mounted': { lancer: 3, horsearcher: 2, horseknight: 2, soldier: 1 },
-  'army:siege-support': { trebuchet: 2, onager: 2, priest: 2, soldier: 2, archer: 1 },
+  // No engines. Nothing in this game's strategy builds curtain walls, so a
+  // trebuchet has nothing to break that a soldier cannot, while the demand for
+  // one deadlocked every attack (see `posture`). What survives of this intent
+  // is the useful half: priests keeping a heavy line alive.
+  'army:siege-support': { priest: 2, soldier: 3, archer: 2 },
 };
 
 /** With no composition vote at all, field the balanced army a sane player would. */
@@ -94,7 +98,7 @@ const DEFAULT_COMPOSITION: Record<string, number> = { soldier: 3, archer: 3, pik
 /** The trainer each composition needs before it can produce anything. */
 const TRAINER_FOR: Record<string, BuildingKey> = {
   'army:ranged': 'barracks', 'army:anti-mounted': 'barracks',
-  'army:mounted': 'stable', 'army:siege-support': 'engineer',
+  'army:mounted': 'stable', 'army:siege-support': 'monastery',
 };
 
 /**
@@ -118,8 +122,8 @@ function foundationKey(planned: ReturnType<typeof plannedBuildingCounts>): Build
  * woodcutter's hut, because a hut with no mill produces trunks nobody can use.
  *
  * Timber is deterministic rather than sampled, and grown past the opening,
- * because it is the input to everything the late game needs: an engineer's
- * workshop costs 5 and every siege engine 10. Leaving it to the sampler left
+ * because it is the input to everything the late game needs. Leaving it to the
+ * sampler left
  * the seat on ONE hut and ONE mill for the whole match with no forester at all
  * — `expand:timber` appears only in the opening plan, and by the time the pair
  * stands the lodge is unaffordable, so the intent times out and the queue moves
@@ -307,7 +311,7 @@ export class TensorMacroV2 implements MacroPolicy {
       if (building.def.gather || building.def.recipe) {
         if (!building.def.worker || building.worker) producers++;
       }
-      if (building.key === 'stable' || building.key === 'engineer' || building.key === 'monastery') advanced++;
+      if (building.key === 'stable' || building.key === 'monastery') advanced++;
     }
     // Report the memory as it stands, ageing included. Deciding when a sighting
     // has gone cold belongs to the context slot, so the policy and the model
@@ -495,7 +499,7 @@ export class TensorMacroV2 implements MacroPolicy {
   }
 
   /** Build the trainer an active composition intent needs before its units can
-   *  exist. `army:siege-support` wants a monastery too once the workshop stands. */
+   *  exist. */
   private ensureTrainer(ctx: PolicyContext): GameCommand | null {
     const planned = plannedBuildingCounts(ctx.view.built, ctx.view.pending);
     for (const intent of this.bundle) {
@@ -503,13 +507,10 @@ export class TensorMacroV2 implements MacroPolicy {
       const key = TRAINER_FOR[intent];
       if (!key) continue;
       if ((planned[key] ?? 0) < 1) {
-        // A stable needs a smithy's weapons; a workshop only needs timber.
+        // A stable needs a smithy's weapons; a monastery only needs stone.
         if (key === 'stable' && (planned.smithy ?? 0) < 1) continue;
         if (!affordable(ctx, key)) continue;
         return placeBuilding(ctx, key, this.blockedUntil);
-      }
-      if (intent === 'army:siege-support' && (planned.monastery ?? 0) < 1 && affordable(ctx, 'monastery')) {
-        return placeBuilding(ctx, 'monastery', this.blockedUntil);
       }
     }
     return null;
@@ -538,15 +539,20 @@ export class TensorMacroV2 implements MacroPolicy {
     const has = (intent: IntentId): boolean => this.bundle.includes(intent);
     const directives: Partial<AIProfile> = {};
 
-    // Only demand siege once a workshop actually STANDS. The tactics layer will
-    // not launch a wave until `minSiege` engines exist, so asking for siege the
-    // economy cannot build blocks every attack for the rest of the match — the
-    // exact deadlock that made this policy sit at home and lose to Godlike
-    // without ever attacking.
+    // NEVER demand siege. Gating the demand on a standing workshop was not
+    // enough, because `directives` reach the TACTICS layer only: tactics then
+    // refused to launch until two engines existed, while the macro's own
+    // training allocator — reading the base profile, where `minSiege` is 0 —
+    // gave engines no priority and reserved no timber for them. The seat waited
+    // forever for something it never told itself to build. Measured: a workshop
+    // standing and active from 600s, an army grown to fifty against a rival
+    // reduced to two, and not one wave launched in forty minutes.
+    //
+    // Nothing in this game's strategy raises curtain walls, so the engines had
+    // nothing to break in the first place; removing the demand is the simpler
+    // half of that fix and costs no capability.
     if (has('army:siege-support')) {
-      const engineer = ctx.view.buildings.some(b => b.key === 'engineer' && b.active);
       const monastery = ctx.view.buildings.some(b => b.key === 'monastery' && b.active);
-      if (engineer) directives.minSiege = 2;
       if (monastery) directives.minPriests = 1;
     }
     if (has('army:mounted')) directives.flankSize = 6;
