@@ -60,8 +60,8 @@ const INTENT_PATIENCE = 40;
  *  bundle that repeats an intent compounds instead of no-opping. */
 const CEILINGS: Record<Phase, Record<LineId, number>> = {
   opening: { timber: 1, stone: 1, coin: 1, food: 1, arms: 1 },
-  midgame: { timber: 2, stone: 3, coin: 2, food: 2, arms: 1 },
-  lategame: { timber: 2, stone: 4, coin: 3, food: 2, arms: 2 },
+  midgame: { timber: 3, stone: 3, coin: 2, food: 2, arms: 1 },
+  lategame: { timber: 4, stone: 4, coin: 3, food: 2, arms: 2 },
 };
 
 type LineId = 'timber' | 'stone' | 'coin' | 'food' | 'arms';
@@ -111,6 +111,36 @@ function foundationKey(planned: ReturnType<typeof plannedBuildingCounts>): Build
     // the tavern is where bread becomes a fed worker — not an optional extra
     ?? ((planned.tavern ?? 0) < 1 ? 'tavern' : null)
     ?? ((planned.barracks ?? 0) < 1 ? 'barracks' : null);
+}
+
+/**
+ * Paired timber lines the seat keeps standing, by phase — one sawmill per
+ * woodcutter's hut, because a hut with no mill produces trunks nobody can use.
+ *
+ * Timber is deterministic rather than sampled, and grown past the opening,
+ * because it is the input to everything the late game needs: an engineer's
+ * workshop costs 5 and every siege engine 10. Leaving it to the sampler left
+ * the seat on ONE hut and ONE mill for the whole match with no forester at all
+ * — `expand:timber` appears only in the opening plan, and by the time the pair
+ * stands the lodge is unaffordable, so the intent times out and the queue moves
+ * on permanently. Measured against Godlike, that seat sat at 1-8 timber to its
+ * rival's 9-26 and never fielded a single siege engine.
+ */
+const TIMBER_LINES: Record<Phase, number> = { opening: 1, midgame: 2, lategame: 3 };
+
+/**
+ * The next step of the timber industry: complete or add a hut/mill PAIR up to
+ * the phase's target, then keep one forester's lodge per hut.
+ *
+ * The lodge is not optional. A hut fells the trees in its radius and stops;
+ * a lodge replants them, so the pair keeps producing instead of going quiet
+ * halfway through the match. Placement anchors the lodge within its planting
+ * radius of an uncovered hut (`execution.ts`), so "near the woodcutter" is
+ * enforced by the placement search rather than hoped for.
+ */
+function timberKey(planned: ReturnType<typeof plannedBuildingCounts>, phase: Phase): BuildingKey | null {
+  return nextTimberLineBuild(planned, TIMBER_LINES[phase])
+    ?? ((planned.forester ?? 0) < (planned.woodcutter ?? 0) ? 'forester' : null);
 }
 
 /** Sampling scopes for {@link TensorMacroV2}'s constructor. */
@@ -386,6 +416,9 @@ export class TensorMacroV2 implements MacroPolicy {
       const foundation = this.tryBuild(ctx, foundationKey(planned));
       if (foundation) return foundation;
     }
+    // Timber upkeep runs for every phase and both policies — see TIMBER_LINES.
+    const timber = this.tryBuild(ctx, timberKey(planned, this.phase.phase));
+    if (timber) return timber;
     const trainer = this.ensureTrainer(ctx);
     if (trainer) return trainer;
 
