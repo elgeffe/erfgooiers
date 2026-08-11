@@ -308,17 +308,12 @@ export class ClassicMacro implements MacroPolicy {
       && view.workers.freeVillagers >= VILLAGER_RESERVE;
     const timber = economyStock(game, view.owner, 'timber'), stone = economyStock(game, view.owner, 'stone');
     const materialProducer: BuildingKey[] = ['woodcutter', 'sawmill', 'quarry', 'forester'];
-    // Hold a real timber float before luxury expansion. This buffer used to be
-    // justified as reserving the ten-timber lump for a siege engine, but that
-    // was never the work it did: `starved` restricts expansion to material
-    // producers and coin, so the reserve is what kept the seat raising a SECOND
-    // timber line and a third quarry instead of sprawling. Removing it with the
-    // siege cost Godlike its entire premium arm — measured at 18 minutes, the
-    // roster went from 8 lancers, 4 horse archers and 3 knights to no mounted
-    // units at all, with no stable, no monastery, two stone towers instead of
-    // five and one woodcutter instead of two.
-    const timberBuffer = (view.built.armory ?? 0) > 0 ? 12 : 3;
-    const starved = timber < timberBuffer || stone < 3;
+    // A bare floor, the same for every persona. The deeper timber float that
+    // keeps an expansion-3 seat raising material producers instead of sprawling
+    // lives in `trainFighter` as `buildTimberReserve`, where it throttles the
+    // fighter queue rather than the build queue — that is where measurement put
+    // its actual effect.
+    const starved = timber < 3 || stone < 3;
     const candidates = goals(profile.expansion)
       .filter(goal => have(view, goal.key) < goal.target)
       // Expansion is earned by staffing the settlement already on the map.
