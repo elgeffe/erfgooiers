@@ -60,8 +60,8 @@ const INTENT_PATIENCE = 40;
  *  bundle that repeats an intent compounds instead of no-opping. */
 const CEILINGS: Record<Phase, Record<LineId, number>> = {
   opening: { timber: 1, stone: 1, coin: 1, food: 1, arms: 1 },
-  midgame: { timber: 3, stone: 3, coin: 2, food: 2, arms: 1 },
-  lategame: { timber: 4, stone: 4, coin: 3, food: 2, arms: 2 },
+  midgame: { timber: 2, stone: 3, coin: 2, food: 2, arms: 1 },
+  lategame: { timber: 2, stone: 4, coin: 3, food: 2, arms: 2 },
 };
 
 type LineId = 'timber' | 'stone' | 'coin' | 'food' | 'arms';
@@ -126,7 +126,7 @@ function foundationKey(planned: ReturnType<typeof plannedBuildingCounts>): Build
  * on permanently. Measured against Godlike, that seat sat at 1-8 timber to its
  * rival's 9-26 and never fielded a single siege engine.
  */
-const TIMBER_LINES: Record<Phase, number> = { opening: 1, midgame: 2, lategame: 3 };
+const TIMBER_LINES: Record<Phase, number> = { opening: 1, midgame: 1, lategame: 1 };
 
 /**
  * The next step of the timber industry: complete or add a hut/mill PAIR up to
