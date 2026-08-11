@@ -27,7 +27,7 @@
  * a rounding error against the simulation itself (92% of match cost).
  */
 import type { Game } from '../../src/game/Game';
-import type { PlayerId } from '../../src/types';
+import type { Building, PlayerId } from '../../src/types';
 
 /** Sim seconds between samples. Coarse on purpose: these are match-scale
  *  summaries, and the integrals below only need to be unbiased, not exact. */
@@ -98,6 +98,8 @@ export class KpiTracker {
   readonly kpis = EMPTY();
   private nextSampleAt = 0;
   private readonly seen = new Set<string>();
+  private ownStore: Building | null = null;
+  private enemyStore: Building | null = null;
 
   constructor(
     private readonly game: Game,
@@ -105,10 +107,20 @@ export class KpiTracker {
     private readonly rival: PlayerId,
   ) {}
 
-  sample(): void {
+  /**
+   * The last word on the match. MUST be called once the loop ends: a razed
+   * keep both drops out of `playerStores` and ends the match on a tick the
+   * rate limiter would usually skip, so without this the winning matches
+   * report whatever the keep's health was up to ten seconds before it fell.
+   */
+  finish(): void {
+    this.sample(true);
+  }
+
+  sample(force = false): void {
     const { game, seat, rival, kpis } = this;
     const now = game.elapsed;
-    if (now < this.nextSampleAt) return;
+    if (!force && now < this.nextSampleAt) return;
     this.nextSampleAt = now + SAMPLE_INTERVAL;
 
     // --- landmarks: first completion only, hence the seen set ---
@@ -122,8 +134,13 @@ export class KpiTracker {
 
     // --- army curve ---
     let army = 0, enemyArmy = 0, villagers = 0, idleVillagers = 0;
-    const ownStore = game.playerStores.get(seat);
-    const enemyStore = game.playerStores.get(rival);
+    // Hold the keeps by reference once seen. A razed storehouse is dropped
+    // from `playerStores`, so re-reading the map every sample would lose the
+    // building at the exact moment its health is the thing worth recording.
+    this.ownStore ??= game.playerStores.get(seat) ?? null;
+    this.enemyStore ??= game.playerStores.get(rival) ?? null;
+    const ownStore = this.ownStore;
+    const enemyStore = this.enemyStore;
     let pressing = 0, besieging = 0;
     for (const unit of game.units) {
       if (unit.dead) continue;

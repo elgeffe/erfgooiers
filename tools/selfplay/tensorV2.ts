@@ -135,6 +135,7 @@ function playMatch(model: TensorV2Model, job: MatchJob): MatchResult {
     kpi.sample();
     if (game.eliminated.size) break;
   }
+  kpi.finish();
 
   const winner = skirmishWinner(game);
   const strength = (id: PlayerId): number => {
