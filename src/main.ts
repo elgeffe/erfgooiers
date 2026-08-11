@@ -642,7 +642,7 @@ function renderSkirmishAISetup(): void {
     const cfg = skaiCfg[side];
     const classic = cfg.policy === 'classic';
     const groups: { key: keyof SkaiSeatCfg; label: string; opts: [string, string][]; hidden?: boolean }[] = [
-      { key: 'policy', label: `${title} — Classic is the benchmark; the Tensor brains are the MPS research models (v2 replans as the match changes); Idle & Random are training dummies`, opts: [['classic', '⚔️ Classic'], ['scripted', '🎯 Strategist'], ['tensor', '🧠 Tensor'], ['tensor2', '🧠 Tensor v2'], ['random', '🎲 Random'], ['idle', '💤 Idle']] },
+      { key: 'policy', label: `${title} — Classic is the benchmark; Tensor is the MPS research model, replanning as the match changes; Idle & Random are training dummies`, opts: [['classic', '⚔️ Classic'], ['scripted', '🎯 Strategist'], ['tensor2', '🧠 Tensor'], ['random', '🎲 Random'], ['idle', '💤 Idle']] },
       { key: 'difficulty', label: 'Difficulty — a better player, never a cheating one', hidden: !classic, opts: [['easy', '🌱 Easy'], ['hard', '⚔️ Hard'], ['godlike', '🔥 Godlike']] },
     ];
     let block = '';

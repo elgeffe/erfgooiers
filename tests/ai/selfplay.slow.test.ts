@@ -52,11 +52,11 @@ describe('headless self-play', () => {
     expect(c.fingerprint).not.toBe(a.fingerprint);
   }, 120_000);
 
-  it('godlike waits for a siege-backed premium roster while hard fields a conventional wave', () => {
+  it('godlike waits for a premium mounted roster while hard fields a conventional wave', () => {
     // Villagers and the common production opening now precede luxury military
     // buildings. Against a passive seat, Godlike should therefore hold for its
     // deliberately larger combined-arms force. The 18-minute horizon includes
-    // its paced fourth perimeter tower and second trebuchet.
+    // its paced fourth perimeter tower.
     const godlike = runSelfPlayMatch({ seed: 1000, p1: 'classic-godlike', p2: 'idle', maxSeconds: 1080 });
     const hard = runSelfPlayMatch({ seed: 1000, p1: 'classic-hard', p2: 'idle', maxSeconds: 1080 });
     const firstGodlike = godlike.stats.p1.firstAttackAt;
@@ -70,8 +70,14 @@ describe('headless self-play', () => {
     const godlikeRoster = trained(godlike);
     const hardRoster = trained(hard);
     const mounted = new Set(['lancer', 'horsearcher', 'horseknight']);
-    const advancedSupport = new Set(['trebuchet', 'onager', 'priest']);
-    expect(godlikeRoster.filter(kind => kind === 'trebuchet')).toHaveLength(2);
+    const advancedSupport = new Set(['priest']);
+    // NO SIEGE, by design and in every seat: nothing in the total strategy
+    // raises curtain walls, so engines have nothing to break that the line
+    // cannot, and demanding them held whole armies at home. Godlike's premium
+    // edge is now its mounted arm and its priests.
+    const siege = new Set(['trebuchet', 'onager', 'ballista']);
+    expect(godlikeRoster.some(kind => siege.has(kind))).toBe(false);
+    expect(hardRoster.some(kind => siege.has(kind))).toBe(false);
     expect(godlikeRoster.some(kind => mounted.has(kind))).toBe(true);
     expect(hardRoster.some(kind => advancedSupport.has(kind))).toBe(false);
 

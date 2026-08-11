@@ -262,6 +262,13 @@ hard placement pressure.
   them, and the imitation anchor plus a row-multiplicity cap keep the distribution from
   collapsing. Training, tuning and campaign seeds come from disjoint ranges, so the reported
   score is never the training score.
+- Every match also records a KPI block (`tools/selfplay/kpi.ts`): build-order landmark
+  timings, army curve, waste integrals, and CONVERSION metrics — how far the enemy keep was
+  driven and how long the seat held pressure on it. These are diagnostic and variance-reduction
+  instrumentation ONLY; the training signal stays win/loss/draw. That separation is not
+  fastidiousness, it is a measured result twice over: v1's five-minute margin reward was shown
+  to prefer fast starts over wins, and the scripted seat draws games against Godlike while
+  +80 ahead on material. Every KPI here correlates with winning and can be hit while losing.
 - Macro policies actuate through ONE shared executor, `src/ai/strategy/execution.ts`:
   affordability with site reservations, legal placement (tower rings, forester coverage),
   civilian staffing, farm plots, stalled-site demolition, counter-composition and quota-based

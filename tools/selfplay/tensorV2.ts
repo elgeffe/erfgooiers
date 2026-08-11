@@ -49,6 +49,7 @@ import {
 import { anchorRows, loadV2Model, priorV2Model, type TensorV2Model } from '../../src/ai/tensor/modelV2';
 import { decodeBundle, PHASE_INTENTS, type IntentId } from '../../src/ai/tensor/plan';
 import type { Phase } from '../../src/ai/tensor/phase';
+import { KpiTracker, kpiReport, type MatchKPIs } from './kpi';
 
 const PHASES: readonly Phase[] = ['opening', 'midgame', 'lategame'];
 const OPPONENTS = ['classic-easy', 'classic-hard', 'classic-godlike'] as const;
@@ -102,6 +103,10 @@ interface MatchResult {
   identity: string;
   /** Phase the seat reached, and whether it ever entered recovery. */
   reachedPhase: Phase;
+  /** Build-order, conversion and waste measurements. Diagnostic only — the
+   *  elite signal stays the outcome. See kpi.ts for why that separation is
+   *  load-bearing rather than fastidious. */
+  kpis: MatchKPIs;
 }
 
 // ---- one match ----
@@ -123,11 +128,14 @@ function playMatch(model: TensorV2Model, job: MatchJob): MatchResult {
   const own = controllers[PLAYER_IDS.indexOf(seat)];
 
   const maxTicks = Math.round(Math.min(seconds, level.hardTimer) / TICK_SECONDS);
+  const kpi = new KpiTracker(game, seat, rival);
   for (let tick = 0; tick < maxTicks; tick++) {
     for (const controller of controllers) controller.tick(TICK_SECONDS);
     game.update(TICK_SECONDS);
+    kpi.sample();
     if (game.eliminated.size) break;
   }
+  kpi.finish();
 
   const winner = skirmishWinner(game);
   const strength = (id: PlayerId): number => {
@@ -154,6 +162,7 @@ function playMatch(model: TensorV2Model, job: MatchJob): MatchResult {
     intents: macro.drawn.flatMap(entry => entry.intents),
     identity: macro.state.identity ?? 'none',
     reachedPhase: macro.state.phase,
+    kpis: kpi.kpis,
   };
 }
 
@@ -500,6 +509,11 @@ async function main(): Promise<void> {
       process.stdout.write(line(opponent, summarise(all.filter(r => r.opponent === opponent))) + '\n');
     }
     process.stdout.write(line('ALL', summarise(all)) + `  intent entropy ${intentEntropy(all).toFixed(2)} bits\n`);
+    // The KPI split by outcome is where the diagnosis lives: the average tells
+    // you what the seat does, the wins-versus-losses gap tells you what to fix.
+    for (const opponent of field) {
+      process.stdout.write(kpiReport(opponent, all.filter(r => r.opponent === opponent)));
+    }
     return;
   }
 

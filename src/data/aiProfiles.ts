@@ -140,15 +140,16 @@ const DIFFICULTY_BASE: Record<AIDifficulty, Omit<AIProfile, 'id' | 'name' | 'des
     // (cadence, APM, reactions, counters, mounted scouting) and army cap; four
     // stone towers cover the home perimeter without fragile wall placement.
     econScale: 1, expansion: 3, maxPendingSites: 4, workerReserveCoin: 3, towers: 4, towerKey: 'stonetower', forwardTowers: 2,
-    // onagers wreck the enemy line in the field clash (anti-personnel splash),
-    // trebuchets (structureMult 4) then break the walls and storehouse — the
-    // demolition core, so they're weighted highest of the siege pair
+    // No engines: nothing in the total strategy builds curtain walls, so the
+    // siege pair had nothing to break that the line cannot, while `minSiege`
+    // held every wave at home until two of them existed. Their weight goes to
+    // the conventional line; the priests that kept it alive stay.
     armyCap: 72, unitMix: {
       soldier: 6, archer: 6, pikeman: 1, knight: 1,
       lancer: 2, horsearcher: 2, horseknight: 1,
-      onager: 1, trebuchet: 1, priest: 1,
+      priest: 1,
     },
-    minSiege: 2, minPriests: 1, flankSize: 6,
+    minSiege: 0, minPriests: 1, flankSize: 6,
     attackArmy: 44, attackEnabled: true, waveGrowth: 8, minAttackInterval: 150, retreatRatio: 0.42, useBell: true,
     counter: 1, homeGuard: 0.2, raidSize: 4, raidInterval: 100,
   },

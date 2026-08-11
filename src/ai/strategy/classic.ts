@@ -129,7 +129,9 @@ function goals(expansion: number): BuildGoal[] {
     { key: 'armory', target: target.armsLines, priority: 30, category: 'war', requires: req('smithy'), expand: true },
     { key: 'barracks', target: E >= 3 ? 2 : 1, priority: 30, category: 'war', expand: true },
     { key: 'stable', target: E >= 3 ? 2 : 0, priority: 30, category: 'war', requires: req('smithy'), expand: true },
-    { key: 'engineer', target: E >= 3 ? 2 : 0, priority: 30, category: 'war', expand: true },
+    // No Engineer's Workshop: nothing in the total strategy raises curtain
+    // walls, so its engines have nothing to break that the line cannot, and
+    // the timber and army slots they consumed go to the line instead.
     { key: 'monastery', target: E >= 3 ? 1 : 0, priority: 30, category: 'war', expand: true },
   ];
   return list.filter(goal => goal.target > 0);
@@ -306,10 +308,12 @@ export class ClassicMacro implements MacroPolicy {
       && view.workers.freeVillagers >= VILLAGER_RESERVE;
     const timber = economyStock(game, view.owner, 'timber'), stone = economyStock(game, view.owner, 'stone');
     const materialProducer: BuildingKey[] = ['woodcutter', 'sawmill', 'quarry', 'forester'];
-    const wantsSiege = (view.built.engineer ?? 0) > 0
-      && view.army.filter(u => u.role === 'onager' || u.role === 'trebuchet' || u.role === 'ballista').length < 3;
-    const timberBuffer = wantsSiege ? 12 : 3; // one siege = 10 timber, plus a little slack
-    const starved = timber < timberBuffer || stone < 3;
+    // A bare floor, the same for every persona. The deeper timber float that
+    // keeps an expansion-3 seat raising material producers instead of sprawling
+    // lives in `trainFighter` as `buildTimberReserve`, where it throttles the
+    // fighter queue rather than the build queue — that is where measurement put
+    // its actual effect.
+    const starved = timber < 3 || stone < 3;
     const candidates = goals(profile.expansion)
       .filter(goal => have(view, goal.key) < goal.target)
       // Expansion is earned by staffing the settlement already on the map.
